@@ -1,0 +1,4 @@
+[alias]
+groth16-test = "test --release --test groth16_integration_test test_groth16_prove_and_verify --features print-trace,r1cs-debug -- --nocapture"
+groth16-setup = "test --release --test groth16_integration_test test_groth16_setup --features print-trace,r1cs-debug -- --nocapture"
+groth16-multi-test = "test --release --test groth16_integration_test test_multi_prove_verify --features print-trace,r1cs-debug -- --nocapture"

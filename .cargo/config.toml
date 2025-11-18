@@ -1,4 +1,6 @@
 [alias]
-groth16-test = "test --release --test groth16_integration_test test_groth16_prove_and_verify --features print-trace,r1cs-debug -- --nocapture"
-groth16-setup = "test --release --test groth16_integration_test test_groth16_setup --features print-trace,r1cs-debug -- --nocapture"
-groth16-multi-test = "test --release --test groth16_integration_test test_multi_prove_verify --features print-trace,r1cs-debug -- --nocapture"
+setup = "test --release --test light_weight test_groth16_setup --features print-trace -- --nocapture"
+prove-verify-opt = "test --release --test light_weight test_prove_and_verify --features print-trace,use-optimized -- --nocapture"
+prove-verify = "test --release --test light_weight test_prove_and_verify --features print-trace -- --nocapture"
+prove-verify-debug = "test --release --test light_weight test_prove_and_verify --features print-trace,r1cs-debug -- --nocapture"
+prove-verify-opt-debug = "test --release --test light_weight test_prove_and_verify --features print-trace,use-optimized,r1cs-debug -- --nocapture"

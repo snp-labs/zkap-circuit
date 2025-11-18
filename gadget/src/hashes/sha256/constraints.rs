@@ -5,7 +5,7 @@ use ark_r1cs_std::{
     R1CSVar,
     alloc::{AllocVar, AllocationMode},
     eq::EqGadget,
-    fields::fp::FpVar,
+    fields::{FieldVar, fp::FpVar},
     prelude::{Boolean, ToBytesGadget},
     select::CondSelectGadget,
     uint8::UInt8,
@@ -192,18 +192,15 @@ impl<F: PrimeField> SHA256Gadget<F> {
     pub fn digest_with_pad(
         &mut self,
         data: &[UInt8<F>],
-        num_sha2_blocks: FpVar<F>,
+        nblocks: FpVar<F>,
     ) -> Result<DigestVar<F>, SynthesisError> {
         assert_eq!(data.len() % 64, 0);
-        // num_sha2_blocks 횟수 만큼의 해시 결과가 저장된다.
+        // nblocks 횟수 만큼의 해시 결과가 저장된다.
         let mut hash_results = Vec::new();
         let zero = UInt32::<F>::constant(0u32);
-        let mut output = Vec::new();
-        for _ in 0..8 {
-            output.push(zero.clone());
-        }
-        let zero_value = output.clone();
-        for (_i, chunk) in data.chunks(64).enumerate() {
+        let mut output = vec![zero.clone(); 8];
+
+        for (i, chunk) in data.chunks(64).enumerate() {
             Self::update_state(&mut self.state, chunk)?;
             // let bytes = Vec::from_iter(self.state.iter().flat_map(|i| i.to_bytes_be().unwrap()));
             // println!("{} chunk {:?}", i, bytes.value().unwrap());
@@ -214,15 +211,27 @@ impl<F: PrimeField> SHA256Gadget<F> {
             hash_results.push(self.state.clone());
         }
 
-        for i in 0..hash_results.len() {
+        let mut flags = Vec::with_capacity(hash_results.len());
+        for (i, state) in hash_results.iter().enumerate() {
             let i_fp = FpVar::<F>::Constant(F::from(i as u64));
-            let is_eq = i_fp.is_eq(&num_sha2_blocks)?;
-            let value = conditionally_select_vec(&is_eq, &hash_results[i], &zero_value.clone())?;
-            output = add_many_vec(&output, &value);
+            let is_eq = i_fp.is_eq(&nblocks)?;
+            flags.push(is_eq);
+        }
+
+        // nblocks는 반드시 0..=len-1 중 하나여야 한다
+        let one = FpVar::<F>::one();
+        let sum_flags = flags.iter().fold(FpVar::<F>::zero(), |acc, b| {
+            acc + FpVar::<F>::from(b.clone())
+        });
+        sum_flags.enforce_equal(&one)?;
+
+        for (flag, state) in flags.iter().zip(hash_results.iter()) {
+            // output = flag ? state : output
+            output = conditionally_select_vec(flag, state, &output)?;
         }
 
         // Collect the state into big-endian bytes
-        let bytes = output
+        let bytes: Vec<ark_r1cs_std::uint::UInt<8, u8, F>> = output
             .iter()
             .flat_map(UInt32::to_bytes_be)
             .flatten()

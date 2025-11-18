@@ -1,0 +1,19 @@
+
+[package]
+edition = "2021"
+name = "napi-rs"
+version = "0.1.0"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+zkpasskey-service = { workspace = true }
+
+napi = { workspace = true }
+napi-derive = { workspace = true }
+
+ark-groth16 = { workspace = true }
+
+[build-dependencies]
+napi-build = { workspace = true }

@@ -9,7 +9,7 @@ use gadget::{
         error::AnchorError,
         poseidon::{PoseidonAnchor, PoseidonAnchorScheme, PoseidonAnchorSecret},
     },
-    matrix::Matrix,
+    matrix::mod_v0::Matrix,
 };
 
 use crate::{

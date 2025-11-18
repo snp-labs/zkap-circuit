@@ -1,17 +1,14 @@
 use std::{borrow::Borrow, marker::PhantomData};
 
-use ark_crypto_primitives::{
-    crh::{
-        CRHSchemeGadget,
-        poseidon::constraints::{CRHGadget, CRHParametersVar},
-    },
-    sponge::Absorb,
-};
+use ark_crypto_primitives::{crh::poseidon::constraints::CRHParametersVar, sponge::Absorb};
 use ark_ff::PrimeField;
 use ark_r1cs_std::{
-    R1CSVar, alloc::AllocVar, eq::EqGadget, fields::{FieldVar, fp::FpVar}
+    alloc::AllocVar,
+    eq::EqGadget,
+    fields::{FieldVar, fp::FpVar},
+    prelude::Boolean,
 };
-use ark_relations::r1cs::{ConstraintSystemRef, Namespace, SynthesisError};
+use ark_relations::r1cs::{Namespace, SynthesisError};
 
 use crate::{
     anchor::{
@@ -20,7 +17,7 @@ use crate::{
             PoseidonAnchor, PoseidonAnchorPublicKey, PoseidonAnchorScheme, PoseidonAnchorWitness,
         },
     },
-    utils::single_multiplexer,
+    matrix::constraints_v2::VandermondeMatrixVar,
 };
 
 #[cfg(feature = "r1cs-debug")]
@@ -33,221 +30,148 @@ pub struct PoseidonAnchorPublicKeyVar<F: PrimeField + Absorb> {
 
 #[derive(Clone)]
 pub struct PoseidonAnchorWitnessVar<F: PrimeField + Absorb> {
-    pub u: Vec<FpVar<F>>,
-    pub ut: Vec<FpVar<F>>,
-    pub placed_secrets: Vec<FpVar<F>>, // 선택된 시크릿들. k = 3 => [h_1, 0, h_3, 0, h_5] 형태
-    pub placed_indices: Vec<FpVar<F>>, // 시크릿 선택 여부를 나타내는 바이너리 벡터. k = 3 => [1,0,1,0,1] 형태
+    pub a: Vec<FpVar<F>>,
+    pub b: Vec<FpVar<F>>,
+    pub h_known: Vec<FpVar<F>>,
 }
 
 impl<F> PoseidonAnchorWitnessVar<F>
 where
     F: PrimeField + Absorb,
 {
-    pub fn enforce_set_equality(
-        &self,
-        cs: ConstraintSystemRef<F>,
-        parameters: &CRHParametersVar<F>,
-        ext_secret: &[FpVar<F>],
-        k: usize,
-    ) -> Result<(), SynthesisError> {
-        Self::enforce_k_non_zero(&self, k)?;
+    /// b 벡터와 h_known 벡터의 Sparsity Consistency를 검증힌다.
+    /// 모든 인덱스 i에 대해 만약 b\[i\] == 0 이면, 반드시 h_known\[i\] == 0 이어야 한다.
+    pub fn verify_sparsity_consistency(&self) -> Result<Boolean<F>, SynthesisError> {
+        if self.b.len() != self.h_known.len() {
+            return Err(SynthesisError::Unsatisfiable);
+        }
 
-        let reconstructed = Self::apply_placed_indices(&self, cs.clone(), parameters, ext_secret)?;
+        let mut is_all_valid = Boolean::constant(true);
 
-        reconstructed.enforce_equal(&self.placed_secrets)?;
+        for (b_elem, h_elem) in self.b.iter().zip(self.h_known.iter()) {
+            // 1. b[i]가 0인지 확인 (Boolean)
+            let b_is_zero = b_elem.is_zero()?;
 
-        Ok(())
+            // 2. h[i]가 0인지 확인 (Boolean)
+            let h_is_zero = h_elem.is_zero()?;
+
+            // 3. 논리 조건 구성: (b가 0이 아님) OR (h가 0임)
+            // - b != 0 이면: (True OR ...) => True (조건 만족, h는 상관없음)
+            // - b == 0 이면: (False OR h_is_zero) => h_is_zero (즉, h도 0이어야 True)
+            let b_is_nonzero = !b_is_zero;
+            let current_pair_valid = b_is_nonzero | &h_is_zero;
+
+            // 4. 전체 결과에 AND 연산으로 누적
+            // 하나라도 False면 전체 결과는 False가 됨
+            is_all_valid = is_all_valid & &current_pair_valid;
+        }
+
+        Ok(is_all_valid)
     }
 
-    // placed_indices가 정확히 k개의 1을 가지고,
-    // placed_secrets[i]가 0이 아닌 경우에만 placed_indices[i]가 1임을 강제한다.
-    pub fn enforce_k_non_zero(&self, k: usize) -> Result<(), SynthesisError> {
-        // indices는 0 또는 1의 값을 가져야 한다.
-        for idx in &self.placed_indices {
-            let binary = idx * (FpVar::one() - idx);
-            #[cfg(feature = "r1cs-debug")]
-            log_r1cs_eq(
-                "PoseidonAnchorWitnessVar::enforce_k_non_zero - binary check",
-                &[binary.clone()],
-                &[FpVar::zero()],
-            );
+    /// 벡터 a가 영벡터(All Zeros)가 아님을 검증한다.
+    pub fn is_a_nonzero(&self) -> Result<Boolean<F>, SynthesisError> {
+        let mut found_nonzero = Boolean::constant(false);
 
-            binary.enforce_equal(&FpVar::zero())?;
+        for elem in &self.a {
+            // 1. 현재 원소가 0인지 확인
+            let is_zero = elem.is_zero()?;
+
+            // 2. 현재 원소가 0이 아닌지 확인
+            // is_zero가 True면 is_nonzero는 False
+            let is_nonzero = !is_zero;
+
+            // 3. 누적 OR 연산
+            // 지금까지 하나라도 0이 아닌 것을 찾았거나(found_nonzero),
+            // 현재 원소가 0이 아니면(is_nonzero) -> 결과는 True
+            found_nonzero = found_nonzero | &is_nonzero;
         }
 
-        // indices의 합이 k와 같아야 한다.
-        let indices_sum = self
-            .placed_indices
-            .iter()
-            .fold(FpVar::zero(), |acc, x| acc + x);
-
-        #[cfg(feature = "r1cs-debug")]
-        log_r1cs_eq(
-            "PoseidonAnchorWitnessVar::enforce_k_non_zero - indices_sum",
-            &[indices_sum.clone()],
-            &[FpVar::constant(F::from(k as u64))],
-        );
-    
-        indices_sum.enforce_equal(&FpVar::constant(F::from(k as u64)))?;
-
-        // sids[i]가 0이 아닌 경우에만 indices[i]가 1이어야 한다.
-        for (sid, idx) in self.placed_secrets.iter().zip(self.placed_indices.iter()) {
-            let is_zero = sid * (FpVar::one() - idx);
-            #[cfg(feature = "r1cs-debug")]
-            log_r1cs_eq(
-                "PoseidonAnchorWitnessVar::enforce_k_non_zero - sid zero check",
-                &[is_zero.clone()],
-                &[FpVar::zero()],
-            );
-
-            is_zero.enforce_equal(&FpVar::zero())?;
-        }
-
-        Ok(())
-    }
-
-    pub fn enforce_slot_activation(
-        &self,
-        slot_indices: &[FpVar<F>],
-        slot: &FpVar<F>,
-    ) -> Result<(), SynthesisError> {
-        let index = single_multiplexer(slot_indices, slot)?;
-        let is_one = single_multiplexer(&self.placed_indices, &index)?;
-
-        #[cfg(feature = "r1cs-debug")]
-        log_r1cs_eq("PoseidonAnchorWitnessVar::enforce_slot_activation", &[is_one.clone()], &[FpVar::one()]);
-
-        is_one.enforce_equal(&FpVar::one())?;
-        Ok(())
-    }
-
-    pub fn apply_placed_indices(
-        &self,
-        _cs: ConstraintSystemRef<F>,
-        parameters: &CRHParametersVar<F>,
-        ext_secret: &[FpVar<F>],
-    ) -> Result<Vec<FpVar<F>>, SynthesisError> {
-        let mut result = Vec::with_capacity(self.placed_indices.len());
-        let mut idx = FpVar::<F>::zero();
-        let zero = FpVar::<F>::zero();
-
-        for (i, sel) in self.placed_indices.iter().enumerate() {
-            let i_const = FpVar::<F>::constant(F::from(i as u64));
-            let is_one = sel.is_eq(&FpVar::one())?;
-            let selected = single_multiplexer(ext_secret, &idx)?;
-
-            let h = CRHGadget::<F>::evaluate(parameters, &[i_const, selected])?;
-
-            let value = is_one.select(&h, &zero)?;
-            result.push(value);
-
-            idx += sel;
-        }
-
-        Ok(result)
-    }
-
-    pub fn enforce_h_i(&self, z: &Vec<FpVar<F>>, h_i: &FpVar<F>) -> Result<(), SynthesisError> {
-        let one = vec![FpVar::<F>::one(); z.len()];
-
-        // z_i는 0 또는 1의 값을 가져야 한다.
-        for zi in z.iter() {
-            let binary = zi * (FpVar::one() - zi);
-            #[cfg(feature = "r1cs-debug")]
-            log_r1cs_eq(
-                "PoseidonAnchorWitnessVar::enforce_h_i - z binary check",
-                &[binary.clone()],
-                &[FpVar::zero()],
-            );
-
-            binary.enforce_equal(&FpVar::zero())?;
-        }
-
-        // <z, 1> = 1 이어야한다.
-        let sum = z
-            .iter()
-            .zip(one.iter())
-            .map(|(x, y)| x * y)
-            .fold(FpVar::zero(), |acc, v| acc + v);
-        #[cfg(feature = "r1cs-debug")]
-        log_r1cs_eq(
-            "PoseidonAnchorWitnessVar::enforce_h_i - z sum check",
-            &[sum.clone()],
-            &[FpVar::one()],
-        );
-
-        sum.enforce_equal(&FpVar::one())?;
-
-        // (1 - placed_indices) * z = 0 이어야한다.
-        for (zi, pi) in z.iter().zip(self.placed_indices.iter()) {
-            let prod = (FpVar::one() - pi) * zi;
-            #[cfg(feature = "r1cs-debug")]
-            log_r1cs_eq(
-                "PoseidonAnchorWitnessVar::enforce_h_i - (1 - placed_indices) * z check",
-                &[prod.clone()],
-                &[FpVar::zero()],
-            );
-
-            prod.enforce_equal(&FpVar::zero())?;
-        }
-
-        match z.value() {
-            Ok(v) => println!("z vector: {:?}", v.iter().map(|x| x.to_string()).collect::<Vec<_>>()),
-            Err(_) => println!("z vector: <missing>"),
-        }
-
-        match self.placed_secrets.value() {
-            Ok(v) => println!("placed_secrets vector: {:?}", v.iter().map(|x| x.to_string()).collect::<Vec<_>>()),
-            Err(_) => println!("placed_secrets vector: <missing>"),
-        }
-
-        match h_i.value() {
-            Ok(v) => println!("h_i value: {}", v.to_string()),
-            Err(_) => println!("h_i value: <missing>"),
-        }
-
-        // <z, placed_secrets> = h_i 이어야한다.
-        let secret_sum = z
-            .iter()
-            .zip(self.placed_secrets.iter())
-            .map(|(x, y)| x * y)
-            .fold(FpVar::zero(), |acc, v| acc + v);
-        #[cfg(feature = "r1cs-debug")]
-        log_r1cs_eq(
-            "PoseidonAnchorWitnessVar::enforce_h_i - secret sum check",
-            &[secret_sum.clone()],
-            &[h_i.clone()],
-        );
-
-        secret_sum.enforce_equal(h_i)?;
-
-        Ok(())
+        Ok(found_nonzero)
     }
 }
 
 #[derive(Clone)]
-pub struct PoseidonAnchorVar<F>
-where
-    F: PrimeField + Absorb,
-{
+pub struct PoseidonAnchorVar<F: PrimeField + Absorb> {
     pub anchor: Vec<FpVar<F>>,
 }
 
 #[derive(Clone)]
-pub struct PoseidonAnchorSchemeGadget<F>
-where
-    F: PrimeField + Absorb,
-{
+pub struct PoseidonAnchorSchemeGadget<F: PrimeField + Absorb> {
     pub _phantom: PhantomData<F>,
 }
 
-impl<F> PoseidonAnchorSchemeGadget<F>
-where
-    F: PrimeField + Absorb,
-{
-    pub fn aggregate(base: &[FpVar<F>], scalars: &[FpVar<F>]) -> Result<FpVar<F>, SynthesisError> {
-        let result = base.iter().zip(scalars.iter()).map(|(b, s)| b * s).sum();
-        Ok(result)
+impl<F: PrimeField + Absorb> PoseidonAnchorSchemeGadget<F> {
+    pub fn inner_product(v1: &[FpVar<F>], v2: &[FpVar<F>]) -> Result<FpVar<F>, SynthesisError> {
+        if v1.len() != v2.len() {
+            return Err(SynthesisError::Unsatisfiable);
+        }
+        let mut sum = FpVar::zero();
+        for (a, b) in v1.iter().zip(v2.iter()) {
+            sum += a * b;
+        }
+        Ok(sum)
+    }
+
+    /// 분할 증명을 위한 함수.
+    /// 벡터 a가 영벡터(All Zeros)가 아님을 검증한다.
+    pub fn is_a_nonzero(a: &[FpVar<F>]) -> Result<Boolean<F>, SynthesisError> {
+        let mut found_nonzero = Boolean::constant(false);
+        for elem in a {
+            let is_zero = elem.is_zero()?;
+
+            let is_nonzero = !is_zero;
+
+            // 지금까지 하나라도 0이 아닌 것을 찾았거나(found_nonzero),
+            // 현재 원소가 0이 아니면(is_nonzero) -> 결과는 True
+            found_nonzero = found_nonzero | &is_nonzero;
+        }
+
+        Ok(found_nonzero)
+    }
+
+    /// 분할 증명을 위한 함수.
+    /// 벡터 b(b = a * A)가 indices에 명시된 인덱스 외에는 모두 0인지 검증한다.
+    pub fn is_b_sparsity(
+        b: &[FpVar<F>],
+        indices: &[FpVar<F>],
+    ) -> Result<Boolean<F>, SynthesisError> {
+        if b.is_empty() || indices.is_empty() {
+            return Err(SynthesisError::Unsatisfiable);
+        }
+
+        let n = b.len();
+
+        let mut is_all_valid = Boolean::TRUE;
+
+        let zero_var = FpVar::Constant(F::zero());
+
+        for j in 0..n {
+            let j_const = FpVar::Constant(F::from(j as u64));
+
+            // 1. j가 indices 리스트에 포함되어 있는지 확인 (is_selected)
+            let mut is_selected = Boolean::FALSE;
+            for idx_var in indices {
+                let is_match = idx_var.is_eq(&j_const)?;
+                is_selected = is_selected | &is_match;
+            }
+
+            // 2. b[j]가 0인지 확인 (is_zero)
+            let is_zero = b[j].is_eq(&zero_var)?;
+
+            // 3. 해당 인덱스 j에 대한 유효성 판단
+            // 조건: "선택되었거나(OR) 값이 0이어야 한다."
+            // 논리식: Valid_j = is_selected OR is_zero
+            // - 선택됨(True) -> 값 상관없음 (True OR X = True) -> 통과
+            // - 선택안됨(False) -> 값이 0이어야 함 (False OR True = True) -> 통과
+            // - 선택안됨(False) -> 값이 0이 아님 (False OR False = False) -> 실패
+            let is_valid_j = is_selected | &is_zero;
+
+            // 5. 전체 결과에 AND 연산 누적
+            is_all_valid = is_all_valid & &is_valid_j;
+        }
+
+        Ok(is_all_valid)
     }
 }
 
@@ -287,30 +211,15 @@ where
         let cs = ns.cs();
 
         f().and_then(|val| {
-            let u = Vec::<FpVar<F>>::new_variable(cs.clone(), || Ok(val.borrow().u.clone()), mode)?;
-            let ut =
-                Vec::<FpVar<F>>::new_variable(cs.clone(), || Ok(val.borrow().ut.clone()), mode)?;
-            let placed_secrets = Vec::<FpVar<F>>::new_variable(
+            let a = Vec::<FpVar<F>>::new_variable(cs.clone(), || Ok(val.borrow().a.clone()), mode)?;
+            let b = Vec::<FpVar<F>>::new_variable(cs.clone(), || Ok(val.borrow().b.clone()), mode)?;
+            let h_known = Vec::<FpVar<F>>::new_variable(
                 cs.clone(),
-                || Ok(val.borrow().placed_secrets.clone()),
+                || Ok(val.borrow().h_known.clone()),
                 mode,
             )?;
-            let placed_indices_field = val
-                .borrow()
-                .placed_indices
-                .clone()
-                .iter()
-                .map(|i| F::from(*i as u64))
-                .collect::<Vec<_>>();
-            let placed_indices =
-                Vec::<FpVar<F>>::new_variable(cs.clone(), || Ok(placed_indices_field), mode)?;
 
-            Ok(PoseidonAnchorWitnessVar {
-                u,
-                ut,
-                placed_secrets,
-                placed_indices,
-            })
+            Ok(PoseidonAnchorWitnessVar { a, b, h_known })
         })
     }
 }
@@ -335,27 +244,34 @@ where
     }
 }
 
-impl<F> AnchorSchemeGadget<PoseidonAnchorScheme<F>, F> for PoseidonAnchorSchemeGadget<F>
-where
-    F: PrimeField + Absorb,
+impl<F: PrimeField + Absorb> AnchorSchemeGadget<PoseidonAnchorScheme<F>, F>
+    for PoseidonAnchorSchemeGadget<F>
 {
     type AnchorVar = PoseidonAnchorVar<F>;
+    type MatrixVar = VandermondeMatrixVar<F>;
     type PublicKeyVar = PoseidonAnchorPublicKeyVar<F>;
     type WitnessVar = PoseidonAnchorWitnessVar<F>;
 
-    fn verify(
+    fn verify_b_consistency(
+        witness: &Self::WitnessVar,
+        matrix: &Self::MatrixVar,
+    ) -> Result<ark_r1cs_std::prelude::Boolean<F>, SynthesisError> {
+        let computed_b = matrix.vector_mul_matrix(&witness.a)?;
+        let is_equal = computed_b
+            .iter()
+            .zip(witness.b.iter())
+            .map(|(c, w)| c.is_eq(w))
+            .collect::<Result<Vec<_>, SynthesisError>>()?;
+        Boolean::kary_and(&is_equal)
+    }
+
+    fn verify_binding(
         _pk: &Self::PublicKeyVar,
         anchor: &Self::AnchorVar,
         witness: &Self::WitnessVar,
-    ) -> Result<(), SynthesisError> {
-        let lhs = Self::aggregate(&anchor.anchor, &witness.u)?;
-        let rhs = Self::aggregate(&witness.placed_secrets, &witness.ut)?;
-
-        #[cfg(feature = "r1cs-debug")]
-        log_r1cs_eq("PoseidonAnchorSchemeGadget::verify", &[lhs.clone()], &[rhs.clone()]);
-
-        lhs.enforce_equal(&rhs)?;
-
-        Ok(())
+    ) -> Result<Boolean<F>, SynthesisError> {
+        let lhs = Self::inner_product(&witness.a, &anchor.anchor)?;
+        let rhs = Self::inner_product(&witness.b, &witness.h_known)?;
+        lhs.is_eq(&rhs)
     }
 }

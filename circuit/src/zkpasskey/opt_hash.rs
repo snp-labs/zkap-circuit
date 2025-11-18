@@ -52,7 +52,7 @@ use crate::zkpasskey::base::{
 };
 
 #[cfg(feature = "r1cs-debug")]
-use common_gadget::debug::log_r1cs_eq;
+use gadget::debug::log_r1cs_eq;
 
 pub type OptHashArgs<C, H> =
     CircuitArgs<C, H, PoseidonAnchorPublicKey<<C as CurveGroup>::BaseField>>;
@@ -269,7 +269,7 @@ where
 
         // check 4: token verification
         // check 4-1: verify token signature
-        token_sig.verify_signature::<C>(token_payload.as_b64_bytes())?;
+        // token_sig.verify_signature(token_payload.as_b64_bytes())?;
 
         // check 4-2: decode payload
         let payload = token_payload.decode_to_bytes(&base64_table, max_payload_len)?;

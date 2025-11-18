@@ -31,5 +31,5 @@ ark-bn254 = { workspace = true }
 ark-ed-on-bn254 = { workspace = true, features = ["r1cs"] }
 
 [features]
-print-trace = []
+print-trace = ["ark-std/print-trace"]
 r1cs-debug = []

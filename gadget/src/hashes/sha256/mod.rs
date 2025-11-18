@@ -9,6 +9,8 @@ pub mod parameters;
 pub mod tests;
 pub mod traits;
 pub mod utils;
+pub mod constraints_v2;
+pub mod tests_v2;
 
 pub use digest::DigestVar;
 pub use gadget::SHA256Gadget;

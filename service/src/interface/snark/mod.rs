@@ -34,3 +34,9 @@ pub struct ProvingKeyExtension<E: Pairing> {
     pub tree_height: usize,
 }
 
+#[derive(Clone, CanonicalSerialize, CanonicalDeserialize)]
+pub struct BaeraeProvingKeyExtension<E: Pairing> {
+    pub pk: ProvingKey<E>,
+    /// audience whitelist
+    pub aud_list: Vec<String>,
+}

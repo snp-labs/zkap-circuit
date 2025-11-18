@@ -16,5 +16,8 @@ pub enum Base64Error {
     InvalidUtf8(#[from] FromUtf8Error),
 
     #[error("Invalid Base64 character: index - {0}, character - {1}")]
-    WrongCharacter(usize, char),
+    InvalidBase64Character(usize, char),
+
+    #[error("Input length {0} exceeds padded length {1}")]
+    InputTooLong(usize, usize),
 }

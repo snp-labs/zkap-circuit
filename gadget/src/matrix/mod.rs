@@ -1,286 +1,398 @@
-use ark_ff::Field;
-
+pub mod constraints_v2;
 pub mod error;
+pub mod mod_v0;
 
-use crate::matrix::error::LinearSystemError;
+use ark_ff::PrimeField;
 
+use crate::matrix::error::VandermondeMatrixError;
+
+/// 최적화된 Vandermonde 행렬 V2
+///
+/// 주요 개선사항:
+/// - 불필요한 메모리 할당 감소
+/// - 더 명확한 메서드 이름
+/// - 에러 메시지 개선
 #[derive(Clone, Debug)]
-pub struct Matrix<F: Field> {
+pub struct VandermondeMatrix<F: PrimeField> {
+    /// m × n 행렬
+    /// m = n - k + 1 (행의 개수)
+    /// n = 전체 시크릿 개수 (열의 개수)
+    pub matrix: Vec<Vec<F>>,
     pub n: usize,
     pub k: usize,
-    pub t_matrix: Vec<Vec<F>>,
 }
 
-impl<F: Field> Matrix<F> {
-    pub fn new(n: usize, k: usize) -> Result<Self, LinearSystemError> {
-        if n <= 0 || k <= 0 || k > n {
-            return Err(LinearSystemError::InvalidLength(format!(
-                "n: {}, k: {}. n must be greater than 0, k must be greater than 0 and less than or equal to n",
-                n, k
-            )));
+impl<F: PrimeField> VandermondeMatrix<F> {
+    /// 새로운 Vandermonde 행렬 생성
+    ///
+    /// # Arguments
+    /// * `n` - 전체 시크릿 개수 (열의 개수)
+    /// * `k` - 알고 있는 시크릿 개수
+    ///
+    /// # Returns
+    /// m × n 행렬, 여기서 m = n - k + 1
+    pub fn new(n: usize, k: usize) -> Self {
+        if k > n {
+            panic!("k must be less than or equal to n");
         }
 
-        let t_matrix = generate_matrix::<F>(n, k);
-        Ok(Matrix { n, k, t_matrix })
+        let m = n - k + 1;
+        let mut matrix = vec![vec![F::zero(); n]; m];
+
+        // matrix[i][j] = (i+1)^j
+        for i in 0..m {
+            let base = F::from((i + 1) as u64);
+            for j in 0..n {
+                matrix[i][j] = base.pow(&[j as u64]);
+            }
+        }
+
+        VandermondeMatrix { matrix, n, k }
     }
 
-    pub fn solution(&self, used_indices: &[usize]) -> Result<(Vec<F>, Vec<F>), LinearSystemError> {
-        if used_indices.len() != self.n {
-            return Err(LinearSystemError::InvalidLength(format!(
-                "used_indices의 길이({})는 반드시 n({})과 같아야 합니다.",
-                used_indices.len(),
-                self.n
+    /// 행렬의 차원 반환 (m, n)
+    pub fn dimensions(&self) -> (usize, usize) {
+        let m = self.matrix.len();
+        let n = if m > 0 { self.matrix[0].len() } else { 0 };
+        (m, n)
+    }
+
+    /// 지정된 열 인덱스로 부분 행렬 생성
+    ///
+    /// # Arguments
+    /// * `column_indices` - 선택할 열 인덱스들 (길이 = m)
+    ///
+    /// # Returns
+    /// m × m 크기의 부분 행렬
+    pub fn create_submatrix(
+        &self,
+        column_indices: &[usize],
+    ) -> Result<Self, VandermondeMatrixError> {
+        let m = self.matrix.len();
+
+        if column_indices.len() != m {
+            return Err(VandermondeMatrixError::LengthError(format!(
+                "Column indices length ({}) must match matrix row count ({})",
+                column_indices.len(),
+                m
             )));
         }
 
-        let num_used = used_indices.iter().filter(|&&val| val == 1).count();
-        if num_used > self.k {
-            return Err(LinearSystemError::InvalidLength(format!(
-                "사용된 인덱스의 개수({})가 k({})를 초과할 수 없습니다.",
-                num_used, self.k
+        // 인덱스 범위 검증
+        for &idx in column_indices {
+            if idx >= self.n {
+                return Err(VandermondeMatrixError::LengthError(format!(
+                    "Column index {} out of bounds (max: {})",
+                    idx,
+                    self.n - 1
+                )));
+            }
+        }
+
+        // 부분 행렬 생성
+        let mut submatrix = vec![vec![F::zero(); m]; m];
+        for r in 0..m {
+            for (new_col, &orig_col) in column_indices.iter().enumerate() {
+                submatrix[r][new_col] = self.matrix[r][orig_col];
+            }
+        }
+
+        Ok(VandermondeMatrix {
+            matrix: submatrix,
+            n: m,
+            k: 1, // 부분 행렬은 정사각 행렬
+        })
+    }
+
+    /// Selector로부터 벡터 a 계산
+    ///
+    /// 이 함수는 선형 시스템을 풀어 벡터 a를 찾습니다:
+    /// a * SubMatrix = target (여기서 target의 마지막 요소만 1)
+    ///
+    /// # Arguments
+    /// * `selector` - 0/1 벡터 (길이 n), 1은 알려진 인덱스, 0은 알려지지 않은 인덱스
+    ///                1의 개수는 정확히 k개여야 함
+    pub fn calculate_vector_a(&self, selector: &[usize]) -> Result<Vec<F>, VandermondeMatrixError> {
+        let n = self.n;
+        let m = self.matrix.len();
+        let k = self.k;
+
+        if selector.len() != n {
+            return Err(VandermondeMatrixError::LengthError(format!(
+                "Selector length ({}) must match n ({})",
+                selector.len(),
+                n
             )));
         }
 
-        let unused_indices: Vec<usize> = used_indices
+        // Unknown과 Known 인덱스 분리
+        let (unknown_indices, known_indices) = partition_indices(selector);
+
+        if known_indices.len() != k {
+            return Err(VandermondeMatrixError::LengthError(format!(
+                "Number of known indices ({}) must match k ({})",
+                known_indices.len(),
+                k
+            )));
+        }
+
+        // 부분 행렬 구성: [unknown_indices..., first_known_index]
+        let mut submatrix_cols = unknown_indices;
+        submatrix_cols.push(known_indices[0]);
+
+        // m × m 부분 행렬 생성
+        let submatrix = self.create_submatrix(&submatrix_cols)?;
+
+        // Target 벡터: 마지막 요소만 1, 나머지는 0
+        let mut target = vec![F::zero(); m];
+        target[m - 1] = F::one();
+
+        // 선형 시스템 해결
+        solve_linear_system(&submatrix, &target)
+    }
+
+    /// 행렬-벡터 곱셈: y = Matrix * x
+    ///
+    /// # Arguments
+    /// * `vector` - 길이 n인 벡터
+    ///
+    /// # Returns
+    /// 길이 m인 결과 벡터
+    pub fn multiply_vector(&self, vector: &[F]) -> Result<Vec<F>, VandermondeMatrixError> {
+        let _m = self.matrix.len();
+        let n = self.n;
+
+        if vector.len() != n {
+            return Err(VandermondeMatrixError::LengthError(format!(
+                "Vector length ({}) must match matrix n ({})",
+                vector.len(),
+                n
+            )));
+        }
+
+        let result = self
+            .matrix
             .iter()
-            .enumerate()
-            .filter_map(|(index, &is_used)| if is_used == 0 { Some(index) } else { None })
+            .map(|row| {
+                row.iter()
+                    .zip(vector.iter())
+                    .fold(F::zero(), |acc, (m_val, v_val)| acc + *m_val * *v_val)
+            })
             .collect();
 
-        let mut t_prime = vec![vec![F::zero(); unused_indices.len()]; self.t_matrix.len()];
-        for (c_prime, &c_t) in unused_indices.iter().enumerate() {
-            for r in 0..(self.t_matrix.len()) {
-                t_prime[r][c_prime] = self.t_matrix[r][c_t];
-            }
-        }
+        Ok(result)
+    }
 
-        let row = t_prime.len();
-        if row < 2 {
-            return Err(LinearSystemError::InvalidLength(format!(
-                "T' must have at least 2 rows, found: {}",
-                row
+    /// 벡터-행렬 곱셈: y = x * Matrix
+    ///
+    /// # Arguments
+    /// * `vector` - 길이 m인 벡터
+    ///
+    /// # Returns
+    /// 길이 n인 결과 벡터
+    pub fn vector_multiply(&self, vector: &[F]) -> Result<Vec<F>, VandermondeMatrixError> {
+        let m = self.matrix.len();
+        let n = self.n;
+
+        if vector.len() != m {
+            return Err(VandermondeMatrixError::LengthError(format!(
+                "Vector length ({}) must match matrix m ({})",
+                vector.len(),
+                m
             )));
         }
 
-        let num_eq = row - 1;
-        if t_prime.iter().any(|r| r.len() != num_eq) {
-            return Err(LinearSystemError::InvalidLength(
-                "T' must have the same number of columns in each row".to_string(),
-            ));
-        }
+        let mut result = vec![F::zero(); n];
 
-        let mut a = vec![vec![F::zero(); num_eq]; num_eq];
-        let mut b = vec![F::zero(); num_eq];
-
-        // x = [u₂, u₃, ..., uₘ]ᵀ
-        // A는 T'의 첫 행을 제외하고 전치한 행렬
-        // b는 T'의 첫 행에 -1을 곱한 벡터
-        for i in 0..num_eq {
-            // 방정식 인덱스 (T'의 열 인덱스)
-            b[i] = -t_prime[0][i];
-            for j in 0..num_eq {
-                // 미지수 인덱스 (u₂, u₃, ...)
-                // A_ij는 u_{j+2}의 i번째 방정식에서의 계수
-                a[i][j] = t_prime[j + 1][i];
+        // result[j] = sum_i(vector[i] * matrix[i][j])
+        for col in 0..n {
+            for row in 0..m {
+                result[col] += vector[row] * self.matrix[row][col];
             }
         }
 
-        // Solve the linear system Ax = b
-        let solution = solve_square_linear_system::<F>(&a, &b)?;
-
-        // Add u₁ = 1 to the solution
-        let mut u = vec![F::one()];
-        u.extend(solution);
-
-        // Verify the solution
-        verify_solution(&u, &t_prime)?;
-
-        // u * t_mattrix
-        let mut result = vec![F::zero(); self.n];
-        for j in 0..self.n {
-            for i in 0..u.len() {
-                result[j] += u[i] * self.t_matrix[i][j];
-            }
-        }
-
-        Ok((u, result))
+        Ok(result)
     }
 }
 
-pub fn solve_square_linear_system<F: Field>(
-    matrix: &[Vec<F>],
-    vector: &[F],
-) -> Result<Vec<F>, LinearSystemError> {
-    let row = matrix.len();
-    if row == 0 || vector.len() != row {
-        return Err(LinearSystemError::InvalidLength(
-            "Matrix and vector dimensions do not match".to_string(),
+// ==================== 헬퍼 함수들 ====================
+
+/// Selector를 기반으로 인덱스를 unknown과 known으로 분리
+fn partition_indices(selector: &[usize]) -> (Vec<usize>, Vec<usize>) {
+    let mut unknown = Vec::new();
+    let mut known = Vec::new();
+
+    for (i, &s) in selector.iter().enumerate() {
+        if s == 0 {
+            unknown.push(i);
+        } else {
+            known.push(i);
+        }
+    }
+
+    (unknown, known)
+}
+
+/// 선형 시스템 해결: Matrix^T * x = target
+///
+/// Gaussian elimination with partial pivoting 사용
+fn solve_linear_system<F: PrimeField>(
+    matrix: &VandermondeMatrix<F>,
+    target: &[F],
+) -> Result<Vec<F>, VandermondeMatrixError> {
+    let size = target.len();
+
+    if matrix.matrix.len() != size || matrix.matrix[0].len() != size {
+        return Err(VandermondeMatrixError::LengthError(
+            "Matrix must be square for linear system solving".to_string(),
         ));
     }
 
-    let mut a = matrix.to_vec();
-    let mut b = vector.to_vec();
+    // 전치 행렬 생성
+    let mut m_t = vec![vec![F::zero(); size]; size];
+    for r in 0..size {
+        for c in 0..size {
+            m_t[r][c] = matrix.matrix[c][r];
+        }
+    }
 
-    for i in 0..row {
-        let pivot_row = (i..row)
-            .find(|&r| a[r][i] != F::zero())
-            .ok_or(LinearSystemError::SingularMatrix(i))?;
+    let mut rhs = target.to_vec();
 
-        a.swap(i, pivot_row);
-        b.swap(i, pivot_row);
+    // Forward elimination
+    for i in 0..size {
+        // Pivoting
+        let mut pivot = i;
+        while pivot < size && m_t[pivot][i].is_zero() {
+            pivot += 1;
+        }
 
-        let pivot_inv = a[i][i]
+        if pivot == size {
+            return Err(VandermondeMatrixError::SingularMatrix);
+        }
+
+        if pivot != i {
+            m_t.swap(i, pivot);
+            rhs.swap(i, pivot);
+        }
+
+        let inv = m_t[i][i]
             .inverse()
-            .ok_or(LinearSystemError::SingularMatrix(i))?;
+            .ok_or(VandermondeMatrixError::NoInverse)?;
 
-        for j in i..row {
-            a[i][j] = a[i][j] * pivot_inv;
-        }
-        b[i] = b[i] * pivot_inv;
+        // Eliminate below
+        for j in (i + 1)..size {
+            let factor = m_t[j][i] * inv;
 
-        for k in 0..row {
-            if k != i {
-                let factor = a[k][i];
-                for j in i..row {
-                    a[k][j] = a[k][j] - factor * a[i][j];
-                }
-                b[k] = b[k] - factor * b[i];
+            // 행을 복사하여 동시 수정 문제 해결
+            let row_i_copy: Vec<F> = m_t[i].clone();
+            let rhs_i_copy = rhs[i];
+
+            for k in i..size {
+                m_t[j][k] -= row_i_copy[k] * factor;
             }
+            rhs[j] -= rhs_i_copy * factor;
         }
     }
 
-    Ok(b)
-}
-
-pub fn generate_matrix<F: Field>(n: usize, k: usize) -> Vec<Vec<F>> {
-    assert!(n > 0 && k > 0, "n and k must be greater than 0");
-    assert!(k <= n, "k cannot be greater than n");
-
-    let num_rows = n - k + 1;
-    let num_cols = n;
-
-    let t_matrix: Vec<Vec<F>> = (0..num_rows)
-        .map(|i| {
-            let mut row = vec![F::zero(); num_cols];
-
-            for j in 0..num_cols {
-                if j < k {
-                    let base = F::from((i + 1) as u64);
-                    row[j] = base.pow(&[j as u64]);
-                } else {
-                    let selector_col_index = j - k;
-                    if i > 0 && (i - 1) == selector_col_index {
-                        row[j] = F::one();
-                    }
-                }
-            }
-            row
-        })
-        .collect();
-
-    t_matrix
-}
-
-fn verify_solution<F: Field>(solution: &[F], t_matrix: &[Vec<F>]) -> Result<(), LinearSystemError> {
-    let m = solution.len();
-    let num_eq = t_matrix.len() - 1;
-
-    if m != num_eq + 1 {
-        return Err(LinearSystemError::InvalidLength(format!(
-            "Solution length {} does not match expected length {}",
-            m,
-            num_eq + 1
-        )));
-    }
-
-    let mut expected = vec![F::zero(); num_eq];
-    for j in 0..num_eq {
-        // T'의 열
-        for i in 0..m {
-            // T'의 행 (u의 원소)
-            expected[j] += solution[i] * t_matrix[i][j];
+    // Backward substitution
+    let mut solution = vec![F::zero(); size];
+    for i in (0..size).rev() {
+        let mut sum = F::zero();
+        for j in (i + 1)..size {
+            sum += m_t[i][j] * solution[j];
         }
+
+        let inv = m_t[i][i]
+            .inverse()
+            .ok_or(VandermondeMatrixError::NoInverse)?;
+
+        solution[i] = (rhs[i] - sum) * inv;
     }
 
-    if expected.iter().all(|x| x.is_zero()) {
-        Ok(())
-    } else {
-        Err(LinearSystemError::SolutionVerifyFailed)
-    }
+    Ok(solution)
 }
 
 #[cfg(test)]
 mod tests {
-    use ark_ff::Field;
+    use super::*;
+    type F = ark_bn254::Fr;
 
-    use crate::matrix::Matrix;
-
-    type F = ark_ed_on_bn254::Fq;
-
-    fn test_generate_t_matrix<F: Field>(n: usize, k: usize, expected: &[Vec<F>]) {
-        let matrix = Matrix::<F>::new(n, k).unwrap();
-        assert_eq!(matrix.n, n);
-        assert_eq!(matrix.k, k);
-        assert_eq!(matrix.t_matrix.len(), n - k + 1);
-        assert_eq!(matrix.t_matrix[0].len(), n);
-        assert_eq!(matrix.t_matrix, expected);
-    }
-
-    fn test_generate_u_vector<F: Field>(n: usize, k: usize, used_indices: &[usize]) {
-        let matrix = Matrix::<F>::new(n, k).unwrap();
-        let solution = matrix.solution(used_indices).unwrap();
-        assert_eq!(solution.0.len(), n - k + 1);
-        assert_eq!(solution.1.len(), n);
+    #[test]
+    fn test_new_matrix() {
+        let matrix = VandermondeMatrix::<F>::new(6, 3);
+        assert_eq!(matrix.dimensions(), (4, 6));
+        assert_eq!(matrix.n, 6);
+        assert_eq!(matrix.k, 3);
     }
 
     #[test]
-    fn test_generate_t_matrix_trivial1() {
-        let n = 6;
-        let k = 3;
-        let expected = matrix_to_field::<F>(&vec![
-            vec![1, 1, 1, 0, 0, 0],
-            vec![1, 2, 4, 1, 0, 0],
-            vec![1, 3, 9, 0, 1, 0],
-            vec![1, 4, 16, 0, 0, 1],
-        ]);
-        test_generate_t_matrix(n, k, &expected);
+    fn test_first_column_all_ones() {
+        let matrix = VandermondeMatrix::<F>::new(5, 2);
+        for row in &matrix.matrix {
+            assert_eq!(row[0], F::from(1u64));
+        }
     }
 
     #[test]
-    fn test_generate_t_matrix_trivial2() {
-        let n = 7;
-        let k = 2;
-        let expected = matrix_to_field::<F>(&vec![
-            vec![1, 1, 0, 0, 0, 0, 0],
-            vec![1, 2, 1, 0, 0, 0, 0],
-            vec![1, 3, 0, 1, 0, 0, 0],
-            vec![1, 4, 0, 0, 1, 0, 0],
-            vec![1, 5, 0, 0, 0, 1, 0],
-            vec![1, 6, 0, 0, 0, 0, 1],
-        ]);
-        test_generate_t_matrix(n, k, &expected);
+    fn test_create_submatrix() {
+        let matrix = VandermondeMatrix::<F>::new(6, 3);
+        let submatrix = matrix.create_submatrix(&[0, 2, 3, 5]).unwrap();
+
+        assert_eq!(submatrix.dimensions(), (4, 4));
     }
 
     #[test]
-    fn test_generate_u_vector_trivial1() {
-        let n = 6;
-        let k = 3;
-        let used_indices = vec![1, 1, 1, 0, 0, 0];
-        test_generate_u_vector::<F>(n, k, &used_indices);
+    fn test_multiply_vector() {
+        let matrix = VandermondeMatrix::<F>::new(4, 2);
+        let vector = vec![F::from(1u64), F::from(2u64), F::from(3u64), F::from(4u64)];
+
+        let result = matrix.multiply_vector(&vector).unwrap();
+        assert_eq!(result.len(), 3); // m = 4 - 2 + 1 = 3
     }
 
     #[test]
-    fn test_generate_u_vector_trivial2() {
-        let n = 7;
-        let k = 2;
-        let used_indices = vec![1, 1, 0, 0, 0, 0, 0];
-        test_generate_u_vector::<F>(n, k, &used_indices);
+    fn test_vector_multiply() {
+        let matrix = VandermondeMatrix::<F>::new(4, 2);
+        let vector = vec![F::from(1u64), F::from(2u64), F::from(3u64)];
+
+        let result = matrix.vector_multiply(&vector).unwrap();
+        assert_eq!(result.len(), 4);
     }
 
-    fn matrix_to_field<F: Field>(matrix: &[Vec<u64>]) -> Vec<Vec<F>> {
-        matrix
-            .iter()
-            .map(|row| row.iter().map(|&x| F::from(x)).collect())
-            .collect()
+    #[test]
+    fn test_calculate_vector_a() {
+        let matrix = VandermondeMatrix::<F>::new(6, 3);
+        let selector = vec![0, 1, 0, 1, 1, 0]; // 3개의 known
+
+        let result = matrix.calculate_vector_a(&selector);
+        assert!(result.is_ok());
+
+        let a = result.unwrap();
+        assert_eq!(a.len(), 4); // m = 6 - 3 + 1 = 4
+    }
+
+    #[test]
+    fn test_partition_indices() {
+        let selector = vec![0, 1, 0, 1, 1, 0];
+        let (unknown, known) = partition_indices(&selector);
+
+        assert_eq!(unknown, vec![0, 2, 5]);
+        assert_eq!(known, vec![1, 3, 4]);
+    }
+
+    #[test]
+    fn test_solve_linear_system_simple() {
+        let matrix = VandermondeMatrix::<F>::new(3, 2);
+        let submatrix = matrix.create_submatrix(&[0, 1]).unwrap();
+
+        let target = vec![F::from(3u64), F::from(5u64)];
+        let solution = solve_linear_system(&submatrix, &target).unwrap();
+
+        assert_eq!(solution.len(), 2);
+
+        // 검증: Matrix * solution = target
+        let verification = submatrix.multiply_vector(&solution).unwrap();
+        assert_eq!(verification[0], target[0]);
+        assert_eq!(verification[1], target[1]);
     }
 }

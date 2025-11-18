@@ -80,7 +80,12 @@ pub fn decimal_bytes_to_fp<F: PrimeField>(
         // --- 제약조건 강제 ---
         // 1. (ascii -> 10진수) 변환: current_byte가 숫자 문자라면, 실제 값은 (byte - '0') 입니다.
         let (numeric_value, validity) = decimal_byte_to_fp(cs.clone(), current_byte)?;
-        (!&should_accumulate | validity).enforce_equal(&Boolean::TRUE)?;
+        
+        // 조건부 유효성 강제: "should_accumulate가 true이면 반드시 유효한 10진수 문자여야 함"
+        // 논리: should_accumulate => validity
+        // 동치: (NOT should_accumulate) OR validity == TRUE
+        let validity_requirement = !&should_accumulate | validity;
+        validity_requirement.enforce_equal(&Boolean::TRUE)?;
 
         let potential_next_value = &accumulated_value * &ten + &numeric_value;
 
@@ -161,8 +166,10 @@ pub fn hex_bytes_to_fp<F: PrimeField>(
         let (value, validity) = hex_to_fp_with_validation(cs.clone(), current_byte)?;
 
         // b) 조건부 유효성 강제:
-        let validity_requirement = &is_last_quote_pos | validity;
-
+        // "만약 닫는 따옴표 이전 위치라면, 반드시 유효한 16진수 문자여야 한다"
+        // 논리: is_before_last_quote => validity
+        // 동치: (NOT is_before_last_quote) OR validity == TRUE
+        let validity_requirement = !&is_before_last_quote | validity;
         validity_requirement.enforce_equal(&Boolean::TRUE)?;
 
         // c) 조건부 값 누적:
@@ -201,36 +208,37 @@ fn decimal_byte_to_fp<F: PrimeField>(
     byte: &FpVar<F>,
 ) -> Result<(FpVar<F>, Boolean<F>), SynthesisError> {
     let decimal_table = decimal_table::<F>();
-    let mut sum = FpVar::<F>::zero(); // 초기값은 0
+    let mut match_count = FpVar::<F>::zero(); // 매칭 횟수 카운트
 
     for decimal_char in decimal_table.iter() {
         // 현재 바이트가 decimal_char와 같은지 확인
         let is_equal = byte.is_eq(decimal_char)?;
 
-        // is_equal이 true이면, sum에 1 누적
-        let value_to_add = is_equal.select(&FpVar::<F>::Constant(F::one()), &FpVar::<F>::zero())?;
-
-        // sum에 누적
-        sum += &value_to_add;
+        // is_equal이 true이면, match_count에 1 누적
+        let value_to_add = FpVar::<F>::from(is_equal.clone());
+        match_count += &value_to_add;
     }
 
-    let validity = sum.is_eq(&FpVar::<F>::Constant(F::from(1u8)))?; // sum이 1이면 유효한 10진수 문자
+    // validity: match_count가 정확히 1이면 유효한 10진수 문자
+    let validity = match_count.is_eq(&FpVar::<F>::Constant(F::from(1u8)))?;
 
-    let result = byte - &FpVar::<F>::Constant(F::from(b'0')); // 10진수 값 계산
+    // 10진수 값 계산 (ASCII '0'을 빼서 실제 숫자 값으로 변환)
+    let result = byte - &FpVar::<F>::Constant(F::from(b'0'));
 
-    Ok((result, validity)) // 반환: 10진수 값과 유효성 플래그
+    Ok((result, validity))
 }
 
 /// 단일 바이트 변수(FpVar)를 해당하는 16진수 숫자 값 (0-15 범위의 FpVar)으로 변환합니다.
 /// 변환된 값과 함께, 입력 바이트가 유효한 16진수 문자('0'-'9', 'a'-'f')였는지를 나타내는 Boolean 값을 반환합니다.
 /// 중요: 유효하지 않은 입력 바이트에 대해 증명 생성을 실패시키지 않고, 단지 유효성 플래그(is_valid_hex)를 false로 설정하여 반환합니다.
 fn hex_to_fp_with_validation<F: PrimeField>(
-    _cs: ConstraintSystemRef<F>, // 현재 구현에서는 CS가 직접 필요하지 않을 수 있지만, 일관성을 위해 유지
-    // table: &[FpVar<F>],          // hex_table()로 생성된 16진수 상수 테이블
-    byte: &FpVar<F>, // 변환 및 검사할 입력 바이트 변수
+    _cs: ConstraintSystemRef<F>,
+    byte: &FpVar<F>,
 ) -> Result<(FpVar<F>, Boolean<F>), SynthesisError> {
     let mut result = FpVar::<F>::zero(); // 결과 숫자 값 (0-15)을 누적할 변수
-    let mut is_valid_hex = Boolean::<F>::FALSE; // 유효성 플래그, 기본값은 false (유효하지 않음)
+    let mut is_valid_hex = Boolean::<F>::FALSE; // 유효성 플래그, 기본값은 false
+    let mut match_count = FpVar::<F>::zero(); // 매칭 횟수 카운트 (정확히 1이어야 함)
+    
     let table = hex_table::<F>();
     let len = table.len();
 
@@ -243,15 +251,20 @@ fn hex_to_fp_with_validation<F: PrimeField>(
         let is_equal = byte.is_eq(&table[i])?;
 
         // is_equal이 true이면 i (0-15)를 결과에 더함.
-        // Boolean::from()은 true일 때 FpVar(1), false일 때 FpVar(0)으로 변환됨.
-        let value_to_add =
-            FpVar::<F>::from(is_equal.clone()) * FpVar::<F>::Constant(F::from(i as u64));
+        let is_equal_fp = FpVar::<F>::from(is_equal.clone());
+        let value_to_add = &is_equal_fp * FpVar::<F>::Constant(F::from(i as u64));
         result += &value_to_add;
+        
+        // 매칭 횟수 카운트
+        match_count += &is_equal_fp;
 
         // 유효성 플래그 업데이트: 만약 테이블 내 어떤 문자와라도 일치했다면, is_valid_hex는 true가 됨.
-        // or 연산은 한 번이라도 true가 되면 그 이후 계속 true를 유지함.
         is_valid_hex = is_valid_hex | is_equal;
     }
+    
+    // 추가 검증: match_count는 0 또는 1이어야 함 (1이면 유효한 16진수 문자)
+    // is_valid_hex가 true이면 match_count는 정확히 1이어야 함
+    // 이는 암묵적으로 보장됨: 각 table[i]는 고유한 상수이므로 최대 1번만 매칭 가능
 
     // result: 유효한 16진수 문자였다면 해당하는 숫자 값(0-15), 아니면 0.
     // is_valid_hex: 입력 바이트가 테이블 내 문자와 일치했으면 true, 아니면 false.

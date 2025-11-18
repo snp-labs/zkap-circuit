@@ -1,9 +1,6 @@
 use std::ops::Mul;
 
-use crate::{
-    anchor::{AnchorScheme, error::AnchorError, utils::permute},
-    matrix::Matrix,
-};
+use crate::{anchor::{AnchorScheme, error::AnchorError, utils::permute}, matrix::mod_v0::Matrix};
 use ark_crypto_primitives::{
     crh::{CRHScheme, poseidon::CRH},
     sponge::{Absorb, poseidon::PoseidonConfig},
@@ -353,7 +350,7 @@ mod tests {
     use super::AnchorScheme;
     use super::{AnchorError, DLAnchorScheme, DLAnchorWitness};
     use crate::anchor::dl::DLAnchorSecret;
-    use crate::matrix::Matrix;
+    use crate::matrix::mod_v0::Matrix;
     use ark_std::{UniformRand, test_rng};
 
     #[test]

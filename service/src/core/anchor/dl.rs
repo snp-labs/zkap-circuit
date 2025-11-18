@@ -7,7 +7,7 @@ use gadget::{
         AnchorScheme,
         dl::{DLAnchor, DLAnchorScheme, DLAnchorSecret},
     },
-    matrix::Matrix,
+    matrix::mod_v0::Matrix,
 };
 
 use crate::{

@@ -101,6 +101,8 @@ pub fn select_array_element<F: PrimeField>(
 ) -> Result<FpVar<F>, SynthesisError> {
     assert!(!input.is_empty());
 
+    assert_eq!(input.len(), 1 << idx_bits.len());
+
     if input.len() == 1 {
         Ok(input[0].clone())
     } else {
@@ -114,6 +116,33 @@ pub fn select_array_element<F: PrimeField>(
 
         let left_value = select_array_element(left, remaining_bits)?;
         let right_value = select_array_element(right, remaining_bits)?;
+
+        let selected_value = FpVar::conditionally_select(&msb, &right_value, &left_value)?;
+
+        Ok(selected_value)
+    }
+}
+
+pub fn select_array_element_be<F: PrimeField>(
+    input: &[FpVar<F>],
+    idx_bits: &[Boolean<F>],
+) -> Result<FpVar<F>, SynthesisError> {
+    assert!(!input.is_empty());
+
+    assert_eq!(input.len(), 1 << idx_bits.len());
+
+    if input.len() == 1 {
+        Ok(input[0].clone())
+    } else {
+        let mid = input.len() / 2;
+        let left = &input[..mid];
+        let right = &input[mid..];
+
+        let msb = idx_bits[0].clone();
+        let remaining_bits = &idx_bits[1..];
+
+        let left_value = select_array_element_be(left, remaining_bits)?;
+        let right_value = select_array_element_be(right, remaining_bits)?;
 
         let selected_value = FpVar::conditionally_select(&msb, &right_value, &left_value)?;
 

@@ -454,7 +454,7 @@ pub(crate) fn build_merkle_proof(
 
 pub(crate) fn build_slot_indices_and_h_slot_and_z(
     parameters: &PoseidonConfig<AppField>,
-    slot: &usize,
+    slot: &u8,
     selector: &[bool],
     random: &AppField,
 ) -> Result<(Vec<AppField>, AppField, Vec<AppField>), ApplicationError> {
@@ -466,7 +466,7 @@ pub(crate) fn build_slot_indices_and_h_slot_and_z(
             slot_indices.push(index);
         }
 
-        if i == *slot {
+        if i == *slot as usize {
             z.push(AppField::from(1u64));
         } else {
             z.push(AppField::from(0u64));
@@ -478,10 +478,6 @@ pub(crate) fn build_slot_indices_and_h_slot_and_z(
     pre_image.push(*random);
     let h_slot = PoseidonHash::evaluate(parameters, pre_image)
         .map_err(|e| ApplicationError::InvalidFormat(format!("Failed to hash h_slot: {:?}", e)))?;
-
-    println!("slot_indices: {:?}", slot_indices);
-    println!("h_slot: {:?}", h_slot);
-    println!("z: {:?}", z);
 
     Ok((slot_indices, h_slot, z))
 }

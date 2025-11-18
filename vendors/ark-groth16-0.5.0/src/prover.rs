@@ -8,7 +8,6 @@ use ark_relations::r1cs::{
 };
 use ark_std::rand::Rng;
 use ark_std::{
-    cfg_iter,
     ops::{AddAssign, Mul},
     vec::Vec,
 };
@@ -18,8 +17,312 @@ use rayon::prelude::*;
 use sysinfo::System;
 
 type D<F> = GeneralEvaluationDomain<F>;
+const MSM_CHUNK_SIZE: usize = 16_384;
+macro_rules! log_step {
+    ($msg:expr) => {
+        println!("[rss_kb] {:<40} : {} MB", $msg, rss_kb() / (1024 * 1024));
+    };
+}
 
 impl<E: Pairing, QAP: R1CSToQAP> Groth16<E, QAP> {
+    /// ✅ 1. Two-Pass 방식의 진입점 (테스트에서 이 함수를 호출해야 함)
+    pub fn create_random_proof_two_pass<C, F>(
+        circuit_factory: F, // 변경: Circuit -> Factory Closure
+        pk: &ProvingKey<E>,
+        rng: &mut impl ark_std::rand::Rng,
+    ) -> ark_relations::r1cs::Result<Proof<E>>
+    where
+        C: ConstraintSynthesizer<E::ScalarField>,
+        F: FnMut() -> C, // 변경: 팩토리 함수 타입 정의
+    {
+        log_step!("Function Start: create_random_proof_two_pass");
+        let r = E::ScalarField::rand(rng);
+        let s = E::ScalarField::rand(rng);
+
+        // factory를 그대로 하위 함수로 전달
+        let res = Self::create_proof_two_pass(circuit_factory, pk, r, s);
+
+        log_step!("Function End: create_random_proof_two_pass");
+        res
+    }
+
+    /// ✅ 2. Two-Pass 핵심 로직 (메모리 분리 수행)
+    // =========================================================================
+    // [Core Logic] Two-Pass 핵심 로직
+    // =========================================================================
+    pub fn create_proof_two_pass<C, F>(
+        mut circuit_factory: F, // 변경: Circuit -> Factory Closure
+        pk: &ProvingKey<E>,
+        r: E::ScalarField,
+        s: E::ScalarField,
+    ) -> ark_relations::r1cs::Result<Proof<E>>
+    where
+        C: ConstraintSynthesizer<E::ScalarField>,
+        F: FnMut() -> C, // 변경: 팩토리 함수 타입 정의
+    {
+        // ---- Pass A: 행렬만 생성 (Matrices Only) ----
+        log_step!("Pass A: Start (Matrices)");
+
+        let cs_a = ConstraintSystem::new_ref();
+        cs_a.set_mode(SynthesisMode::Setup);
+        cs_a.set_optimization_goal(OptimizationGoal::Constraints);
+
+        // 팩토리 함수를 호출하여 첫 번째 회로 생성
+        let circuit_a = circuit_factory();
+        circuit_a.generate_constraints(cs_a.clone())?;
+        log_step!("Pass A: After generate_constraints");
+        cs_a.finalize();
+        log_step!("Pass A: After finalize (Inlining LCs)");
+        log_step!("Pass A: CS Generated");
+
+        let matrices = cs_a.to_matrices().expect("matrices in setup");
+        log_step!("Pass A: Matrices Extracted");
+
+        drop(cs_a); // CS 즉시 해제
+        log_step!("Pass A: CS Dropped (Memory Check)");
+
+        let num_inputs = matrices.num_instance_variables;
+        let num_constraints = matrices.num_constraints;
+
+        // ---- Pass B: 할당만 생성 (Witness Only) ----
+        log_step!("Pass B: Start (Assignment)");
+
+        let cs_b = ConstraintSystem::new_ref();
+        cs_b.set_mode(SynthesisMode::Prove {
+            construct_matrices: false,
+        });
+        cs_b.set_optimization_goal(OptimizationGoal::Constraints);
+
+        // 팩토리 함수를 호출하여 두 번째 회로 생성 (새로운 인스턴스)
+        let circuit_b = circuit_factory();
+        circuit_b.generate_constraints(cs_b.clone())?;
+        log_step!("Pass B: After generate_constraints");
+        cs_b.finalize();
+        log_step!("Pass B: After finalize");
+        log_step!("Pass B: CS Generated");
+
+        let cs_b_inner = cs_b.borrow().unwrap();
+        let full_assignment: Vec<E::ScalarField> = [
+            cs_b_inner.instance_assignment.as_slice(),
+            cs_b_inner.witness_assignment.as_slice(),
+        ]
+        .concat();
+        log_step!("Pass B: Full Assignment Concatenated");
+
+        drop(cs_b_inner);
+        drop(cs_b); // CS 즉시 해제
+        log_step!("Pass B: CS Dropped (Memory Check)");
+
+        // ---- 결합 및 증명 생성 ----
+        Self::create_proof_with_reduction_and_matrices(
+            pk,
+            r,
+            s,
+            &matrices,
+            num_inputs,
+            num_constraints,
+            &full_assignment,
+        )
+    }
+
+    /// ✅ 3. 기존 함수에 로깅 추가 (이미 최적화된 create_proof_with_assignment 호출)
+    #[inline]
+    pub fn create_proof_with_reduction_and_matrices(
+        pk: &ProvingKey<E>,
+        r: E::ScalarField,
+        s: E::ScalarField,
+        matrices: &ConstraintMatrices<E::ScalarField>,
+        num_inputs: usize,
+        num_constraints: usize,
+        full_assignment: &[E::ScalarField],
+    ) -> R1CSResult<Proof<E>> {
+        let prover_time = start_timer!(|| "Groth16::Prover");
+        log_step!("Groth16::Prover Start");
+
+        let witness_map_time = start_timer!(|| "R1CS to QAP witness map");
+
+        log_step!("R1CS→QAP witness map Start");
+
+        // H 계산: 여기가 여전히 메모리를 많이 쓰지만, CS가 없는 상태라 안전할 것임
+        let h = QAP::witness_map_from_matrices::<E::ScalarField, D<E::ScalarField>>(
+            matrices,
+            num_inputs,
+            num_constraints,
+            full_assignment,
+        )?;
+        log_step!("Witness Map(H) Calculated");
+        end_timer!(witness_map_time);
+
+        let input_assignment = &full_assignment[1..num_inputs];
+        let aux_assignment = &full_assignment[num_inputs..];
+
+        // 최적화된 MSM 함수 호출
+        let proof =
+            Self::create_proof_with_assignment(pk, r, s, &h, input_assignment, aux_assignment)?;
+
+        drop(h);
+        log_step!("H Dropped");
+        
+        log_step!("Proof Generated");
+        end_timer!(prover_time);
+
+        Ok(proof)
+    }
+
+    #[inline]
+    fn create_proof_with_assignment(
+        pk: &ProvingKey<E>,
+        r: E::ScalarField,
+        s: E::ScalarField,
+        h: &[E::ScalarField],
+        input_assignment: &[E::ScalarField],
+        aux_assignment: &[E::ScalarField],
+    ) -> R1CSResult<Proof<E>> {
+        let c_acc_time = start_timer!(|| "Compute C");
+        log_step!("MSM: Compute C Start");
+
+        // 1. H Accumulation (Chunked)
+        log_step!("MSM: H_Acc Start");
+        let h_acc = Self::msm_bigint_chunked::<E::G1Affine>(&pk.h_query, h, MSM_CHUNK_SIZE);
+        log_step!("MSM: H_Acc End");
+
+        // 2. L_Aux Accumulation (Chunked - BigInt 변환 제거됨)
+        log_step!("MSM: L_Aux_Acc Start");
+        let l_aux_acc =
+            Self::msm_bigint_chunked::<E::G1Affine>(&pk.l_query, aux_assignment, MSM_CHUNK_SIZE);
+        log_step!("MSM: L_Aux_Acc End");
+
+        let r_s_delta_g1 = pk.delta_g1 * (r * s);
+        end_timer!(c_acc_time);
+
+        // Compute A (Chunked)
+        let a_acc_time = start_timer!(|| "Compute A");
+        log_step!("MSM: Compute A Start");
+        let r_g1 = pk.delta_g1.mul(r);
+
+        let g_a = Self::calculate_coeff_split(
+            r_g1,
+            &pk.a_query,
+            pk.vk.alpha_g1,
+            input_assignment,
+            aux_assignment,
+        );
+        log_step!("MSM: Compute A End");
+
+        let s_g_a = g_a * &s;
+        end_timer!(a_acc_time);
+
+        // Compute B in G1 (Chunked)
+        let g1_b = if !r.is_zero() {
+            let b_g1_acc_time = start_timer!(|| "Compute B in G1");
+            log_step!("MSM: Compute B(G1) Start");
+            let s_g1 = pk.delta_g1.mul(s);
+
+            let g1_b = Self::calculate_coeff_split(
+                s_g1,
+                &pk.b_g1_query,
+                pk.beta_g1,
+                input_assignment,
+                aux_assignment,
+            );
+            log_step!("MSM: Compute B(G1) End");
+            end_timer!(b_g1_acc_time);
+            g1_b
+        } else {
+            E::G1::zero()
+        };
+
+        // Compute B in G2 (Chunked)
+        let b_g2_acc_time = start_timer!(|| "Compute B in G2");
+        log_step!("MSM: Compute B(G2) Start");
+        let s_g2 = pk.vk.delta_g2.mul(s);
+
+        let g2_b = Self::calculate_coeff_split(
+            s_g2,
+            &pk.b_g2_query,
+            pk.vk.beta_g2,
+            input_assignment,
+            aux_assignment,
+        );
+        log_step!("MSM: Compute B(G2) End");
+
+        let r_g1_b = g1_b * &r;
+        end_timer!(b_g2_acc_time);
+
+        let c_time = start_timer!(|| "Finish C");
+        let mut g_c = s_g_a;
+        g_c += &r_g1_b;
+        g_c -= &r_s_delta_g1;
+        g_c += &l_aux_acc;
+        g_c += &h_acc;
+        end_timer!(c_time);
+        log_step!("Function End: create_proof_assignment");
+
+        Ok(Proof {
+            a: g_a.into_affine(),
+            b: g2_b.into_affine(),
+            c: g_c.into_affine(),
+        })
+    }
+
+    /// ScalarField 슬라이스를 받아 Chunk 단위로 BigInt 변환 후 MSM 수행
+    #[inline]
+    fn calculate_coeff_split<G: AffineRepr>(
+        mut acc: G::Group,
+        query: &[G],
+        vk_param: G,
+        assign1: &[G::ScalarField],
+        assign2: &[G::ScalarField],
+    ) -> G::Group
+    where
+        G::Group: VariableBaseMSM<MulBase = G>,
+    {
+        let el0 = query[0];
+        let q_rest = &query[1..];
+
+        let (q1, q2) = q_rest.split_at(assign1.len());
+
+        let part1 = Self::msm_bigint_chunked(q1, assign1, MSM_CHUNK_SIZE);
+        let part2 = Self::msm_bigint_chunked(q2, assign2, MSM_CHUNK_SIZE);
+
+        acc.add_assign(&el0);
+        acc += &part1;
+        acc += &part2;
+        acc.add_assign(&vk_param);
+        acc
+    }
+
+    /// 핵심 최적화 함수: 16K 단위로 BigInt 변환 및 연산 후 즉시 메모리 해제
+    #[inline]
+    fn msm_bigint_chunked<G: AffineRepr>(
+        bases: &[G],
+        scalars_src: &[G::ScalarField],
+        chunk_size: usize,
+    ) -> G::Group
+    where
+        G::Group: VariableBaseMSM<MulBase = G>,
+    {
+        let mut sum = G::Group::zero();
+        let mut i = 0;
+        let len = bases.len();
+
+        while i < len {
+            let end = core::cmp::min(i + chunk_size, len);
+
+            // Chunk만큼만 BigInt로 변환 (메모리 피크 방지)
+            let s_chunk: Vec<<G::ScalarField as PrimeField>::BigInt> = scalars_src[i..end]
+                .iter()
+                .map(|s| s.into_bigint())
+                .collect();
+
+            let part = G::Group::msm_bigint(&bases[i..end], &s_chunk);
+            sum += &part;
+
+            // s_chunk는 여기서 drop됨
+            i = end;
+        }
+        sum
+    }
     pub fn create_random_proof_with_reduction_factory<C>(
         circuit_factory: impl FnMut() -> C,
         pk: &ProvingKey<E>,
@@ -185,267 +488,6 @@ impl<E: Pairing, QAP: R1CSToQAP> Groth16<E, QAP> {
         )
     }
 
-    pub fn create_random_proof_two_pass<C>(
-        circuit: C,
-        pk: &ProvingKey<E>,
-        rng: &mut impl ark_std::rand::Rng,
-    ) -> ark_relations::r1cs::Result<Proof<E>>
-    where
-        C: ConstraintSynthesizer<E::ScalarField> + Clone,
-    {
-        let r = E::ScalarField::rand(rng);
-        let s = E::ScalarField::rand(rng);
-        Self::create_proof_two_pass(circuit, pk, r, s)
-    }
-
-    pub fn create_proof_two_pass<C>(
-        circuit: C,
-        pk: &ProvingKey<E>,
-        r: E::ScalarField,
-        s: E::ScalarField,
-    ) -> ark_relations::r1cs::Result<Proof<E>>
-    where
-        C: ConstraintSynthesizer<E::ScalarField> + Clone,
-    {
-        // ---- Pass A: 행렬만 생성
-        let cs_a = ConstraintSystem::new_ref();
-        cs_a.set_mode(SynthesisMode::Setup);
-        // 메모리 관점에서 두 가지 옵션을 시험해보세요:
-        // 1) Constraints (기본): 인라이닝 → 구조 단순, 행렬 길이는 늘 수 있음
-        // 2) Weight: 아웃라이닝 → non-zero 수 감소 → 행렬 메모리 감소 가능
-        cs_a.set_optimization_goal(OptimizationGoal::Constraints);
-        circuit.clone().generate_constraints(cs_a.clone())?;
-        cs_a.finalize();
-        // 이 시점엔 "할당"이 전혀 없음 → 행렬만 생성
-        let matrices = cs_a.to_matrices().expect("matrices in setup");
-        // cs_a 드롭으로 LC 맵 등 큰 구조 해제
-        drop(cs_a);
-
-        // Pass A에서 필요한 메타 값은 matrices와 아래 값들
-        let num_inputs = matrices.num_instance_variables;
-        let num_constraints = matrices.num_constraints;
-
-        // ---- Pass B: 할당만 생성(행렬 X)
-        let cs_b = ConstraintSystem::new_ref();
-        cs_b.set_mode(SynthesisMode::Prove {
-            construct_matrices: false,
-        });
-        cs_b.set_optimization_goal(OptimizationGoal::Constraints); // 여기선 아웃라이닝 불필요
-        circuit.generate_constraints(cs_b.clone())?;
-        cs_b.finalize();
-
-        // 풀 어사인먼트 추출 (행렬 없이 메모리 가벼움)
-        let cs_b_inner = cs_b.borrow().unwrap();
-        let full_assignment: Vec<E::ScalarField> = [
-            cs_b_inner.instance_assignment.as_slice(),
-            cs_b_inner.witness_assignment.as_slice(),
-        ]
-        .concat();
-        drop(cs_b_inner);
-        drop(cs_b);
-
-        // ---- 행렬 + 할당을 연결하여 증명 생성(메모리 중복 없이)
-        Self::create_proof_with_reduction_and_matrices(
-            pk,
-            r,
-            s,
-            &matrices,
-            num_inputs,
-            num_constraints,
-            &full_assignment,
-        )
-    }
-
-    /// Create a Groth16 proof using randomness `r` and `s` and
-    /// the provided R1CS-to-QAP reduction, using the provided
-    /// R1CS constraint matrices.
-    #[inline]
-    pub fn create_proof_with_reduction_and_matrices(
-        pk: &ProvingKey<E>,
-        r: E::ScalarField,
-        s: E::ScalarField,
-        matrices: &ConstraintMatrices<E::ScalarField>,
-        num_inputs: usize,
-        num_constraints: usize,
-        full_assignment: &[E::ScalarField],
-    ) -> R1CSResult<Proof<E>> {
-        let prover_time = start_timer!(|| "Groth16::Prover");
-        println!(
-            "[rss_kb] Groth16::Prover 시작: {} MB",
-            rss_kb() / (1024 * 1024)
-        );
-        let witness_map_time = start_timer!(|| "R1CS to QAP witness map");
-        println!("[rss_kb] witness_map 시작: {} MB", rss_kb() / (1024 * 1024));
-        let h = QAP::witness_map_from_matrices::<E::ScalarField, D<E::ScalarField>>(
-            matrices,
-            num_inputs,
-            num_constraints,
-            full_assignment,
-        )?;
-        println!("[rss_kb] witness_map 종료: {} MB", rss_kb() / (1024 * 1024));
-        end_timer!(witness_map_time);
-        let input_assignment = &full_assignment[1..num_inputs];
-        let aux_assignment = &full_assignment[num_inputs..];
-        println!(
-            "[rss_kb] assignment 분리 후: {} MB",
-            rss_kb() / (1024 * 1024)
-        );
-        let proof =
-            Self::create_proof_with_assignment(pk, r, s, &h, input_assignment, aux_assignment)?;
-        println!("[rss_kb] proof 생성 후: {} MB", rss_kb() / (1024 * 1024));
-        end_timer!(prover_time);
-
-        Ok(proof)
-    }
-
-    #[inline]
-    fn create_proof_with_assignment(
-        pk: &ProvingKey<E>,
-        r: E::ScalarField,
-        s: E::ScalarField,
-        h: &[E::ScalarField],
-        input_assignment: &[E::ScalarField],
-        aux_assignment: &[E::ScalarField],
-    ) -> R1CSResult<Proof<E>> {
-        let c_acc_time = start_timer!(|| "Compute C");
-        println!("[rss_kb] Compute C 시작: {} MB", rss_kb() / (1024 * 1024));
-        // let h_assignment = cfg_into_iter!(h)
-        //     .map(|s| s.into_bigint())
-        //     .collect::<Vec<_>>();
-        // let h_acc = E::G1::msm_bigint(&pk.h_query, &h_assignment);
-        // drop(h_assignment);
-
-        let h_acc = Self::msm_bigint_chunked::<E::G1Affine>(&pk.h_query, h, 16_384);
-        println!("[rss_kb] h_acc 계산 후: {} MB", rss_kb() / (1024 * 1024));
-
-        // Compute C
-        // let aux_assignment = cfg_iter!(aux_assignment)
-        //     .map(|s| s.into_bigint())
-        //     .collect::<Vec<_>>();
-
-        // let l_aux_acc = E::G1::msm_bigint(&pk.l_query, &aux_assignment);
-        let aux_bigint = cfg_iter!(aux_assignment)
-            .map(|s| s.into_bigint())
-            .collect::<Vec<_>>();
-        let l_aux_acc = E::G1::msm_bigint(&pk.l_query, &aux_bigint);
-        println!(
-            "[rss_kb] l_aux_acc 계산 후: {} MB",
-            rss_kb() / (1024 * 1024)
-        );
-
-        let r_s_delta_g1 = pk.delta_g1 * (r * s);
-
-        end_timer!(c_acc_time);
-        println!("[rss_kb] Compute C 종료: {} MB", rss_kb() / (1024 * 1024));
-
-        // let input_assignment = input_assignment
-        //     .iter()
-        //     .map(|s| s.into_bigint())
-        //     .collect::<Vec<_>>();
-
-        // let assignment = [&input_assignment[..], &aux_assignment[..]].concat();
-        // drop(aux_assignment);
-        let input_bigint = input_assignment
-            .iter()
-            .map(|s| s.into_bigint())
-            .collect::<Vec<_>>();
-        println!(
-            "[rss_kb] input_bigint 변환 후: {} MB",
-            rss_kb() / (1024 * 1024)
-        );
-
-        // Compute A
-        let a_acc_time = start_timer!(|| "Compute A");
-        println!("[rss_kb] Compute A 시작: {} MB", rss_kb() / (1024 * 1024));
-        let r_g1 = pk.delta_g1.mul(r);
-
-        // let g_a = Self::calculate_coeff(r_g1, &pk.a_query, pk.vk.alpha_g1, &assignment);
-        let g_a = Self::calculate_coeff_split(
-            r_g1,
-            &pk.a_query,
-            pk.vk.alpha_g1,
-            &input_bigint,
-            &aux_bigint,
-        );
-        println!("[rss_kb] g_a 계산 후: {} MB", rss_kb() / (1024 * 1024));
-
-        let s_g_a = g_a * &s;
-        end_timer!(a_acc_time);
-        println!("[rss_kb] Compute A 종료: {} MB", rss_kb() / (1024 * 1024));
-
-        // Compute B in G1 if needed
-        let g1_b = if !r.is_zero() {
-            let b_g1_acc_time = start_timer!(|| "Compute B in G1");
-            println!(
-                "[rss_kb] Compute B in G1 시작: {} MB",
-                rss_kb() / (1024 * 1024)
-            );
-            let s_g1 = pk.delta_g1.mul(s);
-            // let g1_b = Self::calculate_coeff(s_g1, &pk.b_g1_query, pk.beta_g1, &assignment);
-            let g1_b = Self::calculate_coeff_split(
-                s_g1,
-                &pk.b_g1_query,
-                pk.beta_g1,
-                &input_bigint,
-                &aux_bigint,
-            );
-            println!("[rss_kb] g1_b 계산 후: {} MB", rss_kb() / (1024 * 1024));
-
-            end_timer!(b_g1_acc_time);
-            println!(
-                "[rss_kb] Compute B in G1 종료: {} MB",
-                rss_kb() / (1024 * 1024)
-            );
-
-            g1_b
-        } else {
-            E::G1::zero()
-        };
-
-        // Compute B in G2
-        let b_g2_acc_time = start_timer!(|| "Compute B in G2");
-        println!(
-            "[rss_kb] Compute B in G2 시작: {} MB",
-            rss_kb() / (1024 * 1024)
-        );
-        let s_g2 = pk.vk.delta_g2.mul(s);
-        // let g2_b = Self::calculate_coeff(s_g2, &pk.b_g2_query, pk.vk.beta_g2, &assignment);
-        let g2_b = Self::calculate_coeff_split(
-            s_g2,
-            &pk.b_g2_query,
-            pk.vk.beta_g2,
-            &input_bigint,
-            &aux_bigint,
-        );
-        println!("[rss_kb] g2_b 계산 후: {} MB", rss_kb() / (1024 * 1024));
-        let r_g1_b = g1_b * &r;
-        // drop(assignment);
-        drop(input_bigint);
-        drop(aux_bigint);
-
-        end_timer!(b_g2_acc_time);
-        println!(
-            "[rss_kb] Compute B in G2 종료: {} MB",
-            rss_kb() / (1024 * 1024)
-        );
-
-        let c_time = start_timer!(|| "Finish C");
-        println!("[rss_kb] Finish C 시작: {} MB", rss_kb() / (1024 * 1024));
-        let mut g_c = s_g_a;
-        g_c += &r_g1_b;
-        g_c -= &r_s_delta_g1;
-        g_c += &l_aux_acc;
-        g_c += &h_acc;
-        end_timer!(c_time);
-        println!("[rss_kb] Finish C 종료: {} MB", rss_kb() / (1024 * 1024));
-
-        Ok(Proof {
-            a: g_a.into_affine(),
-            b: g2_b.into_affine(),
-            c: g_c.into_affine(),
-        })
-    }
-
     /// Create a Groth16 proof that is zero-knowledge using the provided
     /// R1CS-to-QAP reduction.
     /// This method samples randomness for zero knowledges via `rng`.
@@ -585,57 +627,6 @@ impl<E: Pairing, QAP: R1CSToQAP> Groth16<E, QAP> {
             b: new_b.into_affine(),
             c: new_c.into_affine(),
         }
-    }
-
-    #[inline]
-    fn calculate_coeff_split<G: AffineRepr>(
-        mut acc: G::Group,
-        query: &[G],
-        vk_param: G,
-        assign1: &[<G::ScalarField as PrimeField>::BigInt],
-        assign2: &[<G::ScalarField as PrimeField>::BigInt],
-    ) -> G::Group
-    where
-        G::Group: VariableBaseMSM<MulBase = G>,
-    {
-        // query[0]는 별도 더하고, 나머지는 assignment에 맞춰 MSM
-        let el0 = query[0];
-        let q_rest = &query[1..];
-        // q_rest는 assign1(len1) + assign2(len2) 에 대응한다고 가정
-        let (q1, q2) = q_rest.split_at(assign1.len());
-        let part1 = G::Group::msm_bigint(q1, assign1);
-        let part2 = G::Group::msm_bigint(q2, assign2);
-        acc.add_assign(&el0);
-        acc += &part1;
-        acc += &part2;
-        acc.add_assign(&vk_param);
-        acc
-    }
-
-    #[inline]
-    fn msm_bigint_chunked<G: AffineRepr>(
-        bases: &[G],
-        scalars_src: &[G::ScalarField],
-        chunk: usize,
-    ) -> G::Group
-    where
-        G::Group: VariableBaseMSM<MulBase = G>,
-    {
-        use ark_std::vec::Vec;
-        let mut sum = G::Group::zero();
-        let mut i = 0;
-        while i < bases.len() {
-            let end = core::cmp::min(i + chunk, bases.len());
-            // 현 chunk: scalars를 BigInt로 변환
-            let s_chunk: Vec<<G::ScalarField as PrimeField>::BigInt> = scalars_src[i..end]
-                .iter()
-                .map(|s| s.into_bigint())
-                .collect();
-            let part = G::Group::msm_bigint(&bases[i..end], &s_chunk);
-            sum += &part;
-            i = end;
-        }
-        sum
     }
 }
 

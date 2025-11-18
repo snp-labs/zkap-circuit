@@ -29,24 +29,11 @@ pub fn claim_extractor<F: PrimeField>(
         .collect::<Vec<_>>();
     let key_len = UInt16::constant(key.len() as u16);
 
-    let claim = slice(
-        payload,
-        &pos.offset,
-        &pos.len,
-        max_len,
-        &pad_char,
-    )?;
+    let claim = slice(payload, &pos.offset, &pos.len, max_len, &pad_char)?;
 
-    let result_name =
-        slice_from_start(&claim, &key_len.to_fp()?, key.len(), &pad_char)?;
+    let result_name = slice_from_start(&claim, &key_len.to_fp()?, key.len(), &pad_char)?;
 
-    let result_value = slice(
-        &claim,
-        &pos.value_idx,
-        &pos.value_len,
-        max_len,
-        &pad_char,
-    )?;
+    let result_value = slice(&claim, &pos.value_idx, &pos.value_len, max_len, &pad_char)?;
 
     result_name.enforce_equal(&key)?;
 

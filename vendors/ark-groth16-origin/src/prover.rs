@@ -1,0 +1,336 @@
+use crate::{r1cs_to_qap::R1CSToQAP, Groth16, Proof, ProvingKey, VerifyingKey};
+use ark_ec::{pairing::Pairing, AffineRepr, CurveGroup, VariableBaseMSM};
+use ark_ff::{Field, PrimeField, UniformRand, Zero};
+use ark_poly::GeneralEvaluationDomain;
+use ark_relations::r1cs::{
+    ConstraintMatrices, ConstraintSynthesizer, ConstraintSystem, OptimizationGoal,
+    Result as R1CSResult,
+};
+use ark_std::rand::Rng;
+use ark_std::{
+    cfg_into_iter, cfg_iter,
+    ops::{AddAssign, Mul},
+    vec::Vec,
+};
+
+use sysinfo::System;
+
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
+
+type D<F> = GeneralEvaluationDomain<F>;
+
+macro_rules! log_step {
+    ($msg:expr) => {
+        println!("[rss_kb] {:<40} : {} MB", $msg, rss_kb() / (1024 * 1024));
+    };
+}
+
+impl<E: Pairing, QAP: R1CSToQAP> Groth16<E, QAP> {
+    /// Create a Groth16 proof using randomness `r` and `s` and
+    /// the provided R1CS-to-QAP reduction, using the provided
+    /// R1CS constraint matrices.
+    #[inline]
+    pub fn create_proof_with_reduction_and_matrices(
+        pk: &ProvingKey<E>,
+        r: E::ScalarField,
+        s: E::ScalarField,
+        matrices: &ConstraintMatrices<E::ScalarField>,
+        num_inputs: usize,
+        num_constraints: usize,
+        full_assignment: &[E::ScalarField],
+    ) -> R1CSResult<Proof<E>> {
+        let prover_time = start_timer!(|| "Groth16::Prover");
+        log_step!("Groth16::Prover (Matrices) Start");
+
+        let witness_map_time = start_timer!(|| "R1CS to QAP witness map");
+        let h = QAP::witness_map_from_matrices::<E::ScalarField, D<E::ScalarField>>(
+            matrices,
+            num_inputs,
+            num_constraints,
+            full_assignment,
+        )?;
+        log_step!("Witness Map(H) Calculated");
+        end_timer!(witness_map_time);
+
+        let input_assignment = &full_assignment[1..num_inputs];
+        let aux_assignment = &full_assignment[num_inputs..];
+
+        let proof =
+            Self::create_proof_with_assignment(pk, r, s, &h, input_assignment, aux_assignment)?;
+
+        end_timer!(prover_time);
+        log_step!("Groth16::Prover (Matrices) End");
+
+        Ok(proof)
+    }
+
+    #[inline]
+    fn create_proof_with_assignment(
+        pk: &ProvingKey<E>,
+        r: E::ScalarField,
+        s: E::ScalarField,
+        h: &[E::ScalarField],
+        input_assignment: &[E::ScalarField],
+        aux_assignment: &[E::ScalarField],
+    ) -> R1CSResult<Proof<E>> {
+        let c_acc_time = start_timer!(|| "Compute C");
+        log_step!("Compute C Start");
+
+        // [Original 병목 1] H 벡터를 BigInt로 변환하여 새로 할당
+        let h_assignment = cfg_into_iter!(h)
+            .map(|s| s.into_bigint())
+            .collect::<Vec<_>>();
+        log_step!("H converted to BigInt (Allocated)");
+
+        let h_acc = E::G1::msm_bigint(&pk.h_query, &h_assignment);
+        log_step!("H MSM Done");
+
+        drop(h_assignment);
+        log_step!("H Vec Dropped");
+
+        // Compute C
+        // [Original 병목 2] Aux 벡터를 BigInt로 변환하여 새로 할당
+        let aux_assignment_bigint = cfg_iter!(aux_assignment)
+            .map(|s| s.into_bigint())
+            .collect::<Vec<_>>();
+        log_step!("Aux converted to BigInt (Allocated)");
+
+        let l_aux_acc = E::G1::msm_bigint(&pk.l_query, &aux_assignment_bigint);
+        log_step!("Aux MSM Done");
+
+        let r_s_delta_g1 = pk.delta_g1 * (r * s);
+
+        end_timer!(c_acc_time);
+
+        let input_assignment_bigint = input_assignment
+            .iter()
+            .map(|s| s.into_bigint())
+            .collect::<Vec<_>>();
+
+        // [Original 병목 3] Input과 Aux를 합쳐서 'assignment'라는 거대 벡터 생성 (Peak 예상 구간)
+        let assignment = [&input_assignment_bigint[..], &aux_assignment_bigint[..]].concat();
+        log_step!("Full Assignment Concatenated (Peak?)");
+
+        drop(aux_assignment_bigint);
+        log_step!("Aux BigInt Vec Dropped");
+
+        // Compute A
+        let a_acc_time = start_timer!(|| "Compute A");
+        log_step!("Compute A Start");
+        let r_g1 = pk.delta_g1.mul(r);
+
+        let g_a = Self::calculate_coeff(r_g1, &pk.a_query, pk.vk.alpha_g1, &assignment);
+        log_step!("Compute A Done");
+
+        let s_g_a = g_a * &s;
+        end_timer!(a_acc_time);
+
+        // Compute B in G1 if needed
+        let g1_b = if !r.is_zero() {
+            let b_g1_acc_time = start_timer!(|| "Compute B in G1");
+            log_step!("Compute B(G1) Start");
+            let s_g1 = pk.delta_g1.mul(s);
+            let g1_b = Self::calculate_coeff(s_g1, &pk.b_g1_query, pk.beta_g1, &assignment);
+            log_step!("Compute B(G1) Done");
+            end_timer!(b_g1_acc_time);
+
+            g1_b
+        } else {
+            E::G1::zero()
+        };
+
+        // Compute B in G2
+        let b_g2_acc_time = start_timer!(|| "Compute B in G2");
+        log_step!("Compute B(G2) Start");
+        let s_g2 = pk.vk.delta_g2.mul(s);
+        let g2_b = Self::calculate_coeff(s_g2, &pk.b_g2_query, pk.vk.beta_g2, &assignment);
+        log_step!("Compute B(G2) Done");
+
+        let r_g1_b = g1_b * &r;
+
+        drop(assignment);
+        log_step!("Full Assignment Dropped");
+
+        end_timer!(b_g2_acc_time);
+
+        let c_time = start_timer!(|| "Finish C");
+        let mut g_c = s_g_a;
+        g_c += &r_g1_b;
+        g_c -= &r_s_delta_g1;
+        g_c += &l_aux_acc;
+        g_c += &h_acc;
+        end_timer!(c_time);
+        log_step!("Finish C Done");
+
+        Ok(Proof {
+            a: g_a.into_affine(),
+            b: g2_b.into_affine(),
+            c: g_c.into_affine(),
+        })
+    }
+
+    /// Create a Groth16 proof that is zero-knowledge using the provided
+    /// R1CS-to-QAP reduction.
+    /// This method samples randomness for zero knowledges via `rng`.
+    #[inline]
+    pub fn create_random_proof_with_reduction<C>(
+        circuit: C,
+        pk: &ProvingKey<E>,
+        rng: &mut impl Rng,
+    ) -> R1CSResult<Proof<E>>
+    where
+        C: ConstraintSynthesizer<E::ScalarField>,
+    {
+        log_step!("Function Start: create_random_proof (Original)");
+
+        let r = E::ScalarField::rand(rng);
+        let s = E::ScalarField::rand(rng);
+
+        let res = Self::create_proof_with_reduction(circuit, pk, r, s)?;
+        log_step!("Function End: create_random_proof (Original)");
+        Ok(res)
+    }
+
+    /// Create a Groth16 proof that is *not* zero-knowledge with the provided
+    /// R1CS-to-QAP reduction.
+    #[inline]
+    pub fn create_proof_with_reduction_no_zk<C>(
+        circuit: C,
+        pk: &ProvingKey<E>,
+    ) -> R1CSResult<Proof<E>>
+    where
+        C: ConstraintSynthesizer<E::ScalarField>,
+    {
+        Self::create_proof_with_reduction(
+            circuit,
+            pk,
+            E::ScalarField::zero(),
+            E::ScalarField::zero(),
+        )
+    }
+
+    /// Create a Groth16 proof using randomness `r` and `s` and the provided
+    /// R1CS-to-QAP reduction.
+    #[inline]
+    pub fn create_proof_with_reduction<C>(
+        circuit: C,
+        pk: &ProvingKey<E>,
+        r: E::ScalarField,
+        s: E::ScalarField,
+    ) -> R1CSResult<Proof<E>>
+    where
+        E: Pairing,
+        C: ConstraintSynthesizer<E::ScalarField>,
+        QAP: R1CSToQAP,
+    {
+        let prover_time = start_timer!(|| "Groth16::Prover");
+        log_step!("Groth16::Prover Start");
+
+        let cs = ConstraintSystem::new_ref();
+
+        // Set the optimization goal
+        cs.set_optimization_goal(OptimizationGoal::Constraints);
+
+        // Synthesize the circuit.
+        let synthesis_time = start_timer!(|| "Constraint synthesis");
+        circuit.generate_constraints(cs.clone())?;
+        debug_assert!(cs.is_satisfied().unwrap());
+        end_timer!(synthesis_time);
+        log_step!("Constraint synthesis Done");
+
+        let lc_time = start_timer!(|| "Inlining LCs");
+        cs.finalize();
+        end_timer!(lc_time);
+        log_step!("Inlining LCs Done (Matrices Built)");
+
+        let witness_map_time = start_timer!(|| "R1CS to QAP witness map");
+        // [Original 병목 0] 여기서 CS와 H가 동시에 메모리에 존재
+        let h = QAP::witness_map::<E::ScalarField, D<E::ScalarField>>(cs.clone())?;
+        end_timer!(witness_map_time);
+        log_step!("Witness Map(H) Calculated");
+
+        let prover = cs.borrow().unwrap();
+        let proof = Self::create_proof_with_assignment(
+            pk,
+            r,
+            s,
+            &h,
+            &prover.instance_assignment[1..],
+            &prover.witness_assignment,
+        )?;
+
+        end_timer!(prover_time);
+        log_step!("Groth16::Prover End");
+
+        Ok(proof)
+    }
+
+    /// Given a Groth16 proof, returns a fresh proof of the same statement. For a proof π of a
+    /// statement S, the output of the non-deterministic procedure `rerandomize_proof(π)` is
+    /// statistically indistinguishable from a fresh honest proof of S. For more info, see theorem 3 of
+    /// [\[BKSV20\]](https://eprint.iacr.org/2020/811)
+    pub fn rerandomize_proof(
+        vk: &VerifyingKey<E>,
+        proof: &Proof<E>,
+        rng: &mut impl Rng,
+    ) -> Proof<E> {
+        // These are our rerandomization factors. They must be nonzero and uniformly sampled.
+        let (mut r1, mut r2) = (E::ScalarField::zero(), E::ScalarField::zero());
+        while r1.is_zero() || r2.is_zero() {
+            r1 = E::ScalarField::rand(rng);
+            r2 = E::ScalarField::rand(rng);
+        }
+
+        // See figure 1 in the paper referenced above:
+        //   A' = (1/r₁)A
+        //   B' = r₁B + r₁r₂(δG₂)
+        //   C' = C + r₂A
+
+        // We can unwrap() this because r₁ is guaranteed to be nonzero
+        let new_a = proof.a.mul(r1.inverse().unwrap());
+        let new_b = proof.b.mul(r1) + &vk.delta_g2.mul(r1 * &r2);
+        let new_c = proof.c + proof.a.mul(r2).into_affine();
+
+        Proof {
+            a: new_a.into_affine(),
+            b: new_b.into_affine(),
+            c: new_c.into_affine(),
+        }
+    }
+
+    fn calculate_coeff<G: AffineRepr>(
+        initial: G::Group,
+        query: &[G],
+        vk_param: G,
+        assignment: &[<G::ScalarField as PrimeField>::BigInt],
+    ) -> G::Group
+    where
+        G::Group: VariableBaseMSM<MulBase = G>,
+    {
+        let el = query[0];
+        let acc = G::Group::msm_bigint(&query[1..], assignment);
+
+        let mut res = initial;
+        res.add_assign(&el);
+        res += &acc;
+        res.add_assign(&vk_param);
+
+        res
+    }
+}
+
+fn rss_kb() -> u64 {
+    // System은 내부 캐시를 갖습니다. 한 번 만들고 재사용해도 됩니다.
+    // 간단히 매번 새로 만들어도 충분히 가벼워요.
+    let mut sys = System::new();
+    // 현재 프로세스만 갱신
+    if let Ok(pid) = sysinfo::get_current_pid() {
+        sys.refresh_process(pid);
+        if let Some(p) = sys.process(pid) {
+            // KiB 단위 (KB 개념으로 취급해도 무방)
+            return p.memory();
+        }
+    }
+    0
+}

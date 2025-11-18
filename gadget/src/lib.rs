@@ -10,3 +10,4 @@ pub mod mekletree;
 pub mod debug;
 pub mod claimverifier;
 pub mod token;
+pub mod claimverifier_v2;

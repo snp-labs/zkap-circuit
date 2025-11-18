@@ -41,6 +41,15 @@ fn value_to_6bits_lsb(value: u8) -> [bool; 6] {
     bits
 }
 
+fn value_to_6bits_msb(value: u8) -> [bool; 6] {
+    let mut bits = [false; 6];
+    for i in 0..6 {
+        let shift = 5 - i;
+        bits[i] = (value >> shift) & 1 == 1;
+    }
+    bits
+}
+
 pub fn base64_to_6bit_bools(encoded_str: &[u8]) -> Result<Vec<bool>, Base64Error> {
     assert!(
         encoded_str.len() % 4 == 0,
@@ -54,12 +63,39 @@ pub fn base64_to_6bit_bools(encoded_str: &[u8]) -> Result<Vec<bool>, Base64Error
         let value = match value_map.get(&c) {
             Some(val) => *val,
             None => {
-                return Err(Base64Error::WrongCharacter(char_index, *c as char));
+                return Err(Base64Error::InvalidBase64Character(char_index, *c as char));
             }
         };
 
         // 2. 값을 6비트 bool 배열 (LSB first)로 변환
-        let bits = value_to_6bits_lsb(value); // 에러는 여기서 발생 안 함
+        let bits = value_to_6bits_lsb(value);
+
+        // 3. 결과 벡터에 추가
+        result_vec.extend_from_slice(&bits);
+    }
+
+    Ok(result_vec)
+}
+
+pub fn base64_to_6bit_bools_msb(encoded_str: &[u8]) -> Result<Vec<bool>, Base64Error> {
+    assert!(
+        encoded_str.len() % 4 == 0,
+        "Base64 string length must be a multiple of 4"
+    );
+    let value_map = get_urlsafe_base64_value_map();
+    let mut result_vec = Vec::with_capacity(encoded_str.len());
+
+    for (char_index, c) in encoded_str.iter().enumerate() {
+        // 1. Base64 문자 테이블에서 값(0-63) 조회
+        let value = match value_map.get(&c) {
+            Some(val) => *val,
+            None => {
+                return Err(Base64Error::InvalidBase64Character(char_index, *c as char));
+            }
+        };
+
+        // 2. 값을 6비트 bool 배열 (MSB first)로 변환
+        let bits = value_to_6bits_msb(value);
 
         // 3. 결과 벡터에 추가
         result_vec.extend_from_slice(&bits);
@@ -73,7 +109,7 @@ mod tests {
     use base64::engine::general_purpose;
     use base64::{DecodeError, Engine as _};
 
-    use crate::base64::decode_any_base64;
+    use crate::base64::{base64_to_6bit_bools, decode_any_base64};
     use crate::base64::error::Base64Error;
 
     enum EncodeType {
@@ -157,5 +193,22 @@ mod tests {
             EncodeType::UrlSafeNoPad => general_purpose::URL_SAFE_NO_PAD.encode(input),
             EncodeType::UrlSafeWithPad => general_purpose::URL_SAFE.encode(input),
         }
+    }
+
+    #[test]
+    fn test_base64_to_6bit_bools() {
+        let input = b"YWJj"; // "abc" in Base64
+        let result = base64_to_6bit_bools(input).unwrap();
+        let expected_bits = vec![
+            // Y (24 = 011000) LSB-first: [false, false, false, true, true, false]
+            false, false, false, true, true, false,
+            // W (22 = 010110) LSB-first: [false, true, true, false, true, false]
+            false, true, true, false, true, false,
+            // J (9 = 001001) LSB-first: [true, false, false, true, false, false]
+            true, false, false, true, false, false,
+            // j (35 = 100011) LSB-first: [true, true, false, false, false, true]
+            true, true, false, false, false, true,
+        ];
+        assert_eq!(result, expected_bits);
     }
 }

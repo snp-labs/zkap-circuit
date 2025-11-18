@@ -3,7 +3,7 @@ use std::str::FromStr;
 use ark_ec::CurveGroup;
 use ark_ff::PrimeField;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-use gadget::anchor::{dl::DLAnchorPublicKey, poseidon::PoseidonAnchorPublicKey};
+use gadget::anchor::poseidon::PoseidonAnchorPublicKey;
 use serde::{Deserialize, Serialize};
 
 use crate::error::error::ApplicationError;
@@ -18,15 +18,15 @@ pub struct PoseidonAnchorKeyExtension<F: PrimeField> {
     pub max_sub_len: usize,
 }
 
-#[derive(Clone, CanonicalSerialize, CanonicalDeserialize)]
-pub struct DLAnchorKeyExtension<C: CurveGroup> {
-    pub anchor_key: DLAnchorPublicKey<C>,
-    pub n: usize,
-    pub k: usize,
-    pub max_aud_len: Option<usize>,
-    pub max_iss_len: Option<usize>,
-    pub max_sub_len: usize,
-}
+// #[derive(Clone, CanonicalSerialize, CanonicalDeserialize)]
+// pub struct DLAnchorKeyExtension<C: CurveGroup> {
+//     pub anchor_key: DLAnchorPublicKey<C>,
+//     pub n: usize,
+//     pub k: usize,
+//     pub max_aud_len: Option<usize>,
+//     pub max_iss_len: Option<usize>,
+//     pub max_sub_len: usize,
+// }
 
 pub enum AnchorType {
     DL,
@@ -58,6 +58,13 @@ pub struct SecretDto {
     pub sub: Option<String>,
     pub iss: Option<String>,
     pub aud: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct Secret {
+    pub sub: String,
+    pub iss: String,
+    pub aud: String,
 }
 
 #[derive(Serialize, Deserialize)]

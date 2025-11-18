@@ -34,3 +34,9 @@ dotenv = { workspace = true }
 hex    = { workspace = true }
 rand   = { workspace = true }
 sha2   = { workspace = true }
+jsonwebtoken = { workspace = true }
+
+[features]
+default = []
+use-optimized = [] # 이 플래그가 켜지면 최적화 함수 호출
+r1cs-debug = ["gadget/r1cs-debug", "circuit/r1cs-debug"]

@@ -13,3 +13,15 @@ pub enum LinearSystemError {
     #[error("solution verify failed")]
     SolutionVerifyFailed,
 }
+
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum VandermondeMatrixError {
+    #[error("Length error: {0}")]
+    LengthError(String),
+
+    #[error("Singular matrix error")]
+    SingularMatrix,
+
+    #[error("No inverse")]
+    NoInverse,
+}

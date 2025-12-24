@@ -1,7 +1,10 @@
-use crate::jwt::error::TokenError;
 use regex::Regex;
 
+use crate::token::error::TokenError;
+
+pub mod claimverifier;
 pub mod constraints;
+pub mod error;
 
 #[derive(Clone, Debug, Default)]
 pub struct ClaimIndices {
@@ -82,7 +85,6 @@ pub fn parse_claim_from_str(s: &str, key: &str) -> Result<Claim, TokenError> {
         indices,
     })
 }
-
 
 /// Finds claim value by key in the claims list.
 /// Returns reference to avoid unnecessary allocations.

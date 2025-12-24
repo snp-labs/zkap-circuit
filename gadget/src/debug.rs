@@ -1,6 +1,6 @@
 use ark_r1cs_std::R1CSVar;
 
-#[cfg(feature = "r1cs-debug")]
+#[cfg(feature = "constraints-logging")]
 pub fn log_r1cs_eq<F, V>(label: &str, var1: &[V], var2: &[V])
 where
     F: ark_ff::Field,

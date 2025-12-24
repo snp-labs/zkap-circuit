@@ -55,7 +55,7 @@ use gadget::{
 
 use crate::zkpasskey::ExposesPublicInputs;
 
-#[cfg(feature = "r1cs-debug")]
+#[cfg(feature = "constraints-logging")]
 use gadget::debug::log_r1cs_eq;
 
 #[derive(Clone)]
@@ -448,7 +448,7 @@ where
 
         let reconstructed_hanchor = chain_hash_gadget(cs.clone(), &poseidon_param, &anchor.anchor)?;
 
-        #[cfg(feature = "r1cs-debug")]
+        #[cfg(feature = "constraints-logging")]
         log_r1cs_eq("hanchor check", &[reconstructed_hanchor.clone()], &[hanchor.clone()]);
 
         reconstructed_hanchor.enforce_equal(&hanchor)?;
@@ -468,7 +468,7 @@ where
 
         let result = RSA2048VerifyGadget::verify(&mut digest, &signature_rsa, &pk_rsa)?;
         
-        #[cfg(feature = "r1cs-debug")]
+        #[cfg(feature = "constraints-logging")]
         log_r1cs_eq("RSA signature check", &[result.clone()], &[Boolean::constant(true)]);
         
         result.enforce_equal(&Boolean::constant(true))?;
@@ -492,7 +492,7 @@ where
             &[nonce.clone(), counter.clone(), random.clone()],
         )?;
         
-        #[cfg(feature = "r1cs-debug")]
+        #[cfg(feature = "constraints-logging")]
         log_r1cs_eq("nonce check", &[reconstructed_nonce.clone()], &[jwt_nonce.clone()]);
         
         reconstructed_nonce.enforce_equal(&jwt_nonce)?;
@@ -522,7 +522,7 @@ where
         let reconstructed_h_slot =
             CRHGadget::<C::BaseField>::evaluate(&poseidon_param, &slot_input)?;
 
-        #[cfg(feature = "r1cs-debug")]
+        #[cfg(feature = "constraints-logging")]
         log_r1cs_eq("h_slot check", &[reconstructed_h_slot.clone()], &[h_slot.clone()]);
 
         reconstructed_h_slot.enforce_equal(&h_slot)?;
@@ -536,7 +536,7 @@ where
         h_x_input.push(random.clone());
         let reconstructed_h_x = CRHGadget::<C::BaseField>::evaluate(&poseidon_param, &h_x_input)?;
 
-        #[cfg(feature = "r1cs-debug")]
+        #[cfg(feature = "constraints-logging")]
         log_r1cs_eq("h_x check", &[reconstructed_h_x.clone()], &[h_x.clone()]);
         
         reconstructed_h_x.enforce_equal(&h_x)?;

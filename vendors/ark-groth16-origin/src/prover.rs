@@ -13,6 +13,7 @@ use ark_std::{
     vec::Vec,
 };
 
+#[cfg(feature = "memory-logging")]
 use sysinfo::System;
 
 #[cfg(feature = "parallel")]
@@ -20,10 +21,16 @@ use rayon::prelude::*;
 
 type D<F> = GeneralEvaluationDomain<F>;
 
+#[cfg(feature = "memory-logging")]
 macro_rules! log_step {
     ($msg:expr) => {
         println!("[rss_kb] {:<40} : {} MB", $msg, rss_kb() / (1024 * 1024));
     };
+}
+
+#[cfg(not(feature = "memory-logging"))]
+macro_rules! log_step {
+    ($msg:expr) => {};
 }
 
 impl<E: Pairing, QAP: R1CSToQAP> Groth16<E, QAP> {
@@ -320,6 +327,7 @@ impl<E: Pairing, QAP: R1CSToQAP> Groth16<E, QAP> {
     }
 }
 
+#[cfg(feature = "memory-logging")]
 fn rss_kb() -> u64 {
     // System은 내부 캐시를 갖습니다. 한 번 만들고 재사용해도 됩니다.
     // 간단히 매번 새로 만들어도 충분히 가벼워요.
@@ -332,5 +340,10 @@ fn rss_kb() -> u64 {
             return p.memory();
         }
     }
+    0
+}
+
+#[cfg(not(feature = "memory-logging"))]
+fn rss_kb() -> u64 {
     0
 }

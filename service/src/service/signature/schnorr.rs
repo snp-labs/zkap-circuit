@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use ark_ff::{BigInteger, PrimeField};
 use ark_serialize::CanonicalSerialize;
+use common::constants::{Blake2, CG, F};
 use once_cell::sync::OnceCell;
 use rand::{SeedableRng, rngs::StdRng, thread_rng};
 
@@ -13,10 +14,9 @@ use crate::{
         SchnorrSignResponseDto,
     },
     service::{
-        constants::{AppCurve, AppField, Blake2},
         key::io::load_key_uncompressed,
     },
-    utils::point::str_to_field,
+    utils::point::hex_decimal_to_field,
 };
 
 // pub fn init_signing_key(secret: &str) -> Result<(), ApplicationError> {
@@ -40,7 +40,7 @@ use crate::{
 //         .map_err(|_| ApplicationError::Other("Failed to set Schnorr secret key".to_string()))
 // }
 
-pub fn load_schnorr_sk() -> Result<SchnorrSecretKeyExtension<AppCurve, Blake2>, ApplicationError> {
+pub fn load_schnorr_sk() -> Result<SchnorrSecretKeyExtension<CG, Blake2>, ApplicationError> {
     dotenv::dotenv().ok();
 
     let secret_hex = std::env::var("SCHNORR_SECRET")
@@ -72,7 +72,7 @@ pub fn schnorr_sign(
 
     let mut rng = thread_rng();
 
-    let root = str_to_field::<AppField>(&root).map_err(|e| {
+    let root = hex_decimal_to_field::<F>(&root).map_err(|e| {
         ApplicationError::InvalidFormat(format!("Failed to convert root to field element: {}", e))
     })?;
 

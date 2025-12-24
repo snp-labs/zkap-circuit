@@ -7,6 +7,7 @@ edition = "2024"
 gadget = { workspace = true }
 circuit = { workspace = true }
 zkpasskey-service = { workspace = true }
+common = { workspace = true }
 
 ark-groth16           = { workspace = true }
 ark-ec                = { workspace = true }
@@ -22,3 +23,4 @@ ark-serialize         = { workspace = true }
 
 [features]
 print-trace = ["ark-groth16/print-trace"]
+constraints-logging = ["circuit/constraints-logging", "gadget/constraints-logging"]

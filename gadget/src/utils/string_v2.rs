@@ -1,9 +1,6 @@
 use ark_ff::PrimeField;
 use ark_r1cs_std::{
-    eq::EqGadget,
-    fields::{FieldVar, fp::FpVar},
-    prelude::{Boolean, ToBitsGadget},
-    uint16::UInt16,
+    R1CSVar, eq::EqGadget, fields::{FieldVar, fp::FpVar}, prelude::{Boolean, ToBitsGadget}, uint16::UInt16
 };
 use ark_relations::r1cs::{ConstraintSystemRef, SynthesisError};
 

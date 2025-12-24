@@ -1,5 +1,5 @@
 /target
 /test/test_outputs/*
 *.md
-/output
+/dist
 /archive

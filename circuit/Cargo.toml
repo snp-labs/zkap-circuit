@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 gadget = { workspace = true }
+common= { workspace = true }
 
 ark-groth16 = { workspace = true }
 ark-ec = { workspace = true }
@@ -18,12 +19,23 @@ ark-bn254 = { workspace = true }
 ark-ed-on-bn254 = { workspace = true, features = ["r1cs"] }
 ark-serialize = { workspace = true }
 
+regex = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
+
 [features]
 default = []
 print-trace = []
-r1cs-debug = []
+constraints-logging = ["gadget/constraints-logging"]
 baerae = []
+num-cs-logging = []
 
 [[bin]]
 name = "generate_baerae_crs"
 path = "src/bin/generate_baerae_crs.rs"
+
+[[bin]]
+name = "generate_hash"
+path = "src/bin/generate_hash.rs"

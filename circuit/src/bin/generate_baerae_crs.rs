@@ -1,5 +1,6 @@
 use ark_serialize::CanonicalSerialize;
 use ark_std::rand::{self, RngCore, SeedableRng, rngs::OsRng};
+use common::constants::ZkapConfig;
 use std::{
     env::args,
     fs::File,
@@ -10,6 +11,14 @@ fn main() {
     if !cfg!(feature = "baerae") {
         eprintln!(
             "This binary must be run with `--features baerae` because it depends on the baerae circuit."
+        );
+
+        std::process::exit(1);
+    };
+
+    if !cfg!(feature = "num-cs-logging") {
+        eprintln!(
+            "This binary must be run with `--features num-cs-logging` to enable constraint analysis output."
         );
 
         std::process::exit(1);
@@ -29,7 +38,6 @@ fn main() {
 
 #[allow(unused)]
 fn generate_crs_files(file_path: &str, mut rng: rand::rngs::StdRng) {
-    use circuit::baerae::constants::RSA_BITS;
     use circuit::to_solidity::SolidityContractGenerator;
     use gadget::bigint::constraints::BigNatCircuitParams;
     use gadget::hashes::mimc7;
@@ -40,28 +48,30 @@ fn generate_crs_files(file_path: &str, mut rng: rand::rngs::StdRng) {
         Groth16, PreparedVerifyingKey, ProvingKey, VerifyingKey, prepare_verifying_key,
     };
 
+    const LAMBDA: usize = 2048; // 512 bits
     #[derive(Clone, PartialEq, Eq, Debug)]
-    struct BigNat512TestParams;
-    impl BigNatCircuitParams for BigNat512TestParams {
+    struct BigNat2048Params;
+    impl BigNatCircuitParams for BigNat2048Params {
         const LIMB_WIDTH: usize = 64;
-        const N_LIMBS: usize = RSA_BITS / 64;
+        const N_LIMBS: usize = LAMBDA / 64;
     }
 
     type C = ark_ed_on_bn254::EdwardsProjective;
     type CV = ark_ed_on_bn254::constraints::EdwardsVar;
-    type BNP = BigNat512TestParams;
+    type BNP = BigNat2048Params;
 
     println!("Generate Baerae CRS files at path: {}", file_path);
 
-    let circuit = circuit::baerae::BaeraeLightWeightCircuit::<C, CV, BNP>::generate_crs();
+    let circuit =
+        circuit::baerae::BaeraeLightWeightCircuit::<C, CV, BNP, ZkapConfig>::generate_crs();
 
     let (pk, vk) = Groth16::<Bn254>::setup(circuit.clone(), &mut rng).unwrap();
     let pvk = prepare_verifying_key(&vk);
 
-    to_file::<ProvingKey<Bn254>>(&pk, &format!("{}/baerae/crs.pk", file_path)).unwrap();
-    to_file::<VerifyingKey<Bn254>>(&vk, &format!("{}/baerae/crs.vk", file_path)).unwrap();
-    to_file::<PreparedVerifyingKey<Bn254>>(&pvk, &format!("{}/baerae/crs.pvk", file_path)).unwrap();
-    vk.generate_solidity(&format!("{}/baerae/Groth16Verifier.sol", file_path));
+    to_file::<ProvingKey<Bn254>>(&pk, &format!("{}/pk.key", file_path)).unwrap();
+    to_file::<VerifyingKey<Bn254>>(&vk, &format!("{}/vk.key", file_path)).unwrap();
+    to_file::<PreparedVerifyingKey<Bn254>>(&pvk, &format!("{}/pvk.key", file_path)).unwrap();
+    vk.generate_solidity(&format!("{}/Groth16Verifier.sol", file_path));
 }
 
 #[allow(unused)]

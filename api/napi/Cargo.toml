@@ -9,11 +9,20 @@ crate-type = ["cdylib"]
 
 [dependencies]
 zkpasskey-service = { workspace = true }
+common = { workspace = true }
+gadget = { workspace = true }
+circuit = { workspace = true }
 
 napi = { workspace = true }
 napi-derive = { workspace = true }
 
-ark-groth16 = { workspace = true }
+ark-groth16           = { workspace = true }
+ark-ff                = { workspace = true }
+
 
 [build-dependencies]
 napi-build = { workspace = true }
+
+[features]
+constraints-logging = ["gadget/constraints-logging", "circuit/constraints-logging"]
+memory-logging = ["ark-groth16/memory-logging"]

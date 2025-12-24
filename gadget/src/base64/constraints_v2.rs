@@ -1,5 +1,7 @@
 use ark_ff::PrimeField;
-use ark_r1cs_std::{alloc::AllocVar, eq::EqGadget, fields::fp::FpVar, prelude::Boolean};
+use ark_r1cs_std::{
+    alloc::AllocVar, eq::EqGadget, fields::fp::FpVar, prelude::Boolean, select::CondSelectGadget,
+};
 use ark_relations::r1cs::SynthesisError;
 
 use crate::{
@@ -57,7 +59,10 @@ impl<F: PrimeField> Base64DecoderGadget<F> {
         let mut all_bits = Vec::with_capacity(enc_asciis.len() / 4 * 3);
         let mut all_valid = Boolean::constant(true);
 
-        for (enc_chunk, bits_chunk) in enc_asciis.chunks(4).zip(index_bits.inner.chunks(4)) {
+        for (enc_chunk, bits_chunk) in enc_asciis
+            .chunks(4)
+            .zip(index_bits.inner.chunks(4))
+        {
             let (decoded, chunk_valid) =
                 Self::encoded_chunk_to_decoded_chunk_v2(table, enc_chunk, bits_chunk)?;
 
@@ -91,7 +96,18 @@ impl<F: PrimeField> Base64DecoderGadget<F> {
         {
             let expected_ascii = Self::select_array_element_table(table, value_bits_witness)?;
 
-            let is_valid = expected_ascii.is_eq(enc_ascii)?;
+            // ASCII 0 (NULL)은 패딩으로 취급하여 'A' (ASCII 65)와 동일하게 처리
+            // slice_from_start가 0으로 패딩하므로, 0을 'A'로 매핑
+            let padding_char = FpVar::Constant(F::from(65u8)); // ASCII 'A'
+            let zero = FpVar::Constant(F::zero());
+            let is_zero = enc_ascii.is_eq(&zero)?;
+            let normalized_ascii = CondSelectGadget::conditionally_select(
+                &is_zero,
+                &padding_char,
+                enc_ascii,
+            )?;
+
+            let is_valid = expected_ascii.is_eq(&normalized_ascii)?;
 
             all_bits.extend_from_slice(&value_bits_witness.bits);
             all_valid = all_valid & is_valid;
@@ -336,7 +352,10 @@ mod tests {
             println!("Byte {}: {} (expected {})", i, actual, expected);
         }
 
-        println!("✓ decode_v2 성공 케이스 - 제약조건 수: {}", cs.num_constraints());
+        println!(
+            "✓ decode_v2 성공 케이스 - 제약조건 수: {}",
+            cs.num_constraints()
+        );
     }
 
     #[test]
@@ -374,10 +393,13 @@ mod tests {
 
         assert!(cs.is_satisfied().unwrap());
         assert_eq!(is_valid.value().unwrap(), true);
-        
+
         // 8 base64 chars -> 6 bytes output
         assert_eq!(result.len(), 6);
-        println!("✓ decode_v2 긴 입력 성공 - 디코딩된 바이트 수: {}", result.len());
+        println!(
+            "✓ decode_v2 긴 입력 성공 - 디코딩된 바이트 수: {}",
+            result.len()
+        );
         println!("  제약조건 수: {}", cs.num_constraints());
     }
 
@@ -414,7 +436,7 @@ mod tests {
         // 검증: 잘못된 입력이므로 is_valid는 false여야 함
         assert!(cs.is_satisfied().unwrap());
         assert_eq!(is_valid.value().unwrap(), false);
-        
+
         println!("✓ decode_v2 실패 케이스 (잘못된 ASCII) - is_valid: false");
         println!("  제약조건은 여전히 만족됨 (soft validation)");
     }
@@ -451,7 +473,7 @@ mod tests {
         // 부분 불일치도 전체 is_valid가 false가 되어야 함
         assert!(cs.is_satisfied().unwrap());
         assert_eq!(is_valid.value().unwrap(), false);
-        
+
         println!("✓ decode_v2 실패 케이스 (부분 불일치) - is_valid: false");
         println!("  하나의 문자라도 틀리면 전체 검증 실패");
     }
@@ -486,7 +508,7 @@ mod tests {
 
         assert!(cs.is_satisfied().unwrap());
         assert_eq!(is_valid.value().unwrap(), false);
-        
+
         println!("✓ decode_v2 실패 케이스 (전체 불일치) - is_valid: false");
     }
 
@@ -520,14 +542,14 @@ mod tests {
         assert!(cs.is_satisfied().unwrap());
         assert_eq!(is_valid.value().unwrap(), true);
         assert_eq!(result.len(), 3);
-        
+
         // "AAAA" decodes to [0, 0, 0]
         for (i, r) in result.iter().enumerate() {
             let actual = r.value().unwrap().into_bigint().0[0];
             assert_eq!(actual, 0);
             println!("Byte {}: {}", i, actual);
         }
-        
+
         println!("✓ decode_v2 엣지 케이스 (모두 A) - is_valid: true");
     }
 
@@ -535,10 +557,10 @@ mod tests {
     fn test_decode_v2_constraint_count_comparison() {
         // decode vs decode_v2 제약조건 비교
         println!("\n=== decode vs decode_v2 제약조건 비교 ===");
-        
+
         for input_len in [4, 8, 16, 32] {
             let input_str = "A".repeat(input_len);
-            
+
             // decode 테스트
             let cs1 = ConstraintSystem::<F>::new_ref();
             let table = get_base64_table();
@@ -546,39 +568,51 @@ mod tests {
                 Base64TableVar::new_variable(cs1.clone(), || Ok(&table), AllocationMode::Constant)
                     .unwrap();
             let index_bits = IndexBits::from_base64_url(&input_str, input_len).unwrap();
-            let index_bits_var1 =
-                IndexBitsVar::new_variable(cs1.clone(), || Ok(&index_bits), AllocationMode::Witness)
-                    .unwrap();
+            let index_bits_var1 = IndexBitsVar::new_variable(
+                cs1.clone(),
+                || Ok(&index_bits),
+                AllocationMode::Witness,
+            )
+            .unwrap();
             let enc_asciis1: Vec<FpVar<F>> = input_str
                 .as_bytes()
                 .iter()
                 .map(|&byte| FpVar::new_witness(cs1.clone(), || Ok(F::from(byte as u64))).unwrap())
                 .collect();
-            
-            let _result1 = Base64DecoderGadget::decode(&table_var1, &enc_asciis1, &index_bits_var1).unwrap();
+
+            let _result1 =
+                Base64DecoderGadget::decode(&table_var1, &enc_asciis1, &index_bits_var1).unwrap();
             let constraints1 = cs1.num_constraints();
-            
+
             // decode_v2 테스트
             let cs2 = ConstraintSystem::<F>::new_ref();
             let table_var2 =
                 Base64TableVar::new_variable(cs2.clone(), || Ok(&table), AllocationMode::Constant)
                     .unwrap();
-            let index_bits_var2 =
-                IndexBitsVar::new_variable(cs2.clone(), || Ok(&index_bits), AllocationMode::Witness)
-                    .unwrap();
+            let index_bits_var2 = IndexBitsVar::new_variable(
+                cs2.clone(),
+                || Ok(&index_bits),
+                AllocationMode::Witness,
+            )
+            .unwrap();
             let enc_asciis2: Vec<FpVar<F>> = input_str
                 .as_bytes()
                 .iter()
                 .map(|&byte| FpVar::new_witness(cs2.clone(), || Ok(F::from(byte as u64))).unwrap())
                 .collect();
-            
-            let (_result2, _is_valid) = Base64DecoderGadget::decode_v2(&table_var2, &enc_asciis2, &index_bits_var2).unwrap();
+
+            let (_result2, _is_valid) =
+                Base64DecoderGadget::decode_v2(&table_var2, &enc_asciis2, &index_bits_var2)
+                    .unwrap();
             let constraints2 = cs2.num_constraints();
-            
+
             println!("입력 길이: {} chars", input_len);
             println!("  decode:    {} constraints", constraints1);
             println!("  decode_v2: {} constraints", constraints2);
-            println!("  차이:      {} constraints", constraints2 as i32 - constraints1 as i32);
+            println!(
+                "  차이:      {} constraints",
+                constraints2 as i32 - constraints1 as i32
+            );
         }
     }
 }

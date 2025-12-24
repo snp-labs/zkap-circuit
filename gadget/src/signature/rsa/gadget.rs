@@ -25,7 +25,7 @@ use crate::{
     },
 };
 
-#[cfg(feature = "r1cs-debug")]
+#[cfg(feature = "constraints-logging")]
 use crate::debug::log_r1cs_eq;
 
 use super::native::{PublicKey, Signature};
@@ -99,7 +99,7 @@ where
 
     let result_fp = result.to_constraint_field().unwrap();
 
-    #[cfg(feature = "r1cs-debug")]
+    #[cfg(feature = "constraints-logging")]
     log_r1cs_eq("rsa verify", &result_fp, &output_fp);
     result_fp.enforce_equal(&output_fp)?;
     Ok(())

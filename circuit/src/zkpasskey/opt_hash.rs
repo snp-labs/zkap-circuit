@@ -51,7 +51,7 @@ use crate::zkpasskey::base::{
     CircuitOps, Empty,
 };
 
-#[cfg(feature = "r1cs-debug")]
+#[cfg(feature = "constraints-logging")]
 use gadget::debug::log_r1cs_eq;
 
 pub type OptHashArgs<C, H> =
@@ -246,7 +246,7 @@ where
         // check 1: hanchor == H(anchor)
         let reconstructed_hanchor = chain_hash_gadget(cs.clone(), &poseidon_param, &anchor.anchor)?;
 
-        #[cfg(feature = "r1cs-debug")]
+        #[cfg(feature = "constraints-logging")]
         log_r1cs_eq(
             "hanchor check",
             &[reconstructed_hanchor.clone()],
@@ -305,7 +305,7 @@ where
             Err(_) => println!("reconstructed Nonce: <missing>"),
         }
 
-        #[cfg(feature = "r1cs-debug")]
+        #[cfg(feature = "constraints-logging")]
         log_r1cs_eq(
             "Nonce Validity",
             &[reconstructed_nonce.clone()],
@@ -342,7 +342,7 @@ where
         slot_input.push(random.clone());
         let reconstructed_h_slot =
             CRHGadget::<C::BaseField>::evaluate(&poseidon_param, &slot_input)?;
-        #[cfg(feature = "r1cs-debug")]
+        #[cfg(feature = "constraints-logging")]
         log_r1cs_eq(
             "h_slot check",
             &[reconstructed_h_slot.clone()],
@@ -359,7 +359,7 @@ where
         let mut h_x_input = anchor_witness.placed_secrets.clone();
         h_x_input.push(random.clone());
         let reconstructed_h_x = CRHGadget::<C::BaseField>::evaluate(&poseidon_param, &h_x_input)?;
-        #[cfg(feature = "r1cs-debug")]
+        #[cfg(feature = "constraints-logging")]
         log_r1cs_eq("h_x check", &[reconstructed_h_x.clone()], &[h_x.clone()]);
 
         reconstructed_h_x.enforce_equal(&h_x)?;

@@ -35,7 +35,7 @@ pub trait AnchorScheme {
     fn generate_witness(
         pk: &Self::PublicKey,
         secrets: &Self::Secret,
-        selector: &[usize],
+        selector: &[u8],
         matrix: &Self::Matrix,
     ) -> Result<Self::Witness, AnchorError>;
 

@@ -14,7 +14,7 @@ use ark_serialize::CanonicalSerialize;
 use core::{borrow::Borrow, marker::PhantomData};
 use derivative::Derivative;
 
-#[cfg(feature = "r1cs-debug")]
+#[cfg(feature = "constraints-logging")]
 use crate::debug::log_r1cs_eq;
 
 // convenient alias to denote scalars (in the constraint field)
@@ -151,7 +151,7 @@ where
         parameters, public_key, &message, signature,
     )?;
 
-    #[cfg(feature = "r1cs-debug")]
+    #[cfg(feature = "constraints-logging")]
     log_r1cs_eq("Schnorr PK Root Signature Validity", &[valid_sig_var.clone()], &[Boolean::TRUE]);
 
     valid_sig_var.enforce_equal(&Boolean::TRUE)?;

@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
+use common::constants::BN254;
 use once_cell::sync::Lazy;
 
 use crate::{
     error::error::ApplicationError,
     interface::snark::ProvingKeyExtension,
     service::{
-        constants::BN254,
         key::{
             io::load_key_uncompressed,
             manager::{KeyKind, KeyManager},

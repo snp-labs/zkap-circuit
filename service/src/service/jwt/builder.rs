@@ -1,483 +1,225 @@
-use ark_crypto_primitives::{crh::CRHScheme, merkle_tree::Path, sponge::poseidon::PoseidonConfig};
-
+use circuit::token::{Claim, ClaimIndices, error::TokenError, parse_claim_from_str};
+use common::constants::ZkPasskeyConfig;
 use gadget::{
-    base64::{base64_to_6bit_bools, decode_any_base64, decode_any_base64_to_string},
-    hashes::sha256::{
-        H,
-        utils::{sha256_pad_with_len, update},
-    },
-    jwt::{Token, error::TokenError, types::Claim, utils::parse_claim_from_str},
-    mekletree::{MerkleCircuitInput, tree_config::MerkleTreeParams},
+    base64::mod_v2::{IndexBits, decode_any_base64, decode_any_base64_to_string},
+    hashes::sha256::{H, utils::update},
     signature::rsa::native::{PublicKey, Signature},
-    token::{claim::ClaimIndices, decode::TokenPayloadB64, signature::TokenSig},
 };
 
-use crate::{
-    error::error::ApplicationError,
-    service::constants::{AppCurve, AppField, BNP, PoseidonHash}, utils::point::{ascii_to_field_be, str_to_field},
-};
+// SHA-256 블록 크기 (바이트 단위)
+const SHA_BLOCK_LEN: usize = 64;
+
+/// 회로에 주입될 Witness 데이터들을 담는 DTO 구조체
+/// 요청하신 모든 계산 결과 항목이 포함됩니다.
+#[derive(Debug, Clone)]
+pub struct JwtCircuitWitness {
+    // SHA256 & Base64 관련
+    pub state: Vec<u32>,
+    pub nblocks: usize,
+    pub sha_pad_payload_b64: Vec<u8>,
+    pub index_bits: IndexBits,
+    pub pay_offset_b64: usize,
+    pub pay_len_b64: usize,
+
+    // Crypto 관련
+    pub pk: PublicKey,
+    pub sig: Signature,
+
+    // Claims 관련
+    pub claim_indices: Vec<ClaimIndices>,
+}
 
 pub struct TokenBuilder {
-    jwt: String,
-    n: String,
-    claim_keys: Vec<String>,
-    sha_pad_payload_b64: Vec<u8>,
-    post: String,
-    claims: Vec<Claim>,
+    pub header_b64: String,
+    pub payload_b64: String,
+    pub signature_b64: String,
+    pub full_token: String, // SHA 패딩 계산 등을 위해 원본 유지 필요 (또는 재조립)
+    pub claims: Vec<Claim>,
 }
 
 impl TokenBuilder {
-    /// Create a new TokenBuilder with JWT string and RSA public key modulus
-    ///
-    /// # Arguments
-    /// * `jwt` - JWT string in format "header.payload.signature"
-    /// * `n` - RSA public key modulus (base64 encoded)
-    pub fn new(jwt: impl Into<String>, n: impl Into<String>) -> Self {
-        Self {
-            jwt: jwt.into(),
-            n: n.into(),
-            claim_keys: Vec::new(),
-            sha_pad_payload_b64: Vec::new(),
-            claims: Vec::new(),
-            post: String::new(),
-        }
-    }
-
-    /// Add a claim key to extract from the JWT payload
-    ///
-    /// # Arguments
-    /// * `key` - Claim key name (e.g., "iss", "sub", "nonce")
-    ///
-    /// # Example
-    /// ```ignore
-    /// let builder = TokenBuilder::new(jwt, n)
-    ///     .add_claim("iss")
-    ///     .add_claim("sub");
-    /// ```
-    pub fn add_claim(mut self, key: impl Into<String>) -> Self {
-        self.claim_keys.push(key.into());
-        self
-    }
-
-    /// Add multiple claim keys at once
-    ///
-    /// # Arguments
-    /// * `keys` - Iterator of claim key names
-    ///
-    /// # Example
-    /// ```ignore
-    /// let builder = TokenBuilder::new(jwt, n)
-    ///     .add_claims(&["iss", "sub", "nonce"]);
-    /// ```
-    pub fn add_claims<I, S>(mut self, keys: I) -> Self
-    where
-        I: IntoIterator<Item = S>,
-        S: Into<String>,
-    {
-        self.claim_keys.extend(keys.into_iter().map(|k| k.into()));
-        self
-    }
-
-    /// Build the Token
-    ///
-    /// This will:
-    /// 1. Parse the JWT string
-    /// 2. Decode the payload
-    /// 3. Extract the specified claims
-    /// 4. Decode the signature
-    /// 5. Construct the RSA public key
-    pub fn build(self) -> Result<Token, TokenError> {
-        // 1. JWT 파싱
-        let (header_and_payload, sig_b64) = self.jwt.rsplit_once('.').ok_or(
-            TokenError::InvalidFormat("JWT must have 3 parts".to_string()),
-        )?;
-        let (header_b64, payload_b64) =
-            header_and_payload
-                .split_once('.')
-                .ok_or(TokenError::InvalidFormat(
-                    "JWT must have 3 parts".to_string(),
-                ))?;
-
-        // 2. Payload 처리
-        let payload_str = decode_any_base64_to_string(payload_b64)?;
-
-        // 3. Claim 추출
-        let mut claims = Vec::with_capacity(self.claim_keys.len());
-        for key in &self.claim_keys {
-            claims.push(parse_claim_from_str(&payload_str, key)?);
+    /// JWT 문자열을 파싱하여 빌더를 생성합니다.
+    /// 이 단계에서는 무거운 연산(Base64 디코딩, 서명 변환 등)을 수행하지 않습니다.
+    pub fn new(jwt: &str, keys: Vec<&str>) -> Result<Self, TokenError> {
+        let parts: Vec<&str> = jwt.split('.').collect();
+        if parts.len() != 3 {
+            return Err(TokenError::InvalidFormat(
+                "JWT must have three parts separated by dots".to_string(),
+            ));
         }
 
-        // 4. Signature 디코딩
-        let sig = decode_any_base64(sig_b64)?;
+        let payload = decode_any_base64_to_string(parts[1])?;
+        let mut claims = Vec::with_capacity(keys.len());
+        for key in keys {
+            claims.push(parse_claim_from_str(&payload, key)?);
+        }
 
-        // 5. Public Key 구성
-        let n_decoded = decode_any_base64(&self.n)?;
-        let e_decoded = decode_any_base64("AQAB")?; // Standard RSA exponent
-        let pk = PublicKey {
-            n: n_decoded,
-            e: e_decoded,
-        };
-
-        Ok(Token {
-            header_b64: header_b64.as_bytes().to_vec(),
-            payload_b64: payload_b64.as_bytes().to_vec(),
+        Ok(Self {
+            header_b64: parts[0].to_string(),
+            payload_b64: parts[1].to_string(),
+            signature_b64: parts[2].to_string(),
+            full_token: jwt.to_string(),
             claims,
-            sig: Signature(sig),
-            pk,
         })
     }
 
-    /// Build TokenSig for circuit constraints
-    ///
-    /// Creates a TokenSig structure containing signature, public key, and SHA-256 state
-    /// for efficient signature verification in zero-knowledge circuits.
-    ///
-    /// # Example
-    /// ```ignore
-    /// let token_sig = TokenBuilder::new(jwt, n)
-    ///     .build_token_sig()?;
-    /// ```
-    pub fn build_token_sig(&mut self) -> Result<TokenSig, TokenError> {
-        const SHA_BLOCK_LEN: usize = 64;
-        // Parse JWT
-        let (header_and_payload, sig_b64) = self.jwt.rsplit_once('.').ok_or(
-            TokenError::InvalidFormat("JWT must have 3 parts".to_string()),
-        )?;
+    /// 회로에 필요한 모든 Witness 데이터를 계산하여 반환합니다.
+    pub fn build<Config: ZkPasskeyConfig>(
+        &self,
+        pk_modulus_b64: &str,
+    ) -> Result<JwtCircuitWitness, TokenError> {
+        // 1. SHA-256 State 및 Padding 계산
+        let (state, nblocks, sha_pad_payload_b64, index_bits, pay_offset_b64, pay_len_b64) =
+            self.compute_sha_and_base64_witness::<Config>()?;
 
-        let (header_b64, _payload_b64) =
-            header_and_payload
-                .split_once('.')
-                .ok_or(TokenError::InvalidFormat(
-                    "JWT must have 3 parts".to_string(),
-                ))?;
+        // 2. Public Key 및 Signature 디코딩
+        let (pk, sig) = self.compute_crypto_witness(pk_modulus_b64)?;
 
-        // Decode signature
-        let sig = decode_any_base64(sig_b64)?;
+        // 3. Claims Indices 추출 (상수 CLAIMS 순서대로)
+        let claim_indices = self.compute_claim_indices()?;
 
-        // Construct public key
-        let n_decoded = decode_any_base64(&self.n)?;
-        let e_decoded = decode_any_base64("AQAB")?;
-        let pk = PublicKey {
-            n: n_decoded,
-            e: e_decoded,
-        };
+        Ok(JwtCircuitWitness {
+            state,
+            nblocks,
+            sha_pad_payload_b64,
+            index_bits,
+            pay_offset_b64,
+            pay_len_b64,
+            pk,
+            sig,
+            claim_indices,
+        })
+    }
 
-        let pre_hash_block_len = header_b64.len() / SHA_BLOCK_LEN;
+    fn compute_sha_and_base64_witness<Config: ZkPasskeyConfig>(
+        &self,
+    ) -> Result<(Vec<u32>, usize, Vec<u8>, IndexBits, usize, usize), TokenError> {
+        let pre_hash_block_len = self.header_b64.len() / SHA_BLOCK_LEN;
+        let header_b64_rest = self.header_b64[SHA_BLOCK_LEN * pre_hash_block_len..].as_bytes();
 
+        let pay_offset_b64 = header_b64_rest.len() + 1; // '.' 길이 포함
+        let pay_len_b64 = self.payload_b64.len();
+
+        // 1-1. Initial State 계산 (Header의 앞부분 블록 처리)
         let state = if pre_hash_block_len == 0 {
             H.to_vec()
         } else {
-            update(header_b64[..SHA_BLOCK_LEN * pre_hash_block_len].as_bytes()).to_vec()
+            update(self.header_b64[..SHA_BLOCK_LEN * pre_hash_block_len].as_bytes()).to_vec()
         };
 
-        let nblocks = {
-            let post = header_and_payload[SHA_BLOCK_LEN * pre_hash_block_len..].as_bytes();
-            let sha_pad_payload_b64 = sha256_pad_with_len(post, header_and_payload.len());
-            self.sha_pad_payload_b64 = sha_pad_payload_b64.clone();
-            self.post = String::from_utf8(post.to_vec()).unwrap();
-            sha_pad_payload_b64.len() / 64 - 1
-        };
+        // 1-2. Padding 대상 데이터 구성: [Header 나머지] + "." + [Payload]
+        // 서명 검증 대상은 "Header.Payload" 전체이지만,
+        // 회로 최적화를 위해 이미 해시된 Header 앞부분은 State로 넘기고 나머지만 패딩합니다.
+        // *주의*: 여기서 full_token의 일부를 슬라이싱하는 것이 정확하지만,
+        // 구현상 header_rest + "." + payload 구조를 만듭니다.
+        let post = [header_b64_rest, b".", self.payload_b64.as_bytes()].concat();
 
-        Ok(TokenSig {
-            sig: Signature(sig),
-            pk,
+        // 전체 길이 (State에 들어간 앞부분 포함)를 기준으로 패딩해야 올바른 SHA 패딩이 됨
+        let total_len = self.header_b64.len() + 1 + self.payload_b64.len();
+
+        // 1-3. Base64 Index Bits 계산 (Payload만 사용)
+        // 회로 내에서 Base64 디코딩을 위한 비트 인덱스 정보
+        let index_bits = IndexBits::from_base64_url(&self.payload_b64, Config::MAX_PAYLOAD_B64_LEN)
+            .map_err(|e| TokenError::InvalidFormat(format!("index_bits error: {:?}", e)))?;
+
+        // SHA-256 패딩 적용
+        let mut sha_pad_payload_b64 = sha256_pad_with_len(&post, total_len);
+
+        let nblocks = sha_pad_payload_b64.len() / SHA_BLOCK_LEN - 1;
+
+        // 회로 입력 크기에 맞춰 리사이징
+        sha_pad_payload_b64.resize(Config::MAX_JWT_B64_LEN, 0);
+
+        Ok((
             state,
             nblocks,
-        })
-    }
-
-    /// Build TokenPayloadB64 for base64 decoding in circuit
-    ///
-    /// Creates a TokenPayloadB64 structure containing base64-encoded payload
-    /// with offset, length, and bit witness for efficient decoding in circuits.
-    ///
-    /// # Arguments
-    /// * `max_jwt_len` - Maximum JWT length for padding
-    /// * `max_payload_len` - Maximum payload length (decoded)
-    ///
-    /// # Example
-    /// ```ignore
-    /// let token_payload = TokenBuilder::new(jwt, n)
-    ///     .build_token_payload_b64(1024, 512)?;
-    /// ```
-    pub fn build_token_payload_b64(
-        &self,
-        max_jwt_len: usize,
-        max_payload_len: usize,
-    ) -> Result<TokenPayloadB64, TokenError> {
-        // Parse JWT
-        let (header_and_payload, _) = self.jwt.rsplit_once('.').ok_or(
-            TokenError::InvalidFormat("JWT must have 3 parts".to_string()),
-        )?;
-        let (_header_b64, payload_b64) =
-            header_and_payload
-                .split_once('.')
-                .ok_or(TokenError::InvalidFormat(
-                    "JWT must have 3 parts".to_string(),
-                ))?;
-
-        let pay_len_b64 = payload_b64.len();
-
-        // Prepare signing input (header.payload) for SHA-256
-
-        let mut sha_pad_payload_b64 = self.sha_pad_payload_b64.clone();
-
-        let pay_offset_b64 = {
-            let (partial_header, _) = self.post.split_once('.').ok_or(
-                TokenError::InvalidFormat("JWT must have 3 parts".to_string()),
-            )?;
-            partial_header.len() + 1 // +1 for the dot '.'
-        };
-
-        sha_pad_payload_b64.resize(max_jwt_len, b'0');
-
-        // Generate bit witness for base64 decoding
-        let max_payload_b64_len = ((max_payload_len + 2) / 3) * 4;
-        let mut padded_payload = payload_b64.as_bytes().to_vec();
-        padded_payload.resize(max_payload_b64_len + 4, b'A'); // Pad with 'A' (base64 zero)
-
-        println!("padded_payload: {:?}", padded_payload);
-        println!("padded_payload length: {}", padded_payload.len());
-
-        let bit_witness = base64_to_6bit_bools(&padded_payload)
-            .map_err(|e| TokenError::InvalidFormat(format!("Base64 decoding error: {:?}", e)))?;
-
-        Ok(TokenPayloadB64 {
+            sha_pad_payload_b64,
+            index_bits,
             pay_offset_b64,
             pay_len_b64,
-            sha_pad_payload_b64,
-            bit_witness,
-        })
+        ))
     }
 
-    /// Build ClaimIndices for a specific claim key
-    ///
-    /// Extracts claim metadata including offset, length, and value position
-    /// for efficient claim verification in zero-knowledge circuits.
-    ///
-    /// # Arguments
-    /// * `key` - The claim key to extract (e.g., "iss", "sub", "nonce")
-    ///
-    /// # Example
-    /// ```ignore
-    /// let claim_indices = TokenBuilder::new(jwt, n)
-    ///     .build_claim_indices("nonce")?;
-    /// ```
-    pub fn build_claim_indices(&self, key: &str) -> Result<ClaimIndices, TokenError> {
-        // Parse JWT
-        let (header_and_payload, _) = self.jwt.rsplit_once('.').ok_or(
-            TokenError::InvalidFormat("JWT must have 3 parts".to_string()),
-        )?;
-        let (_, payload_b64) =
-            header_and_payload
-                .split_once('.')
-                .ok_or(TokenError::InvalidFormat(
-                    "JWT must have 3 parts".to_string(),
-                ))?;
+    fn compute_crypto_witness(
+        &self,
+        pk_modulus_b64: &str,
+    ) -> Result<(PublicKey, Signature), TokenError> {
+        // Signature 디코딩
+        let sig_bytes = decode_any_base64(&self.signature_b64)?;
 
-        // Decode payload
-        let payload_str = decode_any_base64_to_string(payload_b64)?;
+        // Public Key 구성 (Exponent는 65537 고정)
+        let n_decoded = decode_any_base64(pk_modulus_b64)?;
+        let e_decoded = decode_any_base64("AQAB")?;
 
-        // Parse claim
-        let claim = parse_claim_from_str(&payload_str, key)?;
+        let pk = PublicKey {
+            n: n_decoded,
+            e: e_decoded,
+        };
 
-        // Convert from jwt::types::ClaimIndices to token::claim::ClaimIndices
-        Ok(ClaimIndices {
-            offset: claim.indices.offset,
-            claim_len: claim.indices.len,
-            colon_idx: claim.indices.colon_idx,
-            value_idx: claim.indices.value_idx,
-            value_len: claim.indices.value_len,
-        })
+        Ok((pk, Signature(sig_bytes)))
     }
 
-    pub fn build_claim_indices_v2(&self) -> Result<Vec<ClaimIndices>, TokenError> {
-        let (header_and_payload, _) = self.jwt.rsplit_once('.').ok_or(
-            TokenError::InvalidFormat("JWT must have 3 parts".to_string()),
-        )?;
-        let (_, payload_b64) =
-            header_and_payload
-                .split_once('.')
-                .ok_or(TokenError::InvalidFormat(
-                    "JWT must have 3 parts".to_string(),
-                ))?;
+    fn compute_claim_indices(&self) -> Result<Vec<ClaimIndices>, TokenError> {
+        // // Payload 디코딩 (JSON 파싱을 위해)
+        // let payload_str = decode_any_base64_to_string(&self.payload_b64)?;
 
-        // 2. Payload 처리
-        let payload_str = decode_any_base64_to_string(payload_b64)?;
+        // // 상수 CLAIMS 배열을 순회하며 인덱스 추출
+        // let mut claims_indices = Vec::with_capacity(CLAIMS.len());
 
-        // 3. Claim 추출
-        let mut claims = Vec::with_capacity(self.claim_keys.len());
-        for key in &self.claim_keys {
-            claims.push(parse_claim_from_str(&payload_str, key)?);
+        // for &key in CLAIMS.iter() {
+        //     let indices = parse_claim_from_str(&payload_str, key)?;
+        //     claims_indices.push(indices.indices);
+        // }
+        let mut claims_indices = Vec::with_capacity(self.claims.len());
+
+        for claim in &self.claims {
+            claims_indices.push(claim.indices.clone());
         }
 
-        Ok(claims
-            .into_iter()
-            .map(|claim| ClaimIndices {
-                offset: claim.indices.offset,
-                claim_len: claim.indices.len,
-                colon_idx: claim.indices.colon_idx,
-                value_idx: claim.indices.value_idx,
-                value_len: claim.indices.value_len,
-            })
-            .collect())
-    }
-
-    /// Build all ClaimIndices for all registered claim keys
-    ///
-    /// Returns a vector of ClaimIndices corresponding to the claim keys
-    /// added via `add_claim()` or `add_claims()`.
-    ///
-    /// # Example
-    /// ```ignore
-    /// let indices = TokenBuilder::new(jwt, n)
-    ///     .add_claims(&["iss", "sub", "nonce"])
-    ///     .build_all_claim_indices()?;
-    /// ```
-    pub fn build_all_claim_indices(self) -> Result<Vec<ClaimIndices>, TokenError> {
-        // Parse JWT
-        let (header_and_payload, _) = self.jwt.rsplit_once('.').ok_or(
-            TokenError::InvalidFormat("JWT must have 3 parts".to_string()),
-        )?;
-        let (_, payload_b64) =
-            header_and_payload
-                .split_once('.')
-                .ok_or(TokenError::InvalidFormat(
-                    "JWT must have 3 parts".to_string(),
-                ))?;
-
-        // Decode payload
-        let payload_str = decode_any_base64_to_string(payload_b64)?;
-
-        // Parse all claims
-        let mut indices = Vec::with_capacity(self.claim_keys.len());
-        for key in &self.claim_keys {
-            let claim = parse_claim_from_str(&payload_str, key)?;
-            // Convert from jwt::types::ClaimIndices to token::claim::ClaimIndices
-            indices.push(ClaimIndices {
-                offset: claim.indices.offset,
-                claim_len: claim.indices.len,
-                colon_idx: claim.indices.colon_idx,
-                value_idx: claim.indices.value_idx,
-                value_len: claim.indices.value_len,
-            });
-        }
-
-        Ok(indices)
-    }
-
-    pub fn build_claims(&self) -> Result<Vec<Claim>, TokenError> {
-        // Parse JWT
-        let (header_and_payload, _) = self.jwt.rsplit_once('.').ok_or(
-            TokenError::InvalidFormat("JWT must have 3 parts".to_string()),
-        )?;
-        let (_, payload_b64) =
-            header_and_payload
-                .split_once('.')
-                .ok_or(TokenError::InvalidFormat(
-                    "JWT must have 3 parts".to_string(),
-                ))?;
-
-        // Decode payload
-        let payload_str = decode_any_base64_to_string(payload_b64)?;
-
-        // Parse all claims
-        let mut claims = Vec::with_capacity(self.claim_keys.len());
-        for key in &self.claim_keys {
-            let claim = parse_claim_from_str(&payload_str, key)?;
-            claims.push(claim);
-        }
-
-        Ok(claims)
+        Ok(claims_indices)
     }
 }
 
-pub(crate) fn build_merkle_proof(
-    hash_param: &PoseidonConfig<AppField>,
-    leaf_idx: usize,
-    path: &[String],
-    iss: &String,
-    n: &str,
-    e: &str,
-) -> Result<MerkleCircuitInput<AppField>, ApplicationError> {
-    let n = decode_any_base64(n)
-        .map_err(|e| ApplicationError::InvalidFormat(format!("Failed to decoding n: {:?}", e)))?;
-    let e = decode_any_base64(e)
-        .map_err(|e| ApplicationError::InvalidFormat(format!("Failed to decoding e: {:?}", e)))?;
-    let pk = PublicKey { n, e };
-    let pk_limbs = pk.to_limbs::<BNP, AppCurve>();
-    let iss_limbs = ascii_to_field_be::<AppField>(iss).map_err(|e| {
-        ApplicationError::InvalidFormat(format!("Failed to convert iss to field: {:?}", e))
-    })?;
-    let pre_image = [iss_limbs, pk_limbs.0].concat();
-    let leaf = PoseidonHash::evaluate(hash_param, pre_image)
-        .map_err(|e| ApplicationError::InvalidFormat(format!("Failed to hash leaf: {:?}", e)))?;
+/// Resizes a string to exact length, padding with specified character.
+/// Ensures fixed-size strings for circuit compatibility.
+pub fn resize(s: &str, max_len: usize, pad_char: u8) -> String {
+    let mut resized = s.to_string();
 
-    // 1. 스마트 컨트랙트에서 받은 문자열 경로를 필드(Field) 타입의 벡터로 변환합니다.
-    let path_field: Vec<AppField> = path
-        .iter()
-        .map(|p_str| {
-            str_to_field(p_str).map_err(|e| {
-                ApplicationError::InvalidFormat(format!(
-                    "Failed to convert merkle path element to field: {:?}",
-                    e
-                ))
-            })
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-
-    // 2. 경로가 비어있는 경우, 오류를 발생시켜 안전하게 처리합니다 (Guard Clause).
-    // - 0번째 요소는 리프의 형제 노드(sibling) 해시입니다.
-    // - 남은 요소들이 바로 인증 경로(auth_path)가 됩니다.
-    //  - 스마트 컨트랙트는 리프에 가까운 순서로 주므로, 루트에 가까운 순서로 뒤집습니다.
-    let (leaf_sibling_hash, auth_path_slice) = path_field.split_first().ok_or_else(|| {
-        ApplicationError::InvalidFormat(
-            "Merkle path cannot be empty; must contain at least sibling hash".to_string(),
-        )
-    })?;
-
-    let auth_path: Vec<_> = auth_path_slice.iter().rev().copied().collect();
-
-    // 4. 최종적으로 Path 구조체를 생성하여 반환합니다.
-    let path = Path::<MerkleTreeParams<AppField>> {
-        leaf_sibling_hash: *leaf_sibling_hash,
-        auth_path,
-        leaf_index: leaf_idx,
-    };
-
-    Ok(MerkleCircuitInput {
-        leaf,
-        leaf_idx,
-        path,
-    })
-}
-
-pub(crate) fn build_slot_indices_and_h_slot_and_z(
-    parameters: &PoseidonConfig<AppField>,
-    slot: &u8,
-    selector: &[bool],
-    random: &AppField,
-) -> Result<(Vec<AppField>, AppField, Vec<AppField>), ApplicationError> {
-    let mut slot_indices = Vec::with_capacity(selector.len());
-    let mut z = Vec::with_capacity(selector.len());
-    for (i, selected) in selector.iter().enumerate() {
-        if *selected {
-            let index = AppField::from(i as u64);
-            slot_indices.push(index);
-        }
-
-        if i == *slot as usize {
-            z.push(AppField::from(1u64));
-        } else {
-            z.push(AppField::from(0u64));
-        }
+    if resized.len() < max_len {
+        let padding_len = max_len - resized.len();
+        resized.reserve(padding_len); // Pre-allocate to avoid reallocations
+        resized.extend(std::iter::repeat(pad_char as char).take(padding_len));
     }
 
-    // h_slot 계산 h_slot = H(slot_indices || random)
-    let mut pre_image = slot_indices.clone();
-    pre_image.push(*random);
-    let h_slot = PoseidonHash::evaluate(parameters, pre_image)
-        .map_err(|e| ApplicationError::InvalidFormat(format!("Failed to hash h_slot: {:?}", e)))?;
+    resized
+}
 
-    Ok((slot_indices, h_slot, z))
+/// Helper: SHA-256 Padding
+fn sha256_pad_with_len(input: &[u8], total_len: usize) -> Vec<u8> {
+    let block_size = 64;
+    let mut padded = input.to_vec();
+
+    // 1. Append '1' bit (0x80 byte)
+    padded.push(0x80);
+
+    // 2. Calculate zero padding
+    // 패딩 계산 시, 현재 padded 길이만 고려하는 게 아니라
+    // 실제 전체 메시지 길이(total_len)를 기준으로 0을 채워야 할 위치를 잡아야 할 수도 있음.
+    // 하지만 일반적인 구현에서는 '현재 버퍼' 기준으로 블록을 맞추고 마지막에 길이를 붙임.
+    // 입력 input은 이미 state 처리된 앞부분이 제외된 상태이므로,
+    // 길이 블록(8바이트)과 0x80을 포함하여 block_size 배수가 되도록 0을 채움.
+
+    // 현재 구현은 input 뒤에 바로 붙이는 방식이므로,
+    // (input len + 1 (0x80) + 8 (length) + k (zeros)) % 64 == 0 이어야 함.
+
+    let current_len = padded.len();
+    let zero_pad_len = (block_size - ((current_len + 8) % block_size)) % block_size;
+    padded.extend(vec![0; zero_pad_len]);
+
+    // 3. Append length in bits (Big Endian 64-bit)
+    // *중요*: SHA256 패딩의 길이는 '전체 메시지'의 비트 길이여야 함.
+    let bit_length = (total_len as u64) * 8;
+    padded.extend(&bit_length.to_be_bytes());
+
+    padded
 }

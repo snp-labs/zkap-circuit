@@ -1,5 +1,5 @@
+use gadget::base64::Base64Error;
 use thiserror::Error;
-use crate::base64::Base64Error;
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum TokenError {

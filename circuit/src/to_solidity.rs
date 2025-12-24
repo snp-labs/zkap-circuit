@@ -1,7 +1,7 @@
 use ark_ec::{AffineRepr, pairing::Pairing};
 use ark_ff::Field;
 use ark_groth16::data_structures::VerifyingKey;
-use ark_std::{fs::File, io::Write, ops::Neg, path::Path};
+use ark_std::{ops::Neg, path::Path};
 
 pub trait SolidityContractGenerator {
     fn generate_solidity<P: AsRef<Path>>(&self, path: P);
@@ -11,8 +11,8 @@ fn g1_constant<E: Pairing>(g1: &E::G1Affine, tag: &str) -> String {
     let x = g1.x().unwrap_or_default();
     let y = g1.y().unwrap_or_default();
     vec![
-        format!("\tuint256 constant {}X = {};", tag, x),
-        format!("\tuint256 constant {}Y = {};", tag, y),
+        format!("\tuint256 private constant {}X = {};", tag, x),
+        format!("\tuint256 private constant {}Y = {};", tag, y),
     ]
     .join("\n")
 }
@@ -29,10 +29,10 @@ fn g2_constant<E: Pairing>(g2: E::G2Affine, tag: &str) -> String {
         .to_base_prime_field_elements()
         .collect::<Vec<_>>();
     vec![
-        format!("\tuint256 constant {}X0 = {};", tag, x[1]),
-        format!("\tuint256 constant {}X1 = {};", tag, x[0]),
-        format!("\tuint256 constant {}Y0 = {};", tag, y[1]),
-        format!("\tuint256 constant {}Y1 = {};", tag, y[0]),
+        format!("\tuint256 private constant {}X0 = {};", tag, x[1]),
+        format!("\tuint256 private constant {}X1 = {};", tag, x[0]),
+        format!("\tuint256 private constant {}Y0 = {};", tag, y[1]),
+        format!("\tuint256 private constant {}Y1 = {};", tag, y[0]),
     ]
     .join("\n")
 }
@@ -44,9 +44,15 @@ impl<E: Pairing> SolidityContractGenerator for VerifyingKey<E> {
             format!("pragma solidity ^0.8.0;"),
             String::new(),
             format!("library Groth16Verifier {{"),
+            format!("\terror InvalidProofLength();"),
+            format!("\terror InvalidInstanceLength();"),
+            format!("\terror PrepareInstanceFailed();"),
+            format!("\terror PairingFailed();"),
+            String::new(),
         ];
 
         let mut constants = vec![
+            String::from("\t// solhint-disable const-name-snakecase"),
             g1_constant::<E>(&self.alpha_g1, "alpha"),
             g2_constant::<E>(self.beta_g2.into_group().neg().into(), "beta"),
             g2_constant::<E>(self.gamma_g2.into_group().neg().into(), "gamma"),
@@ -62,13 +68,14 @@ impl<E: Pairing> SolidityContractGenerator for VerifyingKey<E> {
         }
 
         let function_define = [
+            String::from("\t// solhint-disable-next-line function-max-lines"),
             format!(
                 "\tfunction _verify(uint256[{}] calldata instance, uint256[8] calldata proof) public view returns (bool) {{",
                 self.gamma_abc_g1.len() - 1
             ),
-            String::from("\t\trequire(proof.length == 8, \"Invalid proof length\");"),
+            String::from("\t\tif (proof.length != 8) revert InvalidProofLength();"),
             format!(
-                "\t\trequire(instance.length == {}, \"Invalid instance length\");",
+                "\t\tif (instance.length != {}) revert InvalidInstanceLength();",
                 self.gamma_abc_g1.len() - 1
             ),
             String::new(),
@@ -103,7 +110,7 @@ impl<E: Pairing> SolidityContractGenerator for VerifyingKey<E> {
 
         prepare_instance.extend([
             String::from("\t\t}"),
-            String::from("\t\trequire(success, \"Groth16: Prepare Instance Failed\");"),
+            String::from("\t\tif (!success) revert PrepareInstanceFailed();"),
             String::new(),
         ]);
 
@@ -146,7 +153,7 @@ impl<E: Pairing> SolidityContractGenerator for VerifyingKey<E> {
                 "\t\t\tsuccess := staticcall(sub(gas(), 2000), 0x08, io, 0x300, io, 0x020)",
             ),
             String::from("\t\t}"),
-            String::from("\t\trequire(success, \"Groth16: Pairing Failed\");"),
+            String::from("\t\tif (!success) revert PairingFailed();"),
         ];
 
         let footer = [
@@ -169,12 +176,6 @@ impl<E: Pairing> SolidityContractGenerator for VerifyingKey<E> {
         if let Some(parent) = path.as_ref().parent() {
             std::fs::create_dir_all(parent).expect("Failed to create parent directories");
         }
-        let mut file = std::fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .open(&path)
-            .expect("Failed to open or create file");
-        File::write(&mut file, solidity.as_bytes()).expect("Failed to write file");
-        drop(file);
+        std::fs::write(&path, solidity.as_bytes()).expect("Failed to write file");
     }
 }

@@ -1,4 +1,4 @@
-pub mod light_weight;
+// pub mod light_weight;
 pub mod snark_v4_test;
 // pub mod groth16_integration_test;
 

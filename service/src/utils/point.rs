@@ -143,7 +143,7 @@ fn hex_to_bytes_even(s: &str) -> Result<Vec<u8>, PointError> {
 }
 
 /// "0x..."면 hex, 아니면 10진수로 간주
-pub fn str_to_field<F: PrimeField>(s: &str) -> Result<F, PointError> {
+pub fn hex_decimal_to_field<F: PrimeField>(s: &str) -> Result<F, PointError> {
     if s.starts_with("0x") || s.starts_with("0X") {
         let bytes = hex_to_bytes_even(s)?;
         Ok(F::from_be_bytes_mod_order(&bytes))
@@ -183,8 +183,8 @@ where
     A: FromCoords,
     A::BaseField: PrimeField,
 {
-    let x = str_to_field::<A::BaseField>(x_str)?;
-    let y = str_to_field::<A::BaseField>(y_str)?;
+    let x = hex_decimal_to_field::<A::BaseField>(x_str)?;
+    let y = hex_decimal_to_field::<A::BaseField>(y_str)?;
     Ok(A::from_coords(x, y))
 }
 

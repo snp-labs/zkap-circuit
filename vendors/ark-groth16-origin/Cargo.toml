@@ -71,7 +71,7 @@ name = "ark_groth16"
 path = "src/lib.rs"
 
 [dependencies]
-sysinfo = "0.30"
+sysinfo = { version = "0.30", optional = true }
 
 [dependencies.ark-crypto-primitives]
 version = "0.5.0"
@@ -180,6 +180,7 @@ version = "1"
 
 [features]
 default = ["parallel"]
+memory-logging = ["sysinfo"]
 parallel = [
     "std",
     "ark-ff/parallel",

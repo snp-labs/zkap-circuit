@@ -112,9 +112,8 @@ impl<F: PrimeField> VandermondeMatrix<F> {
     /// # Arguments
     /// * `selector` - 0/1 벡터 (길이 n), 1은 알려진 인덱스, 0은 알려지지 않은 인덱스
     ///                1의 개수는 정확히 k개여야 함
-    pub fn calculate_vector_a(&self, selector: &[usize]) -> Result<Vec<F>, VandermondeMatrixError> {
-        let n = self.n;
-        let m = self.matrix.len();
+    pub fn calculate_vector_a(&self, selector: &[u8]) -> Result<Vec<F>, VandermondeMatrixError> {
+        let (m, n) = self.dimensions();
         let k = self.k;
 
         if selector.len() != n {
@@ -159,8 +158,7 @@ impl<F: PrimeField> VandermondeMatrix<F> {
     /// # Returns
     /// 길이 m인 결과 벡터
     pub fn multiply_vector(&self, vector: &[F]) -> Result<Vec<F>, VandermondeMatrixError> {
-        let _m = self.matrix.len();
-        let n = self.n;
+        let (_, n) = self.dimensions();
 
         if vector.len() != n {
             return Err(VandermondeMatrixError::LengthError(format!(
@@ -218,7 +216,7 @@ impl<F: PrimeField> VandermondeMatrix<F> {
 // ==================== 헬퍼 함수들 ====================
 
 /// Selector를 기반으로 인덱스를 unknown과 known으로 분리
-fn partition_indices(selector: &[usize]) -> (Vec<usize>, Vec<usize>) {
+fn partition_indices(selector: &[u8]) -> (Vec<usize>, Vec<usize>) {
     let mut unknown = Vec::new();
     let mut known = Vec::new();
 

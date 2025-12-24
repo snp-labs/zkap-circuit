@@ -20,7 +20,7 @@ use crate::{
     matrix::constraints_v2::VandermondeMatrixVar,
 };
 
-#[cfg(feature = "r1cs-debug")]
+#[cfg(feature = "constraints-logging")]
 use crate::debug::log_r1cs_eq;
 
 #[derive(Clone)]
@@ -131,12 +131,17 @@ impl<F: PrimeField + Absorb> PoseidonAnchorSchemeGadget<F> {
     }
 
     /// 분할 증명을 위한 함수.
-    /// 벡터 b(b = a * A)가 indices에 명시된 인덱스 외에는 모두 0인지 검증한다.
+    /// 벡터 b(b = a * A)가 selector에 명시된 인덱스 외에는 모두 0인지 검증한다.
+    /// selector는 비트마스크 형태 (예: [1, 1, 1, 0, 0, 0])로, 1인 위치에서만 non-zero 허용
     pub fn is_b_sparsity(
         b: &[FpVar<F>],
-        indices: &[FpVar<F>],
+        selector: &[FpVar<F>],
     ) -> Result<Boolean<F>, SynthesisError> {
-        if b.is_empty() || indices.is_empty() {
+        if b.is_empty() || selector.is_empty() {
+            return Err(SynthesisError::Unsatisfiable);
+        }
+
+        if b.len() != selector.len() {
             return Err(SynthesisError::Unsatisfiable);
         }
 
@@ -145,16 +150,11 @@ impl<F: PrimeField + Absorb> PoseidonAnchorSchemeGadget<F> {
         let mut is_all_valid = Boolean::TRUE;
 
         let zero_var = FpVar::Constant(F::zero());
+        let one_var = FpVar::Constant(F::one());
 
         for j in 0..n {
-            let j_const = FpVar::Constant(F::from(j as u64));
-
-            // 1. j가 indices 리스트에 포함되어 있는지 확인 (is_selected)
-            let mut is_selected = Boolean::FALSE;
-            for idx_var in indices {
-                let is_match = idx_var.is_eq(&j_const)?;
-                is_selected = is_selected | &is_match;
-            }
+            // 1. selector[j]가 1인지 확인 (is_selected)
+            let is_selected = selector[j].is_eq(&one_var)?;
 
             // 2. b[j]가 0인지 확인 (is_zero)
             let is_zero = b[j].is_eq(&zero_var)?;
@@ -162,12 +162,11 @@ impl<F: PrimeField + Absorb> PoseidonAnchorSchemeGadget<F> {
             // 3. 해당 인덱스 j에 대한 유효성 판단
             // 조건: "선택되었거나(OR) 값이 0이어야 한다."
             // 논리식: Valid_j = is_selected OR is_zero
-            // - 선택됨(True) -> 값 상관없음 (True OR X = True) -> 통과
-            // - 선택안됨(False) -> 값이 0이어야 함 (False OR True = True) -> 통과
-            // - 선택안됨(False) -> 값이 0이 아님 (False OR False = False) -> 실패
+            // - selector[j] == 1 (선택됨) -> 값 상관없음 (True OR X = True) -> 통과
+            // - selector[j] == 0 (선택안됨) -> 값이 0이어야 함 (False OR is_zero) -> is_zero가 True여야 통과
             let is_valid_j = is_selected | &is_zero;
 
-            // 5. 전체 결과에 AND 연산 누적
+            // 4. 전체 결과에 AND 연산 누적
             is_all_valid = is_all_valid & &is_valid_j;
         }
 

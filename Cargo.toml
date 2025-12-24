@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
 members = [
-    "api/frb",
+    # "api/frb",
     "api/napi",
     "circuit",
     "gadget",
@@ -16,6 +16,7 @@ exclude = [
 ]
 
 [workspace.dependencies]
+common = { path = "common" }
 gadget = { path = "gadget" }
 circuit = { path = "circuit" }
 zkpasskey-service = { path = "service" }
@@ -56,6 +57,7 @@ napi-derive = { version = "3.0.0" }
 napi-build = { version = "2" }
 serde_json = { version = "1.0.145" }
 anyhow = { version = "1.0.100" } 
+clap = { version = "4.5.53" }
 
 [patch.crates-io]
 # 오리지널

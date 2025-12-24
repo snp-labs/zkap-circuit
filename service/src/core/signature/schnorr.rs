@@ -1,22 +1,22 @@
 use ark_std::rand::Rng;
 use ark_ec::CurveGroup;
+use common::constants::{Blake2, CG};
 use gadget::signature::{SignatureScheme, schnorr::Schnorr};
 
 use crate::core::signature::{SignatureParams, SignatureService};
 use crate::error::error::SchnorrServiceError;
 use crate::interface::signature::{SchnorrPublicKeyExtension, SchnorrSecretKeyExtension};
-use crate::service::constants::{AppCurve, Blake2};
 
 
 pub struct SchnorrSignatureParams;
 
 impl SignatureParams for SchnorrSignatureParams {
-    type PublicKey = SchnorrPublicKeyExtension<AppCurve, Blake2>;
-    type SecretKey = SchnorrSecretKeyExtension<AppCurve, Blake2>;
-    type Signature = <Schnorr<AppCurve, Blake2> as SignatureScheme>::Signature;
+    type PublicKey = SchnorrPublicKeyExtension<CG, Blake2>;
+    type SecretKey = SchnorrSecretKeyExtension<CG, Blake2>;
+    type Signature = <Schnorr<CG, Blake2> as SignatureScheme>::Signature;
 }
 
-type SchnorrScheme = Schnorr<AppCurve, Blake2>;
+type SchnorrScheme = Schnorr<CG, Blake2>;
 
 pub struct SchnorrSignatureService;
 

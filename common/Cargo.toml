@@ -5,7 +5,6 @@ edition = "2024"
 
 [dependencies]
 gadget = { workspace = true }
-zkpasskey-service = { workspace = true }
 
 ark-groth16           = { workspace = true }
 ark-ec                = { workspace = true }

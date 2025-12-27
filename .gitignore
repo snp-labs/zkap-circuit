@@ -1,5 +1,4 @@
 /target
 /test/test_outputs/*
-*.md
 /dist
 /archive

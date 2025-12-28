@@ -1,4 +1,5 @@
 use regex::Regex;
+use ark_serialize::{CanonicalSerialize, CanonicalDeserialize};
 
 use crate::token::error::TokenError;
 
@@ -6,7 +7,7 @@ pub mod claimverifier;
 pub mod constraints;
 pub mod error;
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, CanonicalSerialize, CanonicalDeserialize)]
 pub struct ClaimIndices {
     pub offset: usize,
     pub claim_len: usize,

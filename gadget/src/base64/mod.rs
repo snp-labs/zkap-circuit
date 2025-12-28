@@ -8,7 +8,9 @@ pub use constraints::*;
 pub use error::*;
 pub use utils::*;
 
-#[derive(Clone, Debug)]
+use ark_serialize::{CanonicalSerialize, CanonicalDeserialize};
+
+#[derive(Clone, Debug, CanonicalSerialize, CanonicalDeserialize)]
 pub struct Base64Table {
     pub table: Vec<u8>,
 }

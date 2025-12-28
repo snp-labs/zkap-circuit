@@ -1,10 +1,11 @@
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use base64::Engine as _;
 use base64::engine::general_purpose::{self};
 
 use super::error::Base64Error;
 
 /// [단위 구조체] Base64 문자 하나에 해당하는 6비트 (Big-Endian)
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, CanonicalSerialize, CanonicalDeserialize)]
 pub struct Base64CharBits {
     /// 순서: [MSB, ..., LSB]
     pub bits: [bool; 6],
@@ -22,7 +23,7 @@ impl Base64CharBits {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, CanonicalSerialize, CanonicalDeserialize)]
 pub struct IndexBits {
     pub inner: Vec<Base64CharBits>,
 }

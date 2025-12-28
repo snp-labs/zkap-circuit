@@ -7,7 +7,7 @@ use gadget::{
     matrix::VandermondeMatrix,
 };
 
-pub trait ZkPasskeyConfig: Clone + Debug {
+pub trait ZkPasskeyConfig: Clone + Debug + Send + Sync {
     // === JWT Constraints ===
     const MAX_JWT_B64_LEN: usize;
     const MAX_PAYLOAD_B64_LEN: usize;

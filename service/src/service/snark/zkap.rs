@@ -154,7 +154,7 @@ fn generate_proof_internal<Config: ZkPasskeyConfig>(
     let anchor = PoseidonAnchor(anchor_ctx.anchor.0.clone());
 
     // 4. 회로 생성
-    let circuit = BaeraeLightWeightCircuit::<CG, CV, BNP, Config>::new(
+    let circuit = BaeraeLightWeightCircuit::<CG, BNP, Config>::new(
         matrix,
         anchor_ctx.poseidon_params.clone(),
         anchor_ctx.base64_table.clone(),

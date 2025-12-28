@@ -2,9 +2,9 @@ pub mod constraints_v2;
 pub mod error;
 pub mod mod_v0;
 
-use ark_ff::PrimeField;
-
 use crate::matrix::error::VandermondeMatrixError;
+use ark_ff::PrimeField;
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 
 /// 최적화된 Vandermonde 행렬 V2
 ///
@@ -12,7 +12,7 @@ use crate::matrix::error::VandermondeMatrixError;
 /// - 불필요한 메모리 할당 감소
 /// - 더 명확한 메서드 이름
 /// - 에러 메시지 개선
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, CanonicalSerialize, CanonicalDeserialize)]
 pub struct VandermondeMatrix<F: PrimeField> {
     /// m × n 행렬
     /// m = n - k + 1 (행의 개수)

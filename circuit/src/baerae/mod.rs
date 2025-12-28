@@ -1,7 +1,5 @@
 #![allow(unused_variables)]
 
-use std::marker::PhantomData;
-
 use ark_crypto_primitives::{
     crh::{
         CRHSchemeGadget,
@@ -17,12 +15,13 @@ use ark_r1cs_std::{
     alloc::AllocVar,
     eq::EqGadget,
     fields::fp::FpVar,
-    groups::CurveVar,
     prelude::{Boolean, ToBitsGadget, ToBytesGadget},
     uint8::UInt8,
     uint16::UInt16,
 };
 use ark_relations::r1cs::ConstraintSynthesizer;
+use ark_serialize::*;
+use std::marker::PhantomData;
 
 use crate::{
     ExposesPublicInputs,
@@ -63,14 +62,13 @@ use gadget::{
     },
 };
 
-#[derive(Clone)]
-pub struct BaeraeLightWeightCircuit<C, CV, BNP, Config>
+#[derive(Clone, CanonicalSerialize, CanonicalDeserialize)]
+pub struct BaeraeLightWeightCircuit<C, BNP, Config>
 where
     C: CurveGroup,
     C::BaseField: PrimeField + Absorb,
-    CV: CurveVar<C, C::BaseField>,
-    BNP: BigNatCircuitParams,
-    Config: ZkPasskeyConfig,
+    BNP: BigNatCircuitParams + Send + Sync,
+    Config: ZkPasskeyConfig + Send + Sync,
 {
     // constants
     pub vandermonde_matrix: VandermondeMatrix<C::BaseField>,
@@ -107,17 +105,16 @@ where
     pub aud_list: Vec<C::BaseField>,
 
     // phantom
-    _phantom: PhantomData<(CV, BNP, Config)>,
+    _phantom: PhantomData<(BNP, Config)>,
 }
 
-impl<C, CV, BNP, Config> ConstraintSynthesizer<C::BaseField>
-    for BaeraeLightWeightCircuit<C, CV, BNP, Config>
+impl<C, BNP, Config> ConstraintSynthesizer<C::BaseField>
+    for BaeraeLightWeightCircuit<C, BNP, Config>
 where
     C: CurveGroup,
     C::BaseField: PrimeField + Absorb,
-    CV: CurveVar<C, C::BaseField>,
-    BNP: BigNatCircuitParams,
-    Config: ZkPasskeyConfig,
+    BNP: BigNatCircuitParams + Send + Sync,
+    Config: ZkPasskeyConfig + Send + Sync,
 {
     fn generate_constraints(
         self,
@@ -633,15 +630,14 @@ where
     }
 }
 
-impl<C, CV, BNP, Config> BaeraeLightWeightCircuit<C, CV, BNP, Config>
+impl<C, BNP, Config> BaeraeLightWeightCircuit<C, BNP, Config>
 where
     C: CurveGroup,
     C::BaseField: PrimeField + Absorb,
-    CV: CurveVar<C, C::BaseField>,
-    BNP: BigNatCircuitParams,
-    Config: ZkPasskeyConfig,
+    BNP: BigNatCircuitParams + Send + Sync,
+    Config: ZkPasskeyConfig + Send + Sync,
 {
-    pub fn generate_crs() -> Self {
+    pub fn generate_mock_circuit() -> Self {
         let vandermonde_matrix = VandermondeMatrix::new(Config::N, Config::K);
 
         let poseidon_param = get_poseidon_params();
@@ -748,14 +744,12 @@ where
     }
 }
 
-impl<C, CV, BNP, Config> ExposesPublicInputs<C::BaseField>
-    for BaeraeLightWeightCircuit<C, CV, BNP, Config>
+impl<C, BNP, Config> ExposesPublicInputs<C::BaseField> for BaeraeLightWeightCircuit<C, BNP, Config>
 where
     C: CurveGroup,
     C::BaseField: PrimeField + Absorb,
-    CV: CurveVar<C, C::BaseField>,
-    BNP: BigNatCircuitParams,
-    Config: ZkPasskeyConfig,
+    BNP: BigNatCircuitParams + Send + Sync,
+    Config: ZkPasskeyConfig + Send + Sync,
 {
     fn public_inputs(&self) -> Vec<C::BaseField> {
         vec![
@@ -770,29 +764,3 @@ where
         ]
     }
 }
-
-// fn str_to_field<F: PrimeField>(str: &str) -> Vec<F> {
-//     let limb_width = ((F::MODULUS_BIT_SIZE - 1) / 8) as usize;
-//     let pad_char = '0';
-
-//     let padded_str = pad(
-//         str,
-//         ((str.len() + limb_width - 1) / limb_width) * limb_width,
-//         pad_char,
-//     );
-
-//     let mut limbs = Vec::new();
-//     for chunk in padded_str.as_bytes().chunks(limb_width) {
-//         let limb = F::from_be_bytes_mod_order(chunk);
-//         limbs.push(limb);
-//     }
-//     limbs
-// }
-
-// fn pad(str: &str, len: usize, pad_char: char) -> String {
-//     let mut padded = str.to_string();
-//     while padded.len() < len {
-//         padded.push(pad_char);
-//     }
-//     padded
-// }

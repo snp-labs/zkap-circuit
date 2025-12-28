@@ -24,7 +24,7 @@ use crate::bigint::utils::{fe_to_nat, fit_nat_to_limbs, limbs_to_nat, nat_to_fe}
 
 use super::utils::{BigNat, nat_to_limbs};
 
-pub trait BigNatCircuitParams: Clone + Debug + Eq + PartialEq {
+pub trait BigNatCircuitParams: Clone + Debug + Eq + PartialEq + Send + Sync {
     const LIMB_WIDTH: usize;
     const N_LIMBS: usize;
 }

@@ -5,7 +5,7 @@ use crate::bigint::{constraints::BigNatCircuitParams, utils::nat_to_limbs};
 use crate::signature::{SignatureScheme, errors::SignatureError};
 use ark_ec::CurveGroup;
 use ark_ff::PrimeField;
-use ark_serialize::CanonicalSerialize;
+use ark_serialize::{CanonicalSerialize, CanonicalDeserialize};
 use num_bigint::BigUint as NumBigUint;
 use rand::Rng;
 use rsa::BigUint;
@@ -20,7 +20,7 @@ use rsa::{
 };
 use sha2::Digest;
 
-#[derive(Debug, Clone, Default, CanonicalSerialize, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Default, CanonicalSerialize, PartialEq, Eq, Hash, CanonicalDeserialize)]
 pub struct PublicKey {
     pub n: Vec<u8>,
     pub e: Vec<u8>,
@@ -61,7 +61,7 @@ pub struct SecretKey {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Parameter {}
 
-#[derive(Debug, Clone, CanonicalSerialize)]
+#[derive(Debug, Clone, CanonicalSerialize, CanonicalDeserialize)]
 pub struct Signature(pub Vec<u8>);
 
 impl Default for Signature {

@@ -63,9 +63,9 @@ fn generate_crs_files(file_path: &str, mut rng: rand::rngs::StdRng) {
     println!("Generate Baerae CRS files at path: {}", file_path);
 
     let circuit =
-        circuit::baerae::BaeraeLightWeightCircuit::<C, CV, BNP, ZkapConfig>::generate_crs();
+        circuit::baerae::BaeraeLightWeightCircuit::<C, BNP, ZkapConfig>::generate_mock_circuit();
 
-    let (pk, vk) = Groth16::<Bn254>::setup(circuit.clone(), &mut rng).unwrap();
+    let (pk, vk) = Groth16::<Bn254>::setup(circuit, &mut rng).unwrap();
     let pvk = prepare_verifying_key(&vk);
 
     to_file::<ProvingKey<Bn254>>(&pk, &format!("{}/pk.key", file_path)).unwrap();

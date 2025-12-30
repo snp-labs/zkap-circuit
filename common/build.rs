@@ -22,7 +22,7 @@ fn main() {
     println!("cargo:rerun-if-env-changed=ZK_N");
     println!("cargo:rerun-if-env-changed=ZK_K");
     println!("cargo:rerun-if-env-changed=ZK_TREE_HEIGHT");
-    println!("cargo:rerun-if-env-changed=ZK_AUD_LIMIT");
+    println!("cargo:rerun-if-env-changed=ZK_NUM_AUDIENCE_LIMIT");
 
     // [JWT Constraints]
     let max_jwt_len = env::var("ZK_MAX_JWT_B64_LEN").unwrap_or_else(|_| "1024".to_string());
@@ -37,7 +37,7 @@ fn main() {
     let n = env::var("ZK_N").unwrap_or_else(|_| "6".to_string());
     let k = env::var("ZK_K").unwrap_or_else(|_| "3".to_string());
     let tree_height = env::var("ZK_TREE_HEIGHT").unwrap_or_else(|_| "4".to_string());
-    let aud_limit = env::var("ZK_AUD_LIMIT").unwrap_or_else(|_| "5".to_string());
+    let aud_limit = env::var("ZK_NUM_AUDIENCE_LIMIT").unwrap_or_else(|_| "5".to_string());
 
     // === 2. 소스 코드 생성 ===
     // PAD_CHAR는 '\0'으로 고정됩니다.
@@ -98,7 +98,7 @@ fn main() {
         "ZK_N",
         "ZK_K",
         "ZK_TREE_HEIGHT",
-        "ZK_AUD_LIMIT",
+        "ZK_NUM_AUDIENCE_LIMIT",
     ];
     for var in watched_vars {
         println!("cargo:rerun-if-env-changed={}", var);

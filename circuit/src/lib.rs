@@ -4,7 +4,6 @@ use ark_ff::Field;
 pub mod baerae;
 pub mod to_solidity;
 pub mod token;
-pub mod mock_circuit;
 
 pub trait ExposesPublicInputs<F: Field> {
     fn public_inputs(&self) -> Vec<F>;

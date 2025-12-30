@@ -1,6 +1,6 @@
 use ark_serialize::CanonicalSerialize;
 use ark_std::rand::{self, RngCore, SeedableRng, rngs::OsRng};
-use common::constants::ZkapConfig;
+use common::constants::{ZkapConfig, ZkPasskeyConfig};
 use std::{
     env::args,
     fs::File,
@@ -61,6 +61,15 @@ fn generate_crs_files(file_path: &str, mut rng: rand::rngs::StdRng) {
     type BNP = BigNat2048Params;
 
     println!("Generate Baerae CRS files at path: {}", file_path);
+
+    println!("==================================================");
+    println!("⚙️  Configuring Circuit with the following parameters:");
+    println!("   [JWT] Max Len: {}, Payload: {}", ZkapConfig::MAX_JWT_B64_LEN, ZkapConfig::MAX_PAYLOAD_B64_LEN);
+    println!("   [JWT] Fields: Exp={}, Iss={}, Nonce={}, Sub={}", ZkapConfig::MAX_EXP_LEN, ZkapConfig::MAX_ISS_LEN, ZkapConfig::MAX_NONCE_LEN, ZkapConfig::MAX_SUB_LEN);
+    println!("   [Logic] N={}, K={}, Height={}, NumAudienceLimit={}", ZkapConfig::N, ZkapConfig::K, ZkapConfig::TREE_HEIGHT, ZkapConfig::NUM_AUDIENCE_LIMIT);
+    println!("   [Logic] PadChar='{}' (Fixed)", ZkapConfig::PAD_CHAR);
+    println!("   [Logic] CLAIM_TYPES={:?} (Fixed)", ZkapConfig::CLAIMS);
+    println!("==================================================");
 
     let circuit =
         circuit::baerae::BaeraeLightWeightCircuit::<C, BNP, ZkapConfig>::generate_mock_circuit();

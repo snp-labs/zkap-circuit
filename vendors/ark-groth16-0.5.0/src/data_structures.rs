@@ -1,6 +1,6 @@
 use ark_crypto_primitives::sponge::Absorb;
 use ark_ec::pairing::Pairing;
-use ark_ff::PrimeField;
+use ark_ff::{Field, PrimeField};
 use ark_serialize::*;
 use ark_std::vec::Vec;
 
@@ -140,4 +140,52 @@ pub struct ProvingKey<E: Pairing> {
     pub h_query: Vec<E::G1Affine>,
     /// The elements `l_i * G` in `E::G1`.
     pub l_query: Vec<E::G1Affine>,
+}
+/// CSR-like flat sparse matrix.
+/// Row r has entries in k ∈ row_start[r]..row_start[r+1].
+#[derive(Clone, Debug)]
+pub struct FlatMatrix<F: Field> {
+    /// 각 행(Row)의 시작 인덱스를 가리키는 포인터 배열 (CSR 포맷의 row_ptr)
+    pub ptr: Vec<usize>,
+    /// 비영(Non-zero) 원소가 위치한 열(Column/Variable) 인덱스
+    pub col: Vec<u32>, // 메모리 절약을 위해 usize 대신 u32 사용 권장
+    /// 비영 원소의 계수 값
+    pub val: Vec<F>,
+}
+
+impl<F: Field> FlatMatrix<F> {
+    /// 특정 행(row)에 해당하는 데이터의 범위(start..end)를 반환
+    #[inline(always)]
+    pub fn row_range(&self, row: usize) -> (usize, usize) {
+        // ptr은 num_constraints + 1 크기여야 함
+        (self.ptr[row], self.ptr[row + 1])
+    }
+}
+
+/// Convert `Matrix<F> = Vec<Vec<(F, usize)>>` into FlatMatrix.
+/// (F, usize) means (coeff, var_index).
+pub fn flatten_matrix<F: Field + Copy>(
+    m: &Vec<Vec<(F, usize)>>,
+    num_rows: usize,
+    nnz_hint: usize,
+) -> FlatMatrix<F> {
+    let mut row_start = Vec::with_capacity(num_rows + 1);
+    row_start.push(0);
+
+    let mut col = Vec::with_capacity(nnz_hint);
+    let mut val = Vec::with_capacity(nnz_hint);
+
+    for row in m.iter() {
+        for (c, idx) in row.iter() {
+            col.push(*idx as u32);
+            val.push(*c);
+        }
+        row_start.push(col.len());
+    }
+
+    FlatMatrix {
+        ptr: row_start,
+        col,
+        val,
+    }
 }

@@ -1,10 +1,13 @@
+use std::mem;
+
+use crate::FlatMatrix;
 use crate::{r1cs_to_qap::R1CSToQAP, Groth16, Proof, ProvingKey, VerifyingKey};
 use ark_ec::{pairing::Pairing, AffineRepr, CurveGroup, VariableBaseMSM};
-use ark_ff::{Field, PrimeField, UniformRand, Zero};
-use ark_poly::GeneralEvaluationDomain;
+use ark_ff::{FftField, Field, PrimeField, UniformRand, Zero};
+use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
 use ark_relations::r1cs::{
-    ConstraintMatrices, ConstraintSynthesizer, ConstraintSystem, OptimizationGoal,
-    Result as R1CSResult, SynthesisMode,
+    ConstraintSynthesizer, ConstraintSystem, ConstraintSystemRef, OptimizationGoal,
+    Result as R1CSResult, SynthesisError, SynthesisMode, Variable,
 };
 use ark_std::rand::Rng;
 use ark_std::{
@@ -14,14 +17,28 @@ use ark_std::{
 
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
+#[cfg(feature = "memory-logging")]
 use sysinfo::System;
 
 type D<F> = GeneralEvaluationDomain<F>;
-const MSM_CHUNK_SIZE: usize = 16_384;
+const MSM_CHUNK_SIZE: usize = 4_096;
+#[cfg(feature = "memory-logging")]
 macro_rules! log_step {
     ($msg:expr) => {
         println!("[rss_kb] {:<40} : {} MB", $msg, rss_kb() / (1024 * 1024));
     };
+}
+
+#[cfg(not(feature = "memory-logging"))]
+macro_rules! log_step {
+    ($msg:expr) => {};
+}
+
+// ✅ 행렬 선택을 위한 열거형
+enum MatrixTarget {
+    A,
+    B,
+    C,
 }
 
 impl<E: Pairing, QAP: R1CSToQAP> Groth16<E, QAP> {
@@ -60,109 +77,255 @@ impl<E: Pairing, QAP: R1CSToQAP> Groth16<E, QAP> {
         C: ConstraintSynthesizer<E::ScalarField>,
         F: FnMut() -> C, // 변경: 팩토리 함수 타입 정의
     {
-        // ---- Pass A: 행렬만 생성 (Matrices Only) ----
-        log_step!("Pass A: Start (Matrices)");
+        // =========================================================================
+        // [Phase 1] Witness Generation (메모리 가장 적게 먹는 작업 먼저 수행)
+        // =========================================================================
+        log_step!("Phase 1: Witness Gen Start");
 
-        let cs_a = ConstraintSystem::new_ref();
-        cs_a.set_mode(SynthesisMode::Setup);
-        cs_a.set_optimization_goal(OptimizationGoal::Constraints);
-
-        // 팩토리 함수를 호출하여 첫 번째 회로 생성
-        let circuit_a = circuit_factory();
-        circuit_a.generate_constraints(cs_a.clone())?;
-        log_step!("Pass A: After generate_constraints");
-        cs_a.finalize();
-        log_step!("Pass A: After finalize (Inlining LCs)");
-        log_step!("Pass A: CS Generated");
-
-        let matrices = cs_a.to_matrices().expect("matrices in setup");
-        log_step!("Pass A: Matrices Extracted");
-
-        drop(cs_a); // CS 즉시 해제
-        log_step!("Pass A: CS Dropped (Memory Check)");
-
-        let num_inputs = matrices.num_instance_variables;
-        let num_constraints = matrices.num_constraints;
-
-        // ---- Pass B: 할당만 생성 (Witness Only) ----
-        log_step!("Pass B: Start (Assignment)");
-
-        let cs_b = ConstraintSystem::new_ref();
-        cs_b.set_mode(SynthesisMode::Prove {
-            construct_matrices: false,
+        let cs_witness = ConstraintSystem::new_ref();
+        cs_witness.set_mode(SynthesisMode::Prove {
+            construct_matrices: false, // 행렬 생성 안 함 (메모리 절약)
         });
-        cs_b.set_optimization_goal(OptimizationGoal::Constraints);
+        cs_witness.set_optimization_goal(OptimizationGoal::Constraints);
 
-        // 팩토리 함수를 호출하여 두 번째 회로 생성 (새로운 인스턴스)
-        let circuit_b = circuit_factory();
-        circuit_b.generate_constraints(cs_b.clone())?;
-        log_step!("Pass B: After generate_constraints");
-        cs_b.finalize();
-        log_step!("Pass B: After finalize");
-        log_step!("Pass B: CS Generated");
+        let circuit_w = circuit_factory();
+        circuit_w.generate_constraints(cs_witness.clone())?;
+        cs_witness.finalize();
+        log_step!("Phase 1: Finalized");
 
-        let cs_b_inner = cs_b.borrow().unwrap();
-        let full_assignment: Vec<E::ScalarField> = [
-            cs_b_inner.instance_assignment.as_slice(),
-            cs_b_inner.witness_assignment.as_slice(),
-        ]
-        .concat();
-        log_step!("Pass B: Full Assignment Concatenated");
+        // Witness와 Instance만 추출하고 CS는 즉시 해제
+        let (instance_assignment, witness_assignment) = {
+            let mut cs_inner = cs_witness.borrow_mut().unwrap();
+            let inst = mem::take(&mut cs_inner.instance_assignment);
+            let wit = mem::take(&mut cs_inner.witness_assignment);
+            (inst, wit)
+        };
+        drop(cs_witness);
+        log_step!("Phase 1: CS Dropped (Witness Extracted)");
 
-        drop(cs_b_inner);
-        drop(cs_b); // CS 즉시 해제
-        log_step!("Pass B: CS Dropped (Memory Check)");
+        let num_inputs = instance_assignment.len();
 
-        // ---- 결합 및 증명 생성 ----
-        Self::create_proof_with_reduction_and_matrices(
-            pk,
-            r,
-            s,
-            &matrices,
-            num_inputs,
-            num_constraints,
-            &full_assignment,
-        )
+        // =========================================================================
+        // [Phase 2] Matrix Generation & Sequential Processing
+        // =========================================================================
+        log_step!("Phase 2: Matrix Setup Start");
+
+        let cs_matrix = ConstraintSystem::new_ref();
+        cs_matrix.set_mode(SynthesisMode::Setup); // Setup 모드 (값 할당 없이 행렬 구조만 생성)
+        cs_matrix.set_optimization_goal(OptimizationGoal::Constraints);
+
+        let circuit_m = circuit_factory();
+        circuit_m.generate_constraints(cs_matrix.clone())?;
+        cs_matrix.finalize();
+        log_step!("Phase 2: CS Finalized");
+
+        // ⚠️ 여기서 to_matrices()를 호출하지 않음으로써 메모리 복제를 방지합니다.
+        // CS 내부의 constraints 벡터에 직접 접근합니다.
+        let num_constraints = cs_matrix.num_constraints();
+
+        let domain = D::<E::ScalarField>::new(num_constraints + num_inputs)
+            .ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
+        // [Phase 3] Sequential Evaluation (A -> B -> C 순서로 처리하여 중첩 방지)
+        // -------------------------------------------------------------------------
+
+        // --- Step A: Process Matrix A ---
+        log_step!("Phase 3: Processing Matrix A");
+        let mut eval_a = {
+            // CS에서 A 행렬 부분만 추출하여 FlatMatrix 생성
+            let flat_a =
+                Self::extract_flat_matrix(&cs_matrix, MatrixTarget::A, num_inputs, num_constraints);
+
+            QAP::eval_flat_matrix_on_domain(
+                &flat_a,
+                num_inputs,
+                num_constraints,
+                &instance_assignment,
+                &witness_assignment,
+                domain,
+                true,
+            )?
+        };
+        log_step!("Phase 3: Matrix A Done & Dropped");
+
+        // --- Step B: Process Matrix B ---
+        log_step!("Phase 3: Processing Matrix B");
+        let eval_b = {
+            let flat_b =
+                Self::extract_flat_matrix(&cs_matrix, MatrixTarget::B, num_inputs, num_constraints);
+
+            QAP::eval_flat_matrix_on_domain(
+                &flat_b,
+                num_inputs,
+                num_constraints,
+                &instance_assignment,
+                &witness_assignment,
+                domain,
+                false,
+            )?
+        };
+
+        // A = A * B (In-place)
+        log_step!("Phase 3: Compute A * B");
+        for (a, b) in eval_a.iter_mut().zip(eval_b.iter()) {
+            *a *= b;
+        }
+        drop(eval_b); // B 결과 해제
+        log_step!("Phase 3: B Eval Dropped");
+
+        // --- Step C: Process Matrix C ---
+        log_step!("Phase 3: Processing Matrix C");
+        let eval_c = {
+            let flat_c =
+                Self::extract_flat_matrix(&cs_matrix, MatrixTarget::C, num_inputs, num_constraints);
+
+            QAP::eval_flat_matrix_on_domain(
+                &flat_c,
+                num_inputs,
+                num_constraints,
+                &instance_assignment,
+                &witness_assignment,
+                domain,
+                false,
+            )?
+        };
+        log_step!("Phase 3: Matrix C Done & Dropped");
+
+        // A = A - C (In-place)
+        log_step!("Phase 3: Compute (AB - C)");
+
+        // Z(x) 역원 계산 (여기서 E::ScalarField::GENERATOR 사용)
+        let inv_vanishing_poly = domain
+            .evaluate_vanishing_polynomial(E::ScalarField::GENERATOR)
+            .inverse()
+            .unwrap();
+
+        // (AB - C) / Z
+        for (ab, c) in eval_a.iter_mut().zip(eval_c.iter()) {
+            *ab -= c;
+            *ab *= inv_vanishing_poly;
+        }
+        drop(eval_c); // C 결과 해제
+
+        // IFFT on Coset
+        let coset_domain = domain.get_coset(E::ScalarField::GENERATOR).unwrap();
+        coset_domain.ifft_in_place(&mut eval_a);
+
+        let h = eval_a; // 최종 H 다항식
+        log_step!("Phase 3: H Calculated");
+
+        // =========================================================================
+        // [Phase 4] Proof Generation (MSM)
+        // =========================================================================
+
+        let input_assignment = &instance_assignment[1..];
+        let aux_assignment = &witness_assignment;
+
+        let proof =
+            Self::create_proof_with_assignment(pk, r, s, &h, input_assignment, aux_assignment)?;
+
+        log_step!("Proof Generated");
+        Ok(proof)
     }
 
-    /// ✅ 3. 기존 함수에 로깅 추가 (이미 최적화된 create_proof_with_assignment 호출)
+    fn extract_flat_matrix(
+        cs: &ConstraintSystemRef<E::ScalarField>,
+        target: MatrixTarget,
+        num_inputs: usize,
+        num_constraints: usize,
+    ) -> FlatMatrix<E::ScalarField> {
+        let cs_borrow = cs.borrow().unwrap();
+
+        // 1. 목표 행렬에 해당하는 인덱스 벡터 선택
+        // (포크에서 해당 필드들을 pub으로 열어주셔야 접근 가능합니다)
+        let indices = match target {
+            MatrixTarget::A => &cs_borrow.a_constraints,
+            MatrixTarget::B => &cs_borrow.b_constraints,
+            MatrixTarget::C => &cs_borrow.c_constraints,
+        };
+
+        let mut ptr = Vec::with_capacity(num_constraints + 1);
+        let mut col = Vec::new();
+        let mut val = Vec::new();
+
+        ptr.push(0);
+
+        // 2. 인덱스를 순회하며 lc_map에서 실제 선형 결합(LC) 데이터를 조회
+        for &lc_index in indices {
+            if let Some(lc) = cs_borrow.lc_map.get(&lc_index) {
+                // (coeff, var) 순서로 이터레이션 (앞선 타입 에러 해결)
+                for (coeff, var) in lc.iter() {
+                    let idx = match var {
+                        Variable::One => 0,
+                        Variable::Instance(i) => *i,
+                        Variable::Witness(i) => num_inputs + *i,
+
+                        // ✅ 추가됨: Zero 변수는 값이 0이므로 행렬에 추가할 필요 없음 (Sparse 최적화)
+                        Variable::Zero => continue,
+
+                        // ✅ 추가됨: SymbolicLc는 Matrix 추출 단계에서 예외 처리
+                        // 만약 이 변형이 실제로 사용된다면, 해당 로직에 맞춰 인덱스를 매핑해야 합니다.
+                        Variable::SymbolicLc(_) => {
+                            panic!("SymbolicLc encountered during matrix extraction! Ensure constraints are flattened.");
+                        }
+                    };
+
+                    col.push(idx as u32);
+                    val.push(*coeff);
+                }
+            }
+            ptr.push(col.len());
+        }
+
+        FlatMatrix { ptr, col, val }
+    }
+
+    /// ✅ flat matrices + split assignment 버전 (concat 없음)
     #[inline]
-    pub fn create_proof_with_reduction_and_matrices(
+    pub fn create_proof_with_reduction_and_flat_matrices_split(
         pk: &ProvingKey<E>,
         r: E::ScalarField,
         s: E::ScalarField,
-        matrices: &ConstraintMatrices<E::ScalarField>,
+        flat_a: &FlatMatrix<E::ScalarField>,
+        flat_b: &FlatMatrix<E::ScalarField>,
+        flat_c: &FlatMatrix<E::ScalarField>,
         num_inputs: usize,
         num_constraints: usize,
-        full_assignment: &[E::ScalarField],
+        instance_assignment: &[E::ScalarField],
+        witness_assignment: &[E::ScalarField],
     ) -> R1CSResult<Proof<E>> {
         let prover_time = start_timer!(|| "Groth16::Prover");
         log_step!("Groth16::Prover Start");
 
         let witness_map_time = start_timer!(|| "R1CS to QAP witness map");
-
         log_step!("R1CS→QAP witness map Start");
 
-        // H 계산: 여기가 여전히 메모리를 많이 쓰지만, CS가 없는 상태라 안전할 것임
-        let h = QAP::witness_map_from_matrices::<E::ScalarField, D<E::ScalarField>>(
-            matrices,
+        // ✅ 기존 witness_map_from_matrices와 동일 흐름을 flat + split로 수행
+        let domain = D::<E::ScalarField>::new(num_constraints + num_inputs)
+            .ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
+
+        let h = QAP::witness_map_from_flat_matrices_split::<E::ScalarField, D<E::ScalarField>>(
+            flat_a,
+            flat_b,
+            flat_c,
             num_inputs,
             num_constraints,
-            full_assignment,
+            instance_assignment,
+            witness_assignment,
+            domain,
         )?;
         log_step!("Witness Map(H) Calculated");
         end_timer!(witness_map_time);
 
-        let input_assignment = &full_assignment[1..num_inputs];
-        let aux_assignment = &full_assignment[num_inputs..];
+        // ✅ concat 기반 full_assignment slicing 제거
+        let input_assignment = &instance_assignment[1..num_inputs]; // [0] = 1
+        let aux_assignment = witness_assignment;
 
-        // 최적화된 MSM 함수 호출
         let proof =
             Self::create_proof_with_assignment(pk, r, s, &h, input_assignment, aux_assignment)?;
 
         drop(h);
         log_step!("H Dropped");
-        
+
         log_step!("Proof Generated");
         end_timer!(prover_time);
 
@@ -323,27 +486,6 @@ impl<E: Pairing, QAP: R1CSToQAP> Groth16<E, QAP> {
         }
         sum
     }
-    pub fn create_random_proof_with_reduction_factory<C>(
-        circuit_factory: impl FnMut() -> C,
-        pk: &ProvingKey<E>,
-        rng: &mut impl ark_std::rand::Rng,
-    ) -> ark_relations::r1cs::Result<Proof<E>>
-    where
-        C: ConstraintSynthesizer<E::ScalarField>,
-    {
-        println!(
-            "[rss_kb] create_random_proof_with_reduction_factory 시작: {} MB",
-            rss_kb() / (1024 * 1024)
-        );
-        let r = E::ScalarField::rand(rng);
-        let s = E::ScalarField::rand(rng);
-        let result = Self::create_proof_with_reduction_factory(circuit_factory, pk, r, s);
-        println!(
-            "[rss_kb] create_random_proof_with_reduction_factory 종료: {} MB",
-            rss_kb() / (1024 * 1024)
-        );
-        result
-    }
 
     pub fn create_proof_with_reduction_factory<C>(
         mut circuit_factory: impl FnMut() -> C,
@@ -422,71 +564,6 @@ impl<E: Pairing, QAP: R1CSToQAP> Groth16<E, QAP> {
         );
         Ok(proof)
     }
-    pub fn create_proof_two_pass_with_factory<C, F>(
-        mut make_circuit: F,
-        pk: &ProvingKey<E>,
-        r: E::ScalarField,
-        s: E::ScalarField,
-    ) -> ark_relations::r1cs::Result<Proof<E>>
-    where
-        C: ConstraintSynthesizer<E::ScalarField>,
-        F: FnMut() -> C,
-    {
-        let circuit_setup = make_circuit();
-        let circuit_prove = make_circuit();
-        Self::create_proof_two_pass_with(circuit_setup, circuit_prove, pk, r, s)
-    }
-
-    pub fn create_proof_two_pass_with<C>(
-        circuit_for_setup: C,
-        circuit_for_prove: C,
-        pk: &ProvingKey<E>,
-        r: E::ScalarField,
-        s: E::ScalarField,
-    ) -> ark_relations::r1cs::Result<Proof<E>>
-    where
-        C: ConstraintSynthesizer<E::ScalarField>,
-    {
-        // ---- Pass A: 행렬만
-        let cs_a = ConstraintSystem::new_ref();
-        cs_a.set_mode(SynthesisMode::Setup);
-        cs_a.set_optimization_goal(OptimizationGoal::Constraints);
-        circuit_for_setup.generate_constraints(cs_a.clone())?;
-        cs_a.finalize();
-        let matrices = cs_a.to_matrices().expect("matrices in setup");
-        let num_inputs = matrices.num_instance_variables;
-        let num_constraints = matrices.num_constraints;
-        drop(cs_a); // 행렬 외 임시들 해제
-
-        // ---- Pass B: 할당만
-        let cs_b = ConstraintSystem::new_ref();
-        cs_b.set_mode(SynthesisMode::Prove {
-            construct_matrices: false,
-        });
-        cs_b.set_optimization_goal(OptimizationGoal::Constraints);
-        circuit_for_prove.generate_constraints(cs_b.clone())?;
-        cs_b.finalize();
-
-        let cs_b_in = cs_b.borrow().unwrap();
-        let full_assignment: Vec<E::ScalarField> = [
-            cs_b_in.instance_assignment.as_slice(),
-            cs_b_in.witness_assignment.as_slice(),
-        ]
-        .concat();
-        drop(cs_b_in);
-        drop(cs_b);
-
-        // ---- 연결
-        Self::create_proof_with_reduction_and_matrices(
-            pk,
-            r,
-            s,
-            &matrices,
-            num_inputs,
-            num_constraints,
-            &full_assignment,
-        )
-    }
 
     /// Create a Groth16 proof that is zero-knowledge using the provided
     /// R1CS-to-QAP reduction.
@@ -509,24 +586,6 @@ impl<E: Pairing, QAP: R1CSToQAP> Groth16<E, QAP> {
         let s = E::ScalarField::rand(rng);
 
         Self::create_proof_with_reduction(circuit, pk, r, s)
-    }
-
-    /// Create a Groth16 proof that is *not* zero-knowledge with the provided
-    /// R1CS-to-QAP reduction.
-    #[inline]
-    pub fn create_proof_with_reduction_no_zk<C>(
-        circuit: C,
-        pk: &ProvingKey<E>,
-    ) -> R1CSResult<Proof<E>>
-    where
-        C: ConstraintSynthesizer<E::ScalarField>,
-    {
-        Self::create_proof_with_reduction(
-            circuit,
-            pk,
-            E::ScalarField::zero(),
-            E::ScalarField::zero(),
-        )
     }
 
     /// Create a Groth16 proof using randomness `r` and `s` and the provided
@@ -630,6 +689,7 @@ impl<E: Pairing, QAP: R1CSToQAP> Groth16<E, QAP> {
     }
 }
 
+#[cfg(feature = "memory-logging")]
 pub fn rss_kb() -> u64 {
     // System은 내부 캐시를 갖습니다. 한 번 만들고 재사용해도 됩니다.
     // 간단히 매번 새로 만들어도 충분히 가벼워요.
@@ -642,5 +702,10 @@ pub fn rss_kb() -> u64 {
             return p.memory();
         }
     }
+    0
+}
+
+#[cfg(not(feature = "memory-logging"))]
+pub fn rss_kb() -> u64 {
     0
 }

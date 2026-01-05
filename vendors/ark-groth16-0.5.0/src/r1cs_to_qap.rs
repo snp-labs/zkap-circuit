@@ -1,8 +1,8 @@
-use ark_ff::{One, PrimeField, Zero};
-use ark_poly::EvaluationDomain;
+use ark_ff::{Field, One, PrimeField, Zero};
+use ark_poly::{domain, EvaluationDomain};
 use ark_std::{cfg_iter, cfg_iter_mut, vec};
 
-use crate::Vec;
+use crate::{FlatMatrix, Vec};
 use ark_relations::r1cs::{
     ConstraintMatrices, ConstraintSystemRef, Result as R1CSResult, SynthesisError,
 };
@@ -42,6 +42,33 @@ where
     return res.sum();
     #[cfg(not(feature = "parallel"))]
     return res;
+}
+
+#[inline(always)]
+fn get_var<F: Copy>(idx: u32, num_inputs: usize, instance: &[F], witness: &[F]) -> F {
+    let i = idx as usize;
+    if i < num_inputs {
+        instance[i]
+    } else {
+        witness[i - num_inputs]
+    }
+}
+
+#[inline(always)]
+fn eval_row<F: Field + Copy>(
+    flat: &FlatMatrix<F>,
+    r: usize,
+    num_inputs: usize,
+    instance: &[F],
+    witness: &[F],
+) -> F {
+    let (s, e) = flat.row_range(r);
+    let mut acc = F::zero();
+    for k in s..e {
+        let v = get_var(flat.col[k], num_inputs, instance, witness);
+        acc += flat.val[k] * v;
+    }
+    acc
 }
 
 /// Computes instance and witness reductions from R1CS to
@@ -95,6 +122,28 @@ pub trait R1CSToQAP {
         zt: F,
         delta_inverse: F,
     ) -> Result<Vec<F>, SynthesisError>;
+
+    fn witness_map_from_flat_matrices_split<F: PrimeField, D: EvaluationDomain<F>>(
+        flat_a: &FlatMatrix<F>,
+        flat_b: &FlatMatrix<F>,
+        flat_c: &FlatMatrix<F>,
+        num_inputs: usize,
+        num_constraints: usize,
+        instance: &[F],
+        witness: &[F],
+        domain: D,
+    ) -> R1CSResult<Vec<F>>;
+
+    // ✅ 추가: 단일 행렬 처리용 메서드
+    fn eval_flat_matrix_on_domain<F: PrimeField, D: EvaluationDomain<F>>(
+        flat_matrix: &FlatMatrix<F>,
+        num_inputs: usize,
+        num_constraints: usize,
+        instance: &[F],
+        witness: &[F],
+        domain: D,
+        is_matrix_a: bool, // ✅ 파라미터 추가
+    ) -> R1CSResult<Vec<F>>;
 }
 
 /// Computes the R1CS-to-QAP reduction defined in [`libsnark`](https://github.com/scipr-lab/libsnark/blob/2af440246fa2c3d0b1b0a425fb6abd8cc8b9c54d/libsnark/reductions/r1cs_to_qap/r1cs_to_qap.tcc).
@@ -156,10 +205,10 @@ impl R1CSToQAP for LibsnarkReduction {
         let domain =
             D::new(num_constraints + num_inputs).ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
         let domain_size = domain.size();
-        let zero = F::zero();
 
-        let mut a = vec![zero; domain_size];
-        let mut b = vec![zero; domain_size];
+        // 1. a, b 벡터 할당 및 계산
+        let mut a = vec![F::zero(); domain_size];
+        let mut b = vec![F::zero(); domain_size];
 
         cfg_iter_mut!(a[..num_constraints])
             .zip(cfg_iter_mut!(b[..num_constraints]))
@@ -170,59 +219,47 @@ impl R1CSToQAP for LibsnarkReduction {
                 *b = evaluate_constraint(&bt_i, &full_assignment);
             });
 
-        {
-            let start = num_constraints;
-            let end = start + num_inputs;
-            a[start..end].clone_from_slice(&full_assignment[..num_inputs]);
-        }
+        a[num_constraints..num_constraints + num_inputs]
+            .copy_from_slice(&full_assignment[..num_inputs]);
 
+        // In-place FFT로 메모리 절약
         domain.ifft_in_place(&mut a);
         domain.ifft_in_place(&mut b);
 
         let coset_domain = domain.get_coset(F::GENERATOR).unwrap();
-
         coset_domain.fft_in_place(&mut a);
         coset_domain.fft_in_place(&mut b);
 
-        // let mut ab = domain.mul_polynomials_in_evaluation_domain(&a, &b);
-        // drop(a);
-        // drop(b);
-
-        // a 벡터 재사용.
-        // let mut c = a;
-        // drop(b);
-
-        // 원소별 곱을 in-place로: ab := a .* b
-        let mut ab = a; // a 버퍼를 ab로 재사용
-        for (ab_i, b_i) in ab.iter_mut().zip(b.iter()) {
-            *ab_i *= b_i;
+        // 2. a 버퍼를 ab 곱 계산용으로 재사용
+        for (a_i, b_i) in a.iter_mut().zip(b.iter()) {
+            *a_i *= b_i;
         }
+        let mut ab = a; // 변수명만 변경, 실제 메모리 이동 없음
+
+        // 3. b 버퍼를 c 계산용으로 재사용 (추가 할당 방지)
         let mut c = b;
-        // let mut c = vec![zero; domain_size];
-        // cfg_iter_mut!(c[..num_constraints])
-        for el in c.iter_mut() {
-            *el = zero;
-        }
+        c.fill(F::zero()); // 기존 b 내용 초기화
+
         cfg_iter_mut!(c[..num_constraints])
             .enumerate()
-            .for_each(|(i, c)| {
-                *c = evaluate_constraint(&matrices.c[i], &full_assignment);
+            .for_each(|(i, c_val)| {
+                *c_val = evaluate_constraint(&matrices.c[i], &full_assignment);
             });
 
         domain.ifft_in_place(&mut c);
         coset_domain.fft_in_place(&mut c);
 
-        let vanishing_polynomial_over_coset = domain
+        // 4. 최종 결과 계산
+        let inv_vanishing_poly = domain
             .evaluate_vanishing_polynomial(F::GENERATOR)
             .inverse()
             .unwrap();
         cfg_iter_mut!(ab).zip(c).for_each(|(ab_i, c_i)| {
             *ab_i -= &c_i;
-            *ab_i *= &vanishing_polynomial_over_coset;
+            *ab_i *= &inv_vanishing_poly;
         });
 
         coset_domain.ifft_in_place(&mut ab);
-
         Ok(ab)
     }
 
@@ -236,5 +273,111 @@ impl R1CSToQAP for LibsnarkReduction {
             .map(|i| zt * &delta_inverse * &t.pow([i as u64]))
             .collect::<Vec<_>>();
         Ok(scalars)
+    }
+
+    fn witness_map_from_flat_matrices_split<F: PrimeField, D: EvaluationDomain<F>>(
+        flat_a: &FlatMatrix<F>,
+        flat_b: &FlatMatrix<F>,
+        flat_c: &FlatMatrix<F>,
+        num_inputs: usize,
+        num_constraints: usize,
+        instance: &[F],
+        witness: &[F],
+        domain: D,
+    ) -> R1CSResult<Vec<F>> {
+        // Keep semantics identical to `witness_map_from_matrices`, but read rows
+        // from flat CSR matrices and use split assignment (instance/witness).
+        let domain_size = domain.size();
+
+        // 1) Allocate and compute a, b on the coset domain.
+        let mut a = vec![F::zero(); domain_size];
+        let mut b = vec![F::zero(); domain_size];
+
+        cfg_iter_mut!(a[..num_constraints])
+            .zip(cfg_iter_mut!(b[..num_constraints]))
+            .enumerate()
+            .for_each(|(i, (a_i, b_i))| {
+                *a_i = eval_row(flat_a, i, num_inputs, instance, witness);
+                *b_i = eval_row(flat_b, i, num_inputs, instance, witness);
+            });
+
+        // a holds the public inputs in the tail, exactly like the original.
+        a[num_constraints..num_constraints + num_inputs].copy_from_slice(&instance[..num_inputs]);
+
+        // In-place FFT to reduce allocations.
+        domain.ifft_in_place(&mut a);
+        domain.ifft_in_place(&mut b);
+
+        let coset_domain = domain.get_coset(F::GENERATOR).unwrap();
+        coset_domain.fft_in_place(&mut a);
+        coset_domain.fft_in_place(&mut b);
+
+        // 2) Reuse `a` as `ab` (point-wise product).
+        for (a_i, b_i) in a.iter_mut().zip(b.iter()) {
+            *a_i *= b_i;
+        }
+        let mut ab = a;
+
+        // 3) Reuse `b` buffer to compute c.
+        let mut c = b;
+        c.fill(F::zero());
+
+        cfg_iter_mut!(c[..num_constraints])
+            .enumerate()
+            .for_each(|(i, c_val)| {
+                *c_val = eval_row(flat_c, i, num_inputs, instance, witness);
+            });
+
+        domain.ifft_in_place(&mut c);
+        coset_domain.fft_in_place(&mut c);
+
+        // 4) Finalize: (ab - c) / Z on the coset, then IFFT.
+        // NOTE: This matches the original implementation's choice of evaluation point.
+        let inv_vanishing_poly = domain
+            .evaluate_vanishing_polynomial(F::GENERATOR)
+            .inverse()
+            .unwrap();
+
+        cfg_iter_mut!(ab).zip(c).for_each(|(ab_i, c_i)| {
+            *ab_i -= &c_i;
+            *ab_i *= &inv_vanishing_poly;
+        });
+
+        coset_domain.ifft_in_place(&mut ab);
+        Ok(ab)
+    }
+
+    // ✅ 추가된 핵심 메서드: 단일 FlatMatrix를 도메인 위에서 평가 (FFT 포함)
+fn eval_flat_matrix_on_domain<F: PrimeField, D: EvaluationDomain<F>>(
+        flat_matrix: &FlatMatrix<F>,
+        num_inputs: usize,
+        num_constraints: usize,
+        instance: &[F],
+        witness: &[F],
+        domain: D,
+        is_matrix_a: bool, // ✅ 파라미터 추가
+    ) -> R1CSResult<Vec<F>> {
+        let domain_size = domain.size();
+        let mut evals = vec![F::zero(); domain_size];
+
+        // 1. Evaluate row (Lagrange basis)
+        cfg_iter_mut!(evals[..num_constraints])
+            .enumerate()
+            .for_each(|(i, val)| {
+                *val = eval_row(flat_matrix, i, num_inputs, instance, witness);
+            });
+        
+        // ✅ Matrix A인 경우 Public Input(Instance) 값을 뒤에 복사
+        if is_matrix_a {
+            evals[num_constraints..num_constraints + num_inputs]
+                .copy_from_slice(&instance[..num_inputs]);
+        }
+
+        // 2. IFFT -> FFT (Coset)
+        domain.ifft_in_place(&mut evals);
+        let coset_domain = domain.get_coset(F::GENERATOR).unwrap();
+        coset_domain.fft_in_place(&mut evals);
+
+        Ok(evals)
     }
 }

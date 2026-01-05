@@ -24,3 +24,6 @@ ark-serialize         = { workspace = true }
 [features]
 print-trace = ["ark-groth16/print-trace"]
 constraints-logging = ["circuit/constraints-logging", "gadget/constraints-logging"]
+use-optimized = ["zkpasskey-service/use-optimized"]
+memory-logging = ["ark-groth16/memory-logging"]
+parallel = []

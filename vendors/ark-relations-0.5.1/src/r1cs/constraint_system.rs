@@ -61,14 +61,14 @@ pub struct ConstraintSystem<F: Field> {
     /// Map for gadgets to cache computation results.
     pub cache_map: Rc<RefCell<BTreeMap<TypeId, Box<dyn Any>>>>,
 
-    lc_map: BTreeMap<LcIndex, LinearCombination<F>>,
+    pub lc_map: BTreeMap<LcIndex, LinearCombination<F>>,
 
     #[cfg(feature = "std")]
     constraint_traces: Vec<Option<ConstraintTrace>>,
 
-    a_constraints: Vec<LcIndex>,
-    b_constraints: Vec<LcIndex>,
-    c_constraints: Vec<LcIndex>,
+    pub a_constraints: Vec<LcIndex>,
+    pub b_constraints: Vec<LcIndex>,
+    pub c_constraints: Vec<LcIndex>,
 
     lc_assignment_cache: Rc<RefCell<BTreeMap<LcIndex, F>>>,
 }

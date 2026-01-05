@@ -2,3 +2,5 @@
 /test/test_outputs/*
 /dist
 /archive
+.DS_Store
+**/.DS_Store

@@ -1,0 +1,13 @@
+[package]
+name = "craby-api"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+common = { workspace = true }
+zkpasskey-service = { workspace = true }
+
+ark-groth16 = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+anyhow = { workspace = true }

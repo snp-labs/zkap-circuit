@@ -2,18 +2,13 @@
 resolver = "3"
 members = [
     # "api/frb",
+    "api/craby",
     "api/napi",
     "circuit",
     "gadget",
     "service",
-    "vendors/*",   # vendors 안에 여러 crate가 있으면 glob로 묶기
     "test",
     "common"]
-
-exclude = [
-    "vendors/ark-groth16-0.5.0",
-    "vendors/ark-groth16-origin"
-]
 
 [workspace.dependencies]
 common = { path = "common" }
@@ -61,11 +56,11 @@ clap = { version = "4.5.53" }
 
 [patch.crates-io]
 # 오리지널
-ark-groth16 = { path = "vendors/ark-groth16-origin" }
+# ark-groth16 = { path = "vendors/ark-groth16-origin" }
 
 # 최적화
-#ark-groth16 = { path = "vendors/ark-groth16-0.5.0" }
-#ark-relations = { path = "vendors/ark-relations-0.5.1" }
+ark-groth16 = { path = "vendors/ark-groth16-0.5.0" }
+ark-relations = { path = "vendors/ark-relations-0.5.1" }
 
 [profile.release]
 lto = true

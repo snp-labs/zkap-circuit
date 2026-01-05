@@ -4,9 +4,7 @@ use std::path::PathBuf;
 use ark_crypto_primitives::snark::SNARK;
 use ark_crypto_primitives::{crh::CRHScheme, merkle_tree::Path, sponge::poseidon::PoseidonConfig};
 use ark_ff::PrimeField;
-#[cfg(not(feature = "use-optimized"))]
-use ark_groth16::Groth16;
-use ark_groth16::{Proof, ProvingKey};
+use ark_groth16::{Groth16, Proof, ProvingKey};
 use circuit::{ExposesPublicInputs, baerae::BaeraeLightWeightCircuit};
 use common::constants::{AnchorConfig, BN254, BNP, CG, CV, F, PoseidonHash, ZkPasskeyConfig};
 use gadget::{

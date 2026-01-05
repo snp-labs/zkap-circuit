@@ -80,6 +80,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "anyhow"
+version = "1.0.100"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
+
+[[package]]
 name = "ark-bn254"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -101,7 +107,7 @@ dependencies = [
  "ark-ec",
  "ark-ff",
  "ark-r1cs-std",
- "ark-relations 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ark-relations",
  "ark-serialize",
  "ark-snark",
  "ark-std",
@@ -214,7 +220,7 @@ dependencies = [
  "ark-ec",
  "ark-ff",
  "ark-poly",
- "ark-relations 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ark-relations",
  "ark-serialize",
  "ark-std",
  "rayon",
@@ -245,7 +251,7 @@ checksum = "941551ef1df4c7a401de7068758db6503598e6f01850bdb2cfdb614a1f9dbea1"
 dependencies = [
  "ark-ec",
  "ark-ff",
- "ark-relations 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ark-relations",
  "ark-std",
  "educe",
  "num-bigint",
@@ -257,19 +263,6 @@ dependencies = [
 [[package]]
 name = "ark-relations"
 version = "0.5.1"
-dependencies = [
- "ark-ff",
- "ark-std",
- "ark-test-curves",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "ark-relations"
-version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ec46ddc93e7af44bcab5230937635b06fb5744464dd6a7e7b083e80ebd274384"
 dependencies = [
  "ark-ff",
  "ark-std",
@@ -309,7 +302,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d368e2848c2d4c129ce7679a7d0d2d612b6a274d3ea6a13bad4445d61b381b88"
 dependencies = [
  "ark-ff",
- "ark-relations 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ark-relations",
  "ark-serialize",
  "ark-std",
 ]
@@ -324,17 +317,6 @@ dependencies = [
  "num-traits",
  "rand",
  "rayon",
-]
-
-[[package]]
-name = "ark-test-curves"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5cc137bb3271671a597ae79157030f88affe9fa7975207c3b781a01cb9ed0372"
-dependencies = [
- "ark-ec",
- "ark-ff",
- "ark-std",
 ]
 
 [[package]]
@@ -450,7 +432,7 @@ dependencies = [
  "ark-groth16",
  "ark-poly",
  "ark-r1cs-std",
- "ark-relations 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ark-relations",
  "ark-serialize",
  "ark-std",
  "clap",
@@ -568,6 +550,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "59ed5838eebb26a2bb2e58f6d5b5316989ae9d08bab10e0e6d103e656d1b0280"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "craby-api"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ark-groth16",
+ "common",
+ "serde",
+ "serde_json",
+ "zkpasskey-service",
 ]
 
 [[package]]
@@ -848,7 +842,7 @@ dependencies = [
  "ark-groth16",
  "ark-poly",
  "ark-r1cs-std",
- "ark-relations 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ark-relations",
  "ark-serialize",
  "ark-std",
  "base64",
@@ -1641,7 +1635,7 @@ dependencies = [
  "ark-groth16",
  "ark-poly",
  "ark-r1cs-std",
- "ark-relations 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ark-relations",
  "ark-serialize",
  "ark-std",
  "circuit",
@@ -2031,7 +2025,7 @@ dependencies = [
  "ark-groth16",
  "ark-poly",
  "ark-r1cs-std",
- "ark-relations 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ark-relations",
  "ark-serialize",
  "ark-std",
  "blake2",

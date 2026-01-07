@@ -15,11 +15,11 @@ use ark_std::{
     vec::Vec,
 };
 
+use log;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 #[cfg(feature = "memory-logging")]
 use sysinfo::System;
-use log;
 
 type D<F> = GeneralEvaluationDomain<F>;
 const MSM_CHUNK_SIZE: usize = 4_096;
@@ -80,23 +80,25 @@ impl<E: Pairing, QAP: R1CSToQAP> Groth16<E, QAP> {
         C: ConstraintSynthesizer<E::ScalarField>,
         F: FnMut() -> C, // 변경: 팩토리 함수 타입 정의
     {
-        // =========================================================================
-        // [Phase 1] Witness Generation (메모리 가장 적게 먹는 작업 먼저 수행)
-        // =========================================================================
+        // -------------------------------------------------------------------------
+        // [Phase 1] Witness Generation
+        // -------------------------------------------------------------------------
         log_step!("Phase 1: Witness Gen Start");
 
         let cs_witness = ConstraintSystem::new_ref();
         cs_witness.set_mode(SynthesisMode::Prove {
-            construct_matrices: false, // 행렬 생성 안 함 (메모리 절약)
+            construct_matrices: false,
         });
         cs_witness.set_optimization_goal(OptimizationGoal::Constraints);
 
         let circuit_w = circuit_factory();
         circuit_w.generate_constraints(cs_witness.clone())?;
         cs_witness.finalize();
+
+        // ✅ Phase 2를 위해 제약조건 수 미리 캡처
+        let num_constraints = cs_witness.num_constraints();
         log_step!("Phase 1: Finalized");
 
-        // Witness와 Instance만 추출하고 CS는 즉시 해제
         let (instance_assignment, witness_assignment) = {
             let mut cs_inner = cs_witness.borrow_mut().unwrap();
             let inst = mem::take(&mut cs_inner.instance_assignment);
@@ -108,37 +110,43 @@ impl<E: Pairing, QAP: R1CSToQAP> Groth16<E, QAP> {
 
         let num_inputs = instance_assignment.len();
 
-        // =========================================================================
-        // [Phase 2] Matrix Generation & Sequential Processing
-        // =========================================================================
-        log_step!("Phase 2: Matrix Setup Start");
-
-        let cs_matrix = ConstraintSystem::new_ref();
-        cs_matrix.set_mode(SynthesisMode::Setup); // Setup 모드 (값 할당 없이 행렬 구조만 생성)
-        cs_matrix.set_optimization_goal(OptimizationGoal::Constraints);
-
-        let circuit_m = circuit_factory();
-        circuit_m.generate_constraints(cs_matrix.clone())?;
-        cs_matrix.finalize();
-        log_step!("Phase 2: CS Finalized");
-
-        // ⚠️ 여기서 to_matrices()를 호출하지 않음으로써 메모리 복제를 방지합니다.
-        // CS 내부의 constraints 벡터에 직접 접근합니다.
-        let num_constraints = cs_matrix.num_constraints();
-
         let domain = D::<E::ScalarField>::new(num_constraints + num_inputs)
             .ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
-        // [Phase 3] Sequential Evaluation (A -> B -> C 순서로 처리하여 중첩 방지)
+
         // -------------------------------------------------------------------------
+        // [Phase 2 & 3] Sequential Matrix Gen & Eval (3-Pass)
+        // -------------------------------------------------------------------------
+        // 헬퍼 클로저: 회로를 다시 생성하고 특정 행렬(Target)만 추출한 뒤 CS를 즉시 해제함
+        // 이를 통해 Peak 메모리를 (CS 1개 + FlatMatrix 1개) 수준으로 억제
+        let mut generate_and_extract_one =
+            |target: MatrixTarget| -> R1CSResult<FlatMatrix<E::ScalarField>> {
+                // log_step!(format!("Phase 2: Generating CS for Matrix {:?}", target)); // Debug 없을시 주석
+                log_step!("Phase 2: Re-generating CS for Matrix Extraction");
 
-        // --- Step A: Process Matrix A ---
-        log_step!("Phase 3: Processing Matrix A");
+                let cs_matrix = ConstraintSystem::new_ref();
+                cs_matrix.set_mode(SynthesisMode::Setup);
+                cs_matrix.set_optimization_goal(OptimizationGoal::Constraints);
+
+                let circuit_m = circuit_factory();
+                circuit_m.generate_constraints(cs_matrix.clone())?;
+                cs_matrix.finalize();
+
+                // 추출
+                let flat =
+                    Self::extract_flat_matrix(&cs_matrix, target, num_inputs, num_constraints);
+
+                // ✅ CS 즉시 해제 (메모리 확보)
+                drop(cs_matrix);
+                log_step!("Phase 2: CS Dropped");
+
+                Ok(flat)
+            };
+
+        // --- Step A ---
+        log_step!("Phase 3: Processing Matrix A (Pass 1/3)");
         let mut eval_a = {
-            // CS에서 A 행렬 부분만 추출하여 FlatMatrix 생성
-            let flat_a =
-                Self::extract_flat_matrix(&cs_matrix, MatrixTarget::A, num_inputs, num_constraints);
-
-            QAP::eval_flat_matrix_on_domain(
+            let flat_a = generate_and_extract_one(MatrixTarget::A)?;
+            let e = QAP::eval_flat_matrix_on_domain(
                 &flat_a,
                 num_inputs,
                 num_constraints,
@@ -146,17 +154,17 @@ impl<E: Pairing, QAP: R1CSToQAP> Groth16<E, QAP> {
                 &witness_assignment,
                 domain,
                 true,
-            )?
+            )?;
+            drop(flat_a); // Matrix A 메모리 해제
+            e
         };
-        log_step!("Phase 3: Matrix A Done & Dropped");
+        log_step!("Phase 3: Matrix A Done");
 
-        // --- Step B: Process Matrix B ---
-        log_step!("Phase 3: Processing Matrix B");
+        // --- Step B ---
+        log_step!("Phase 3: Processing Matrix B (Pass 2/3)");
         let eval_b = {
-            let flat_b =
-                Self::extract_flat_matrix(&cs_matrix, MatrixTarget::B, num_inputs, num_constraints);
-
-            QAP::eval_flat_matrix_on_domain(
+            let flat_b = generate_and_extract_one(MatrixTarget::B)?;
+            let e = QAP::eval_flat_matrix_on_domain(
                 &flat_b,
                 num_inputs,
                 num_constraints,
@@ -164,24 +172,24 @@ impl<E: Pairing, QAP: R1CSToQAP> Groth16<E, QAP> {
                 &witness_assignment,
                 domain,
                 false,
-            )?
+            )?;
+            drop(flat_b); // Matrix B 메모리 해제
+            e
         };
+        log_step!("Phase 3: Matrix B Done");
 
-        // A = A * B (In-place)
+        // A = A * B
         log_step!("Phase 3: Compute A * B");
         for (a, b) in eval_a.iter_mut().zip(eval_b.iter()) {
             *a *= b;
         }
-        drop(eval_b); // B 결과 해제
-        log_step!("Phase 3: B Eval Dropped");
+        drop(eval_b); // Eval B 해제
 
-        // --- Step C: Process Matrix C ---
-        log_step!("Phase 3: Processing Matrix C");
+        // --- Step C ---
+        log_step!("Phase 3: Processing Matrix C (Pass 3/3)");
         let eval_c = {
-            let flat_c =
-                Self::extract_flat_matrix(&cs_matrix, MatrixTarget::C, num_inputs, num_constraints);
-
-            QAP::eval_flat_matrix_on_domain(
+            let flat_c = generate_and_extract_one(MatrixTarget::C)?;
+            let e = QAP::eval_flat_matrix_on_domain(
                 &flat_c,
                 num_inputs,
                 num_constraints,
@@ -189,37 +197,34 @@ impl<E: Pairing, QAP: R1CSToQAP> Groth16<E, QAP> {
                 &witness_assignment,
                 domain,
                 false,
-            )?
+            )?;
+            drop(flat_c); // Matrix C 메모리 해제
+            e
         };
-        log_step!("Phase 3: Matrix C Done & Dropped");
+        log_step!("Phase 3: Matrix C Done");
 
-        // A = A - C (In-place)
+        // (AB - C) / Z
         log_step!("Phase 3: Compute (AB - C)");
-
-        // Z(x) 역원 계산 (여기서 E::ScalarField::GENERATOR 사용)
         let inv_vanishing_poly = domain
             .evaluate_vanishing_polynomial(E::ScalarField::GENERATOR)
             .inverse()
             .unwrap();
 
-        // (AB - C) / Z
         for (ab, c) in eval_a.iter_mut().zip(eval_c.iter()) {
             *ab -= c;
             *ab *= inv_vanishing_poly;
         }
-        drop(eval_c); // C 결과 해제
+        drop(eval_c);
 
-        // IFFT on Coset
+        // IFFT
         let coset_domain = domain.get_coset(E::ScalarField::GENERATOR).unwrap();
         coset_domain.ifft_in_place(&mut eval_a);
-
-        let h = eval_a; // 최종 H 다항식
+        let h = eval_a;
         log_step!("Phase 3: H Calculated");
 
-        // =========================================================================
-        // [Phase 4] Proof Generation (MSM)
-        // =========================================================================
-
+        // -------------------------------------------------------------------------
+        // [Phase 4] Proof Generation
+        // -------------------------------------------------------------------------
         let input_assignment = &instance_assignment[1..];
         let aux_assignment = &witness_assignment;
 
@@ -238,37 +243,44 @@ impl<E: Pairing, QAP: R1CSToQAP> Groth16<E, QAP> {
     ) -> FlatMatrix<E::ScalarField> {
         let cs_borrow = cs.borrow().unwrap();
 
-        // 1. 목표 행렬에 해당하는 인덱스 벡터 선택
-        // (포크에서 해당 필드들을 pub으로 열어주셔야 접근 가능합니다)
         let indices = match target {
             MatrixTarget::A => &cs_borrow.a_constraints,
             MatrixTarget::B => &cs_borrow.b_constraints,
             MatrixTarget::C => &cs_borrow.c_constraints,
         };
 
+        // 1. [Optimization] 정확한 크기(Capacity) 계산 (메모리 피크 방지)
+        let mut total_non_zeros = 0;
+        for &lc_index in indices {
+            if let Some(lc) = cs_borrow.lc_map.get(&lc_index) {
+                // Zero, SymbolicLc 제외하고 실제 추가될 개수만 카운트
+                for (_, var) in lc.iter() {
+                    match var {
+                        Variable::Zero => continue,
+                        Variable::SymbolicLc(_) => continue,
+                        _ => total_non_zeros += 1,
+                    }
+                }
+            }
+        }
+
         let mut ptr = Vec::with_capacity(num_constraints + 1);
-        let mut col = Vec::new();
-        let mut val = Vec::new();
+        let mut col = Vec::with_capacity(total_non_zeros); // 정확한 크기로 할당
+        let mut val = Vec::with_capacity(total_non_zeros); // 정확한 크기로 할당
 
         ptr.push(0);
 
-        // 2. 인덱스를 순회하며 lc_map에서 실제 선형 결합(LC) 데이터를 조회
+        // 2. 데이터 채우기
         for &lc_index in indices {
             if let Some(lc) = cs_borrow.lc_map.get(&lc_index) {
-                // (coeff, var) 순서로 이터레이션 (앞선 타입 에러 해결)
                 for (coeff, var) in lc.iter() {
                     let idx = match var {
                         Variable::One => 0,
                         Variable::Instance(i) => *i,
                         Variable::Witness(i) => num_inputs + *i,
-
-                        // ✅ 추가됨: Zero 변수는 값이 0이므로 행렬에 추가할 필요 없음 (Sparse 최적화)
                         Variable::Zero => continue,
-
-                        // ✅ 추가됨: SymbolicLc는 Matrix 추출 단계에서 예외 처리
-                        // 만약 이 변형이 실제로 사용된다면, 해당 로직에 맞춰 인덱스를 매핑해야 합니다.
                         Variable::SymbolicLc(_) => {
-                            panic!("SymbolicLc encountered during matrix extraction! Ensure constraints are flattened.");
+                            panic!("SymbolicLc encountered during matrix extraction!");
                         }
                     };
 

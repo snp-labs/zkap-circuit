@@ -20,6 +20,8 @@ ark-crypto-primitives = { workspace = true }
 ark-bn254             = { workspace = true }
 ark-ed-on-bn254       = { workspace = true }
 ark-serialize         = { workspace = true }
+log                   = { workspace = true }
+env_logger = "0.10"
 
 [features]
 print-trace = ["ark-groth16/print-trace"]

@@ -29,7 +29,10 @@ use zkpasskey_service::{
     core::signature::{SignatureService, schnorr::SchnorrSignatureService},
     interface::anchor::{PoseidonAnchorKeyExtension, Secret, SecretDto},
     service::{
-        anchor::anchor::create_poseidon_anchor, jwt::builder::resize, key::io::{load_key_uncompressed, save_key_uncompressed}, snark::zkap::generate_baerae_proof
+        anchor::anchor::create_poseidon_anchor,
+        jwt::builder::resize,
+        key::io::{load_key_uncompressed, save_key_uncompressed},
+        snark::zkap::generate_baerae_proof,
     },
     utils::{
         padding::fit_len_to_field,
@@ -99,7 +102,8 @@ impl Default for AnchorConfig {
 
 /// 테스트용 임시 디렉토리 생성
 fn setup_test_dir() -> PathBuf {
-    let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_outputs/crs_n_6_k_1/baerae");
+    let test_dir =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_outputs/crs_n_6_k_1/baerae");
     if !test_dir.exists() {
         std::fs::create_dir_all(&test_dir).unwrap();
     }
@@ -253,6 +257,11 @@ fn create_test_aud_lists(auds: &[Vec<u8>]) -> (Vec<F>, F) {
 
 #[test]
 fn test_generate_baerae_proof_single() {
+    let _ = env_logger::builder()
+        .filter_level(log::LevelFilter::Info) // 기본 로그 레벨 설정 (Info)
+        .is_test(true) // 테스트 환경에 맞게 출력 (println! 가로채기 방지)
+        .try_init();
+
     // 테스트 파라미터 설정 - K=3으로 고정 (회로 상수)
     let n = 6;
     let k = 1; // BaeraeLightWeightCircuit의 K 상수와 일치해야 함

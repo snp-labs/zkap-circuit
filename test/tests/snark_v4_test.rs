@@ -257,9 +257,10 @@ fn create_test_aud_lists(auds: &[Vec<u8>]) -> (Vec<F>, F) {
 
 #[test]
 fn test_generate_baerae_proof_single() {
+    // ✅ 로거 초기화 (테스트 실행 시 로그 확인용)
     let _ = env_logger::builder()
-        .filter_level(log::LevelFilter::Info) // 기본 로그 레벨 설정 (Info)
-        .is_test(true) // 테스트 환경에 맞게 출력 (println! 가로채기 방지)
+        .filter_level(log::LevelFilter::Info)
+        .is_test(true)
         .try_init();
 
     // 테스트 파라미터 설정 - K=3으로 고정 (회로 상수)
@@ -273,14 +274,10 @@ fn test_generate_baerae_proof_single() {
 
     println!("\n=== Testing generate_baerae_proof (K={}) ===", k);
 
-    // 1. 테스트 디렉토리 설정
     let test_dir = setup_test_dir();
-
-    // 2. 테스트 키 생성 및 저장
     let snark_pk_path = test_dir.join("pk.key");
     let snark_vk_path = test_dir.join("vk.key");
 
-    // 3. 테스트 데이터 준비
     let selected_secrets = Secret {
         sub: r#""105043881177884738227""#.to_string(),
         iss: r#""https://accounts.google.com""#.to_string(),
@@ -289,29 +286,22 @@ fn test_generate_baerae_proof_single() {
     };
 
     let anchor_parts = create_test_anchor_parts(&selected_secrets, n);
-    println!("Anchor parts created: {} elements", anchor_parts.len());
-
     let (pk, _e, jwt, iss) = create_test_jwt_data();
 
-    // 4. Merkle tree 생성
     let padded_iss = resize(&iss, max_iss_len, pad_char);
     let leaf = create_test_leaf(&padded_iss, &pk);
     let (mp, root) = create_test_merkle_tree(leaf, tree_height);
     let root_str = root.to_string();
-    println!("Merkle tree created. Root: {}", root_str);
 
-    // 5. 입력 준비 (K=3개 - 회로 상수와 일치)
+    // K개 입력 준비
     let jwts = vec![jwt.clone(); k];
     let pk_ops = vec![pk.clone(); k];
     let mp_vec = vec![mp.clone(); k];
     let leaf_index_vec = vec![0; k];
 
-    // Schnorr 서명 관련 값들
     let h_sign_userop = "67890";
     let block_timestamp = "1753676658";
     let random = "12345";
-
-    // aud_list 생성 0번째만 실제 값, 나머지는 0을 hash한 값
     let aud_list: Vec<String> = vec![
         "1537516906439034952305634351122994193921181616590605158358594959574076457504".to_string(),
         "4725746703237049609879526210021666464972871326396081167205154246686201634852".to_string(),

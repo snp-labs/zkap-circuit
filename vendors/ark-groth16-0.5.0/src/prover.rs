@@ -660,6 +660,184 @@ impl<E: Pairing, QAP: R1CSToQAP> Groth16<E, QAP> {
 
         Ok(proof)
     }
+    // =========================================================================
+    // [Optimized] Split Execution API
+    // 메모리 최적화를 위해 "Witness/H 계산(PK 불필요)"과 "MSM(PK 필요)"을 분리
+    // =========================================================================
+
+    /// [Step 1] ProvingKey 없이 Witness와 H 다항식만 먼저 계산합니다.
+    /// 이 함수 실행 중에는 거대한 PK가 메모리에 없어야 최적화 효과가 있습니다.
+    pub fn create_proof_part1_witness_h<C, F>(
+        mut circuit_factory: F,
+    ) -> ark_relations::r1cs::Result<(
+        Vec<E::ScalarField>,
+        Vec<E::ScalarField>,
+        Vec<E::ScalarField>,
+    )>
+    where
+        C: ConstraintSynthesizer<E::ScalarField>,
+        F: FnMut() -> C,
+    {
+        // -------------------------------------------------------------------------
+        // [Phase 1] Witness Generation
+        // -------------------------------------------------------------------------
+        log_step!("Step 1: Witness Gen Start");
+
+        let cs_witness = ConstraintSystem::new_ref();
+        cs_witness.set_mode(SynthesisMode::Prove {
+            construct_matrices: false,
+        });
+        cs_witness.set_optimization_goal(OptimizationGoal::Constraints);
+
+        let circuit_w = circuit_factory();
+        circuit_w.generate_constraints(cs_witness.clone())?;
+        cs_witness.finalize();
+
+        // Phase 2를 위해 제약조건 수 캡처
+        let num_constraints = cs_witness.num_constraints();
+        log_step!("Step 1: Finalized");
+
+        let (instance_assignment, witness_assignment) = {
+            let mut cs_inner = cs_witness.borrow_mut().unwrap();
+            let inst = mem::take(&mut cs_inner.instance_assignment);
+            let wit = mem::take(&mut cs_inner.witness_assignment);
+            (inst, wit)
+        };
+        drop(cs_witness);
+        log_step!("Step 1: CS Dropped (Witness Extracted)");
+
+        let num_inputs = instance_assignment.len();
+
+        let domain = D::<E::ScalarField>::new(num_constraints + num_inputs)
+            .ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
+
+        // -------------------------------------------------------------------------
+        // [Phase 2 & 3] Sequential Matrix Gen & Eval (3-Pass)
+        // -------------------------------------------------------------------------
+        let mut generate_and_extract_one =
+            |target: MatrixTarget| -> R1CSResult<FlatMatrix<E::ScalarField>> {
+                log_step!("Step 1: Re-generating CS for Matrix Extraction");
+
+                let cs_matrix = ConstraintSystem::new_ref();
+                cs_matrix.set_mode(SynthesisMode::Setup);
+                cs_matrix.set_optimization_goal(OptimizationGoal::Constraints);
+
+                let circuit_m = circuit_factory();
+                circuit_m.generate_constraints(cs_matrix.clone())?;
+                cs_matrix.finalize();
+
+                // 추출
+                let flat =
+                    Self::extract_flat_matrix(&cs_matrix, target, num_inputs, num_constraints);
+
+                // CS 즉시 해제
+                drop(cs_matrix);
+                log_step!("Step 1: CS Dropped");
+
+                Ok(flat)
+            };
+
+        // --- Matrix A ---
+        log_step!("Step 1: Processing Matrix A");
+        let mut eval_a = {
+            let flat_a = generate_and_extract_one(MatrixTarget::A)?;
+            let e = QAP::eval_flat_matrix_on_domain(
+                &flat_a,
+                num_inputs,
+                num_constraints,
+                &instance_assignment,
+                &witness_assignment,
+                domain,
+                true,
+            )?;
+            drop(flat_a);
+            e
+        };
+
+        // --- Matrix B ---
+        log_step!("Step 1: Processing Matrix B");
+        let eval_b = {
+            let flat_b = generate_and_extract_one(MatrixTarget::B)?;
+            let e = QAP::eval_flat_matrix_on_domain(
+                &flat_b,
+                num_inputs,
+                num_constraints,
+                &instance_assignment,
+                &witness_assignment,
+                domain,
+                false,
+            )?;
+            drop(flat_b);
+            e
+        };
+
+        // A = A * B
+        for (a, b) in eval_a.iter_mut().zip(eval_b.iter()) {
+            *a *= b;
+        }
+        drop(eval_b);
+
+        // --- Matrix C ---
+        log_step!("Step 1: Processing Matrix C");
+        let eval_c = {
+            let flat_c = generate_and_extract_one(MatrixTarget::C)?;
+            let e = QAP::eval_flat_matrix_on_domain(
+                &flat_c,
+                num_inputs,
+                num_constraints,
+                &instance_assignment,
+                &witness_assignment,
+                domain,
+                false,
+            )?;
+            drop(flat_c);
+            e
+        };
+
+        // (AB - C) / Z
+        let inv_vanishing_poly = domain
+            .evaluate_vanishing_polynomial(E::ScalarField::GENERATOR)
+            .inverse()
+            .unwrap();
+
+        for (ab, c) in eval_a.iter_mut().zip(eval_c.iter()) {
+            *ab -= c;
+            *ab *= inv_vanishing_poly;
+        }
+        drop(eval_c);
+
+        // IFFT
+        let coset_domain = domain.get_coset(E::ScalarField::GENERATOR).unwrap();
+        coset_domain.ifft_in_place(&mut eval_a);
+
+        let h = eval_a;
+        log_step!("Step 1: H Calculated. Ready for MSM.");
+
+        // H 벡터와 Assignment를 반환
+        Ok((h, instance_assignment, witness_assignment))
+    }
+
+    /// [Step 2] ProvingKey를 로드하여 최종 증명을 생성합니다.
+    /// 이 단계에서만 PK가 메모리에 올라옵니다.
+    pub fn create_proof_part2_msm(
+        pk: &ProvingKey<E>,
+        r: E::ScalarField,
+        s: E::ScalarField,
+        h: &[E::ScalarField],
+        instance_assignment: &[E::ScalarField],
+        witness_assignment: &[E::ScalarField],
+    ) -> R1CSResult<Proof<E>> {
+        log_step!("Step 2: MSM Start (PK Loaded)");
+
+        let input_assignment = &instance_assignment[1..];
+        let aux_assignment = witness_assignment;
+
+        let proof =
+            Self::create_proof_with_assignment(pk, r, s, h, input_assignment, aux_assignment)?;
+
+        log_step!("Step 2: Proof Generated");
+        Ok(proof)
+    }
 
     /// Given a Groth16 proof, returns a fresh proof of the same statement. For a proof π of a
     /// statement S, the output of the non-deterministic procedure `rerandomize_proof(π)` is

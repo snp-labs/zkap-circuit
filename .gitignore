@@ -5,9 +5,9 @@
 crates/test/test_outputs/
 artifacts/
 dist/
-/test/test_outputs/*
-/dist
-/archive
+
+# legacy files
+legacy/
 
 # macOS
 .DS_Store

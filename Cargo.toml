@@ -4,17 +4,19 @@ members = [
     # "api/frb",
     "api/craby",
     "api/napi",
-    "circuit",
-    "gadget",
-    "service",
-    "test",
-    "common"]
+
+    "crates/circuit",
+    "crates/gadget",
+    "crates/service",
+    "crates/test",
+    "crates/common"
+]
 
 [workspace.dependencies]
-common = { path = "common" }
-gadget = { path = "gadget" }
-circuit = { path = "circuit" }
-zkpasskey-service = { path = "service" }
+common                    = { path = "crates/common" }
+gadget                    = { path = "crates/gadget" }
+circuit                   = { path = "crates/circuit" }
+zkpasskey-service         = { path = "crates/service" }
 
 thiserror = { version = "2.0.12" }
 serde = { version = "1.0.227", features = ["derive"] }
@@ -60,11 +62,11 @@ android_logger = { version = "0.13" }
 
 [patch.crates-io]
 # 오리지널
-# ark-groth16 = { path = "vendors/ark-groth16-origin" }
+# ark-groth16 = { path = "vendor/ark-groth16-origin" }
 
 # 최적화
-ark-groth16 = { path = "vendors/ark-groth16-0.5.0" }
-ark-relations = { path = "vendors/ark-relations-0.5.1" }
+ark-groth16 = { path = "vendor/ark-groth16-0.5.0" }
+ark-relations = { path = "vendor/ark-relations-0.5.1" }
 
 [profile.release]
 lto = true

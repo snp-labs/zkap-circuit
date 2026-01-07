@@ -1,6 +1,14 @@
+# Build outputs
 /target
+
+# Test artifacts / generated files
+crates/test/test_outputs/
+artifacts/
+dist/
 /test/test_outputs/*
 /dist
 /archive
+
+# macOS
 .DS_Store
 **/.DS_Store

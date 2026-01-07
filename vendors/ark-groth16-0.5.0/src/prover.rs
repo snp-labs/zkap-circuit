@@ -15,6 +15,8 @@ use ark_std::{
     vec::Vec,
 };
 
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use log;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
@@ -26,7 +28,14 @@ const MSM_CHUNK_SIZE: usize = 4_096;
 #[cfg(feature = "memory-logging")]
 macro_rules! log_step {
     ($msg:expr) => {
-        log::info!("[rss_kb] {:<40} : {} MB", $msg, rss_kb() / (1024 * 1024));
+        let (cur, peak) = rss_kb();
+        // println!을 사용하여 테스트 환경(--nocapture)에서도 바로 출력되도록 함
+        println!(
+            "[rss_kb] {:<40} : Cur {} MB / Peak {} MB",
+            $msg,
+            cur / (1024 * 1024),
+            peak / (1024 * 1024)
+        );
     };
 }
 
@@ -513,10 +522,7 @@ impl<E: Pairing, QAP: R1CSToQAP> Groth16<E, QAP> {
     where
         C: ConstraintSynthesizer<E::ScalarField>,
     {
-        println!(
-            "[rss_kb] create_proof_with_reduction_factory 시작: {} MB",
-            rss_kb() / (1024 * 1024)
-        );
+        log_step!("Function Start: create_proof_with_reduction_factory");
         // ---- Pass 1: 회로를 생성해 CS 구성 & 행렬/할당 추출 ----
         let prover_time = start_timer!(|| "Groth16::Prover (factory)");
         let cs = ConstraintSystem::new_ref();
@@ -575,10 +581,7 @@ impl<E: Pairing, QAP: R1CSToQAP> Groth16<E, QAP> {
             Self::create_proof_with_assignment(pk, r, s, &h, input_assignment, aux_assignment)?;
 
         end_timer!(prover_time);
-        println!(
-            "[rss_kb] create_proof_with_reduction_factory 종료: {} MB",
-            rss_kb() / (1024 * 1024)
-        );
+        log_step!("Groth16::Prover (factory) End");
         Ok(proof)
     }
 
@@ -594,10 +597,7 @@ impl<E: Pairing, QAP: R1CSToQAP> Groth16<E, QAP> {
     where
         C: ConstraintSynthesizer<E::ScalarField>,
     {
-        println!(
-            "[rss_kb] create_random_proof_with_reduction 시작: {} MB",
-            rss_kb() / (1024 * 1024)
-        );
+        log_step!("Function Start: create_random_proof_with_reduction");
 
         let r = E::ScalarField::rand(rng);
         let s = E::ScalarField::rand(rng);
@@ -620,10 +620,8 @@ impl<E: Pairing, QAP: R1CSToQAP> Groth16<E, QAP> {
         QAP: R1CSToQAP,
     {
         let prover_time = start_timer!(|| "Groth16::Prover");
-        println!(
-            "[rss_kb] Groth16::Prover 시작: {} MB",
-            rss_kb() / (1024 * 1024)
-        );
+
+        log_step!("Function Start: create_proof_with_reduction");
         let cs = ConstraintSystem::new_ref();
 
         // Set the optimization goal
@@ -634,23 +632,17 @@ impl<E: Pairing, QAP: R1CSToQAP> Groth16<E, QAP> {
         circuit.generate_constraints(cs.clone())?;
         debug_assert!(cs.is_satisfied().unwrap());
         end_timer!(synthesis_time);
-        println!(
-            "[rss_kb] Constraint synthesis 종료: {} MB",
-            rss_kb() / (1024 * 1024)
-        );
+        log_step!("Constraint synthesis End");
 
         let lc_time = start_timer!(|| "Inlining LCs");
         cs.finalize();
         end_timer!(lc_time);
-        println!(
-            "[rss_kb] Inlining LCs 종료: {} MB",
-            rss_kb() / (1024 * 1024)
-        );
+        log_step!("Inlining LCs End");
 
         let witness_map_time = start_timer!(|| "R1CS to QAP witness map");
         let h = QAP::witness_map::<E::ScalarField, D<E::ScalarField>>(cs.clone())?;
         end_timer!(witness_map_time);
-        println!("[rss_kb] witness_map 종료: {} MB", rss_kb() / (1024 * 1024));
+        log_step!("R1CS to QAP witness map End");
 
         let prover = cs.borrow().unwrap();
         let proof = Self::create_proof_with_assignment(
@@ -661,13 +653,10 @@ impl<E: Pairing, QAP: R1CSToQAP> Groth16<E, QAP> {
             &prover.instance_assignment[1..],
             &prover.witness_assignment,
         )?;
-        println!("[rss_kb] proof 생성 후: {} MB", rss_kb() / (1024 * 1024));
+        log_step!("Proof Generated");
 
         end_timer!(prover_time);
-        println!(
-            "[rss_kb] Groth16::Prover 종료: {} MB",
-            rss_kb() / (1024 * 1024)
-        );
+        log_step!("Function End: create_proof_with_reduction");
 
         Ok(proof)
     }
@@ -706,23 +695,30 @@ impl<E: Pairing, QAP: R1CSToQAP> Groth16<E, QAP> {
     }
 }
 
+// ✅ 전역 변수로 피크 메모리 저장 (초기값 0)
+static PEAK_MEMORY: AtomicU64 = AtomicU64::new(0);
+
 #[cfg(feature = "memory-logging")]
-pub fn rss_kb() -> u64 {
-    // System은 내부 캐시를 갖습니다. 한 번 만들고 재사용해도 됩니다.
-    // 간단히 매번 새로 만들어도 충분히 가벼워요.
+pub fn rss_kb() -> (u64, u64) {
+    // 반환 타입 변경: (Current, Peak)
     let mut sys = System::new();
-    // 현재 프로세스만 갱신
     if let Ok(pid) = sysinfo::get_current_pid() {
         sys.refresh_process(pid);
         if let Some(p) = sys.process(pid) {
-            // KiB 단위 (KB 개념으로 취급해도 무방)
-            return p.memory();
+            let current = p.memory(); // 현재 메모리 (Bytes)
+
+            // 피크 메모리 갱신 (현재 값이 더 크면 업데이트)
+            // fetch_max는 이전 값을 반환하므로, 현재 값과 비교하여 더 큰 값을 peak로 사용
+            let prev_peak = PEAK_MEMORY.fetch_max(current, Ordering::Relaxed);
+            let peak = std::cmp::max(prev_peak, current);
+
+            return (current, peak);
         }
     }
-    0
+    (0, PEAK_MEMORY.load(Ordering::Relaxed))
 }
 
 #[cfg(not(feature = "memory-logging"))]
-pub fn rss_kb() -> u64 {
-    0
+pub fn rss_kb() -> (u64, u64) {
+    (0, 0)
 }

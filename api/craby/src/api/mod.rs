@@ -7,7 +7,7 @@ use zkpasskey_service::service::{
 
 use crate::dto::{
     anchor::{GenerateAnchorReq, GenerateAnchorRes},
-    prover::{GenerateProofReq, GenerateProofRes},
+    prover::{GenerateProofReq, GenerateProofRes, GetConfigRes},
 };
 
 pub fn craby_generate_poseidon_anchor(req: GenerateAnchorReq) -> anyhow::Result<GenerateAnchorRes> {
@@ -47,4 +47,8 @@ pub fn craby_generate_proof(req: GenerateProofReq) -> anyhow::Result<GeneratePro
     .map_err(|e| anyhow::anyhow!("Failed to generate proof: {}", e))?;
 
     Ok(GenerateProofRes::from(result))
+}
+
+pub fn craby_get_config() -> anyhow::Result<GetConfigRes> {
+    Ok(ZkapConfig.into())
 }

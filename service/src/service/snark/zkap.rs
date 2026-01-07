@@ -1,12 +1,9 @@
 use std::path::PathBuf;
 
-#[cfg(not(feature = "use-optimized"))]
-use ark_crypto_primitives::snark::SNARK;
 use ark_crypto_primitives::{crh::CRHScheme, merkle_tree::Path, sponge::poseidon::PoseidonConfig};
-use ark_ff::PrimeField;
 use ark_groth16::{Groth16, Proof, ProvingKey};
 use circuit::{ExposesPublicInputs, baerae::BaeraeLightWeightCircuit};
-use common::constants::{AnchorConfig, BN254, BNP, CG, CV, F, PoseidonHash, ZkPasskeyConfig};
+use common::constants::{AnchorConfig, BN254, BNP, CG, F, PoseidonHash, ZkPasskeyConfig};
 use gadget::{
     anchor::{
         AnchorUtils,
@@ -21,7 +18,11 @@ use gadget::{
     mekletree::tree_config::MerkleTreeParams,
     utils::str_to_limbs,
 };
+use log;
 use rand::rngs::OsRng;
+
+use crate::init_android_logging;
+
 
 use crate::{
     error::error::ApplicationError,
@@ -76,17 +77,33 @@ pub fn generate_baerae_proof<Config: ZkPasskeyConfig>(
     random: &str,
     aud_list: &[String],
 ) -> Result<(Vec<Proof<BN254>>, Vec<Vec<F>>), ApplicationError> {
+
+    #[cfg(target_os = "android")]
+    init_android_logging();
+
+    log::info!("[ZKAP] Starting ZK proof generation...");
+
     // 1. 입력 검증
+    log::info!("[ZKAP] Step 1: Validating inputs...");
     validate_inputs::<Config>(&jwts, &pk_ops, &mp, &leaf_index, anchor_parts)?;
+    log::info!("[ZKAP] Step 1 completed: Input validation passed");
 
     // 2. Proving key 로드
-    let pk = load_key_uncompressed::<ProvingKey<BN254>>(pk_path)?;
+    log::info!("[ZKAP] Step 2: Loading proving key from {}...", pk_path.display());
+    let pk = load_key_uncompressed::<ProvingKey<BN254>>(pk_path).map_err(|e| {
+        log::error!("[ZKAP] Step 2 failed: Failed to load proving key: {}", e);
+        ApplicationError::InvalidFormat(format!("Failed to load proving key: {}", e))
+    })?;
+    log::info!("[ZKAP] Step 2 completed: Proving key loaded successfully");
 
     // 3. 공통 입력 파싱
+    log::info!("[ZKAP] Step 3: Parsing common inputs...");
     let common_inputs =
         parse_common_inputs(root, h_sign_userop, block_timestamp, random, aud_list)?;
+    log::info!("[ZKAP] Step 3 completed: Common inputs parsed");
 
     // 4. TokenBuilder 일괄 생성 (가장 무거운 파싱 작업 수행)
+    log::info!("[ZKAP] Step 4: Creating TokenBuilders for {} JWTs...", jwts.len());
     // CLAIMS 상수를 사용하여 빌더를 초기화합니다.
     let builders: Vec<TokenBuilder> = jwts
         .iter()
@@ -95,20 +112,25 @@ pub fn generate_baerae_proof<Config: ZkPasskeyConfig>(
                 .map_err(|e| ApplicationError::InvalidFormat(format!("JWT parsing failed: {}", e)))
         })
         .collect::<Result<Vec<_>, _>>()?;
+    log::info!("[ZKAP] Step 4 completed: {} TokenBuilders created", builders.len());
 
     // 5. Anchor 컨텍스트 계산 (Secret 추출 및 Hashing)
+    log::info!("[ZKAP] Step 5: Computing anchor context...");
     let anchor_ctx = compute_anchor_context::<Config>(
         anchor_parts,
         &builders,
         common_inputs.random,
         &common_inputs.aud_list,
     )?;
+    log::info!("[ZKAP] Step 5 completed: Anchor context computed");
 
     // 6. 각 JWT에 대한 증명 생성
+    log::info!("[ZKAP] Step 6: Generating proofs for {} JWTs...", Config::K);
     let mut proofs = Vec::with_capacity(Config::K);
     let mut public_inputs_list = Vec::with_capacity(Config::K);
 
     for i in 0..Config::K {
+        log::info!("[ZKAP] Step 6.{}: Generating proof for JWT {}...", i + 1, i);
         let (proof, public_inputs) = generate_proof_internal::<Config>(
             &pk,
             &common_inputs,
@@ -119,11 +141,12 @@ pub fn generate_baerae_proof<Config: ZkPasskeyConfig>(
             leaf_index[i],
             i,
         )?;
-
         proofs.push(proof);
         public_inputs_list.push(public_inputs);
+        log::info!("[ZKAP] Step 6.{} completed: Proof generated for JWT {}", i + 1, i);
     }
 
+    log::info!("[ZKAP] All steps completed successfully! Generated {} proofs", proofs.len());
     Ok((proofs, public_inputs_list))
 }
 
@@ -138,20 +161,25 @@ fn generate_proof_internal<Config: ZkPasskeyConfig>(
     leaf_index: usize,
     proof_idx: usize,
 ) -> Result<(Proof<BN254>, Vec<F>), ApplicationError> {
-    let mut rng = OsRng;
+    log::info!("[ZKAP] Proof {}: Building witness...", proof_idx);
 
     // 1. Witness 생성 (builder.build() 호출)
     let witness = builder.build::<Config>(pk_op_str).map_err(|e| {
+        log::error!("[ZKAP] Proof {} failed: Failed to build circuit witness: {}", proof_idx, e);
         ApplicationError::InvalidFormat(format!("Failed to build circuit witness: {}", e))
     })?;
+    log::info!("[ZKAP] Proof {}: Witness built successfully", proof_idx);
 
     // 2. Merkle Path 파싱
+    log::info!("[ZKAP] Proof {}: Parsing Merkle path...", proof_idx);
     let path = build_mp(mp, leaf_index)?;
+    log::info!("[ZKAP] Proof {}: Merkle path parsed", proof_idx);
 
     let matrix = VandermondeMatrix::<F>::new(Config::N, Config::K);
     let anchor = PoseidonAnchor(anchor_ctx.anchor.0.clone());
 
     // 4. 회로 생성
+    log::info!("[ZKAP] Proof {}: Creating circuit...", proof_idx);
     let circuit = BaeraeLightWeightCircuit::<CG, BNP, Config>::new(
         matrix,
         anchor_ctx.poseidon_params.clone(),
@@ -168,7 +196,6 @@ fn generate_proof_internal<Config: ZkPasskeyConfig>(
         leaf_index,
         path,
         anchor,
-        // Witness 데이터 주입
         witness.state,
         witness.nblocks,
         witness.claim_indices,
@@ -187,14 +214,25 @@ fn generate_proof_internal<Config: ZkPasskeyConfig>(
     let public_inputs = circuit.public_inputs();
 
     // 5. 증명 생성 실행
+    log::info!("[ZKAP] Proof {}: Generating proof...", proof_idx);
+    let mut rng = OsRng;
     #[cfg(feature = "use-optimized")]
     let proof = Groth16::<BN254>::create_random_proof_two_pass(|| circuit.clone(), pk, &mut rng)
-        .map_err(|e| ApplicationError::InvalidFormat(format!("Failed to create proof: {}", e)))?;
+        .map_err(|e| {
+            log::error!("[ZKAP] Proof {} failed: Failed to create optimized proof: {}", proof_idx, e);
+            ApplicationError::InvalidFormat(format!("Failed to create proof: {}", e))
+        })?;
+    log::info!("[ZKAP] Proof {}: Optimized proof generated successfully", proof_idx);
 
     #[cfg(not(feature = "use-optimized"))]
     let proof = Groth16::<BN254>::prove(pk, circuit, &mut rng)
-        .map_err(|e| ApplicationError::InvalidFormat(format!("Failed to create proof: {}", e)))?;
+        .map_err(|e| {
+            log::error!("[ZKAP] Proof {} failed: Failed to create standard proof: {}", proof_idx, e);
+            ApplicationError::InvalidFormat(format!("Failed to create proof: {}", e))
+        })?;
+    log::info!("[ZKAP] Proof {}: Standard proof generated successfully", proof_idx);
 
+    log::info!("[ZKAP] Proof {} completed successfully", proof_idx);
     Ok((proof, public_inputs))
 }
 

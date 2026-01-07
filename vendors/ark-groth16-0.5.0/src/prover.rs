@@ -19,19 +19,22 @@ use ark_std::{
 use rayon::prelude::*;
 #[cfg(feature = "memory-logging")]
 use sysinfo::System;
+use log;
 
 type D<F> = GeneralEvaluationDomain<F>;
 const MSM_CHUNK_SIZE: usize = 4_096;
 #[cfg(feature = "memory-logging")]
 macro_rules! log_step {
     ($msg:expr) => {
-        println!("[rss_kb] {:<40} : {} MB", $msg, rss_kb() / (1024 * 1024));
+        log::info!("[rss_kb] {:<40} : {} MB", $msg, rss_kb() / (1024 * 1024));
     };
 }
 
 #[cfg(not(feature = "memory-logging"))]
 macro_rules! log_step {
-    ($msg:expr) => {};
+    ($msg:expr) => {
+        log::info!("[ZKAP] {}", $msg);
+    };
 }
 
 // ✅ 행렬 선택을 위한 열거형
@@ -351,6 +354,8 @@ impl<E: Pairing, QAP: R1CSToQAP> Groth16<E, QAP> {
 
         // 2. L_Aux Accumulation (Chunked - BigInt 변환 제거됨)
         log_step!("MSM: L_Aux_Acc Start");
+        log_step!(format!("l_query length: {}", pk.l_query.len()));
+        log_step!(format!("aux_assignment length: {}", aux_assignment.len()));
         let l_aux_acc =
             Self::msm_bigint_chunked::<E::G1Affine>(&pk.l_query, aux_assignment, MSM_CHUNK_SIZE);
         log_step!("MSM: L_Aux_Acc End");

@@ -1,8 +1,7 @@
 use ark_groth16::Proof;
-use common::constants::{BN254, F};
-use zkpasskey_service::utils::solidity::Solidity;
+use common::constants::{BN254, F, ZkapConfig, ZkPasskeyConfig};
 use serde::{Deserialize, Serialize};
-
+use zkpasskey_service::utils::solidity::Solidity;
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct GenerateProofReq {
@@ -27,6 +26,42 @@ pub struct GenerateProofRes {
     pub proofs: Vec<Vec<String>>,
     pub shared_inputs: Vec<String>,
     pub partial_rhs_list: Vec<String>,
+}
+
+// // === JWT Constraints ===
+// const MAX_JWT_B64_LEN: usize;
+// const MAX_PAYLOAD_B64_LEN: usize;
+// const MAX_AUD_LEN: usize;
+// const MAX_EXP_LEN: usize;
+// const MAX_ISS_LEN: usize;
+// const MAX_NONCE_LEN: usize;
+// const MAX_SUB_LEN: usize;
+
+// // === Logic Constraints ===
+// const N: usize;
+// const K: usize;
+// const TREE_HEIGHT: usize;
+// const CLAIMS: &'static [&'static str];
+// const NUM_AUDIENCE_LIMIT: usize;
+// const FORBIDDEN_STRING: &'static str;
+// const PAD_CHAR: char;
+#[derive(Clone, Serialize, Deserialize)]
+pub struct GetConfigRes {
+    pub max_jwt_b64_len: usize,
+    pub max_payload_b64_len: usize,
+    pub max_aud_len: usize,
+    pub max_exp_len: usize,
+    pub max_iss_len: usize,
+    pub max_nonce_len: usize,
+    pub max_sub_len: usize,
+
+    pub n: usize,
+    pub k: usize,
+    pub tree_height: usize,
+    pub claims: Vec<String>,
+    pub num_audience_limit: usize,
+    pub forbidden_string: String,
+    pub pad_char: char,
 }
 
 pub struct ProofBundle {
@@ -81,6 +116,27 @@ impl From<(Vec<Proof<BN254>>, Vec<Vec<F>>)> for GenerateProofRes {
             proofs,
             shared_inputs,
             partial_rhs_list,
+        }
+    }
+}
+
+impl From<ZkapConfig> for GetConfigRes {
+    fn from(_config: ZkapConfig) -> Self {
+        Self {
+            max_jwt_b64_len: <ZkapConfig as ZkPasskeyConfig>::MAX_JWT_B64_LEN,
+            max_payload_b64_len: <ZkapConfig as ZkPasskeyConfig>::MAX_PAYLOAD_B64_LEN,
+            max_aud_len: <ZkapConfig as ZkPasskeyConfig>::MAX_AUD_LEN,
+            max_exp_len: <ZkapConfig as ZkPasskeyConfig>::MAX_EXP_LEN,
+            max_iss_len: <ZkapConfig as ZkPasskeyConfig>::MAX_ISS_LEN,
+            max_nonce_len: <ZkapConfig as ZkPasskeyConfig>::MAX_NONCE_LEN,
+            max_sub_len: <ZkapConfig as ZkPasskeyConfig>::MAX_SUB_LEN,
+            n: <ZkapConfig as ZkPasskeyConfig>::N,
+            k: <ZkapConfig as ZkPasskeyConfig>::K,
+            tree_height: <ZkapConfig as ZkPasskeyConfig>::TREE_HEIGHT,
+            claims: <ZkapConfig as ZkPasskeyConfig>::CLAIMS.iter().map(|s| s.to_string()).collect(),
+            num_audience_limit: <ZkapConfig as ZkPasskeyConfig>::NUM_AUDIENCE_LIMIT,
+            forbidden_string: <ZkapConfig as ZkPasskeyConfig>::FORBIDDEN_STRING.to_string(),
+            pad_char: <ZkapConfig as ZkPasskeyConfig>::PAD_CHAR,
         }
     }
 }

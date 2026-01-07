@@ -54,6 +54,10 @@ serde_json = { version = "1.0.145" }
 anyhow = { version = "1.0.100" } 
 clap = { version = "4.5.53" }
 
+log = "0.4"
+android_logger = { version = "0.13" }
+
+
 [patch.crates-io]
 # 오리지널
 # ark-groth16 = { path = "vendors/ark-groth16-origin" }

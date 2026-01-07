@@ -19,6 +19,11 @@ napi-derive = { workspace = true }
 ark-groth16           = { workspace = true }
 ark-ff                = { workspace = true }
 
+# Android logging
+log = "0.4"
+android_logger = "0.13"
+ctor = "0.2"
+
 
 [build-dependencies]
 napi-build = { workspace = true }

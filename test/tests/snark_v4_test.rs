@@ -99,7 +99,7 @@ impl Default for AnchorConfig {
 
 /// 테스트용 임시 디렉토리 생성
 fn setup_test_dir() -> PathBuf {
-    let test_dir = PathBuf::from("crs_n_6_k_3/baerae");
+    let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_outputs/crs_n_6_k_1/baerae");
     if !test_dir.exists() {
         std::fs::create_dir_all(&test_dir).unwrap();
     }
@@ -255,7 +255,7 @@ fn create_test_aud_lists(auds: &[Vec<u8>]) -> (Vec<F>, F) {
 fn test_generate_baerae_proof_single() {
     // 테스트 파라미터 설정 - K=3으로 고정 (회로 상수)
     let n = 6;
-    let k = 3; // BaeraeLightWeightCircuit의 K 상수와 일치해야 함
+    let k = 1; // BaeraeLightWeightCircuit의 K 상수와 일치해야 함
     let max_jwt_len_b64 = 1024;
     let max_payload_len_b64 = 640;
     let max_iss_len = 31 * 3 as usize;
@@ -268,8 +268,8 @@ fn test_generate_baerae_proof_single() {
     let test_dir = setup_test_dir();
 
     // 2. 테스트 키 생성 및 저장
-    let snark_pk_path = test_dir.join("crs.pk");
-    let snark_vk_path = test_dir.join("crs.vk");
+    let snark_pk_path = test_dir.join("pk.key");
+    let snark_vk_path = test_dir.join("vk.key");
 
     // 3. 테스트 데이터 준비
     let selected_secrets = Secret {
@@ -312,6 +312,18 @@ fn test_generate_baerae_proof_single() {
     ];
 
     println!("\nGenerating {} proof(s)...", k);
+
+    println!("input data:");
+    println!(" - jwt: {}", jwts[0]);
+    println!(" - pk_op: {}", pk_ops[0]);
+    println!(" - merkle_path: {:?}", mp_vec[0]);
+    println!(" - leaf_index: {}", leaf_index_vec[0]);
+    println!(" - root: {}", root_str);
+    println!(" - anchor_parts: {:?}", anchor_parts);
+    println!(" - h_sign_userop: {}", h_sign_userop);
+    println!(" - block_timestamp: {}", block_timestamp);
+    println!(" - random: {}", random);
+    println!(" - aud_list: {:?}", aud_list);
 
     // 6. generate_baerae_proof 호출
     let result = generate_baerae_proof::<ZkapConfig>(

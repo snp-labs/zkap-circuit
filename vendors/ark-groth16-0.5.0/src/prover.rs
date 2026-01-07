@@ -15,7 +15,7 @@ use ark_std::{
     vec::Vec,
 };
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::AtomicU64;
 
 use log;
 #[cfg(feature = "parallel")]
@@ -24,7 +24,6 @@ use rayon::prelude::*;
 use sysinfo::System;
 
 type D<F> = GeneralEvaluationDomain<F>;
-const MSM_CHUNK_SIZE: usize = 4_096;
 #[cfg(feature = "memory-logging")]
 macro_rules! log_step {
     ($msg:expr) => {
@@ -370,15 +369,25 @@ impl<E: Pairing, QAP: R1CSToQAP> Groth16<E, QAP> {
 
         // 1. H Accumulation (Chunked)
         log_step!("MSM: H_Acc Start");
-        let h_acc = Self::msm_bigint_chunked::<E::G1Affine>(&pk.h_query, h, MSM_CHUNK_SIZE);
-        log_step!("MSM: H_Acc End");
+        let h_acc = E::G1::msm_bigint(
+            &pk.h_query,
+            cfg_into_iter!(h)
+                .map(|s| s.into_bigint())
+                .collect::<Vec<_>>()
+                .as_slice(),
+        );
 
         // 2. L_Aux Accumulation (Chunked - BigInt 변환 제거됨)
         log_step!("MSM: L_Aux_Acc Start");
         log_step!(format!("l_query length: {}", pk.l_query.len()));
         log_step!(format!("aux_assignment length: {}", aux_assignment.len()));
-        let l_aux_acc =
-            Self::msm_bigint_chunked::<E::G1Affine>(&pk.l_query, aux_assignment, MSM_CHUNK_SIZE);
+        let l_aux_acc = E::G1::msm_bigint(
+            &pk.l_query,
+            cfg_into_iter!(aux_assignment)
+                .map(|s| s.into_bigint())
+                .collect::<Vec<_>>()
+                .as_slice(),
+        );
         log_step!("MSM: L_Aux_Acc End");
 
         let r_s_delta_g1 = pk.delta_g1 * (r * s);
@@ -471,46 +480,26 @@ impl<E: Pairing, QAP: R1CSToQAP> Groth16<E, QAP> {
 
         let (q1, q2) = q_rest.split_at(assign1.len());
 
-        let part1 = Self::msm_bigint_chunked(q1, assign1, MSM_CHUNK_SIZE);
-        let part2 = Self::msm_bigint_chunked(q2, assign2, MSM_CHUNK_SIZE);
+        let part1 = G::Group::msm_bigint(
+            q1,
+            cfg_into_iter!(assign1)
+                .map(|s| s.into_bigint())
+                .collect::<Vec<_>>()
+                .as_slice(),
+        );
+        let part2 = G::Group::msm_bigint(
+            q2,
+            cfg_into_iter!(assign2)
+                .map(|s| s.into_bigint())
+                .collect::<Vec<_>>()
+                .as_slice(),
+        );
 
         acc.add_assign(&el0);
         acc += &part1;
         acc += &part2;
         acc.add_assign(&vk_param);
         acc
-    }
-
-    /// 핵심 최적화 함수: 16K 단위로 BigInt 변환 및 연산 후 즉시 메모리 해제
-    #[inline]
-    fn msm_bigint_chunked<G: AffineRepr>(
-        bases: &[G],
-        scalars_src: &[G::ScalarField],
-        chunk_size: usize,
-    ) -> G::Group
-    where
-        G::Group: VariableBaseMSM<MulBase = G>,
-    {
-        let mut sum = G::Group::zero();
-        let mut i = 0;
-        let len = bases.len();
-
-        while i < len {
-            let end = core::cmp::min(i + chunk_size, len);
-
-            // Chunk만큼만 BigInt로 변환 (메모리 피크 방지)
-            let s_chunk: Vec<<G::ScalarField as PrimeField>::BigInt> = scalars_src[i..end]
-                .iter()
-                .map(|s| s.into_bigint())
-                .collect();
-
-            let part = G::Group::msm_bigint(&bases[i..end], &s_chunk);
-            sum += &part;
-
-            // s_chunk는 여기서 drop됨
-            i = end;
-        }
-        sum
     }
 
     pub fn create_proof_with_reduction_factory<C>(

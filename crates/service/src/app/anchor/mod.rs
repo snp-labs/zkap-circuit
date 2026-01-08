@@ -1,5 +1,6 @@
 pub mod anchor;
 pub mod utils;
+pub mod poseidon;
 
 use ark_crypto_primitives::sponge::Absorb;
 use ark_ff::PrimeField;

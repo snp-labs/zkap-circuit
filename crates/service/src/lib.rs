@@ -1,13 +1,10 @@
-pub mod interface;
-pub mod core;
+pub mod app;
 pub mod error;
+pub mod types;
+// pub mod dto;
 pub mod utils;
-pub mod service;
-
-
-use log::LevelFilter;
-
-// service/src/lib.rs
+pub mod io;
+pub mod api;
 
 #[cfg(target_os = "android")]
 pub fn init_android_logging() {

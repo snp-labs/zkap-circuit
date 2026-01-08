@@ -1,10 +1,9 @@
 use ark_crypto_primitives::crh::CRHScheme;
-use common::constants::{F, PoseidonHash};
+use common::{constants::{F, PoseidonHash}, field_parser::hex_decimal_to_field};
 use gadget::hashes::poseidon::get_poseidon_params;
 
 use crate::{
-    error::error::ApplicationError,
-    utils::point::hex_decimal_to_field,
+    error::ApplicationError,
 };
 
 pub fn poseidon_hash(messages: Vec<String>) -> Result<F, ApplicationError> {

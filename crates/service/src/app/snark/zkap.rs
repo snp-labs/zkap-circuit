@@ -4,7 +4,7 @@ use ark_crypto_primitives::{crh::CRHScheme, merkle_tree::Path, sponge::poseidon:
 use ark_groth16::{Groth16, Proof, ProvingKey};
 use ark_std::UniformRand;
 use circuit::{ExposesPublicInputs, baerae::BaeraeLightWeightCircuit};
-use common::constants::{AnchorConfig, BN254, BNP, CG, F, PoseidonHash, ZkPasskeyConfig};
+use common::{constants::{AnchorConfig, BN254, BNP, CG, F, PoseidonHash, ZkPasskeyConfig}, field_parser::hex_decimal_to_field};
 use gadget::{
     anchor::{
         AnchorUtils,
@@ -22,20 +22,16 @@ use gadget::{
 use log;
 use rand::rngs::OsRng;
 
-use crate::init_android_logging;
-
 use crate::{
-    error::error::ApplicationError,
-    interface::anchor::Secret,
-    service::{
+    app::{
         anchor::anchor::{
             build_poseidon_anchor_from_strings_v3, derive_hashed_message_v2,
             derive_selector_from_secret_and_anchor,
         },
         jwt::builder::TokenBuilder,
-        key::io::load_key_uncompressed,
     },
-    utils::point::hex_decimal_to_field,
+    error::ApplicationError,
+    io::load_key_uncompressed, types::Secret,
 };
 
 #[derive(Clone)]
@@ -53,7 +49,6 @@ struct AnchorContextV3 {
     poseidon_params: PoseidonConfig<F>,
     base64_table: Base64Table,
     h_ctx: F,
-    nullifier: F,
     lhs: F,
     h_aud_list: F,
     anchor: PoseidonAnchor<F>,
@@ -62,7 +57,6 @@ struct AnchorContextV3 {
     partial_rhs_list: Vec<F>,
     current_idx_list: Vec<usize>,
     selectors: Vec<u8>,
-    vandermonde_matrix: VandermondeMatrix<F>,
     aud_list: Vec<F>,
 }
 
@@ -79,9 +73,6 @@ pub fn generate_baerae_proof<Config: ZkPasskeyConfig>(
     random: &str,
     aud_list: &[String],
 ) -> Result<(Vec<Proof<BN254>>, Vec<Vec<F>>), ApplicationError> {
-    #[cfg(target_os = "android")]
-    init_android_logging();
-
     log::info!("[ZKAP] Starting ZK proof generation (Optimized Split Flow)...");
 
     // 1. 입력 검증
@@ -249,6 +240,7 @@ pub fn generate_baerae_proof<Config: ZkPasskeyConfig>(
 }
 
 /// 단일 회로에 대한 증명 생성
+#[allow(dead_code)]
 fn generate_proof_internal<Config: ZkPasskeyConfig>(
     pk: &ProvingKey<BN254>,
     common: &CommonInputs,
@@ -447,10 +439,6 @@ fn compute_anchor_context<Config: ZkPasskeyConfig>(
     let h_ctx = PoseidonHash::evaluate(&poseidon_params, h_ctx_inputs.as_slice())
         .map_err(|e| ApplicationError::InvalidFormat(format!("Failed to compute h_ctx: {}", e)))?;
 
-    let nullifier = PoseidonHash::evaluate(&poseidon_params, [random]).map_err(|e| {
-        ApplicationError::InvalidFormat(format!("Failed to compute nullifier: {}", e))
-    })?;
-
     let lhs = PoseidonAnchorScheme::<F>::inner_product(&anchor_witness.a, &anchor.0)
         .map_err(|e| ApplicationError::InvalidFormat(format!("Failed to compute lhs: {}", e)))?;
     let lhs = lhs * random;
@@ -498,7 +486,6 @@ fn compute_anchor_context<Config: ZkPasskeyConfig>(
         poseidon_params,
         base64_table,
         h_ctx,
-        nullifier,
         lhs,
         h_aud_list,
         anchor,
@@ -507,7 +494,6 @@ fn compute_anchor_context<Config: ZkPasskeyConfig>(
         partial_rhs_list,
         current_idx_list,
         selectors,
-        vandermonde_matrix,
         aud_list: aud_list_inputs,
     })
 }

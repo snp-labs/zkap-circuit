@@ -1,37 +1,16 @@
-use std::{
-    fs::File,
-    io::{BufReader, BufWriter, Write},
-    path::PathBuf,
-};
+use std::{fs::File, io::BufReader, path::PathBuf};
 
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
+use ark_serialize::CanonicalDeserialize;
 
-use crate::error::error::KeyError;
+use crate::error::{ApplicationError, KeyError};
 
-pub fn save_key_uncompressed<T: CanonicalSerialize>(
-    path: &PathBuf,
-    key: &T,
-) -> Result<(), KeyError> {
-    let file = File::create(path).map_err(|source| KeyError::SaveFailed {
-        path: path.display().to_string(),
-        source,
-    })?;
-    let mut writer = BufWriter::new(file);
-
-    key.serialize_uncompressed(&mut writer)
-        .map_err(|source| KeyError::SerializeFailed {
-            path: path.display().to_string(),
-            source,
-        })?;
-
-    writer.flush().map_err(|source| KeyError::SaveFailed {
-        path: path.display().to_string(),
-        source,
-    })?;
-
-    Ok(())
-}
 pub fn load_key_uncompressed<T: CanonicalDeserialize + Send + Sync + 'static>(
+    path: &PathBuf,
+) -> Result<T, ApplicationError> {
+    load_key_uncompressed_inner(path).map_err(ApplicationError::from)
+}
+
+fn load_key_uncompressed_inner<T: CanonicalDeserialize + Send + Sync + 'static>(
     path: &PathBuf,
 ) -> Result<T, KeyError> {
     let file = File::open(path).map_err(|source| KeyError::LoadFailed {

@@ -1,11 +1,8 @@
 use ark_crypto_primitives::{crh::CRHScheme, sponge::Absorb};
 use ark_ff::PrimeField;
-use common::constants::{AnchorConfig, F, PoseidonHash, ZkPasskeyConfig};
+use common::{constants::{AnchorConfig, F, PoseidonHash, ZkPasskeyConfig}, field_parser::hex_decimal_to_field};
 
-use crate::{
-    error::error::ApplicationError, interface::anchor::Secret,
-    service::anchor::PoseidonAnchorService, utils::point::hex_decimal_to_field,
-};
+use crate::{error::ApplicationError, types::Secret};
 
 use gadget::{
     anchor::{
@@ -18,6 +15,28 @@ use gadget::{
     },
     matrix::VandermondeMatrix,
 };
+
+//TODO: DL Anchor와 함께 Trait으로 만들기?
+pub struct PoseidonAnchorService<F: PrimeField + Absorb> {
+    _field: std::marker::PhantomData<F>,
+}
+
+impl<F: PrimeField + Absorb> PoseidonAnchorService<F> {
+    pub fn setup() -> PoseidonAnchorPublicKey<F> {
+        let anchor_key = PoseidonAnchorPublicKey {
+            params: gadget::hashes::poseidon::get_poseidon_params(),
+        };
+        anchor_key
+    }
+
+    pub fn generate_anchor(
+        pk: &PoseidonAnchorPublicKey<F>,
+        secrets: &PoseidonAnchorSecret<F>,
+        matrix: &VandermondeMatrix<F>,
+    ) -> Result<PoseidonAnchor<F>, gadget::anchor::error::AnchorError> {
+        PoseidonAnchorScheme::generate_anchor(pk, secrets, matrix)
+    }
+}
 
 pub fn create_poseidon_anchor<Config: ZkPasskeyConfig>(
     secrets: Vec<Secret>,

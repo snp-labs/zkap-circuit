@@ -1,4 +1,4 @@
-use crate::{error::error::ApplicationError, interface::anchor::Secret};
+use crate::{error::ApplicationError, types::Secret};
 
 impl Secret {
     /// 개별 SecretDto를 패딩 및 연결하여 문자열로 반환합니다.

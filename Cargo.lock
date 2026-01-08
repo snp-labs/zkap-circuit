@@ -536,9 +536,12 @@ dependencies = [
  "ark-crypto-primitives",
  "ark-ec",
  "ark-ed-on-bn254",
+ "ark-ff",
  "ark-groth16",
  "ark-poly",
  "gadget",
+ "hex",
+ "thiserror",
 ]
 
 [[package]]

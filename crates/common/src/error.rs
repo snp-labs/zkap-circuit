@@ -17,3 +17,12 @@ pub enum FieldParseError {
     #[error("point is not in correct subgroup")]
     NotInCorrectSubgroup,
 }
+
+#[derive(Debug, Error)]
+pub enum IoError {
+    #[error("Failed to load key file")]
+    LoadKeyFailed,
+
+    #[error("Failed to deserialize key file")]
+    DeserializeFailed,
+}

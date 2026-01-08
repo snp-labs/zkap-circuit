@@ -539,6 +539,7 @@ dependencies = [
  "ark-ff",
  "ark-groth16",
  "ark-poly",
+ "ark-serialize",
  "gadget",
  "hex",
  "thiserror",

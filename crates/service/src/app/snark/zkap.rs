@@ -4,7 +4,10 @@ use ark_crypto_primitives::{crh::CRHScheme, merkle_tree::Path, sponge::poseidon:
 use ark_groth16::{Groth16, Proof, ProvingKey};
 use ark_std::UniformRand;
 use circuit::{ExposesPublicInputs, baerae::BaeraeLightWeightCircuit};
-use common::{constants::{AnchorConfig, BN254, BNP, CG, F, PoseidonHash, ZkPasskeyConfig}, field_parser::hex_decimal_to_field};
+use common::{
+    constants::{AnchorConfig, BN254, BNP, CG, F, PoseidonHash, ZkPasskeyConfig},
+    field_parser::hex_decimal_to_field, io::load_key_uncompressed,
+};
 use gadget::{
     anchor::{
         AnchorUtils,
@@ -31,7 +34,7 @@ use crate::{
         jwt::builder::TokenBuilder,
     },
     error::ApplicationError,
-    io::load_key_uncompressed, types::Secret,
+    types::Secret,
 };
 
 #[derive(Clone)]

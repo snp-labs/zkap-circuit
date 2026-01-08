@@ -1,8 +1,8 @@
-use ark_crypto_primitives::{crh::CRHScheme, sponge::Absorb};
+use ark_crypto_primitives::sponge::Absorb;
 use ark_ff::PrimeField;
-use common::{constants::{AnchorConfig, F, PoseidonHash, ZkPasskeyConfig}, field_parser::hex_decimal_to_field};
+use common::constants::{AnchorConfig, F, PoseidonHash, ZkPasskeyConfig};
 
-use crate::{error::ApplicationError, types::Secret};
+use crate::{app::anchor::utils::derive_x_from_secret, error::ApplicationError, types::Secret};
 
 use gadget::{
     anchor::{
@@ -13,100 +13,29 @@ use gadget::{
             build_anchor_witness,
         },
     },
+    hashes::poseidon::get_poseidon_params,
     matrix::VandermondeMatrix,
 };
-
-//TODO: DL Anchor와 함께 Trait으로 만들기?
-pub struct PoseidonAnchorService<F: PrimeField + Absorb> {
-    _field: std::marker::PhantomData<F>,
-}
-
-impl<F: PrimeField + Absorb> PoseidonAnchorService<F> {
-    pub fn setup() -> PoseidonAnchorPublicKey<F> {
-        let anchor_key = PoseidonAnchorPublicKey {
-            params: gadget::hashes::poseidon::get_poseidon_params(),
-        };
-        anchor_key
-    }
-
-    pub fn generate_anchor(
-        pk: &PoseidonAnchorPublicKey<F>,
-        secrets: &PoseidonAnchorSecret<F>,
-        matrix: &VandermondeMatrix<F>,
-    ) -> Result<PoseidonAnchor<F>, gadget::anchor::error::AnchorError> {
-        PoseidonAnchorScheme::generate_anchor(pk, secrets, matrix)
-    }
-}
 
 pub fn create_poseidon_anchor<Config: ZkPasskeyConfig>(
     secrets: Vec<Secret>,
 ) -> Result<PoseidonAnchor<F>, ApplicationError> {
     let ctx = AnchorConfig::from_config::<Config>();
 
-    let anchor_key = PoseidonAnchorService::setup();
+    let anchor_key = PoseidonAnchorPublicKey {
+        params: get_poseidon_params::<F>(),
+    };
 
-    let hased_message =
-        derive_hashed_message_v2::<F, PoseidonHash>(&secrets, &anchor_key.params, &ctx)?;
+    let x_list: Vec<F> = secrets
+        .iter()
+        .map(|s| derive_x_from_secret::<F, PoseidonHash>(s, &anchor_key.params, &ctx))
+        .collect::<Result<Vec<F>, ApplicationError>>()?;
 
-    let anchor_secret = PoseidonAnchorSecret(hased_message.into());
+    let anchor_secret = PoseidonAnchorSecret(x_list.into());
 
-    let anchor = PoseidonAnchorService::generate_anchor(&anchor_key, &anchor_secret, &ctx.matrix)
-        .map_err(|e| {
-        ApplicationError::InvalidFormat(format!("Failed to generate anchor: {}", e))
-    })?;
+    let anchor = PoseidonAnchorScheme::generate_anchor(&anchor_key, &anchor_secret, &ctx.matrix)?;
 
     Ok(anchor)
-}
-
-/// Anchor를 문자열 배열로부터 빌드하는 최적화된 함수 V3
-///
-/// # Arguments
-/// * `anchor_parts` - Anchor 값들과 hanchor를 포함하는 문자열 배열
-///                    마지막 요소가 hanchor, 나머지가 anchor 값들
-///
-/// # Returns
-/// (PoseidonAnchor, hanchor) 튜플
-///
-/// # 개선사항
-/// - 더 명확한 에러 메시지
-/// - 타입 안전성 향상
-/// - 메모리 할당 최적화
-pub fn build_poseidon_anchor_from_strings_v3<F: PrimeField>(
-    anchor_parts: &[String],
-) -> Result<(PoseidonAnchor<F>, F), ApplicationError> {
-    if anchor_parts.is_empty() {
-        return Err(ApplicationError::InvalidFormat(
-            "Anchor parts cannot be empty".to_string(),
-        ));
-    }
-
-    // 마지막 요소를 hanchor로 분리
-    let (hanchor_str, anchor_strings) = anchor_parts.split_last().ok_or_else(|| {
-        ApplicationError::InvalidFormat("Failed to split anchor parts".to_string())
-    })?;
-
-    // hanchor 파싱
-    let hanchor = hex_decimal_to_field::<F>(hanchor_str).map_err(|e| {
-        ApplicationError::InvalidFormat(format!("Failed to parse hanchor '{}': {}", hanchor_str, e))
-    })?;
-
-    // anchor 값들 파싱
-    let anchor_values: Result<Vec<F>, _> = anchor_strings
-        .iter()
-        .enumerate()
-        .map(|(i, s)| {
-            hex_decimal_to_field::<F>(s).map_err(|e| {
-                ApplicationError::InvalidFormat(format!(
-                    "Failed to parse anchor value at index {}: '{}'- {}",
-                    i, s, e
-                ))
-            })
-        })
-        .collect();
-
-    let anchor = PoseidonAnchor::new(anchor_values?);
-
-    Ok((anchor, hanchor))
 }
 
 /// secret을 기반으로 selector 벡터 생성
@@ -167,58 +96,6 @@ pub fn derive_selector_from_secret_and_anchor<F: PrimeField + Absorb>(
     .map_err(|e| ApplicationError::InvalidFormat(format!("{}", e)))
 }
 
-pub fn derive_hashed_message_v2<F, CRH>(
-    secrets: &[Secret],
-    hash_params: &CRH::Parameters,
-    ctx: &AnchorConfig,
-) -> Result<Vec<F>, ApplicationError>
-where
-    F: PrimeField + Absorb,
-    CRH: CRHScheme<Input = [F], Output = F>,
-{
-    secrets
-        .iter()
-        .map(|s| {
-            let padded_message = s.concatenate(
-                ctx.max_aud_len,
-                ctx.max_iss_len,
-                ctx.max_sub_len,
-                ctx.pad_char,
-            )?;
-            let hashed = hash_single_message::<F, CRH>(&padded_message, hash_params)?;
-            Ok(hashed)
-        })
-        .collect::<Result<Vec<F>, ApplicationError>>()
-}
-
-fn hash_single_message<F, CRH>(
-    message: &str,
-    hash_params: &CRH::Parameters,
-) -> Result<F, ApplicationError>
-where
-    F: PrimeField + Absorb,
-    CRH: CRHScheme<Input = [F], Output = F>,
-{
-    let limb_width = (F::MODULUS_BIT_SIZE - 1) as usize / 8;
-
-    if message.len() % limb_width != 0 {
-        return Err(ApplicationError::InvalidFormat(format!(
-            "String length must be a multiple of limb width: {} % {} != 0",
-            message.len(),
-            limb_width
-        )));
-    }
-
-    let num_limbs = message.len() / limb_width;
-    let mut limbs = Vec::with_capacity(num_limbs);
-
-    for chunk in message.as_bytes().chunks_exact(limb_width) {
-        limbs.push(F::from_be_bytes_mod_order(chunk));
-    }
-
-    CRH::evaluate(hash_params, limbs).map_err(|e| ApplicationError::Other(e.to_string()))
-}
-
 // nCk 조합 생성기
 fn combinations(n: usize, k: usize) -> Vec<Vec<usize>> {
     let mut result = Vec::new();
@@ -241,33 +118,6 @@ fn combinations(n: usize, k: usize) -> Vec<Vec<usize>> {
         indices[i] += 1;
         for j in i + 1..k {
             indices[j] = indices[j - 1] + 1;
-        }
-    }
-    result
-}
-
-/// k개의 원소에 대한 모든 순열을 생성하는 헬퍼 함수
-fn permute<T: Clone>(items: &[T]) -> Vec<Vec<T>> {
-    if items.is_empty() {
-        return vec![vec![]];
-    }
-    let mut result = Vec::new();
-    let n = items.len();
-    let mut p: Vec<usize> = (0..=n).collect();
-    let mut items_clone = items.to_vec();
-
-    result.push(items_clone.clone());
-
-    let mut i = 1;
-    while i < n {
-        p[i] -= 1;
-        let j = if i % 2 == 1 { p[i] } else { 0 };
-        items_clone.swap(i, j);
-        result.push(items_clone.clone());
-        i = 1;
-        while i < n && p[i] == 0 {
-            p[i] = i;
-            i += 1;
         }
     }
     result

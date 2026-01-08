@@ -6,7 +6,8 @@ use ark_std::UniformRand;
 use circuit::{ExposesPublicInputs, baerae::BaeraeLightWeightCircuit};
 use common::{
     constants::{AnchorConfig, BN254, BNP, CG, F, PoseidonHash, ZkPasskeyConfig},
-    field_parser::hex_decimal_to_field, io::load_key_uncompressed,
+    field_parser::hex_decimal_to_field,
+    io::load_key_uncompressed,
 };
 use gadget::{
     anchor::{
@@ -27,9 +28,9 @@ use rand::rngs::OsRng;
 
 use crate::{
     app::{
-        anchor::anchor::{
-            build_poseidon_anchor_from_strings_v3, derive_hashed_message_v2,
-            derive_selector_from_secret_and_anchor,
+        anchor::{
+            poseidon::derive_selector_from_secret_and_anchor,
+            utils::{convert_raw_anchor, derive_x_from_secret},
         },
         jwt::builder::TokenBuilder,
     },
@@ -356,7 +357,7 @@ fn compute_anchor_context<Config: ZkPasskeyConfig>(
     let vandermonde_matrix = VandermondeMatrix::<F>::new(Config::N, Config::K);
     let base64_table = get_base64_table();
 
-    let (anchor, hanchor) = build_poseidon_anchor_from_strings_v3(anchor_parts)?;
+    let (anchor, hanchor) = convert_raw_anchor(anchor_parts)?;
 
     // 1. Secret 추출
     // TokenBuilderV3.new에서 CLAIMS 순서대로 claims 벡터를 채웠으므로,
@@ -403,10 +404,14 @@ fn compute_anchor_context<Config: ZkPasskeyConfig>(
 
     // 2. 해시된 메시지 생성
     let ctx = AnchorConfig::from_config::<Config>();
-    let hashed_messages =
-        derive_hashed_message_v2::<F, PoseidonHash>(&secrets, &poseidon_params, &ctx).map_err(
-            |e| ApplicationError::InvalidFormat(format!("Failed to derive hashed messages: {}", e)),
-        )?;
+    // let hashed_messages =
+    //     derive_hashed_message_v2::<F, PoseidonHash>(&secrets, &poseidon_params, &ctx).map_err(
+    //         |e| ApplicationError::InvalidFormat(format!("Failed to derive hashed messages: {}", e)),
+    //     )?;
+    let x_list = secrets
+        .iter()
+        .map(|s| derive_x_from_secret::<F, PoseidonHash>(s, &poseidon_params, &ctx))
+        .collect::<Result<Vec<F>, ApplicationError>>()?;
 
     // 3. Anchor Witness 생성
     let poseidon_key = PoseidonAnchorPublicKey {
@@ -414,8 +419,8 @@ fn compute_anchor_context<Config: ZkPasskeyConfig>(
     };
 
     // hashed_messages를 복사하여 사용 (나중에 h_known 구성에 필요)
-    let hashed_messages_clone = hashed_messages.clone();
-    let secret_obj = PoseidonAnchorSecret(hashed_messages);
+    let hashed_messages_clone = x_list.clone();
+    let secret_obj = PoseidonAnchorSecret(x_list);
 
     // derive_selector_from_secret_and_anchor는 selector 벡터를 반환
     // 예: [1, 0, 1, 0, 1, 0] - 0번, 2번, 4번 위치에 시크릿이 있음

@@ -1,8 +1,11 @@
-pub mod app;
+pub mod api;
+mod app;
 pub mod error;
 pub mod types;
-pub mod utils;
-pub mod api;
+mod utils;
+
+pub use api::anchor::create_poseidon_anchor;
+pub use types::Secret;
 
 #[cfg(target_os = "android")]
 pub fn init_android_logging() {

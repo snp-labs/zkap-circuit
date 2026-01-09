@@ -1,3 +1,4 @@
+use common::error::{FieldParseError, TextError};
 use gadget::anchor::error::AnchorError;
 use thiserror::Error;
 
@@ -17,4 +18,10 @@ pub enum ApplicationError {
 
     #[error("Poseidon hash error")]
     PoseidonHashError,
+
+    #[error("Field parsing error: {0}")]
+    FieldParsingError(#[from] FieldParseError),
+
+    #[error("Text error: {0}")]
+    TextError(#[from] TextError),
 }

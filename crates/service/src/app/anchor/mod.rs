@@ -1,2 +1,2 @@
 pub mod poseidon;
-pub mod utils;
+pub mod types;

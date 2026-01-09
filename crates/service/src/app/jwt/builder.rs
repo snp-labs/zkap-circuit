@@ -6,6 +6,8 @@ use gadget::{
     signature::rsa::native::{PublicKey, Signature},
 };
 
+use crate::Secret;
+
 // SHA-256 블록 크기 (바이트 단위)
 const SHA_BLOCK_LEN: usize = 64;
 
@@ -177,6 +179,28 @@ impl TokenBuilder {
         }
 
         Ok(claims_indices)
+    }
+
+    pub fn parse_secret(&self) -> Secret {
+        let mut sub = None;
+        let mut iss = None;
+        let mut aud = None;
+
+        for (idx, key) in self.claims.iter().enumerate() {
+            match key.key.as_str() {
+                "sub" => sub = Some(self.claims[idx].value.clone()),
+                "iss" => iss = Some(self.claims[idx].value.clone()),
+                "aud" => aud = Some(self.claims[idx].value.clone()),
+                _ => {}
+            }
+        }
+
+        // 필수 필드가 누락되었는지 확인
+        Secret {
+            sub: sub.expect("Missing 'sub' claim"),
+            iss: iss.expect("Missing 'iss' claim"),
+            aud: aud.expect("Missing 'aud' claim"),
+        }
     }
 }
 

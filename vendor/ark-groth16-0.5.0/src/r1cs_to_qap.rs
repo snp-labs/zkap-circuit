@@ -1,5 +1,5 @@
 use ark_ff::{Field, One, PrimeField, Zero};
-use ark_poly::{domain, EvaluationDomain};
+use ark_poly::EvaluationDomain;
 use ark_std::{cfg_iter, cfg_iter_mut, vec};
 
 use crate::{FlatMatrix, Vec};
@@ -348,7 +348,7 @@ impl R1CSToQAP for LibsnarkReduction {
     }
 
     // ✅ 추가된 핵심 메서드: 단일 FlatMatrix를 도메인 위에서 평가 (FFT 포함)
-fn eval_flat_matrix_on_domain<F: PrimeField, D: EvaluationDomain<F>>(
+    fn eval_flat_matrix_on_domain<F: PrimeField, D: EvaluationDomain<F>>(
         flat_matrix: &FlatMatrix<F>,
         num_inputs: usize,
         num_constraints: usize,
@@ -366,7 +366,7 @@ fn eval_flat_matrix_on_domain<F: PrimeField, D: EvaluationDomain<F>>(
             .for_each(|(i, val)| {
                 *val = eval_row(flat_matrix, i, num_inputs, instance, witness);
             });
-        
+
         // ✅ Matrix A인 경우 Public Input(Instance) 값을 뒤에 복사
         if is_matrix_a {
             evals[num_constraints..num_constraints + num_inputs]

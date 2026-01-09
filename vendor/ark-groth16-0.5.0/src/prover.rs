@@ -15,7 +15,10 @@ use ark_std::{
     vec::Vec,
 };
 
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicU64};
+
+#[cfg(feature = "memory-logging")]
+use std::sync::atomic::Ordering;
 
 use log;
 #[cfg(feature = "parallel")]

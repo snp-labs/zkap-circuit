@@ -1,11 +1,11 @@
 pub mod api;
 mod app;
 pub mod error;
-pub mod types;
-mod utils;
 
 pub use api::anchor::create_poseidon_anchor;
-pub use types::Secret;
+pub use api::hash::poseidon_hash;
+pub use api::snark::generate_baerae_proof;
+pub use app::anchor::types::Secret;
 
 #[cfg(target_os = "android")]
 pub fn init_android_logging() {

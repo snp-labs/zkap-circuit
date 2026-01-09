@@ -26,3 +26,9 @@ pub enum IoError {
     #[error("Failed to deserialize key file")]
     DeserializeFailed,
 }
+
+#[derive(Debug, Error)]
+pub enum TextError {
+    #[error("Invalid format: {0}")]
+    InvalidFormat(String),
+}

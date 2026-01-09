@@ -1,11 +1,7 @@
 use common::constants::{F, ZkPasskeyConfig};
 use gadget::anchor::poseidon::PoseidonAnchor;
 
-use crate::{
-    app,
-    types::Secret,
-    error::ApplicationError,
-};
+use crate::{Secret, app, error::ApplicationError};
 
 pub fn create_poseidon_anchor<Config: ZkPasskeyConfig>(
     secrets: Vec<Secret>,

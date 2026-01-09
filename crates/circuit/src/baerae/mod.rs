@@ -79,7 +79,7 @@ where
     pub hanchor: C::BaseField,
     pub h_ctx: C::BaseField,
     pub root: C::BaseField,
-    pub h_sign_userop: C::BaseField,
+    pub h_sign_user_op: C::BaseField,
     pub block_timestamp: C::BaseField,
     pub partial_rhs: C::BaseField,
     pub lhs: C::BaseField,
@@ -143,8 +143,8 @@ where
 
         let root = FpVar::<C::BaseField>::new_input(cs.clone(), || Ok(self.root))?;
 
-        let h_sign_userop =
-            FpVar::<C::BaseField>::new_input(cs.clone(), || Ok(self.h_sign_userop))?;
+        let h_sign_user_op =
+            FpVar::<C::BaseField>::new_input(cs.clone(), || Ok(self.h_sign_user_op))?;
 
         let block_timestamp =
             FpVar::<C::BaseField>::new_input(cs.clone(), || Ok(self.block_timestamp))?;
@@ -380,7 +380,7 @@ where
         // [Phase 2] Nonce 바인딩 확인 (nonce == Poseidon(SignUserOpHash, random))
         let nonce_start = cs.num_constraints();
         let mut nonce_inputs = Vec::<FpVar<C::BaseField>>::new();
-        nonce_inputs.push(h_sign_userop);
+        nonce_inputs.push(h_sign_user_op);
         nonce_inputs.push(random.clone());
         let target_nonce =
             PoseidonCRHGadget::<C::BaseField>::evaluate(&poseidon_param, &nonce_inputs)?;
@@ -652,7 +652,7 @@ where
             hanchor: C::BaseField::default(),
             h_ctx: C::BaseField::default(),
             root: C::BaseField::default(),
-            h_sign_userop: C::BaseField::default(),
+            h_sign_user_op: C::BaseField::default(),
             block_timestamp: C::BaseField::default(),
             partial_rhs: C::BaseField::default(),
             lhs: C::BaseField::default(),
@@ -687,7 +687,7 @@ where
         hanchor: C::BaseField,
         h_ctx: C::BaseField,
         root: C::BaseField,
-        h_sign_userop: C::BaseField,
+        h_sign_user_op: C::BaseField,
         block_timestamp: C::BaseField,
         partial_rhs: C::BaseField,
         lhs: C::BaseField,
@@ -717,7 +717,7 @@ where
             hanchor,
             h_ctx,
             root,
-            h_sign_userop,
+            h_sign_user_op,
             block_timestamp,
             partial_rhs,
             lhs,
@@ -756,7 +756,7 @@ where
             self.hanchor,
             self.h_ctx,
             self.root,
-            self.h_sign_userop,
+            self.h_sign_user_op,
             self.block_timestamp,
             self.partial_rhs,
             self.lhs,

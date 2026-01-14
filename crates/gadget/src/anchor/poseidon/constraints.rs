@@ -174,6 +174,63 @@ impl<F: PrimeField + Absorb> PoseidonAnchorSchemeGadget<F> {
     }
 }
 
+/// indices[j] ∈ {0,1}  (boolean)
+pub fn enforce_boolean_selectors<F: PrimeField>(
+    indices: &[FpVar<F>],
+) -> Result<(), SynthesisError> {
+    let one = FpVar::<F>::one();
+    let zero = FpVar::<F>::zero();
+
+    for s in indices {
+        // s * (s - 1) == 0  <=> s ∈ {0,1}
+        let s_minus_one = s.clone() - one.clone();
+        (s.clone() * s_minus_one).enforce_equal(&zero)?;
+    }
+    Ok(())
+}
+
+pub fn enforce_boolean_selector_debug<F: PrimeField>(
+    indices: &[FpVar<F>],
+) -> Result<Boolean<F>, SynthesisError> {
+    let one = FpVar::<F>::one();
+    let zero = FpVar::<F>::zero();
+    let mut ok = Boolean::constant(true);
+
+    for s in indices {
+        // s * (s - 1) == 0  <=> s ∈ {0,1}
+        let s_minus_one = s.clone() - one.clone();
+        let is_zero = (s.clone() * s_minus_one).is_eq(&zero)?;
+        ok = ok & is_zero;
+    }
+    Ok(ok)
+}
+
+/// Σ indices[j] == k  (cardinality)
+pub fn enforce_selector_cardinality<F: PrimeField>(
+    indices: &[FpVar<F>],
+    k: &FpVar<F>,
+) -> Result<(), SynthesisError> {
+    let mut sum = FpVar::<F>::zero();
+    for s in indices {
+        sum += s.clone();
+    }
+    sum.enforce_equal(k)?;
+    Ok(())
+}
+
+/// Σ indices[j] == k  (cardinality)
+pub fn enforce_selector_cardinality_debug<F: PrimeField>(
+    indices: &[FpVar<F>],
+    k: &FpVar<F>,
+) -> Result<Boolean<F>, SynthesisError> {
+    let mut sum = FpVar::<F>::zero();
+    for s in indices {
+        sum += s.clone();
+    }
+    let is_eq = sum.is_eq(k)?;
+    Ok(is_eq)
+}
+
 impl<F> AllocVar<PoseidonAnchorPublicKey<F>, F> for PoseidonAnchorPublicKeyVar<F>
 where
     F: PrimeField + Absorb,

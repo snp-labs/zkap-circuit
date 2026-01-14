@@ -36,7 +36,9 @@ use common::constants::ZkPasskeyConfig;
 use gadget::{
     anchor::poseidon::{
         PoseidonAnchor,
-        constraints::{PoseidonAnchorSchemeGadget, PoseidonAnchorVar},
+        constraints::{
+            PoseidonAnchorSchemeGadget, PoseidonAnchorVar, enforce_boolean_selector_debug, enforce_boolean_selectors, enforce_selector_cardinality, enforce_selector_cardinality_debug
+        },
     },
     base64::{
         Base64Table, Base64TableVar,
@@ -534,7 +536,40 @@ where
         }
         // [Phase 4] b_vector의 Sparsity(희소성) 검증
         let sparsity_start = cs.num_constraints();
+        // 1) indices는 반드시 boolean
+        let ok = enforce_boolean_selector_debug(&indices)?;
+        #[cfg(feature = "constraints-logging")]
+        gadget::debug::log_r1cs_eq(
+            "Boolean Selectors",
+            &[ok.clone()],
+            &[Boolean::constant(true)],
+        );
+
+        ok.enforce_equal(&Boolean::constant(true))?;
         let result = PoseidonAnchorSchemeGadget::<C::BaseField>::is_b_sparsity(&b, &indices)?;
+
+        // 2) 정확히 K개 선택 (k가 상수라면 constant로)
+        let k_fp = FpVar::<C::BaseField>::Constant(C::BaseField::from(Config::K as u64));
+        let ok = enforce_selector_cardinality_debug(&indices, &k_fp)?;
+        #[cfg(feature = "constraints-logging")]
+        gadget::debug::log_r1cs_eq(
+            "Selector Cardinality",
+            &[ok.clone()],
+            &[Boolean::constant(true)],
+        );
+        ok.enforce_equal(&Boolean::constant(true))?;
+
+        let is_one = single_multiplexer(&indices, &current_idx)?;
+        #[cfg(feature = "constraints-logging")]
+        gadget::debug::log_r1cs_eq(
+            "Current Index One-hot",
+            &[is_one.clone()],
+            &[FpVar::Constant(C::BaseField::from(1u64))],
+        );
+
+        is_one.enforce_equal(&FpVar::Constant(C::BaseField::from(1u64)))?;
+
+        random.enforce_not_equal(&FpVar::Constant(C::BaseField::from(0u64)))?;
 
         #[cfg(feature = "constraints-logging")]
         gadget::debug::log_r1cs_eq(

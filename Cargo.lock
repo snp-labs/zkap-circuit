@@ -581,6 +581,7 @@ name = "craby-api"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "ark-ff",
  "ark-groth16",
  "common",
  "serde",

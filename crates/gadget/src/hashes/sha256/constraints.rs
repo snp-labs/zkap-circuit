@@ -1,4 +1,4 @@
-use std::{borrow::Borrow, iter};
+use std::{borrow::Borrow, iter, ops::Not};
 
 use ark_ff::PrimeField;
 use ark_r1cs_std::{
@@ -6,20 +6,22 @@ use ark_r1cs_std::{
     alloc::{AllocVar, AllocationMode},
     eq::EqGadget,
     fields::{FieldVar, fp::FpVar},
-    prelude::{Boolean, ToBytesGadget},
+    prelude::{Boolean, ToBitsGadget, ToBytesGadget},
     select::CondSelectGadget,
     uint8::UInt8,
+    uint16::UInt16,
     uint32::UInt32,
 };
 use ark_relations::r1cs::{ConstraintSystemRef, Namespace, SynthesisError};
 use core::ops::BitXor;
 
 use crate::{
-    hashes::sha256::{
-        H, K,
-        utils::{add_many_vec, conditionally_select_vec},
+    hashes::sha256::{H, K, utils::conditionally_select_vec},
+    utils::{
+        UInt32Ext,
+        comparison_v2::{is_greater_or_equal, is_less_than},
+        slice_v2,
     },
-    utils::UInt32Ext,
 };
 
 #[derive(Clone)]
@@ -200,7 +202,7 @@ impl<F: PrimeField> SHA256Gadget<F> {
         let zero = UInt32::<F>::constant(0u32);
         let mut output = vec![zero.clone(); 8];
 
-        for (i, chunk) in data.chunks(64).enumerate() {
+        for chunk in data.chunks(64) {
             Self::update_state(&mut self.state, chunk)?;
             // let bytes = Vec::from_iter(self.state.iter().flat_map(|i| i.to_bytes_be().unwrap()));
             // println!("{} chunk {:?}", i, bytes.value().unwrap());
@@ -212,7 +214,7 @@ impl<F: PrimeField> SHA256Gadget<F> {
         }
 
         let mut flags = Vec::with_capacity(hash_results.len());
-        for (i, state) in hash_results.iter().enumerate() {
+        for (i, _state) in hash_results.iter().enumerate() {
             let i_fp = FpVar::<F>::Constant(F::from(i as u64));
             let is_eq = i_fp.is_eq(&nblocks)?;
             flags.push(is_eq);
@@ -237,6 +239,358 @@ impl<F: PrimeField> SHA256Gadget<F> {
             .flatten()
             .collect();
         Ok(DigestVar(bytes))
+    }
+
+    pub fn enforce_sha2_pad_verifier(
+        sha_pad_payload_b64: &[UInt8<F>],
+        nblocks_idx: &FpVar<F>,
+        prefix_blocks: &UInt16<F>,
+        total_len_wo_pad_bytes: &UInt16<F>,
+        pad_start_in_suffix: &UInt16<F>,
+    ) -> Result<(), SynthesisError> {
+        // SHA-256은 64바이트 블록 단위
+        assert!(sha_pad_payload_b64.len() % 64 == 0);
+        let max_blocks = sha_pad_payload_b64.len() / 64;
+
+        // ------------------------------------------------------------
+        // 0) 마지막 블록 선택을 위한 one-hot 플래그 생성
+        //    flags[b] == 1  <=>  nblocks_idx == b
+        // ------------------------------------------------------------
+        let mut flags: Vec<FpVar<F>> = Vec::with_capacity(max_blocks);
+        for i in 0..max_blocks {
+            let i_fp = FpVar::<F>::constant(F::from(i as u64));
+            flags.push(i_fp.is_eq(nblocks_idx)?.into());
+        }
+
+        // one-hot: sum(flags) == 1 을 직접 enforce
+        let sum_flags = flags
+            .iter()
+            .fold(FpVar::<F>::zero(), |acc, f| acc + f.clone());
+        sum_flags.enforce_equal(&FpVar::<F>::one())?;
+
+        // ------------------------------------------------------------
+        // 1) 전체 메시지 길이(bit 단위) 계산
+        //    total_len_bits = total_len_wo_pad_bytes * 8
+        // ------------------------------------------------------------
+        let total_len_bits_fp =
+            total_len_wo_pad_bytes.to_fp()? * FpVar::<F>::constant(F::from(8u64));
+
+        // ------------------------------------------------------------
+        // 2) SHA-256 length field 검증
+        //    선택된 마지막 블록의 [56..63] 바이트를 big-endian으로 해석한 값
+        //    == total_len_bits
+        // ------------------------------------------------------------
+        let mut enc_bytes: [FpVar<F>; 8] = core::array::from_fn(|_| FpVar::<F>::zero());
+        for (b, flag) in flags.iter().enumerate() {
+            let base = b * 64 + 56;
+            for j in 0..8 {
+                enc_bytes[j] += flag.clone() * sha_pad_payload_b64[base + j].to_fp()?;
+            }
+        }
+
+        let mut enc_fp = FpVar::<F>::zero();
+        let mut base = F::from(1u64);
+        for j in (0..8).rev() {
+            enc_fp += enc_bytes[j].clone() * FpVar::<F>::constant(base);
+            base *= F::from(256u64);
+        }
+
+        // enc_fp == total_len_bits_fp 를 직접 enforce
+        enc_fp.enforce_equal(&total_len_bits_fp)?;
+
+        // ------------------------------------------------------------
+        // 3) 선택된 마지막 블록의 경계 계산
+        //    block_start    = block_idx * 64
+        //    lenfield_start = block_start + 56
+        // ------------------------------------------------------------
+        let mut block_start_fp = FpVar::<F>::zero();
+        let mut lenfield_start_fp = FpVar::<F>::zero();
+        for (b, flag) in flags.iter().enumerate() {
+            block_start_fp += flag.clone() * FpVar::<F>::constant(F::from((b * 64) as u64));
+            lenfield_start_fp += flag.clone() * FpVar::<F>::constant(F::from((b * 64 + 56) as u64));
+        }
+
+        let pad_start_fp = pad_start_in_suffix.to_fp()?;
+
+        // sha_pad_payload_b64.len() <= 2048 이므로 모든 인덱스는 16비트 이내
+        let pad_bits = pad_start_fp.to_bits_le_with_top_bits_zero(16)?.0;
+        let block_start_bits = block_start_fp.to_bits_le_with_top_bits_zero(16)?.0;
+        let lenfield_start_bits = lenfield_start_fp.to_bits_le_with_top_bits_zero(16)?.0;
+
+        // pad_start는 반드시 선택된 마지막 블록 내부에 있어야 함:
+        //   block_start <= pad_start < lenfield_start
+        is_greater_or_equal(&pad_bits, &block_start_bits)?.enforce_equal(&Boolean::TRUE)?;
+        is_less_than(&pad_bits, &lenfield_start_bits)?.enforce_equal(&Boolean::TRUE)?;
+
+        // ------------------------------------------------------------
+        // 4) 길이 연결식 검증
+        //    total_len = prefix_blocks*64 + pad_start
+        // ------------------------------------------------------------
+        let prefix_len_bytes_fp = prefix_blocks.to_fp()? * FpVar::<F>::constant(F::from(64u64));
+        let total_len_fp = total_len_wo_pad_bytes.to_fp()?;
+
+        (prefix_len_bytes_fp + &pad_start_fp).enforce_equal(&total_len_fp)?;
+
+        // ------------------------------------------------------------
+        // 5) 패딩 바이트 검증 (length field 완전히 제외)
+        //
+        //    padding_len = lenfield_start - pad_start   ∈ [1..=56]
+        //
+        //    pad_start 위치부터 "최대 56바이트"를 slice:
+        //      - 첫 바이트는 반드시 0x80
+        //      - 그 이후는 전부 0
+        //
+        //    slice_efficient는 padding_len 이후를 0으로 채우므로
+        //    [1..]을 조건 없이 0으로 enforce해도 안전함
+        // ------------------------------------------------------------
+        let padding_len_fp = &lenfield_start_fp - &pad_start_fp;
+        let padding_len_bits = padding_len_fp.to_bits_le_with_top_bits_zero(16)?.0;
+
+        // padding_len >= 1  <=> !(padding_len < 1)
+        let one_bits = UInt16::constant(1u16).to_bits_le()?;
+        let lt_one = is_less_than(&padding_len_bits, &one_bits)?;
+        lt_one.not().enforce_equal(&Boolean::TRUE)?;
+
+        // padding_len <= 56  <=> padding_len < 57
+        let fifty_seven_bits = UInt16::constant(57u16).to_bits_le()?;
+        is_less_than(&padding_len_bits, &fifty_seven_bits)?.enforce_equal(&Boolean::TRUE)?;
+
+        let padding_len_u16 = UInt16::from_bits_le(&padding_len_bits);
+
+        // slice_efficient 입력을 FpVar 벡터로 변환
+        let sha_pad_fp: Vec<FpVar<F>> = sha_pad_payload_b64
+            .iter()
+            .map(|b| b.to_fp())
+            .collect::<Result<Vec<_>, _>>()?;
+
+        // length field 시작(56) 이전까지만 검사하므로 max=56
+        const PAD_REGION_MAX: usize = 56;
+        let pad_region = slice_v2::slice_efficient(
+            &sha_pad_fp,
+            pad_start_in_suffix,
+            &padding_len_u16,
+            PAD_REGION_MAX,
+        )?;
+
+        // 첫 바이트는 0x80
+        pad_region[0].enforce_equal(&FpVar::<F>::constant(F::from(0x80u64)))?;
+
+        // 나머지 바이트는 모두 0
+        for i in 1..PAD_REGION_MAX {
+            pad_region[i].enforce_equal(&FpVar::<F>::zero())?;
+        }
+
+        // ------------------------------------------------------------
+        // 6) 마지막 블록 이후의 모든 바이트는 0이어야 함
+        //    (suffix padding 이후의 trailing zero 검증)
+        // ------------------------------------------------------------
+        let mut prefix_sum = FpVar::<F>::zero();
+        for b in 0..max_blocks {
+            // prefix_sum == 1 이면 b > last_block
+            let after_mask = prefix_sum.clone();
+
+            for off in 0..64 {
+                let idx = b * 64 + off;
+                let byte_fp = sha_pad_payload_b64[idx].to_fp()?;
+                let prod = after_mask.clone() * byte_fp;
+                prod.enforce_equal(&FpVar::<F>::zero())?;
+            }
+
+            prefix_sum += flags[b].clone();
+        }
+
+        Ok(())
+    }
+
+    pub fn digest_with_pad_checked(
+        &mut self,
+        data: &[UInt8<F>],
+        nblocks_idx: FpVar<F>,
+        prefix_blocks: &UInt16<F>,
+        total_len_wo_pad_bytes: &UInt16<F>,
+        pad_start_in_suffix: &UInt16<F>,
+    ) -> Result<DigestVar<F>, ark_relations::r1cs::SynthesisError> {
+        Self::enforce_sha2_pad_verifier(
+            data,
+            &nblocks_idx,
+            prefix_blocks,
+            total_len_wo_pad_bytes,
+            pad_start_in_suffix,
+        )?;
+        self.digest_with_pad(data, nblocks_idx)
+    }
+
+    /// enforce_sha2_pad_verifier와 동일한 기능을 수행하지만,
+    /// Boolean<F> 결과를 반환한다. Boolean<F>에 대한 and를 수행하기 때문에 더 많은 제약조건이 생성된다.
+    pub fn enforce_sha2_pad_verifier_debug(
+        sha_pad_payload_b64: &[UInt8<F>],
+        nblocks_idx: &FpVar<F>,
+        prefix_blocks: &UInt16<F>,
+        total_len_wo_pad_bytes: &UInt16<F>,
+        pad_start_in_suffix: &UInt16<F>,
+    ) -> Result<Boolean<F>, SynthesisError> {
+        assert!(sha_pad_payload_b64.len() % 64 == 0);
+        let max_blocks = sha_pad_payload_b64.len() / 64;
+
+        let mut ok = Boolean::<F>::TRUE;
+
+        // ------------------------------------------------------------
+        // 0) 마지막 블록 선택을 위한 one-hot 플래그 생성
+        //    flags[b] == 1  <=>  nblocks_idx == b
+        //    이후 모든 계산은 이 one-hot 가중합으로 수행
+        // ------------------------------------------------------------
+        let mut flags: Vec<FpVar<F>> = Vec::with_capacity(max_blocks);
+        for i in 0..max_blocks {
+            let i_fp = FpVar::<F>::constant(F::from(i as u64));
+            flags.push(i_fp.is_eq(nblocks_idx)?.into());
+        }
+
+        // 정확히 하나의 블록만 선택되었는지 확인 (one-hot)
+        let sum_flags = flags
+            .iter()
+            .fold(FpVar::<F>::zero(), |acc, f| acc + f.clone());
+        let onehot_ok: Boolean<F> = sum_flags.is_eq(&FpVar::<F>::one())?.into();
+        ok = &ok & &onehot_ok;
+
+        // ------------------------------------------------------------
+        // 1) 전체 메시지 길이(bit 단위) 계산
+        //    total_len_bits = total_len_wo_pad_bytes * 8
+        // ------------------------------------------------------------
+        let total_len_bits_fp =
+            total_len_wo_pad_bytes.to_fp()? * FpVar::<F>::constant(F::from(8u64));
+
+        // ------------------------------------------------------------
+        // 2) SHA-256 length field 검증
+        //    선택된 마지막 블록의 [56..63] 바이트를 big-endian으로
+        //    해석한 값이 total_len_bits 와 동일해야 함
+        // ------------------------------------------------------------
+        let mut enc_bytes: [FpVar<F>; 8] = core::array::from_fn(|_| FpVar::<F>::zero());
+        for (b, flag) in flags.iter().enumerate() {
+            let base = b * 64 + 56;
+            for j in 0..8 {
+                enc_bytes[j] += flag.clone() * sha_pad_payload_b64[base + j].to_fp()?;
+            }
+        }
+
+        // big-endian 정수로 복원
+        let mut enc_fp = FpVar::<F>::zero();
+        let mut base = F::from(1u64);
+        for j in (0..8).rev() {
+            enc_fp += enc_bytes[j].clone() * FpVar::<F>::constant(base);
+            base *= F::from(256u64);
+        }
+
+        let lenfield_ok: Boolean<F> = enc_fp.is_eq(&total_len_bits_fp)?.into();
+        ok = &ok & &lenfield_ok;
+
+        // ------------------------------------------------------------
+        // 3) 선택된 마지막 블록의 경계 계산
+        //    block_start      = block_idx * 64
+        //    lenfield_start   = block_start + 56
+        // ------------------------------------------------------------
+        let mut block_start_fp = FpVar::<F>::zero();
+        let mut lenfield_start_fp = FpVar::<F>::zero();
+        for (b, flag) in flags.iter().enumerate() {
+            block_start_fp += flag.clone() * FpVar::<F>::constant(F::from((b * 64) as u64));
+            lenfield_start_fp += flag.clone() * FpVar::<F>::constant(F::from((b * 64 + 56) as u64));
+        }
+
+        let pad_start_fp = pad_start_in_suffix.to_fp()?;
+
+        let pad_bits = pad_start_fp.to_bits_le_with_top_bits_zero(16)?.0;
+        let block_start_bits = block_start_fp.to_bits_le_with_top_bits_zero(16)?.0;
+        let lenfield_start_bits = lenfield_start_fp.to_bits_le_with_top_bits_zero(16)?.0;
+
+        // pad_start는 반드시 선택된 마지막 블록 내부에 있어야 함
+        //   block_start <= pad_start < lenfield_start
+        let ge_block_start: Boolean<F> = is_greater_or_equal(&pad_bits, &block_start_bits)?;
+        ok = &ok & &ge_block_start;
+        let lt_lenfield: Boolean<F> = is_less_than(&pad_bits, &lenfield_start_bits)?;
+        ok = &ok & &lt_lenfield;
+
+        // ------------------------------------------------------------
+        // 4) 길이 연결식 검증
+        //    total_len = prefix_blocks*64 + pad_start
+        // ------------------------------------------------------------
+        let prefix_len_bytes_fp = prefix_blocks.to_fp()? * FpVar::<F>::constant(F::from(64u64));
+        let total_len_fp = total_len_wo_pad_bytes.to_fp()?;
+        let tie_ok: Boolean<F> = (prefix_len_bytes_fp + &pad_start_fp).is_eq(&total_len_fp)?;
+        ok = &ok & &tie_ok;
+
+        // ------------------------------------------------------------
+        // 5) 패딩 바이트 검증 (length field 완전히 제외)
+        //
+        //    padding_len = lenfield_start - pad_start   ∈ [1..=56]
+        //
+        //    pad_start 위치부터 최대 56바이트를 slice:
+        //      - 첫 바이트는 반드시 0x80
+        //      - 그 이후는 전부 0
+        //
+        //    slice_efficient는 padding_len 이후를 0으로 채우므로
+        //    조건 없이 [1..] == 0 을 강제해도 안전함
+        // ------------------------------------------------------------
+        let padding_len_fp = lenfield_start_fp - pad_start_fp;
+        let padding_len_bits = padding_len_fp.to_bits_le_with_top_bits_zero(16)?.0;
+
+        // padding_len >= 1
+        let one_bits = UInt16::constant(1u16).to_bits_le()?;
+        let lt_one = is_less_than(&padding_len_bits, &one_bits)?;
+        ok = &ok & &(!lt_one);
+
+        // padding_len <= 56  <=> padding_len < 57
+        let fifty_seven_bits = UInt16::constant(57u16).to_bits_le()?;
+        let lt_57 = is_less_than(&padding_len_bits, &fifty_seven_bits)?;
+        ok = &ok & &lt_57;
+
+        let padding_len_u16 = UInt16::from_bits_le(&padding_len_bits);
+
+        let sha_pad_fp: Vec<FpVar<F>> = sha_pad_payload_b64
+            .iter()
+            .map(|b| b.to_fp())
+            .collect::<Result<Vec<_>, _>>()?;
+
+        const PAD_REGION_MAX: usize = 56;
+        let pad_region = slice_v2::slice_efficient(
+            &sha_pad_fp,
+            pad_start_in_suffix,
+            &padding_len_u16,
+            PAD_REGION_MAX,
+        )?;
+
+        let mut padding_ok = Boolean::<F>::TRUE;
+
+        // 첫 바이트는 0x80
+        padding_ok = &padding_ok & pad_region[0].is_eq(&FpVar::<F>::constant(F::from(0x80u64)))?;
+
+        // 나머지 바이트는 모두 0
+        for i in 1..PAD_REGION_MAX {
+            padding_ok = &padding_ok & pad_region[i].is_eq(&FpVar::<F>::zero())?;
+        }
+
+        ok = &ok & &padding_ok;
+
+        // ------------------------------------------------------------
+        // 6) 마지막 블록 이후의 모든 바이트는 0이어야 함
+        //    (suffix padding 이후의 trailing zero 검증)
+        // ------------------------------------------------------------
+        let mut prefix_sum = FpVar::<F>::zero();
+        let mut trailing_ok = Boolean::<F>::TRUE;
+
+        for b in 0..max_blocks {
+            // prefix_sum == 1 이면 b > last_block
+            let after_mask = prefix_sum.clone();
+            for off in 0..64 {
+                let idx = b * 64 + off;
+                let byte_fp = sha_pad_payload_b64[idx].to_fp()?;
+
+                let prod = after_mask.clone() * byte_fp;
+                trailing_ok = &trailing_ok & prod.is_eq(&FpVar::<F>::zero())?;
+            }
+            prefix_sum += flags[b].clone();
+        }
+        ok = &ok & &trailing_ok;
+
+        Ok(ok)
     }
 }
 

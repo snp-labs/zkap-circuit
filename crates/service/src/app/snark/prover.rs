@@ -8,14 +8,23 @@ use ark_std::UniformRand;
 use circuit::baerae::BaeraeLightWeightCircuit;
 #[cfg(feature = "use-optimized")]
 use common::constants::BN254;
-use common::{constants::{BNP, CG, F, ZkPasskeyConfig}, io::load_key_uncompressed};
+use common::{
+    constants::{BNP, CG, F, ZkPasskeyConfig},
+    io::load_key_uncompressed,
+};
 use gadget::mekletree::tree_config::MerkleTreeParams;
 use rand::rngs::OsRng;
 
-use crate::{app::{
-    jwt::builder::{JwtCircuitWitness, TokenBuilder},
-    snark::{preprocess::build_mp, types::{AnchorContext, CircuitContext, Intermediate, ParsedInputs}},
-}, error::ApplicationError};
+use crate::{
+    app::{
+        jwt::builder::{JwtCircuitWitness, TokenBuilder},
+        snark::{
+            preprocess::build_mp,
+            types::{AnchorContext, CircuitContext, Intermediate, ParsedInputs},
+        },
+    },
+    error::ApplicationError,
+};
 
 pub(crate) fn make_circuit_factory<Config: ZkPasskeyConfig>(
     circuit_ctx: &CircuitContext<Config>,
@@ -85,6 +94,9 @@ pub(crate) fn make_circuit_factory<Config: ZkPasskeyConfig>(
             selector.clone(),
             current_idx,
             aud.to_vec(),
+            w.total_len,
+            w.pre_hash_block_len,
+            w.pad_start_in_suffix,
         )
     }
 }

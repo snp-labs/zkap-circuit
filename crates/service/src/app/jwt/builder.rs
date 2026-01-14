@@ -22,6 +22,9 @@ pub struct JwtCircuitWitness {
     pub index_bits: IndexBits,
     pub pay_offset_b64: usize,
     pub pay_len_b64: usize,
+    pub total_len: usize,
+    pub pre_hash_block_len: usize,
+    pub pad_start_in_suffix: usize,
 
     // Crypto 관련
     pub pk: PublicKey,
@@ -35,7 +38,6 @@ pub struct TokenBuilder {
     pub header_b64: String,
     pub payload_b64: String,
     pub signature_b64: String,
-    pub full_token: String, // SHA 패딩 계산 등을 위해 원본 유지 필요 (또는 재조립)
     pub claims: Vec<Claim>,
 }
 
@@ -60,7 +62,6 @@ impl TokenBuilder {
             header_b64: parts[0].to_string(),
             payload_b64: parts[1].to_string(),
             signature_b64: parts[2].to_string(),
-            full_token: jwt.to_string(),
             claims,
         })
     }
@@ -71,7 +72,7 @@ impl TokenBuilder {
         pk_modulus_b64: &str,
     ) -> Result<JwtCircuitWitness, TokenError> {
         // 1. SHA-256 State 및 Padding 계산
-        let (state, nblocks, sha_pad_payload_b64, index_bits, pay_offset_b64, pay_len_b64) =
+        let (state, nblocks, sha_pad_payload_b64, index_bits, pay_offset_b64, pay_len_b64, total_len, pre_hash_block_len, pad_start_in_suffix) =
             self.compute_sha_and_base64_witness::<Config>()?;
 
         // 2. Public Key 및 Signature 디코딩
@@ -87,6 +88,9 @@ impl TokenBuilder {
             index_bits,
             pay_offset_b64,
             pay_len_b64,
+            total_len,
+            pre_hash_block_len,
+            pad_start_in_suffix,
             pk,
             sig,
             claim_indices,
@@ -95,7 +99,7 @@ impl TokenBuilder {
 
     fn compute_sha_and_base64_witness<Config: ZkPasskeyConfig>(
         &self,
-    ) -> Result<(Vec<u32>, usize, Vec<u8>, IndexBits, usize, usize), TokenError> {
+    ) -> Result<(Vec<u32>, usize, Vec<u8>, IndexBits, usize, usize, usize, usize, usize), TokenError> {
         let pre_hash_block_len = self.header_b64.len() / SHA_BLOCK_LEN;
         let header_b64_rest = self.header_b64[SHA_BLOCK_LEN * pre_hash_block_len..].as_bytes();
 
@@ -119,6 +123,8 @@ impl TokenBuilder {
         // 전체 길이 (State에 들어간 앞부분 포함)를 기준으로 패딩해야 올바른 SHA 패딩이 됨
         let total_len = self.header_b64.len() + 1 + self.payload_b64.len();
 
+        let pad_start_in_suffix = total_len - pre_hash_block_len * SHA_BLOCK_LEN;
+
         // 1-3. Base64 Index Bits 계산 (Payload만 사용)
         // 회로 내에서 Base64 디코딩을 위한 비트 인덱스 정보
         let index_bits = IndexBits::from_base64_url(&self.payload_b64, Config::MAX_PAYLOAD_B64_LEN)
@@ -139,6 +145,9 @@ impl TokenBuilder {
             index_bits,
             pay_offset_b64,
             pay_len_b64,
+            total_len,
+            pre_hash_block_len,
+            pad_start_in_suffix,
         ))
     }
 
@@ -202,20 +211,6 @@ impl TokenBuilder {
             aud: aud.expect("Missing 'aud' claim"),
         }
     }
-}
-
-/// Resizes a string to exact length, padding with specified character.
-/// Ensures fixed-size strings for circuit compatibility.
-pub fn resize(s: &str, max_len: usize, pad_char: u8) -> String {
-    let mut resized = s.to_string();
-
-    if resized.len() < max_len {
-        let padding_len = max_len - resized.len();
-        resized.reserve(padding_len); // Pre-allocate to avoid reallocations
-        resized.extend(std::iter::repeat(pad_char as char).take(padding_len));
-    }
-
-    resized
 }
 
 /// Helper: SHA-256 Padding

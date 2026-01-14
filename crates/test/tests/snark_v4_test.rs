@@ -8,7 +8,11 @@ use ark_crypto_primitives::{
 use ark_ff::{BigInteger, PrimeField};
 use ark_groth16::{Groth16, VerifyingKey};
 use ark_serialize::CanonicalSerialize;
-use common::{constants::ZkapConfig, field_parser::ascii_to_field_be, io::load_key_uncompressed};
+use common::{
+    constants::{ZkPasskeyConfig, ZkapConfig},
+    field_parser::ascii_to_field_be,
+    io::load_key_uncompressed,
+};
 use gadget::{
     base64::decode_any_base64,
     bigint::constraints::BigNatCircuitParams,
@@ -89,6 +93,7 @@ fn setup_test_dir() -> PathBuf {
     if !test_dir.exists() {
         std::fs::create_dir_all(&test_dir).unwrap();
     }
+    println!("Test directory: {:?}", test_dir);
     test_dir
 }
 
@@ -275,6 +280,50 @@ fn test_generate_baerae_proof_single() {
         "4725746703237049609879526210021666464972871326396081167205154246686201634852".to_string(),
         "4725746703237049609879526210021666464972871326396081167205154246686201634852".to_string(),
     ];
+    println!("\n=== Generating Baerae Proof Test ===");
+    println!("ZkapConfig Parameters:");
+    println!(" - N: {}", <ZkapConfig as ZkPasskeyConfig>::N);
+    println!(" - K: {}", <ZkapConfig as ZkPasskeyConfig>::K);
+    println!(
+        " - TREE_HEIGHT: {}",
+        <ZkapConfig as ZkPasskeyConfig>::TREE_HEIGHT
+    );
+    println!(
+        " - MAX_JWT_B64_LEN: {}",
+        <ZkapConfig as ZkPasskeyConfig>::MAX_JWT_B64_LEN
+    );
+    println!(
+        " - MAX_PAYLOAD_B64_LEN: {}",
+        <ZkapConfig as ZkPasskeyConfig>::MAX_PAYLOAD_B64_LEN
+    );
+    println!(
+        " - MAX_AUD_LEN: {}",
+        <ZkapConfig as ZkPasskeyConfig>::MAX_AUD_LEN
+    );
+    println!(
+        " - MAX_EXP_LEN: {}",
+        <ZkapConfig as ZkPasskeyConfig>::MAX_EXP_LEN
+    );
+    println!(
+        " - MAX_ISS_LEN: {}",
+        <ZkapConfig as ZkPasskeyConfig>::MAX_ISS_LEN
+    );
+    println!(
+        " - MAX_NONCE_LEN: {}",
+        <ZkapConfig as ZkPasskeyConfig>::MAX_NONCE_LEN
+    );
+    println!(
+        " - MAX_SUB_LEN: {}",
+        <ZkapConfig as ZkPasskeyConfig>::MAX_SUB_LEN
+    );
+    println!(
+        " - NUM_AUDIENCE_LIMIT: {}",
+        <ZkapConfig as ZkPasskeyConfig>::NUM_AUDIENCE_LIMIT
+    );
+    println!(
+        " - PAD_CHAR: '{}'",
+        <ZkapConfig as ZkPasskeyConfig>::PAD_CHAR
+    );
 
     println!("\nGenerating {} proof(s)...", k);
 

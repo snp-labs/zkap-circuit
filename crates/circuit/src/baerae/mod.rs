@@ -4,6 +4,7 @@ use ark_crypto_primitives::{
     crh::{
         CRHSchemeGadget,
         poseidon::{self, constraints::CRHGadget as PoseidonCRHGadget},
+        sha256::digest::typenum::UInt,
     },
     merkle_tree::{Path, constraints::PathVar},
     sponge::{Absorb, poseidon::PoseidonConfig},
@@ -103,6 +104,9 @@ where
     pub indices: Vec<u8>,
     pub current_idx: usize,
     pub aud_list: Vec<C::BaseField>,
+    pub total_len: usize,
+    pub pre_hash_block_len: usize,
+    pub pad_start_in_suffix: usize,
 
     // phantom
     _phantom: PhantomData<(BNP, Config)>,
@@ -217,6 +221,18 @@ where
 
         let aud_list = Vec::<FpVar<C::BaseField>>::new_witness(cs.clone(), || Ok(self.aud_list))?;
 
+        let total_len =
+            UInt16::<C::BaseField>::new_witness(cs.clone(), || Ok(self.total_len as u16))?;
+
+        let pre_hash_block_len =
+            UInt16::<C::BaseField>::new_witness(cs.clone(), || Ok(self.pre_hash_block_len as u16))?;
+
+        let pad_start_in_suffix =
+            UInt16::<C::BaseField>::new_witness(
+                cs.clone(),
+                || Ok(self.pad_start_in_suffix as u16),
+            )?;
+
         let after_allocation = cs.num_constraints();
 
         #[cfg(feature = "num-cs-logging")]
@@ -233,7 +249,13 @@ where
         let phase1_start = cs.num_constraints();
         let rsa_start = cs.num_constraints();
         let mut digest = midstate
-            .digest_with_pad(&sha_pad_payload_b64, nblocks)?
+            .digest_with_pad_checked(
+                &sha_pad_payload_b64,
+                nblocks,
+                &pre_hash_block_len,
+                &total_len,
+                &pad_start_in_suffix,
+            )?
             .to_bytes_le()?;
         let result = RSA2048VerifyGadget::verify(&mut digest, &signature_op, &pk_op)?;
 
@@ -675,6 +697,10 @@ where
             indices: vec![0; Config::N],
             current_idx: 0,
             aud_list: vec![C::BaseField::default(); Config::NUM_AUDIENCE_LIMIT],
+            total_len: 0,
+            pre_hash_block_len: 0,
+            pad_start_in_suffix: 0,
+
             _phantom: PhantomData,
         }
     }
@@ -709,6 +735,9 @@ where
         indices: Vec<u8>,
         current_idx: usize,
         aud_list: Vec<C::BaseField>,
+        total_len: usize,
+        pre_hash_block_len: usize,
+        pad_start_in_suffix: usize,
     ) -> Self {
         Self {
             vandermonde_matrix,
@@ -739,6 +768,9 @@ where
             indices,
             current_idx,
             aud_list,
+            total_len,
+            pre_hash_block_len,
+            pad_start_in_suffix,
             _phantom: PhantomData,
         }
     }

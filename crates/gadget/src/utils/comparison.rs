@@ -1,6 +1,5 @@
-use ark_ff::{PrimeField, One};
+use ark_ff::PrimeField;
 use ark_r1cs_std::{
-    R1CSVar,
     fields::{FieldVar, fp::FpVar},
     prelude::Boolean,
 };
@@ -127,11 +126,9 @@ where
 #[cfg(test)]
 mod tests {
     use ark_r1cs_std::{
-        R1CSVar,
         alloc::AllocVar,
         eq::EqGadget,
         fields::{FieldVar, fp::FpVar},
-        prelude::Boolean,
     };
     use ark_relations::r1cs::{ConstraintSystem, ConstraintSystemRef};
 

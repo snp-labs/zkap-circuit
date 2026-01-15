@@ -1,6 +1,9 @@
 use ark_ff::PrimeField;
 use ark_r1cs_std::{
-    R1CSVar, eq::EqGadget, fields::{FieldVar, fp::FpVar}, prelude::{Boolean, ToBitsGadget}, uint16::UInt16
+    eq::EqGadget,
+    fields::{FieldVar, fp::FpVar},
+    prelude::{Boolean, ToBitsGadget},
+    uint16::UInt16,
 };
 use ark_relations::r1cs::{ConstraintSystemRef, SynthesisError};
 
@@ -317,7 +320,7 @@ pub fn jwt_exp_to_field<F: PrimeField>(
 
     let ten = FpVar::Constant(F::from(10u8));
     let zero = FpVar::<F>::Constant(F::zero());
-    
+
     let mut accumulated_value = FpVar::<F>::zero();
 
     // --- 1. 첫 10자리 파싱 및 검증 ---
@@ -366,7 +369,8 @@ fn decimal_byte_to_digit<F: PrimeField>(
         let is_equal = byte.is_eq(&byte_const)?;
 
         // 값 누적 (digit 그 자체가 값)
-        let value_to_add = FpVar::from(is_equal.clone()) * FpVar::<F>::Constant(F::from(digit as u64));
+        let value_to_add =
+            FpVar::from(is_equal.clone()) * FpVar::<F>::Constant(F::from(digit as u64));
         result += &value_to_add;
 
         // 유효성 플래그 업데이트
@@ -587,12 +591,18 @@ mod tests {
 
         let result = jwt_exp_to_field(&input_var).unwrap();
 
-        assert!(cs.is_satisfied().unwrap(), "Constraints should be satisfied");
+        assert!(
+            cs.is_satisfied().unwrap(),
+            "Constraints should be satisfied"
+        );
 
         let expected = F::from(1234567890u64);
         assert_eq!(result.value().unwrap(), expected);
 
-        println!("✓ Basic exp test (1234567890) - constraints: {}", cs.num_constraints());
+        println!(
+            "✓ Basic exp test (1234567890) - constraints: {}",
+            cs.num_constraints()
+        );
     }
 
     #[test]
@@ -640,7 +650,10 @@ mod tests {
         let expected = F::from(9999999999u64);
         assert_eq!(result.value().unwrap(), expected);
 
-        println!("✓ Max value test (9999999999) - constraints: {}", cs.num_constraints());
+        println!(
+            "✓ Max value test (9999999999) - constraints: {}",
+            cs.num_constraints()
+        );
     }
 
     #[test]
@@ -666,7 +679,10 @@ mod tests {
         let expected = F::from(1734000000u64);
         assert_eq!(result.value().unwrap(), expected);
 
-        println!("✓ Realistic timestamp test (1734000000) - constraints: {}", cs.num_constraints());
+        println!(
+            "✓ Realistic timestamp test (1734000000) - constraints: {}",
+            cs.num_constraints()
+        );
     }
 
     #[test]

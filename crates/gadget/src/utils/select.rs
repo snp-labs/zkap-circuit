@@ -52,7 +52,7 @@ where
     Ok(res)
 }
 
-fn single_multiplexer_v2<F>(inp: &[FpVar<F>], idx: &FpVar<F>, n: usize) -> Result<FpVar<F>, SynthesisError>
+pub fn single_multiplexer_v2<F>(inp: &[FpVar<F>], idx: &FpVar<F>, n: usize) -> Result<FpVar<F>, SynthesisError>
 where
     F: PrimeField,
 {

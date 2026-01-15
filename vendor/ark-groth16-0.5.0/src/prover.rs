@@ -15,6 +15,7 @@ use ark_std::{
     vec::Vec,
 };
 
+#[cfg(feature = "memory-logging")]
 use std::sync::atomic::{AtomicU64};
 
 #[cfg(feature = "memory-logging")]
@@ -866,6 +867,7 @@ impl<E: Pairing, QAP: R1CSToQAP> Groth16<E, QAP> {
 }
 
 // ✅ 전역 변수로 피크 메모리 저장 (초기값 0)
+#[cfg(feature = "memory-logging")]
 static PEAK_MEMORY: AtomicU64 = AtomicU64::new(0);
 
 #[cfg(feature = "memory-logging")]

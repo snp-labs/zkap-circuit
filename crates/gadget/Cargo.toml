@@ -33,3 +33,4 @@ ark-ed-on-bn254 = { workspace = true, features = ["r1cs"] }
 [features]
 print-trace = ["ark-std/print-trace"]
 constraints-logging = []
+num-cs-logging = []

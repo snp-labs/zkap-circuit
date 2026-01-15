@@ -1,10 +1,10 @@
 #![allow(unused_variables)]
+#![allow(unused_mut)]
 
 use ark_crypto_primitives::{
     crh::{
         CRHSchemeGadget,
         poseidon::{self, constraints::CRHGadget as PoseidonCRHGadget},
-        sha256::digest::typenum::UInt,
     },
     merkle_tree::{Path, constraints::PathVar},
     sponge::{Absorb, poseidon::PoseidonConfig},
@@ -12,7 +12,6 @@ use ark_crypto_primitives::{
 use ark_ec::CurveGroup;
 use ark_ff::PrimeField;
 use ark_r1cs_std::{
-    R1CSVar,
     alloc::AllocVar,
     eq::EqGadget,
     fields::fp::FpVar,
@@ -37,7 +36,8 @@ use gadget::{
     anchor::poseidon::{
         PoseidonAnchor,
         constraints::{
-            PoseidonAnchorSchemeGadget, PoseidonAnchorVar, enforce_boolean_selector_debug, enforce_boolean_selectors, enforce_selector_cardinality, enforce_selector_cardinality_debug
+            PoseidonAnchorSchemeGadget, PoseidonAnchorVar, enforce_boolean_selector_debug,
+            enforce_selector_cardinality_debug,
         },
     },
     base64::{
@@ -130,6 +130,8 @@ where
         // Implement the constraint generation logic here
 
         let initial_constraints = cs.num_constraints();
+        let mut cs_last = initial_constraints;
+
         let vandermonde_matrix = VandermondeMatrixVar::<C::BaseField>::new_constant(
             cs.clone(),
             self.vandermonde_matrix,
@@ -235,21 +237,19 @@ where
                 || Ok(self.pad_start_in_suffix as u16),
             )?;
 
-        let after_allocation = cs.num_constraints();
+        let zero = FpVar::<C::BaseField>::Constant(C::BaseField::from(0u64));
+        let one = FpVar::<C::BaseField>::Constant(C::BaseField::from(1u64));
 
-        #[cfg(feature = "num-cs-logging")]
-        {
-            println!("=== Baerae Circuit Constraint Analysis ===");
-            println!("Initial constraints: {}", initial_constraints);
-            println!(
-                "\n[Setup] Variable allocation: {} constraints",
-                after_allocation - initial_constraints
-            );
-        }
+        gadget::dbg_cs_total!(&cs, "Initial constraints");
+        gadget::dbg_cs_delta!(&cs, &mut cs_last, "[Setup] Variable allocation");
 
-        // [Phase 1: Integrity] JWT 서명 검증 (RSA Verification)
+        // ============================================================
+        // [Phase 1] JWT Authenticity & Claim Extraction
+        // ============================================================
         let phase1_start = cs.num_constraints();
-        let rsa_start = cs.num_constraints();
+        let mut phase1_total_last = phase1_start;
+
+        // [1.1] RSA-2048 서명 검증
         let mut digest = midstate
             .digest_with_pad_checked(
                 &sha_pad_payload_b64,
@@ -259,25 +259,14 @@ where
                 &pad_start_in_suffix,
             )?
             .to_bytes_le()?;
+
         let result = RSA2048VerifyGadget::verify(&mut digest, &signature_op, &pk_op)?;
-
-        #[cfg(feature = "constraints-logging")]
-        gadget::debug::log_r1cs_eq(
-            "RSA Verification",
-            &[result.clone()],
-            &[Boolean::constant(true)],
-        );
-
         result.enforce_equal(&Boolean::constant(true))?;
 
-        #[cfg(feature = "num-cs-logging")]
-        {
-            let rsa_end = cs.num_constraints();
-            println!("  - RSA Verification: {} constraints", rsa_end - rsa_start);
-        }
+        gadget::dbg_r1cs_eq!("RSA Verification", result, Boolean::constant(true));
+        gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - RSA Verification");
 
-        // [Phase 1] Payload 슬라이싱 및 Base64 디코딩
-        let base64_start = cs.num_constraints();
+        // [1.2] Base64 디코딩 및 Claim 추출
         let sha_pad_payload_b64_to_fp = sha_pad_payload_b64
             .iter()
             .map(|u8| u8.to_fp())
@@ -294,34 +283,18 @@ where
             &payload_b64,
             &index_bits,
         )?;
-
-        #[cfg(feature = "constraints-logging")]
-        gadget::debug::log_r1cs_eq(
-            "Base64 Decoding Valid",
-            &[valid.clone()],
-            &[Boolean::constant(true)],
-        );
-
         valid.enforce_equal(&Boolean::constant(true))?;
 
-        #[cfg(feature = "num-cs-logging")]
-        {
-            let base64_end = cs.num_constraints();
-            println!(
-                "  - Base64 Decoding: {} constraints",
-                base64_end - base64_start
-            );
-        }
+        gadget::dbg_r1cs_eq!("Base64 Decoding Valid", valid, Boolean::constant(true));
+        gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Base64 Decoding");
 
-        // [Phase 1] Claims 값 추출 (Extraction)
-        let claims_start = cs.num_constraints();
         let aud_bytes = claim_extractor_v2("aud", &payload, &token_claim[0], Config::MAX_AUD_LEN)?;
         let exp_bytes = claim_extractor_v2("exp", &payload, &token_claim[1], Config::MAX_EXP_LEN)?;
         let iss_bytes = claim_extractor_v2("iss", &payload, &token_claim[2], Config::MAX_ISS_LEN)?;
         let nonce_bytes =
             claim_extractor_v2("nonce", &payload, &token_claim[3], Config::MAX_NONCE_LEN)?;
         let sub_bytes = claim_extractor_v2("sub", &payload, &token_claim[4], Config::MAX_SUB_LEN)?;
-        // [Phase 1] Field Element로 변환 및 패킹 (Packing)
+        // Field Element로 변환 및 패킹 (Packing)
         let aud = pack_decompose_bytes_unchecked(&aud_bytes)?;
         let exp = jwt_exp_to_field(&exp_bytes)?;
         let iss = pack_decompose_bytes_unchecked(&iss_bytes)?;
@@ -332,291 +305,166 @@ where
         let nonce = jwt_nonce_hex_to_field(&nonce_bytes, &last_quote_index)?;
         let sub = pack_decompose_bytes_unchecked(&sub_bytes)?;
 
-        #[cfg(feature = "num-cs-logging")]
-        {
-            let claims_end = cs.num_constraints();
-            println!(
-                "  - Claims Extraction: {} constraints",
-                claims_end - claims_start
-            );
-        }
-
-        #[cfg(feature = "num-cs-logging")]
-        {
-            let phase1_end = cs.num_constraints();
-            println!(
-                "[Phase 1] JWT Integrity Total: {} constraints",
-                phase1_end - phase1_start
-            );
-        }
-
-        // [Phase 2: Validation] OP Key가 유효한지 Merkle Proof로 검증
-        let phase2_start = cs.num_constraints();
-        let merkle_start = cs.num_constraints();
-        let leaf_inputs = vec![iss.clone(), pk_op.n.limbs.clone()].concat();
-        let leaf = PoseidonCRHGadget::<C::BaseField>::evaluate(&poseidon_param, &leaf_inputs)?;
-        path.set_leaf_position(leaf_idx.to_bits_le()?);
-        let result = path.verify_membership(&poseidon_param, &poseidon_param, &root, &[leaf])?;
-
-        #[cfg(feature = "constraints-logging")]
-        gadget::debug::log_r1cs_eq(
-            "Merkle Proof Verification",
-            &[result.clone()],
-            &[Boolean::constant(true)],
+        gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Claims Extraction");
+        gadget::dbg_cs_delta!(
+            &cs,
+            &mut phase1_total_last,
+            "[Phase 1] JWT Authenticity & Claim Extraction Total"
         );
 
+        // ============================================================
+        // [Phase 2] Issuer Validation and Execution Binding
+        // ============================================================
+        let phase2_start = cs.num_constraints();
+        let mut phase2_total_last = phase2_start;
+
+        // [2.1] Issuer-Public Key 검증
+        let leaf_inputs = vec![iss.clone(), pk_op.n.limbs.clone()].concat();
+        let leaf = PoseidonCRHGadget::<C::BaseField>::evaluate(&poseidon_param, &leaf_inputs)?;
+
+        path.set_leaf_position(leaf_idx.to_bits_le()?);
+        let result = path.verify_membership(&poseidon_param, &poseidon_param, &root, &[leaf])?;
         result.enforce_equal(&Boolean::constant(true))?;
 
-        #[cfg(feature = "num-cs-logging")]
-        {
-            let merkle_end = cs.num_constraints();
-            println!(
-                "  - Merkle Proof: {} constraints",
-                merkle_end - merkle_start
-            );
-        }
-        // [Phase 2] 토큰 만료 시간 확인 (block_timer < exp)
-        // ark-r1cs-std의 비교 함수 버그로 인해, a_le_b를 사용합니다.
-        let expiry_start = cs.num_constraints();
+        gadget::dbg_r1cs_eq!("MerkleVerify", result, Boolean::constant(true));
+        gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Issuer-PublicKey MerkleVerify");
+
+        // [2.2] expiry check: block_timestamp < exp
         let result = is_less_than(
             &block_timestamp.to_bits_le_with_top_bits_zero(64)?.0,
             &exp.to_bits_le_with_top_bits_zero(64)?.0,
         )?;
-
-        #[cfg(feature = "constraints-logging")]
-        gadget::debug::log_r1cs_eq(
-            "Expiry Check",
-            &[result.clone()],
-            &[Boolean::constant(true)],
-        );
-
         result.enforce_equal(&Boolean::constant(true))?;
 
-        #[cfg(feature = "num-cs-logging")]
-        {
-            let expiry_end = cs.num_constraints();
-            println!(
-                "  - Expiry Check: {} constraints",
-                expiry_end - expiry_start
-            );
-        }
+        gadget::dbg_r1cs_eq!("Expiry Check (ts < exp)", result, Boolean::constant(true));
+        gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Expiry Check");
 
-        // [Phase 2] Nonce 바인딩 확인 (nonce == Poseidon(SignUserOpHash, random))
-        let nonce_start = cs.num_constraints();
+        gadget::dbg_cs_delta!(&cs, &mut phase2_total_last, "[Phase 2] Validation Total");
+
+        // ============================================================
+        // [Phase 3] Threshold Membership and Anchor Binding (Binding)
+        // ============================================================
+        let phase3_start = cs.num_constraints();
+        let mut phase3_total_last = phase3_start;
+
+        // h_anchor == Poseidon(anchor)
+        let target_hanchor = chain_hash_gadget(cs.clone(), &poseidon_param, &anchor.anchor)?;
+        target_hanchor.enforce_equal(&hanchor)?;
+
+        gadget::dbg_r1cs_eq!("Anchor Binding", target_hanchor, hanchor);
+        gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Anchor Binding");
+
+        // Nonce binding: nonce == Poseidon(h_sign_userop, random)
         let mut nonce_inputs = Vec::<FpVar<C::BaseField>>::new();
         nonce_inputs.push(h_sign_user_op);
         nonce_inputs.push(random.clone());
         let target_nonce =
             PoseidonCRHGadget::<C::BaseField>::evaluate(&poseidon_param, &nonce_inputs)?;
-
-        #[cfg(feature = "constraints-logging")]
-        gadget::debug::log_r1cs_eq("Nonce Binding", &[target_nonce.clone()], &[nonce.clone()]);
-
         target_nonce.enforce_equal(&nonce)?;
 
-        #[cfg(feature = "num-cs-logging")]
-        {
-            let nonce_end = cs.num_constraints();
-            println!("  - Nonce Binding: {} constraints", nonce_end - nonce_start);
-            let phase2_end = cs.num_constraints();
-            println!(
-                "[Phase 2] Validation Total: {} constraints",
-                phase2_end - phase2_start
-            );
-        }
+        gadget::dbg_r1cs_eq!("Nonce Binding", target_nonce, nonce);
+        gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Nonce Binding");
 
-        // [Phase 3: Binding] Anchor 무결성 확인 (hanchor == Poseidon(anchor))
-        let phase3_start = cs.num_constraints();
-        let anchor_start = cs.num_constraints();
-        let target_hanchor = chain_hash_gadget(cs.clone(), &poseidon_param, &anchor.anchor)?;
-
-        #[cfg(feature = "constraints-logging")]
-        gadget::debug::log_r1cs_eq(
-            "Anchor Integrity",
-            &[target_hanchor.clone()],
-            &[hanchor.clone()],
-        );
-
-        target_hanchor.enforce_equal(&hanchor)?;
-        #[cfg(feature = "num-cs-logging")]
-        {
-            let anchor_end = cs.num_constraints();
-            println!(
-                "  - Anchor Integrity: {} constraints",
-                anchor_end - anchor_start
-            );
-        }
-
-        // [Phase 3: Membership] 토큰의 aud가 aud_list에 포함되는지 검증
-        let aud_start = cs.num_constraints();
+        // aud membership: Poseidon(aud) ∈ aud_list (product trick)
         let target_aud = PoseidonCRHGadget::<C::BaseField>::evaluate(&poseidon_param, &aud)?;
         let mut product = FpVar::<C::BaseField>::Constant(C::BaseField::from(1u64));
         for valid_aud in aud_list.iter() {
             let diff = target_aud.clone() - valid_aud.clone();
             product *= diff;
         }
-        #[cfg(feature = "constraints-logging")]
-        gadget::debug::log_r1cs_eq(
-            "Aud Membership",
-            &[product.clone()],
-            &[FpVar::<C::BaseField>::Constant(C::BaseField::from(0u64))],
-        );
+        product.enforce_equal(&zero)?;
 
-        product.enforce_equal(&FpVar::<C::BaseField>::Constant(C::BaseField::from(0u64)))?;
+        gadget::dbg_r1cs_eq!("Aud Membership", product, zero);
+        gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Aud Membership");
 
-        #[cfg(feature = "num-cs-logging")]
-        {
-            let aud_end = cs.num_constraints();
-            println!("  - Aud Membership: {} constraints", aud_end - aud_start);
-        }
-
-        // [Phase 3] Context 바인딩 확인 (h_ctx == Poseidon(a_vector, random))
-        let context_start = cs.num_constraints();
+        // h_ctx == Poseidon(a_vector, random)
         let mut ctx_inputs = a.clone();
         ctx_inputs.push(random.clone());
         let target_h_ctx =
             PoseidonCRHGadget::<C::BaseField>::evaluate(&poseidon_param, &ctx_inputs)?;
-
-        #[cfg(feature = "constraints-logging")]
-        gadget::debug::log_r1cs_eq("Context Binding", &[target_h_ctx.clone()], &[h_ctx.clone()]);
-
         target_h_ctx.enforce_equal(&h_ctx)?;
 
-        // [Phase 3: Binding] aud_list 바인딩 확인 (h_aud_list == Poseidon(aud_list, random))
+        gadget::dbg_r1cs_eq!("Context Binding", target_h_ctx, h_ctx);
+        gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Context Binding");
+
+        // h_aud_list == Poseidon(aud_list)
         let target_h_aud_list =
             PoseidonCRHGadget::<C::BaseField>::evaluate(&poseidon_param, &aud_list)?;
-
-        #[cfg(feature = "constraints-logging")]
-        gadget::debug::log_r1cs_eq(
-            "Aud List Binding",
-            &[target_h_aud_list.clone()],
-            &[h_aud_list.clone()],
-        );
-
         target_h_aud_list.enforce_equal(&h_aud_list)?;
 
-        #[cfg(feature = "num-cs-logging")]
-        {
-            let context_end = cs.num_constraints();
-            println!(
-                "  - Context Binding: {} constraints",
-                context_end - context_start
-            );
-            let phase3_end = cs.num_constraints();
-            println!(
-                "[Phase 3] Binding Total: {} constraints",
-                phase3_end - phase3_start
-            );
-        }
+        gadget::dbg_r1cs_eq!("Aud List Binding", target_h_aud_list, h_aud_list);
 
-        // [Phase 4: Logic] a_vector가 0이 아님을 확인
+        gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Aud List Binding");
+        gadget::dbg_cs_delta!(&cs, &mut phase3_total_last, "[Phase 3] Binding Total");
+
+        // ============================================================
+        // [Phase 4] Threshold logic (Vandermonde + indices constraints)
+        // ============================================================
         let phase4_start = cs.num_constraints();
-        let vandermonde_start = cs.num_constraints();
+        let mut phase4_total_last = phase4_start;
+
         let result = PoseidonAnchorSchemeGadget::<C::BaseField>::is_a_nonzero(&a)?;
-
-        #[cfg(feature = "constraints-logging")]
-        gadget::debug::log_r1cs_eq(
-            "A Vector Nonzero",
-            &[result.clone()],
-            &[Boolean::constant(true)],
-        );
-
         result.enforce_equal(&Boolean::constant(true))?;
 
-        // [Phase 4] 변환 수행 (b = a * Matrix)
+        gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - A Vector Nonzero");
+
         let b = vandermonde_matrix.vector_mul_matrix(&a)?;
 
-        #[cfg(feature = "num-cs-logging")]
-        {
-            let vandermonde_end = cs.num_constraints();
-            println!(
-                "  - Vandermonde Transform: {} constraints",
-                vandermonde_end - vandermonde_start
-            );
-        }
-        // [Phase 4] b_vector의 Sparsity(희소성) 검증
-        let sparsity_start = cs.num_constraints();
-        // 1) indices는 반드시 boolean
-        let ok = enforce_boolean_selector_debug(&indices)?;
-        #[cfg(feature = "constraints-logging")]
-        gadget::debug::log_r1cs_eq(
-            "Boolean Selectors",
-            &[ok.clone()],
-            &[Boolean::constant(true)],
-        );
+        gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Vandermonde Transform");
 
-        ok.enforce_equal(&Boolean::constant(true))?;
-        let result = PoseidonAnchorSchemeGadget::<C::BaseField>::is_b_sparsity(&b, &indices)?;
-
-        // 2) 정확히 K개 선택 (k가 상수라면 constant로)
-        let k_fp = FpVar::<C::BaseField>::Constant(C::BaseField::from(Config::K as u64));
-        let ok = enforce_selector_cardinality_debug(&indices, &k_fp)?;
-        #[cfg(feature = "constraints-logging")]
-        gadget::debug::log_r1cs_eq(
-            "Selector Cardinality",
-            &[ok.clone()],
-            &[Boolean::constant(true)],
-        );
-        ok.enforce_equal(&Boolean::constant(true))?;
-
-        let is_one = single_multiplexer(&indices, &current_idx)?;
-        #[cfg(feature = "constraints-logging")]
-        gadget::debug::log_r1cs_eq(
-            "Current Index One-hot",
-            &[is_one.clone()],
-            &[FpVar::Constant(C::BaseField::from(1u64))],
-        );
-
-        is_one.enforce_equal(&FpVar::Constant(C::BaseField::from(1u64)))?;
-
-        random.enforce_not_equal(&FpVar::Constant(C::BaseField::from(0u64)))?;
-
-        #[cfg(feature = "constraints-logging")]
-        gadget::debug::log_r1cs_eq(
-            "Sparsity Check",
-            &[result.clone()],
-            &[Boolean::constant(true)],
-        );
-
+        // indices constraints:
+        //  1) boolean
+        //  2) Σ indices = k
+        //  3) indices[current_idx] = 1
+        //  4) b sparsity helper
+        let result = enforce_boolean_selector_debug(&indices)?;
         result.enforce_equal(&Boolean::constant(true))?;
 
-        // [Phase 4] Index Range Check (current_idx < N)
+        gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Boolean Selectors");
+
+        let result = PoseidonAnchorSchemeGadget::<C::BaseField>::is_b_sparsity(&b, &indices)?;
+        result.enforce_equal(&Boolean::constant(true))?;
+
+        gadget::dbg_r1cs_eq!("Sparsity Check", result, Boolean::constant(true));
+
+        let k_fp = FpVar::<C::BaseField>::Constant(C::BaseField::from(Config::K as u64));
+        let result = enforce_selector_cardinality_debug(&indices, &k_fp)?;
+        result.enforce_equal(&Boolean::constant(true))?;
+
+        gadget::dbg_r1cs_eq!("Selector Cardinality", result, Boolean::constant(true));
+        gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Selector Cardinality");
+
+        let is_one = single_multiplexer(&indices, &current_idx)?;
+        is_one.enforce_equal(&one)?;
+
+        gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Current Idx One-hot");
+
+        // random != 0
+        random.enforce_not_equal(&zero)?;
+        gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Random Nonzero");
+
+        // current_idx < N
         let n =
             FpVar::<C::BaseField>::new_constant(cs.clone(), C::BaseField::from(Config::N as u8))?;
         let result = is_less_than(
             &current_idx.to_bits_le_with_top_bits_zero(8)?.0,
             &n.to_bits_le_with_top_bits_zero(8)?.0,
         )?;
-
-        #[cfg(feature = "constraints-logging")]
-        gadget::debug::log_r1cs_eq(
-            "Index Range Check",
-            &[result.clone()],
-            &[Boolean::constant(true)],
-        );
-
         result.enforce_equal(&Boolean::constant(true))?;
 
-        #[cfg(feature = "num-cs-logging")]
-        {
-            let sparsity_end = cs.num_constraints();
-            println!(
-                "  - Sparsity Check: {} constraints",
-                sparsity_end - sparsity_start
-            );
+        gadget::dbg_r1cs_eq!("Index Range Check", result, Boolean::constant(true));
 
-            let phase4_end = cs.num_constraints();
-            println!(
-                "[Phase 4] Logic Total: {} constraints",
-                phase4_end - phase4_start
-            );
-        }
+        gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Index Range Check");
+        gadget::dbg_cs_delta!(&cs, &mut phase4_total_last, "[Phase 4] Logic Total");
 
-        // [Phase 5] Identity Hash 생성 (aud, iss, sub, curr_index 포함)
+        // ============================================================
+        // [Phase 5] Output binding (h_id, partial_rhs, lhs)
+        // ============================================================
         let phase5_start = cs.num_constraints();
-        let identity_start = cs.num_constraints();
+        let mut phase5_total_last = phase5_start;
+
+        // h_id = Poseidon(current_idx, Poseidon(aud, iss, sub))
         let mut h_id_inputs = Vec::<FpVar<C::BaseField>>::new();
-        // h_id_inputs.push(current_idx.clone());
         h_id_inputs.extend_from_slice(&aud);
         h_id_inputs.extend_from_slice(&iss);
         h_id_inputs.extend_from_slice(&sub);
@@ -624,64 +472,28 @@ where
         let mut h_id_inputs_with_index = Vec::<FpVar<C::BaseField>>::new();
         h_id_inputs_with_index.push(current_idx.clone());
         h_id_inputs_with_index.push(h_id_.clone());
+
         let h_id =
             PoseidonCRHGadget::<C::BaseField>::evaluate(&poseidon_param, &h_id_inputs_with_index)?;
 
-        #[cfg(feature = "num-cs-logging")]
-        {
-            let identity_end = cs.num_constraints();
-            println!(
-                "  - Identity Hash: {} constraints",
-                identity_end - identity_start
-            );
-        }
+        gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Identity Hash");
 
-        // [Phase 5] Partial RHS 계산 및 Blinding 적용 (beta * h_id * random)
-        let rhs_lhs_start = cs.num_constraints();
+        // partial_rhs[current_idx] = b[current_idx] * h_id * random
+        // lhs = <a, anchor> * random
         let beta = single_multiplexer(&b, &current_idx)?;
         let calc_rhs = beta * h_id.clone() * random.clone();
-
-        // [Phase 5] LHS 계산 및 Blinding 적용 (<a, anchor> * random)
-        let lhs_ = PoseidonAnchorSchemeGadget::<C::BaseField>::inner_product(&anchor.anchor, &a)?;
-        let calc_lhs = lhs_ * random.clone();
-
-        // [Phase 5] 최종 출력값 검증 (Output Consistency Check)
-        #[cfg(feature = "constraints-logging")]
-        gadget::debug::log_r1cs_eq(
-            "RHS Calculation",
-            &[calc_rhs.clone()],
-            &[partial_rhs.clone()],
-        );
-
         calc_rhs.enforce_equal(&partial_rhs)?;
 
-        #[cfg(feature = "constraints-logging")]
-        gadget::debug::log_r1cs_eq("LHS Calculation", &[calc_lhs.clone()], &[lhs.clone()]);
+        gadget::dbg_r1cs_eq!("RHS Calculation", calc_rhs, partial_rhs);
 
+        let lhs_ = PoseidonAnchorSchemeGadget::<C::BaseField>::inner_product(&anchor.anchor, &a)?;
+        let calc_lhs = lhs_ * random.clone();
         calc_lhs.enforce_equal(&lhs)?;
-        #[cfg(feature = "num-cs-logging")]
-        {
-            let rhs_lhs_end = cs.num_constraints();
-            println!(
-                "  - RHS/LHS Calculation: {} constraints",
-                rhs_lhs_end - rhs_lhs_start
-            );
-        }
 
-        #[cfg(feature = "num-cs-logging")]
-        {
-            let phase5_end = cs.num_constraints();
-            println!(
-                "[Phase 5] Output Total: {} constraints",
-                phase5_end - phase5_start
-            );
+        gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - RHS/LHS Calculation");
 
-            let total_constraints = cs.num_constraints();
-            println!("\n=== Summary ===");
-            println!("Total constraints: {}", total_constraints);
-            println!("==========================================\n");
-        }
-        println!("\n");
+        gadget::dbg_cs_delta!(&cs, &mut phase5_total_last, "[Phase 5] Output Total");
+        gadget::dbg_cs_total!(&cs, "Total constraints");
 
         Ok(())
     }

@@ -188,3 +188,69 @@ pub(crate) fn phase_b_part2_msm<Config: ZkPasskeyConfig>(
 
     Ok(proofs)
 }
+
+pub(crate) fn prove_streaming<Config: ZkPasskeyConfig>(
+    pk_path: &PathBuf,
+    circuit_ctx: &CircuitContext<Config>,
+    builders: &[TokenBuilder],
+    raw_pk_ops: &[String],
+    raw_merkle_paths: &[Vec<String>],
+    raw_leaf_indices: &[usize],
+    parsed_inputs: &ParsedInputs,
+    anchor_ctx: &AnchorContext,
+    padded_aud_list: &[F],
+    h_aud_list: F,
+) -> Result<(Vec<Proof<BN254>>, Vec<Vec<F>>), ApplicationError> {
+    // ✅ PK는 한 번만 로드
+    let pk = load_key_uncompressed::<ProvingKey<BN254>>(pk_path)
+        .map_err(|e| ApplicationError::InvalidFormat(e.to_string()))?;
+
+    let mut rng = OsRng;
+    let mut proofs = Vec::with_capacity(Config::K);
+    let mut public_inputs = Vec::with_capacity(Config::K);
+
+    for i in 0..Config::K {
+        // ---------------------------
+        // Phase A(i): witness + h
+        // ---------------------------
+        let witness = builders[i]
+            .build::<Config>(&raw_pk_ops[i])
+            .map_err(|e| ApplicationError::InvalidFormat(e.to_string()))?;
+
+        let leaf_idx = raw_leaf_indices[i];
+        let path = build_mp(&raw_merkle_paths[i], leaf_idx)?;
+
+        let circuit_factory = make_circuit_factory::<Config>(
+            circuit_ctx,
+            parsed_inputs,
+            anchor_ctx,
+            leaf_idx,
+            witness,
+            path,
+            padded_aud_list,
+            h_aud_list,
+            i,
+        );
+
+        let (h, instance, w) = Groth16::<BN254>::create_proof_part1_witness_h(circuit_factory)
+            .map_err(|e| ApplicationError::InvalidFormat(e.to_string()))?;
+
+        // public input은 보존
+        public_inputs.push(instance[1..].to_vec());
+
+        // ---------------------------
+        // Phase B(i): MSM
+        // ---------------------------
+        let r = F::rand(&mut rng);
+        let s = F::rand(&mut rng);
+
+        let proof = Groth16::<BN254>::create_proof_part2_msm(&pk, r, s, &h, &instance, &w)
+            .map_err(|e| ApplicationError::InvalidFormat(e.to_string()))?;
+
+        proofs.push(proof);
+
+        // ✅ 여기서 h / w는 스코프 종료로 drop
+    }
+
+    Ok((proofs, public_inputs))
+}

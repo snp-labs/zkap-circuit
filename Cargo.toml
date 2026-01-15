@@ -58,6 +58,7 @@ clap = { version = "4.5.53" }
 
 log = "0.4"
 android_logger = { version = "0.13" }
+mimalloc = "0.1.48"
 
 
 [patch.crates-io]

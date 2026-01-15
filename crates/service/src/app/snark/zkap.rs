@@ -12,7 +12,7 @@ use crate::{
             preprocess::{
                 compute_anchor_ctx, pad_aud_list_and_hash, parse_inputs, validate_inputs,
             },
-            prover::{phase_a_part1, phase_b_part2_msm},
+            prover::{phase_a_part1, phase_b_part2_msm, prove_streaming},
             types::CircuitContext,
         },
     },
@@ -83,12 +83,10 @@ pub fn generate_baerae_proof<Config: ZkPasskeyConfig>(
     let (padded_aud_list, h_aud_list) =
         pad_aud_list_and_hash::<Config>(&circuit_ctx.poseidon_params, &parsed_inputs.aud_list)?;
 
-    // =========================================================================
-    // Phase A: Witness & H Generation (PK 없이 수행)
-    // =========================================================================
-    log::info!("[ZKAP] Phase A: Generating Witnesses and H polynomials...");
+    log::info!("[ZKAP] Phase A+B: Streaming proof generation...");
 
-    let (intermediates, public_inputs) = phase_a_part1::<Config>(
+    let (proofs, public_inputs) = prove_streaming::<Config>(
+        pk_path,
         &circuit_ctx,
         &builders,
         &raw_pk_ops,
@@ -100,15 +98,5 @@ pub fn generate_baerae_proof<Config: ZkPasskeyConfig>(
         h_aud_list,
     )?;
 
-    // =========================================================================
-    // Phase B: Load PK & Generate Proofs (MSM)
-    // =========================================================================
-    log::info!("[ZKAP] Phase B: Loading Proving Key...");
-    let proofs = phase_b_part2_msm::<Config>(pk_path, &intermediates)?;
-
-    log::info!(
-        "[ZKAP] All steps completed successfully! Generated {} proofs",
-        proofs.len()
-    );
     Ok((proofs, public_inputs))
 }

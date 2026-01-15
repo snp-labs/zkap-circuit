@@ -1,4 +1,8 @@
-use std::{borrow::Borrow, iter, ops::Not};
+use std::{
+    borrow::Borrow,
+    iter,
+    ops::{BitXor, Not},
+};
 
 use ark_ff::PrimeField;
 use ark_r1cs_std::{
@@ -13,7 +17,6 @@ use ark_r1cs_std::{
     uint32::UInt32,
 };
 use ark_relations::r1cs::{ConstraintSystemRef, Namespace, SynthesisError};
-use core::ops::BitXor;
 
 use crate::{
     hashes::sha256::{H, K, utils::conditionally_select_vec},
@@ -129,12 +132,7 @@ impl<F: PrimeField> SHA256Gadget<F> {
 
         let mut h = state.to_vec();
         for i in 0..64 {
-            let ch = {
-                let f_xor_g = h[5].clone().bitxor(h[6].clone());
-                let e_and_f_xor_g = h[4].bitand(&f_xor_g)?;
-                h[6].clone().bitxor(&e_and_f_xor_g)
-            };
-
+            let ch = ch_selector_u32(&h[4], &h[5], &h[6])?;
             // Ma(a,b,c) = (a & b) ^ (a & c) ^ (b & c) -> (a & b) ^ (c & (a ^ b))
             // a, b, c = h[0], h[1], h[2]
             let ma = {
@@ -594,6 +592,24 @@ impl<F: PrimeField> SHA256Gadget<F> {
     }
 }
 
+fn ch_selector_u32<F: PrimeField>(
+    e: &UInt32<F>,
+    f: &UInt32<F>,
+    g: &UInt32<F>,
+) -> Result<UInt32<F>, SynthesisError> {
+    let eb = e.to_bits_le()?;
+    let fb = f.to_bits_le()?;
+    let gb = g.to_bits_le()?;
+
+    // bitwise select: e ? f : g
+    let mut out = Vec::with_capacity(32);
+    for i in 0..32 {
+        let bi = Boolean::select(&eb[i], &fb[i], &gb[i])?;
+        out.push(bi);
+    }
+    Ok(UInt32::from_bits_le(&out))
+}
+
 impl<F: PrimeField> Default for SHA256Gadget<F> {
     fn default() -> Self {
         Self {
@@ -714,5 +730,41 @@ impl<ConstraintF: PrimeField> R1CSVar<ConstraintF> for DigestVar<ConstraintF> {
         }
 
         Ok(buf)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ark_bn254::Fr;
+    use ark_relations::r1cs::ConstraintSystem;
+
+    #[test]
+    fn test_update_state_constraints() -> Result<(), SynthesisError> {
+        let cs = ConstraintSystem::<Fr>::new_ref();
+
+        let mut gadget = SHA256Gadget::new_variable(
+            cs.clone(),
+            || Ok(H.iter().cloned().collect::<Vec<u32>>()),
+            AllocationMode::Witness,
+        )?;
+
+        let data = vec![0u8; 64];
+        let data_vars: Vec<UInt8<Fr>> = data
+            .iter()
+            .map(|&b| UInt8::new_witness(cs.clone(), || Ok(b)))
+            .collect::<Result<_, _>>()?;
+
+        gadget.update(&data_vars)?;
+
+        println!("state: {:?}", gadget.state.value()?);
+
+        let num_constraints = cs.num_constraints();
+        println!(
+            "Number of constraints after update_state: {}",
+            num_constraints
+        );
+
+        Ok(())
     }
 }

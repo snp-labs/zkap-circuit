@@ -1,28 +1,86 @@
-use super::Parameter;
-use ark_bn254::Fr as Bn254Fr;
-
 pub mod constraints;
 pub mod digest;
-pub mod gadget;
-pub mod native;
-pub mod parameters;
-pub mod tests;
-pub mod traits;
 pub mod utils;
-pub mod constraints_v2;
-pub mod tests_v2;
 
 pub use digest::DigestVar;
-pub use gadget::SHA256Gadget;
-pub use native::{SHA256, TwoToOneSHA256};
-pub use parameters::{H, K, Sha2BlockAccessor, Sha256Parameters, State, StateAccessor};
 
-#[derive(Clone, Debug)]
-pub struct Sha256Bn254ParamProvider;
+use std::{borrow::Borrow, marker::PhantomData};
 
-impl Parameter<Bn254Fr> for Sha256Bn254ParamProvider {
-    type ParameterStruct = ();
-    fn params() -> Self::ParameterStruct {
-        ()
+use ark_ff::Field;
+use sha2::{Digest, Sha256};
+
+use crate::hashes::{CRHScheme, Parameter, TwoToOneCRHScheme, error::HashError};
+
+const STATE_LEN: usize = 8;
+
+pub type State = [u32; STATE_LEN];
+
+pub const K: [u32; 64] = [
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+];
+
+pub const H: State = [
+    0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+];
+
+pub struct SHA256<F: Field, P> {
+    _field: PhantomData<F>,
+    _params: PhantomData<P>,
+}
+
+impl<F, P> CRHScheme for SHA256<F, P>
+where
+    F: Field,
+    P: Parameter<F>,
+{
+    type Input = [u8];
+    type Output = Vec<u8>;
+
+    fn evaluate<T: Borrow<Self::Input>>(input: T) -> Result<Self::Output, HashError> {
+        Ok(Sha256::digest(input.borrow()).to_vec())
+    }
+}
+
+pub struct TwoToOneSHA256<F: Field> {
+    _field: PhantomData<F>,
+}
+
+impl<F, P> TwoToOneCRHScheme for SHA256<F, P>
+where
+    F: Field,
+    P: Parameter<F>,
+{
+    type Input = [u8];
+    // This is always 32 bytes. It has to be a Vec to impl CanonicalSerialize
+    type Output = Vec<u8>;
+
+    // Evaluates SHA256(left_input || right_input)
+    fn evaluate<T: Borrow<Self::Input>>(
+        left_input: T,
+        right_input: T,
+    ) -> Result<Self::Output, HashError> {
+        let left_input = left_input.borrow();
+        let right_input = right_input.borrow();
+
+        // Process the left input then the right input
+        let mut h = Sha256::default();
+        h.update(left_input);
+        h.update(right_input);
+        Ok(h.finalize().to_vec())
+    }
+
+    // Evaluates SHA256(left_input || right_input)
+    fn compress<T: Borrow<Self::Input>>(
+        left_input: T,
+        right_input: T,
+    ) -> Result<Self::Output, HashError> {
+        <Self as TwoToOneCRHScheme>::evaluate(left_input, right_input)
     }
 }

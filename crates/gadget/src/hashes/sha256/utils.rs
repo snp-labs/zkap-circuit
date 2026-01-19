@@ -4,13 +4,6 @@ use ark_relations::r1cs::SynthesisError;
 
 use crate::hashes::sha256::{H, K};
 
-pub fn add_many_vec<F: PrimeField>(a: &[UInt32<F>], b: &[UInt32<F>]) -> Vec<UInt32<F>> {
-    a.iter()
-        .zip(b.iter())
-        .map(|(a, b)| a.wrapping_add(b))
-        .collect()
-}
-
 pub fn conditionally_select_vec<F: PrimeField>(
     condition: &Boolean<F>,
     a: &[UInt32<F>],
@@ -22,23 +15,6 @@ pub fn conditionally_select_vec<F: PrimeField>(
         .collect()
 }
 
-pub fn sha256_pad(input: &[u8]) -> Vec<u8> {
-    let block_size = 64; // Block size in bytes
-    let mut padded = input.to_vec();
-
-    // Append the '1' bit as 0x80
-    padded.push(0x80);
-
-    // Calculate the number of zero bytes to add
-    let zero_pad_len = (block_size - ((padded.len() + 8) % block_size)) % block_size;
-    padded.extend(vec![0; zero_pad_len]);
-
-    // Append the length in bits as a 64-bit big-endian integer
-    let bit_length = (input.len() as u64) * 8;
-    padded.extend(&bit_length.to_be_bytes());
-
-    padded
-}
 
 pub fn sha256_pad_with_len(input: &[u8], max_len: usize) -> Vec<u8> {
     let block_size = 64; // Block size in bytes

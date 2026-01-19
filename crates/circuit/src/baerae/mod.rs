@@ -53,10 +53,7 @@ use gadget::{
     },
     matrix::{VandermondeMatrix, constraints_v2::VandermondeMatrixVar},
     mekletree::tree_config::{Empty, MerkleTreeParams, MerkleTreeParamsVar},
-    signature::rsa::{
-        gadget::{PublicKeyVar, SignatureVar},
-        native::{PublicKey, Signature},
-    },
+    signature::rsa::{PublicKey, Signature, constraints::{PublicKeyVar, SignatureVar}},
     utils::{
         bit_bytes_v2::pack_decompose_bytes_unchecked,
         comparison_v2::is_less_than,

@@ -4,12 +4,8 @@ use ark_ec::CurveGroup;
 use ark_ff::{Field, One, PrimeField};
 use ark_r1cs_std::{
     alloc::{AllocVar, AllocationMode},
-    convert::ToConstraintFieldGadget,
-    eq::EqGadget,
-    fields::fp::FpVar,
     prelude::ToBytesGadget,
     uint8::UInt8,
-    uint32::UInt32,
 };
 use ark_relations::r1cs::SynthesisError;
 use num_bigint::BigUint as NumBigUint;
@@ -17,93 +13,15 @@ use num_bigint::BigUint as NumBigUint;
 use crate::{
     bigint::{
         constraints::{BigNatCircuitParams, BigNatTrait, BigNatVar},
-        utils::{nat_to_limbs, BigNat},
+        utils::{BigNat, nat_to_limbs},
     },
-    hashes::{
-        Parameter,
-        sha256::{SHA256Gadget, constraints::SHA256Gadget as NewSHA256Gadget},
-    },
+    signature::rsa::{PublicKey, Signature},
 };
 
 #[cfg(feature = "constraints-logging")]
 use crate::debug::log_r1cs_eq;
 
-use super::native::{PublicKey, Signature};
-
 pub type ConstraintF<C> = <<C as CurveGroup>::BaseField as Field>::BasePrimeField;
-
-pub fn rsa_verify_with_state<C, BNP, HP>(
-    pk: PublicKeyVar<ConstraintF<C>, BNP>,
-    sig: SignatureVar<ConstraintF<C>, BNP>,
-    message: &[UInt8<ConstraintF<C>>],
-    num_sha2_blocks: FpVar<ConstraintF<C>>,
-    state: &[UInt32<ConstraintF<C>>],
-) -> Result<(), SynthesisError>
-where
-    C: CurveGroup,
-    BNP: BigNatCircuitParams,
-    HP: Parameter<ConstraintF<C>>,
-{
-    let num_exp_bits: usize = 17; // RSA 2048 uses 17 bits for the exponent
-    let mut sha256_gadget = SHA256Gadget::<ConstraintF<C>, HP>::default();
-
-    sha256_gadget = sha256_gadget.set_state(state);
-    let mut hashed_msg = sha256_gadget
-        .digest_with_pad(message, num_sha2_blocks)
-        .unwrap()
-        .to_bytes_le()
-        .unwrap();
-    hashed_msg.reverse();
-
-    let output = output_with_prifix(&hashed_msg);
-    let output_fp = output.to_constraint_field().unwrap();
-
-    let result = sig
-        .sig
-        .pow_mod(&pk.e, &pk.n, num_exp_bits)?
-        .to_bytes_le()
-        .unwrap();
-    let result_fp = result.to_constraint_field().unwrap();
-    result_fp.enforce_equal(&output_fp)?;
-    Ok(())
-}
-
-pub fn new_rsa_verify_with_state<C, BNP>(
-    pk: &PublicKeyVar<ConstraintF<C>, BNP>,
-    sig: &SignatureVar<ConstraintF<C>, BNP>,
-    message: &[UInt8<ConstraintF<C>>],
-    num_sha2_blocks: &FpVar<ConstraintF<C>>,
-    sha256_gadget: &mut NewSHA256Gadget<ConstraintF<C>>,
-) -> Result<(), SynthesisError>
-where
-    C: CurveGroup,
-    BNP: BigNatCircuitParams,
-{
-    let num_exp_bits: usize = 17; // RSA 2048 uses 17 bits for the exponent
-
-    let mut hashed_msg = sha256_gadget
-        .digest_with_pad(message, num_sha2_blocks.clone())
-        .unwrap()
-        .to_bytes_le()
-        .unwrap();
-    hashed_msg.reverse();
-
-    let output = output_with_prifix(&hashed_msg);
-    let output_fp = output.to_constraint_field().unwrap();
-
-    let result = sig
-        .sig
-        .pow_mod(&pk.e, &pk.n, num_exp_bits)?
-        .to_bytes_le()
-        .unwrap();
-
-    let result_fp = result.to_constraint_field().unwrap();
-
-    #[cfg(feature = "constraints-logging")]
-    log_r1cs_eq("rsa verify", &result_fp, &output_fp);
-    result_fp.enforce_equal(&output_fp)?;
-    Ok(())
-}
 
 #[derive(Clone, Debug, Default)]
 pub struct ParameterVar<ConstriantF: PrimeField> {
@@ -241,8 +159,9 @@ mod tests {
         base64::decode_any_base64,
         bigint::{
             constraints::{BigNatCircuitParams, BigNatTrait, BigNatVar},
-            utils::{nat_to_limbs, BigNat},
-        }, signature::rsa::{gadget::SignatureVar, native::{PublicKey, Signature}},
+            utils::{BigNat, nat_to_limbs},
+        },
+        signature::rsa::{PublicKey, Signature, constraints::SignatureVar},
     };
 
     use super::PublicKeyVar;

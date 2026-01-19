@@ -37,7 +37,11 @@ where
 {
     pub fn enforce_equal_leaf(&self, other: &FpVar<F>) -> Result<(), SynthesisError> {
         #[cfg(feature = "constraints-logging")]
-        log_r1cs_eq("Merkle Leaf Equality", &[self.leaf.clone()], &[other.clone()]);
+        log_r1cs_eq(
+            "Merkle Leaf Equality",
+            &[self.leaf.clone()],
+            &[other.clone()],
+        );
 
         self.leaf.enforce_equal(other)
     }
@@ -54,7 +58,11 @@ where
                 .verify_membership(hash_param, hash_param, root, &[self.leaf.clone()])?;
 
         #[cfg(feature = "constraints-logging")]
-        log_r1cs_eq("Merkle Membership Validity", &[membership.clone()], &[Boolean::TRUE]);
+        log_r1cs_eq(
+            "Merkle Membership Validity",
+            &[membership.clone()],
+            &[Boolean::TRUE],
+        );
 
         membership.enforce_equal(&Boolean::TRUE)?;
         Ok(())
@@ -111,12 +119,13 @@ mod tests {
         eq::EqGadget,
         fields::fp::FpVar,
         prelude::{Boolean, ToBitsGadget},
-        uint32::UInt32,
     };
     use ark_relations::r1cs::{ConstraintSystemRef, SynthesisError};
 
     use crate::{
-        base64::decode_any_base64, bigint::constraints::BigNatCircuitParams, hashes::poseidon::get_poseidon_params, mekletree::tree_config::{MerkleTreeParams, MerkleTreeParamsVar}, signature::rsa::native::PublicKey, utils::{str_to_fields}
+        bigint::constraints::BigNatCircuitParams,
+        hashes::poseidon::get_poseidon_params,
+        mekletree::tree_config::{MerkleTreeParams, MerkleTreeParamsVar},
     };
 
     const LAMBDA: usize = 2048; // 2048 bits
@@ -131,7 +140,6 @@ mod tests {
     type F = ark_bn254::Fr;
     type BNP = BigNat512TestParams;
     type C = ark_ed_on_bn254::EdwardsProjective;
-
 
     fn generate_merkle_tree_input<F: PrimeField + Absorb>(
         tree_height: usize,

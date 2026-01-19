@@ -7,7 +7,7 @@ use ark_r1cs_std::{
 use ark_relations::r1cs::{Namespace, SynthesisError};
 use gadget::{
     bigint::constraints::BigNatCircuitParams,
-    signature::rsa::gadget::{PublicKeyVar, SignatureVar, output_with_prifix},
+    signature::rsa::constraints::{PublicKeyVar, SignatureVar, output_with_prifix},
 };
 
 use crate::token::ClaimIndices;

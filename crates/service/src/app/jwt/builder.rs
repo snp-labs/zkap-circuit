@@ -3,7 +3,7 @@ use common::constants::ZkPasskeyConfig;
 use gadget::{
     base64::mod_v2::{IndexBits, decode_any_base64, decode_any_base64_to_string},
     hashes::sha256::{H, utils::update},
-    signature::rsa::native::{PublicKey, Signature},
+    signature::rsa::{PublicKey, Signature},
 };
 
 use crate::Secret;
@@ -72,8 +72,17 @@ impl TokenBuilder {
         pk_modulus_b64: &str,
     ) -> Result<JwtCircuitWitness, TokenError> {
         // 1. SHA-256 State 및 Padding 계산
-        let (state, nblocks, sha_pad_payload_b64, index_bits, pay_offset_b64, pay_len_b64, total_len, pre_hash_block_len, pad_start_in_suffix) =
-            self.compute_sha_and_base64_witness::<Config>()?;
+        let (
+            state,
+            nblocks,
+            sha_pad_payload_b64,
+            index_bits,
+            pay_offset_b64,
+            pay_len_b64,
+            total_len,
+            pre_hash_block_len,
+            pad_start_in_suffix,
+        ) = self.compute_sha_and_base64_witness::<Config>()?;
 
         // 2. Public Key 및 Signature 디코딩
         let (pk, sig) = self.compute_crypto_witness(pk_modulus_b64)?;
@@ -99,7 +108,20 @@ impl TokenBuilder {
 
     fn compute_sha_and_base64_witness<Config: ZkPasskeyConfig>(
         &self,
-    ) -> Result<(Vec<u32>, usize, Vec<u8>, IndexBits, usize, usize, usize, usize, usize), TokenError> {
+    ) -> Result<
+        (
+            Vec<u32>,
+            usize,
+            Vec<u8>,
+            IndexBits,
+            usize,
+            usize,
+            usize,
+            usize,
+            usize,
+        ),
+        TokenError,
+    > {
         let pre_hash_block_len = self.header_b64.len() / SHA_BLOCK_LEN;
         let header_b64_rest = self.header_b64[SHA_BLOCK_LEN * pre_hash_block_len..].as_bytes();
 

@@ -5,8 +5,7 @@ use ark_ff::PrimeField;
 use clap::{Args, Parser, Subcommand, command};
 use common::constants::{BNP, CG, F, PoseidonHash, ZkPasskeyConfig, ZkapConfig};
 use gadget::{
-    base64::mod_v2::decode_any_base64, hashes::poseidon::get_poseidon_params,
-    signature::rsa::native::PublicKey, utils::str_to_limbs,
+    base64::mod_v2::decode_any_base64, hashes::poseidon::get_poseidon_params, signature::rsa::PublicKey, utils::str_to_limbs
 };
 use serde::Serialize;
 

@@ -36,7 +36,7 @@ once_cell = { version = "1.21.3" }
 base64 = { version = "0.22.1" }
 derivative = { version = "2.2.0" }
 regex = { version = "1.11.1" }
-rsa = { version = "0.9.6" }
+rsa = { version = "0.9.10" }
 num = { version = "0.4" }
 num-integer = { version = "0.1.46" }
 num-bigint = { version = "0.4.6" }
@@ -58,6 +58,7 @@ clap = { version = "4.5.53" }
 
 log = "0.4"
 android_logger = { version = "0.13" }
+mimalloc = "0.1.48"
 
 
 [patch.crates-io]

@@ -7,6 +7,9 @@ pub use api::hash::poseidon_hash;
 pub use api::snark::generate_baerae_proof;
 pub use app::anchor::types::Secret;
 
+#[global_allocator]
+static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 #[cfg(target_os = "android")]
 pub fn init_android_logging() {
     use log::LevelFilter;

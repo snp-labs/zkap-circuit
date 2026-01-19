@@ -1,6 +1,5 @@
 use ark_ff::PrimeField;
 use ark_r1cs_std::{
-    R1CSVar,
     eq::EqGadget,
     fields::{FieldVar, fp::FpVar},
     prelude::{Boolean, ToBitsGadget},

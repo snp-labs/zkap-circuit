@@ -1,5 +1,5 @@
 use ark_ff::PrimeField;
-use ark_r1cs_std::{R1CSVar, alloc::AllocVar, eq::EqGadget, fields::fp::FpVar, prelude::Boolean};
+use ark_r1cs_std::{alloc::AllocVar, eq::EqGadget, fields::fp::FpVar, prelude::Boolean};
 use ark_relations::r1cs::SynthesisError;
 
 use crate::base64::Base64Table;
@@ -75,7 +75,7 @@ fn encoded_chunk_to_decoded_chunk_unopt<F: PrimeField>(
     for enc_ascii in encoded_chunk.iter() {
         // Search through the table to find the index
         let value_bits = find_index_in_table(table, enc_ascii)?;
-        
+
         let value_bits_reversed = value_bits.iter().rev().cloned().collect::<Vec<_>>();
         all_bits.extend_from_slice(&value_bits_reversed);
     }
@@ -98,14 +98,14 @@ fn find_index_in_table<F: PrimeField>(
     enc_ascii: &FpVar<F>,
 ) -> Result<Vec<Boolean<F>>, SynthesisError> {
     assert_eq!(table.len(), 64);
-    
+
     // Create indicator variables for each table position
     let mut indicators = Vec::with_capacity(64);
     for table_entry in table.iter() {
         let is_equal = enc_ascii.is_eq(table_entry)?;
         indicators.push(is_equal);
     }
-    
+
     // Enforce that exactly one indicator is true
     let sum = indicators
         .iter()
@@ -113,7 +113,7 @@ fn find_index_in_table<F: PrimeField>(
             acc + FpVar::from(ind.clone())
         });
     sum.enforce_equal(&FpVar::Constant(F::one()))?;
-    
+
     // Compute the 6-bit index from indicators
     let mut index_bits = Vec::with_capacity(6);
     for bit_pos in 0..6 {
@@ -125,7 +125,7 @@ fn find_index_in_table<F: PrimeField>(
         }
         index_bits.push(bit_value);
     }
-    
+
     Ok(index_bits)
 }
 
@@ -197,7 +197,7 @@ mod tests {
     use crate::base64::utils::base64_to_6bit_bools;
 
     use super::{
-        base64_decoder, base64_decoder_unopt, encoded_chunk_to_decoded_chunk, encoded_table, 
+        base64_decoder, base64_decoder_unopt, encoded_chunk_to_decoded_chunk, encoded_table,
         verify_6bit_value_le,
     };
     type F = ark_bn254::Fr;
@@ -245,10 +245,13 @@ mod tests {
             .iter()
             .map(|&byte| FpVar::new_witness(cs.clone(), || Ok(F::from(byte as u64))).unwrap())
             .collect();
-        
+
         let result = base64_decoder_unopt(&table, &enc_asciis).unwrap();
         assert!(cs.is_satisfied().unwrap());
-        println!("number of constraints (unoptimized): {}", cs.num_constraints());
+        println!(
+            "number of constraints (unoptimized): {}",
+            cs.num_constraints()
+        );
         println!("result_len: {:?}", result.len());
     }
 
@@ -262,20 +265,24 @@ mod tests {
     #[test]
     fn test_compare_opt_vs_unopt() {
         println!("\n=== Comparing Optimized vs Unoptimized Base64 Decoder ===\n");
-        
+
         let test_cases = vec![
-            ("TWFu", 1),           // 4 chars (1 chunk)
-            ("TWFu", 2),           // 8 chars (2 chunks)
-            ("TWFu", 4),           // 16 chars (4 chunks)
-            ("TWFu", 8),           // 32 chars (8 chunks)
+            ("TWFu", 1), // 4 chars (1 chunk)
+            ("TWFu", 2), // 8 chars (2 chunks)
+            ("TWFu", 4), // 16 chars (4 chunks)
+            ("TWFu", 8), // 32 chars (8 chunks)
         ];
-        
+
         for (base, repeat) in test_cases {
             let enc = base.repeat(repeat);
             let num_chars = enc.len();
-            
-            println!("Testing with {} characters ({} chunks):", num_chars, num_chars / 4);
-            
+
+            println!(
+                "Testing with {} characters ({} chunks):",
+                num_chars,
+                num_chars / 4
+            );
+
             // Test optimized version
             let cs_opt = ark_relations::r1cs::ConstraintSystem::<F>::new_ref();
             let table = encoded_table::<F>();
@@ -284,7 +291,9 @@ mod tests {
 
             let enc_asciis_opt: Vec<FpVar<F>> = enc_bytes
                 .iter()
-                .map(|&byte| FpVar::new_witness(cs_opt.clone(), || Ok(F::from(byte as u64))).unwrap())
+                .map(|&byte| {
+                    FpVar::new_witness(cs_opt.clone(), || Ok(F::from(byte as u64))).unwrap()
+                })
                 .collect();
             let bits_witnesss = input_bits
                 .chunks(6)
@@ -296,27 +305,35 @@ mod tests {
                         .unwrap()
                 })
                 .collect::<Vec<[Boolean<F>; 6]>>();
-            
+
             let _result_opt = base64_decoder(&table, &enc_asciis_opt, &bits_witnesss).unwrap();
             assert!(cs_opt.is_satisfied().unwrap());
             let constraints_opt = cs_opt.num_constraints();
-            
+
             // Test unoptimized version
             let cs_unopt = ark_relations::r1cs::ConstraintSystem::<F>::new_ref();
             let table = encoded_table::<F>();
             let enc_asciis_unopt: Vec<FpVar<F>> = enc_bytes
                 .iter()
-                .map(|&byte| FpVar::new_witness(cs_unopt.clone(), || Ok(F::from(byte as u64))).unwrap())
+                .map(|&byte| {
+                    FpVar::new_witness(cs_unopt.clone(), || Ok(F::from(byte as u64))).unwrap()
+                })
                 .collect();
-            
+
             let _result_unopt = base64_decoder_unopt(&table, &enc_asciis_unopt).unwrap();
             assert!(cs_unopt.is_satisfied().unwrap());
             let constraints_unopt = cs_unopt.num_constraints();
-            
+
             println!("  Optimized:     {} constraints", constraints_opt);
             println!("  Unoptimized:   {} constraints", constraints_unopt);
-            println!("  Difference:    {} constraints", constraints_unopt as i64 - constraints_opt as i64);
-            println!("  Ratio:         {:.2}x\n", constraints_unopt as f64 / constraints_opt as f64);
+            println!(
+                "  Difference:    {} constraints",
+                constraints_unopt as i64 - constraints_opt as i64
+            );
+            println!(
+                "  Ratio:         {:.2}x\n",
+                constraints_unopt as f64 / constraints_opt as f64
+            );
         }
     }
 

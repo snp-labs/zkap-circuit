@@ -21,8 +21,7 @@ use gadget::{
         poseidon::get_poseidon_params,
     },
     matrix::VandermondeMatrix,
-    mekletree::tree_config::MerkleTreeParams,
-    signature::rsa::native::PublicKey,
+    mekletree::tree_config::MerkleTreeParams, signature::rsa::PublicKey,
 };
 use zkpasskey_service::{Secret, api::generate_baerae_proof, create_poseidon_anchor};
 
@@ -89,7 +88,7 @@ impl Default for AnchorConfig {
 /// 테스트용 임시 디렉토리 생성
 fn setup_test_dir() -> PathBuf {
     let test_dir =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_outputs/crs_n_6_k_3/baerae");
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../dist");
     if !test_dir.exists() {
         std::fs::create_dir_all(&test_dir).unwrap();
     }

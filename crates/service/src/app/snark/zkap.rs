@@ -12,12 +12,17 @@ use crate::{
             preprocess::{
                 compute_anchor_ctx, pad_aud_list_and_hash, parse_inputs, validate_inputs,
             },
-            prover::{phase_a_part1, phase_b_part2_msm, prove_streaming},
             types::CircuitContext,
         },
     },
     error::ApplicationError,
 };
+
+#[cfg(feature = "use-optimized")]
+use crate::app::snark::prover::prove_streaming;
+
+#[cfg(not(feature = "use-optimized"))]
+use crate::app::snark::prover::generate_proof;
 
 pub fn generate_baerae_proof<Config: ZkPasskeyConfig>(
     pk_path: &PathBuf,
@@ -32,8 +37,6 @@ pub fn generate_baerae_proof<Config: ZkPasskeyConfig>(
     raw_random: &str,
     raw_aud_list: &[String],
 ) -> Result<(Vec<Proof<BN254>>, Vec<Vec<F>>), ApplicationError> {
-    log::info!("[ZKAP] Starting ZK proof generation (Optimized Split Flow)...");
-
     // 1. 입력 검증
     log::info!("[ZKAP] Step 1: Validating inputs...");
     validate_inputs::<Config>(
@@ -83,20 +86,39 @@ pub fn generate_baerae_proof<Config: ZkPasskeyConfig>(
     let (padded_aud_list, h_aud_list) =
         pad_aud_list_and_hash::<Config>(&circuit_ctx.poseidon_params, &parsed_inputs.aud_list)?;
 
-    log::info!("[ZKAP] Phase A+B: Streaming proof generation...");
+    #[cfg(feature = "use-optimized")]
+    {
+        let (proofs, public_inputs) = prove_streaming::<Config>(
+            pk_path,
+            &circuit_ctx,
+            &builders,
+            &raw_pk_ops,
+            &raw_merkle_paths,
+            &raw_leaf_indices,
+            &parsed_inputs,
+            &anchor_ctx,
+            &padded_aud_list,
+            h_aud_list,
+        )?;
 
-    let (proofs, public_inputs) = prove_streaming::<Config>(
-        pk_path,
-        &circuit_ctx,
-        &builders,
-        &raw_pk_ops,
-        &raw_merkle_paths,
-        &raw_leaf_indices,
-        &parsed_inputs,
-        &anchor_ctx,
-        &padded_aud_list,
-        h_aud_list,
-    )?;
+        Ok((proofs, public_inputs))
+    }
 
-    Ok((proofs, public_inputs))
+    #[cfg(not(feature = "use-optimized"))]
+    {
+        log::info!("[ZKAP] Prover mode: default (generate_proof)");
+        let (proofs, public_inputs) = generate_proof::<Config>(
+            pk_path,
+            &circuit_ctx,
+            &builders,
+            &raw_pk_ops,
+            &raw_merkle_paths,
+            &raw_leaf_indices,
+            &parsed_inputs,
+            &anchor_ctx,
+            &padded_aud_list,
+            h_aud_list,
+        )?;
+        return Ok((proofs, public_inputs));
+    }
 }

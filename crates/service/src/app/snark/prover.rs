@@ -1,15 +1,11 @@
 use std::path::PathBuf;
 
-use ark_crypto_primitives::merkle_tree::Path;
-#[cfg(feature = "use-optimized")]
-use ark_groth16::Groth16;
-use ark_groth16::{Proof, ProvingKey};
-use ark_std::UniformRand;
-use circuit::baerae::BaeraeLightWeightCircuit;
-#[cfg(feature = "use-optimized")]
-use common::constants::BN254;
+use ark_crypto_primitives::{merkle_tree::Path, snark::SNARK};
+use ark_ff::UniformRand;
+use ark_groth16::{Groth16, Proof, ProvingKey};
+use circuit::{ExposesPublicInputs, baerae::BaeraeLightWeightCircuit};
 use common::{
-    constants::{BNP, CG, F, ZkPasskeyConfig},
+    constants::{BN254, BNP, CG, F, ZkPasskeyConfig},
     io::load_key_uncompressed,
 };
 use gadget::mekletree::tree_config::MerkleTreeParams;
@@ -101,6 +97,7 @@ pub(crate) fn make_circuit_factory<Config: ZkPasskeyConfig>(
     }
 }
 
+#[cfg(feature = "use-optimized")]
 pub(crate) fn phase_a_part1<Config: ZkPasskeyConfig>(
     circuit_ctx: &CircuitContext<Config>,
     builders: &[TokenBuilder],
@@ -136,14 +133,8 @@ pub(crate) fn phase_a_part1<Config: ZkPasskeyConfig>(
             i,
         );
 
-        #[cfg(feature = "use-optimized")]
         let (h, instance, w) = Groth16::<BN254>::create_proof_part1_witness_h(circuit_factory)
             .map_err(|e| ApplicationError::InvalidFormat(format!("Part 1 failed: {}", e)))?;
-
-        #[cfg(not(feature = "use-optimized"))]
-        return Err(ApplicationError::InvalidFormat(
-            "Split execution requires 'use-optimized' feature".into(),
-        ));
 
         public_inputs_list.push(instance[1..].to_vec());
         intermediate_results.push(Intermediate {
@@ -156,6 +147,7 @@ pub(crate) fn phase_a_part1<Config: ZkPasskeyConfig>(
     Ok((intermediate_results, public_inputs_list))
 }
 
+#[cfg(feature = "use-optimized")]
 pub(crate) fn phase_b_part2_msm<Config: ZkPasskeyConfig>(
     pk_path: &PathBuf,
     intermediate_results: &[Intermediate],
@@ -189,6 +181,7 @@ pub(crate) fn phase_b_part2_msm<Config: ZkPasskeyConfig>(
     Ok(proofs)
 }
 
+#[cfg(feature = "use-optimized")]
 pub(crate) fn prove_streaming<Config: ZkPasskeyConfig>(
     pk_path: &PathBuf,
     circuit_ctx: &CircuitContext<Config>,
@@ -201,6 +194,8 @@ pub(crate) fn prove_streaming<Config: ZkPasskeyConfig>(
     padded_aud_list: &[F],
     h_aud_list: F,
 ) -> Result<(Vec<Proof<BN254>>, Vec<Vec<F>>), ApplicationError> {
+    log::info!("[ZKAP] Phase A+B: Streaming proof generation...");
+
     // ✅ PK는 한 번만 로드
     let pk = load_key_uncompressed::<ProvingKey<BN254>>(pk_path)
         .map_err(|e| ApplicationError::InvalidFormat(e.to_string()))?;
@@ -253,4 +248,126 @@ pub(crate) fn prove_streaming<Config: ZkPasskeyConfig>(
     }
 
     Ok((proofs, public_inputs))
+}
+
+pub(crate) fn generate_proof<Config: ZkPasskeyConfig>(
+    pk_path: &PathBuf,
+    circuit_ctx: &CircuitContext<Config>,
+    builders: &[TokenBuilder],
+    raw_pk_ops: &[String],
+    raw_merkle_paths: &[Vec<String>],
+    raw_leaf_indices: &[usize],
+    parsed_inputs: &ParsedInputs,
+    anchor_ctx: &AnchorContext,
+    padded_aud_list: &[F],
+    h_aud_list: F,
+) -> Result<(Vec<Proof<BN254>>, Vec<Vec<F>>), ApplicationError> {
+    log::info!("[ZKAP] Starting ZK proof generation...");
+
+    // ✅ PK는 한 번만 로드
+    let pk = load_key_uncompressed::<ProvingKey<BN254>>(pk_path)
+        .map_err(|e| ApplicationError::InvalidFormat(e.to_string()))?;
+
+    let mut rng = OsRng;
+    let mut proofs = Vec::with_capacity(Config::K);
+    let mut public_inputs = Vec::with_capacity(Config::K);
+
+    for i in 0..Config::K {
+        let witness = builders[i]
+            .build::<Config>(&raw_pk_ops[i])
+            .map_err(|e| ApplicationError::InvalidFormat(e.to_string()))?;
+
+        let leaf_idx = raw_leaf_indices[i];
+        let path = build_mp(&raw_merkle_paths[i], leaf_idx)?;
+
+        let circuit = make_circuit::<Config>(
+            circuit_ctx,
+            parsed_inputs,
+            anchor_ctx,
+            leaf_idx,
+            witness,
+            path,
+            padded_aud_list,
+            h_aud_list,
+            i,
+        );
+        public_inputs.push(circuit.public_inputs());
+
+        let proof = Groth16::<BN254>::prove(&pk, circuit, &mut rng)
+            .map_err(|e| ApplicationError::InvalidFormat(e.to_string()))?;
+
+        proofs.push(proof);
+    }
+
+    log::info!("[ZKAP] ZK proof generation completed successfully");
+    Ok((proofs, public_inputs))
+}
+
+pub(crate) fn make_circuit<Config: ZkPasskeyConfig>(
+    circuit_ctx: &CircuitContext<Config>,
+    parsed_inputs: &ParsedInputs,
+    anchor_ctx: &AnchorContext,
+    leaf_idx: usize,
+    jwt_circuit_witness: JwtCircuitWitness,
+    path: Path<MerkleTreeParams<F>>,
+    padded_aud_list: &[F],
+    h_aud_list: F,
+    proof_i: usize,
+) -> BaeraeLightWeightCircuit<CG, BNP, Config> {
+    let partial_rhs = anchor_ctx.partial_rhs_list[proof_i];
+    let current_idx = anchor_ctx.current_idx_list[proof_i];
+
+    let vm = circuit_ctx.vandermonde_matrix.clone();
+    let pp = circuit_ctx.poseidon_params.clone();
+    let bt = circuit_ctx.base64_table.clone();
+
+    let hanchor = parsed_inputs.hanchor;
+    let root = parsed_inputs.root;
+    let h_sign_user_op = parsed_inputs.h_sign_user_op;
+    let block_timestamp = parsed_inputs.block_timestamp;
+    let random = parsed_inputs.random;
+    let anchor = parsed_inputs.anchor.clone();
+
+    let h_ctx = anchor_ctx.h_ctx;
+    let lhs = anchor_ctx.lhs;
+    let a = anchor_ctx.anchor_witness_a.clone();
+    let selector = anchor_ctx.selector.clone();
+
+    let path0 = path;
+    let w0 = jwt_circuit_witness;
+    let aud0 = padded_aud_list;
+
+    BaeraeLightWeightCircuit::<CG, BNP, Config>::new(
+        vm,
+        pp,
+        bt,
+        hanchor,
+        h_ctx,
+        root,
+        h_sign_user_op,
+        block_timestamp,
+        partial_rhs,
+        lhs,
+        h_aud_list,
+        random,
+        leaf_idx,
+        path0,
+        anchor,
+        w0.state,
+        w0.nblocks,
+        w0.claim_indices,
+        w0.pay_offset_b64,
+        w0.pay_len_b64,
+        w0.sha_pad_payload_b64,
+        w0.index_bits,
+        w0.pk,
+        w0.sig,
+        a,
+        selector,
+        current_idx,
+        aud0.to_vec(),
+        w0.total_len,
+        w0.pre_hash_block_len,
+        w0.pad_start_in_suffix,
+    )
 }

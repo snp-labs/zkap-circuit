@@ -257,7 +257,7 @@ where
             )?
             .to_bytes_le()?;
 
-        let result = RSA2048VerifyGadget::verify(&mut digest, &signature_op, &pk_op)?;
+        let result = RSA2048VerifyGadget::verify_opt(&mut digest, &signature_op, &pk_op)?;
         result.enforce_equal(&Boolean::constant(true))?;
 
         gadget::dbg_r1cs_eq!("RSA Verification", result, Boolean::constant(true));

@@ -59,6 +59,17 @@ pub fn str_to_bignat(s: &str) -> BigNat {
     BigUint::from_str(s).unwrap()
 }
 
+#[inline]
+pub fn field_characteristic_to_nat<F: PrimeField>() -> BigNat {
+    // F::characteristic() is a little-endian array of u64 limbs.
+    // Convert it to little-endian bytes, then to BigNat.
+    let mut bytes = Vec::with_capacity(F::characteristic().len() * 8);
+    for &w in F::characteristic().iter() {
+        bytes.extend_from_slice(&w.to_le_bytes());
+    }
+    BigNat::from_bytes_le(&bytes)
+}
+
 #[test]
 fn test_convert_nat_fe() {
     let nat = BigNat::from(42u64);

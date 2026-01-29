@@ -47,10 +47,6 @@ jobs:
           echo "버전: $VERSION"
           echo "폴더명: $FOLDER_NAME"
           
-          # VM의 zone 가져오기
-          VM_ZONE=$(gcloud compute instances describe "$VM_INSTANCE" --format="get(zone)" | awk -F'/' '{print $NF}')
-          echo "VM Zone: $VM_ZONE"
-          
           # 임시 디렉토리에 버킷에서 파일 다운로드
           TEMP_DIR=$(mktemp -d)
           echo "임시 디렉토리: $TEMP_DIR"

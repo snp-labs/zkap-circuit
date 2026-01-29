@@ -32,15 +32,16 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Deploy from bucket to VM
+      - name: Deploy from bucket to Worker VM
         run: |
           BUCKET_NAME=$(echo "${{ vars.GCP_BUCKET_NAME }}" | tr -d ' \n\r')
-          VM_INSTANCE=$(echo "${{ vars.GCP_VM_INSTANCE_NAME }}" | tr -d ' \n\r')
+          VM_INSTANCE=$(echo "${{ vars.GCP_VM_WORKER_INSTANCE_NAME }}" | tr -d ' \n\r')
           VM_ZONE=$(echo "${{ vars.GCP_VM_ZONE }}" | tr -d ' \n\r')
+          ZKUP_DIR=$(echo "${{ vars.GCP_VM_ZKUP_DIR_NAME }}" | tr -d ' \n\r')
           VERSION="${{ inputs.version }}"
           FOLDER_NAME="zkup_${VERSION}"
           
-          echo "버킷에서 파일을 VM으로 배포합니다..."
+          echo "버킷에서 파일을 Worker VM으로 배포합니다..."
           echo "버킷: $BUCKET_NAME"
           echo "VM 인스턴스: $VM_INSTANCE"
           echo "VM Zone: $VM_ZONE"
@@ -59,23 +60,75 @@ jobs:
             exit 1
           fi
           
-          echo "다운로드 완료. VM으로 전송 중..."
+          echo "다운로드 완료. Worker VM으로 전송 중..."
           
-          # VM에 ~/zkup 디렉토리 생성 (존재하지 않으면)
-          echo "VM에 zkup 디렉토리 확인 및 생성 중..."
-          gcloud compute ssh "$VM_INSTANCE" --zone="$VM_ZONE" --command="mkdir -p ~/zkup" --quiet
+          # VM에 /root/$ZKUP_DIR 디렉토리 생성 (존재하지 않으면)
+          echo "Worker VM에 $ZKUP_DIR 디렉토리 확인 및 생성 중..."
+          gcloud compute ssh "root@$VM_INSTANCE" --zone="$VM_ZONE" --command="mkdir -p /root/$ZKUP_DIR" --quiet
           
           # 파일을 VM으로 전송
-          echo "파일을 VM으로 전송 중..."
-          if ! gcloud compute scp --recurse --zone="$VM_ZONE" "$TEMP_DIR/$FOLDER_NAME" "$VM_INSTANCE:~/zkup/"; then
-            echo "오류: VM으로 파일 전송 실패"
+          echo "파일을 Worker VM으로 전송 중..."
+          if ! gcloud compute scp --recurse --zone="$VM_ZONE" "$TEMP_DIR/$FOLDER_NAME" "root@$VM_INSTANCE:/root/$ZKUP_DIR/"; then
+            echo "오류: Worker VM으로 파일 전송 실패"
             exit 1
           fi
           
-          echo "VM 배포 완료"
+          echo "Worker VM 배포 완료"
           # 전송 확인
           echo "전송된 파일 확인 중..."
-          if ! gcloud compute ssh "$VM_INSTANCE" --zone="$VM_ZONE" --command="ls -la ~/zkup/$FOLDER_NAME" --quiet; then
+          if ! gcloud compute ssh "root@$VM_INSTANCE" --zone="$VM_ZONE" --command="ls -la /root/$ZKUP_DIR/$FOLDER_NAME" --quiet; then
+            echo "경고: 전송 확인 실패 (파일은 전송되었을 수 있음)"
+          fi
+          
+          # 임시 디렉토리 정리
+          rm -rf "$TEMP_DIR"
+          echo "임시 디렉토리 정리 완료"
+
+      - name: Deploy from bucket to API Server VM
+        run: |
+          BUCKET_NAME=$(echo "${{ vars.GCP_BUCKET_NAME }}" | tr -d ' \n\r')
+          VM_INSTANCE=$(echo "${{ vars.GCP_VM_ZKAP_API_SERVER_INSTANCE_NAME }}" | tr -d ' \n\r')
+          VM_ZONE=$(echo "${{ vars.GCP_VM_ZONE }}" | tr -d ' \n\r')
+          ZKUP_DIR=$(echo "${{ vars.GCP_VM_ZKUP_DIR_NAME }}" | tr -d ' \n\r')
+          VERSION="${{ inputs.version }}"
+          FOLDER_NAME="zkup_${VERSION}"
+          
+          echo "버킷에서 파일을 API Server VM으로 배포합니다..."
+          echo "버킷: $BUCKET_NAME"
+          echo "VM 인스턴스: $VM_INSTANCE"
+          echo "VM Zone: $VM_ZONE"
+          echo "버전: $VERSION"
+          echo "폴더명: $FOLDER_NAME"
+          
+          # 임시 디렉토리에 버킷에서 파일 다운로드
+          TEMP_DIR=$(mktemp -d)
+          echo "임시 디렉토리: $TEMP_DIR"
+          
+          echo "버킷에서 파일 다운로드 중..."
+          gcloud storage cp -r "gs://$BUCKET_NAME/$FOLDER_NAME" "$TEMP_DIR/"
+          
+          if [ ! -d "$TEMP_DIR/$FOLDER_NAME" ]; then
+            echo "오류: 버킷에서 폴더를 찾을 수 없습니다: $FOLDER_NAME"
+            exit 1
+          fi
+          
+          echo "다운로드 완료. API Server VM으로 전송 중..."
+          
+          # VM에 /root/$ZKUP_DIR 디렉토리 생성 (존재하지 않으면)
+          echo "API Server VM에 $ZKUP_DIR 디렉토리 확인 및 생성 중..."
+          gcloud compute ssh "root@$VM_INSTANCE" --zone="$VM_ZONE" --command="mkdir -p /root/$ZKUP_DIR" --quiet
+          
+          # 파일을 VM으로 전송
+          echo "파일을 API Server VM으로 전송 중..."
+          if ! gcloud compute scp --recurse --zone="$VM_ZONE" "$TEMP_DIR/$FOLDER_NAME" "root@$VM_INSTANCE:/root/$ZKUP_DIR/"; then
+            echo "오류: API Server VM으로 파일 전송 실패"
+            exit 1
+          fi
+          
+          echo "API Server VM 배포 완료"
+          # 전송 확인
+          echo "전송된 파일 확인 중..."
+          if ! gcloud compute ssh "root@$VM_INSTANCE" --zone="$VM_ZONE" --command="ls -la /root/$ZKUP_DIR/$FOLDER_NAME" --quiet; then
             echo "경고: 전송 확인 실패 (파일은 전송되었을 수 있음)"
           fi
           
@@ -93,17 +146,21 @@ jobs:
         id: slack-payload
         env:
           VERSION: ${{ inputs.version }}
-          VM_INSTANCE: ${{ vars.GCP_VM_INSTANCE_NAME }}
+          WORKER_VM_INSTANCE: ${{ vars.GCP_VM_WORKER_INSTANCE_NAME }}
+          API_SERVER_VM_INSTANCE: ${{ vars.GCP_VM_ZKAP_API_SERVER_INSTANCE_NAME }}
           BUCKET_NAME: ${{ vars.GCP_BUCKET_NAME }}
+          ZKUP_DIR: ${{ vars.GCP_VM_ZKUP_DIR_NAME }}
           RUN_ID: ${{ github.run_id }}
         run: |
           # JSON payload 생성
           PAYLOAD=$(node -e "
             const version = process.env.VERSION || '';
-            const vmInstance = process.env.VM_INSTANCE || '';
+            const workerVmInstance = process.env.WORKER_VM_INSTANCE || '';
+            const apiServerVmInstance = process.env.API_SERVER_VM_INSTANCE || '';
             const bucketName = process.env.BUCKET_NAME || '';
+            const zkupDir = process.env.ZKUP_DIR || '';
             const runId = process.env.RUN_ID || '';
-            const text = \`✅ [개발] zkup VM 배포 완료\\n- 버전: \${version}\\n- VM 인스턴스: \${vmInstance}\\n- 버킷: \${bucketName}\\n- 배포 위치: ~/zkup/zkup_\${version}\\n- 배포가 성공적으로 완료되었습니다.\`;
+            const text = \`✅ [개발] zkup VM 배포 완료\\n- 버전: \${version}\\n- Worker VM 인스턴스: \${workerVmInstance}\\n- API Server VM 인스턴스: \${apiServerVmInstance}\\n- 버킷: \${bucketName}\\n- 배포 위치: ~/\${zkupDir}/zkup_\${version}\\n- 배포가 성공적으로 완료되었습니다.\`;
             const payload = {
               text: '[개발] zkup VM 배포 알림',
               blocks: [
@@ -151,17 +208,19 @@ jobs:
         id: slack-failure-payload
         env:
           VERSION: ${{ inputs.version }}
-          VM_INSTANCE: ${{ vars.GCP_VM_INSTANCE_NAME }}
+          WORKER_VM_INSTANCE: ${{ vars.GCP_VM_WORKER_INSTANCE_NAME }}
+          API_SERVER_VM_INSTANCE: ${{ vars.GCP_VM_ZKAP_API_SERVER_INSTANCE_NAME }}
           BUCKET_NAME: ${{ vars.GCP_BUCKET_NAME }}
           RUN_ID: ${{ github.run_id }}
         run: |
           # JSON payload 생성
           PAYLOAD=$(node -e "
             const version = process.env.VERSION || '';
-            const vmInstance = process.env.VM_INSTANCE || '';
+            const workerVmInstance = process.env.WORKER_VM_INSTANCE || '';
+            const apiServerVmInstance = process.env.API_SERVER_VM_INSTANCE || '';
             const bucketName = process.env.BUCKET_NAME || '';
             const runId = process.env.RUN_ID || '';
-            const text = \`❌ [개발] zkup VM 배포 실패\\n- 버전: \${version}\\n- VM 인스턴스: \${vmInstance}\\n- 버킷: \${bucketName}\\n- 배포 작업이 실패했습니다.\\n- 상세 내용은 GitHub Actions에서 확인해주세요.\`;
+            const text = \`❌ [개발] zkup VM 배포 실패\\n- 버전: \${version}\\n- Worker VM 인스턴스: \${workerVmInstance}\\n- API Server VM 인스턴스: \${apiServerVmInstance}\\n- 버킷: \${bucketName}\\n- 배포 작업이 실패했습니다.\\n- 상세 내용은 GitHub Actions에서 확인해주세요.\`;
             const payload = {
               text: '[개발] zkup VM 배포 실패 알림',
               blocks: [

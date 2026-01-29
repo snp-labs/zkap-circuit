@@ -36,12 +36,14 @@ jobs:
         run: |
           BUCKET_NAME=$(echo "${{ vars.GCP_BUCKET_NAME }}" | tr -d ' \n\r')
           VM_INSTANCE=$(echo "${{ vars.GCP_VM_INSTANCE_NAME }}" | tr -d ' \n\r')
+          VM_ZONE=$(echo "${{ vars.GCP_VM_ZONE }}" | tr -d ' \n\r')
           VERSION="${{ inputs.version }}"
           FOLDER_NAME="zkup_${VERSION}"
           
           echo "버킷에서 파일을 VM으로 배포합니다..."
           echo "버킷: $BUCKET_NAME"
           echo "VM 인스턴스: $VM_INSTANCE"
+          echo "VM Zone: $VM_ZONE"
           echo "버전: $VERSION"
           echo "폴더명: $FOLDER_NAME"
           
@@ -63,27 +65,22 @@ jobs:
           
           echo "다운로드 완료. VM으로 전송 중..."
           
-          # VM에 ~/zkup 디렉토리 생성
+          # VM에 ~/zkup 디렉토리 생성 (존재하지 않으면)
+          echo "VM에 zkup 디렉토리 확인 및 생성 중..."
           gcloud compute ssh "$VM_INSTANCE" --zone="$VM_ZONE" --command="mkdir -p ~/zkup" --quiet
           
-          # 기존 디렉토리 백업 (있는 경우)
-          gcloud compute ssh "$VM_INSTANCE" --zone="$VM_ZONE" --command="
-            if [ -d ~/zkup/$FOLDER_NAME ]; then
-              echo '기존 디렉토리 백업 중...'
-              mv ~/zkup/$FOLDER_NAME ~/zkup/${FOLDER_NAME}.backup.\$(date +%Y%m%d_%H%M%S) || true
-            fi
-          " --quiet
-          
           # 파일을 VM으로 전송
-          gcloud compute scp --recurse --zone="$VM_ZONE" "$TEMP_DIR/$FOLDER_NAME" "$VM_INSTANCE:~/zkup/"
-          
-          if [ $? -eq 0 ]; then
-            echo "VM 배포 완료"
-            # 전송 확인
-            gcloud compute ssh "$VM_INSTANCE" --zone="$VM_ZONE" --command="ls -la ~/zkup/$FOLDER_NAME" --quiet
-          else
-            echo "VM 배포 실패"
+          echo "파일을 VM으로 전송 중..."
+          if ! gcloud compute scp --recurse --zone="$VM_ZONE" "$TEMP_DIR/$FOLDER_NAME" "$VM_INSTANCE:~/zkup/"; then
+            echo "오류: VM으로 파일 전송 실패"
             exit 1
+          fi
+          
+          echo "VM 배포 완료"
+          # 전송 확인
+          echo "전송된 파일 확인 중..."
+          if ! gcloud compute ssh "$VM_INSTANCE" --zone="$VM_ZONE" --command="ls -la ~/zkup/$FOLDER_NAME" --quiet; then
+            echo "경고: 전송 확인 실패 (파일은 전송되었을 수 있음)"
           fi
           
           # 임시 디렉토리 정리

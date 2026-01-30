@@ -40,6 +40,12 @@ hex    = { workspace = true }
 rand   = { workspace = true }
 sha2   = { workspace = true }
 jsonwebtoken = { workspace = true }
+
+# mimalloc: musl(Alpine Linux)에서는 dlopen TLS 문제 해결을 위해 local_dynamic_tls 필요
+[target.'cfg(target_env = "musl")'.dependencies]
+mimalloc = { workspace = true, features = ["local_dynamic_tls"] }
+
+[target.'cfg(not(target_env = "musl"))'.dependencies]
 mimalloc = { workspace = true }
 
 [features]

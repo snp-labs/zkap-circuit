@@ -1,124 +1,96 @@
-use std::path::PathBuf;
+//! ZKAP 증명 생성 서비스 (리팩토링 버전)
+//!
+//! ## 아키텍처
+//!
+//! ```text
+//! ┌─────────────────────────────────────────────────────────────────┐
+//! │                     generate_baerae_proof_v2                    │
+//! │                        (엔트리 포인트)                             │
+//! └───────────────────────────────┬─────────────────────────────────┘
+//!                                 │
+//!                 ┌───────────────┼───────────────┐
+//!                 ▼               ▼               ▼
+//! ┌───────────────────┐ ┌─────────────────┐ ┌─────────────────────┐
+//! │  RawProofRequest  │ │  ProofRequest   │ │ ProofContextBuilder │
+//! │   (입력 수집)        │→│  (검증/파싱)     │→│    (컨텍스트 구축)      │
+//! └───────────────────┘ └─────────────────┘ └──────────┬──────────┘
+//!                                                      │
+//!                                                      ▼
+//!                                          ┌──────────────────────┐
+//!                                          │    CircuitInput[]    │
+//!                                          │ (회로 입력 구조체들)     │
+//!                                          └──────────┬───────────┘
+//!                                                     │
+//!                                                     ▼
+//!                                          ┌──────────────────────┐
+//!                                          │   ProofGenerator     │
+//!                                          │   (증명 생성)          │
+//!                                          └──────────┬───────────┘
+//!                                                     │
+//!                                                     ▼
+//!                                          ┌──────────────────────┐
+//!                                          │    ProofOutput       │
+//!                                          │ (증명 + 공개입력)       │
+//!                                          └──────────────────────┘
+//! ```
 
 use ark_groth16::Proof;
-
 use common::constants::{BN254, F, ZkPasskeyConfig};
 use log;
 
-use crate::{
-    app::{
-        jwt::builder::TokenBuilder,
-        snark::{
-            preprocess::{
-                compute_anchor_ctx, pad_aud_list_and_hash, parse_inputs, validate_inputs,
-            },
-            types::CircuitContext,
-        },
-    },
-    error::ApplicationError,
-};
+use crate::error::ApplicationError;
 
-#[cfg(feature = "use-optimized")]
-use crate::app::snark::prover::prove_streaming;
+use super::context::ProofContextBuilder;
+use super::input::{ProofRequest, RawProofRequest};
+use super::proof::ProofGenerator;
 
-#[cfg(not(feature = "use-optimized"))]
-use crate::app::snark::prover::generate_proof;
-
+/// 1. RawProofRequest → ProofRequest (검증 및 파싱)
+/// 2. ProofRequest → CircuitInput[] (컨텍스트 구축)
+/// 3. CircuitInput[] → Proof[] (증명 생성)
+///
+/// # Arguments
+/// * `raw` - 원시 증명 요청 데이터
+///
+/// # Returns
+/// * 증명들과 공개 입력들의 튜플
 pub fn generate_baerae_proof<Config: ZkPasskeyConfig>(
-    pk_path: &PathBuf,
-    raw_jwts: Vec<String>,
-    raw_pk_ops: Vec<String>,
-    raw_merkle_paths: Vec<Vec<String>>,
-    raw_leaf_indices: Vec<usize>,
-    raw_root: &str,
-    raw_anchor: &[String],
-    raw_h_sign_user_op: &str,
-    raw_block_timestamp: &str,
-    raw_random: &str,
-    raw_aud_list: &[String],
+    raw: RawProofRequest,
 ) -> Result<(Vec<Proof<BN254>>, Vec<Vec<F>>), ApplicationError> {
-    // 1. 입력 검증
-    log::info!("[ZKAP] Step 1: Validating inputs...");
-    validate_inputs::<Config>(
-        &raw_jwts,
-        &raw_pk_ops,
-        &raw_merkle_paths,
-        &raw_leaf_indices,
-        raw_anchor,
-    )?;
-    log::info!("[ZKAP] Step 1 completed: Input validation passed");
+    // 1. 입력 검증 및 파싱
+    log::info!("[ZKAP-v2] Step 1: Validating and parsing inputs...");
+    let request = ProofRequest::from_raw::<Config>(raw)?;
+    log::info!("[ZKAP-v2] Step 1 completed: Input validation passed");
 
-    let circuit_ctx = CircuitContext::<Config>::new();
+    // 2. 컨텍스트 구축
+    log::info!("[ZKAP-v2] Step 2: Building proof context...");
+    let builder = ProofContextBuilder::<Config>::new(request.clone())
+        .build_anchor_context()?
+        .build_audience_context()?;
+    log::info!("[ZKAP-v2] Step 2 completed: Context built");
 
-    // 3. 입력을 도메인 요소로 변환
-    log::info!("[ZKAP] Step 3: Converting inputs to domain elements...");
-
-    let parsed_inputs = parse_inputs(
-        raw_root,
-        raw_h_sign_user_op,
-        raw_block_timestamp,
-        raw_random,
-        raw_anchor,
-        raw_aud_list,
-    )?;
-
-    log::info!("[ZKAP] Step 3 completed: Inputs converted");
-
-    // 4. TokenBuilder 일괄 생성
+    // 3. 회로 입력 생성
+    log::info!("[ZKAP-v2] Step 3: Building circuit inputs...");
+    let circuit_inputs = builder.build_all_circuit_inputs()?;
     log::info!(
-        "[ZKAP] Step 4: Creating TokenBuilders for {} JWTs...",
-        raw_jwts.len()
-    );
-    let builders: Vec<TokenBuilder> = raw_jwts
-        .iter()
-        .map(|jwt| {
-            TokenBuilder::new(jwt, Config::CLAIMS.to_vec())
-                .map_err(|e| ApplicationError::InvalidFormat(format!("JWT parsing failed: {}", e)))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    log::info!(
-        "[ZKAP] Step 4 completed: {} TokenBuilders created",
-        builders.len()
+        "[ZKAP-v2] Step 3 completed: {} circuit inputs created",
+        circuit_inputs.len()
     );
 
-    let anchor_ctx = compute_anchor_ctx(&circuit_ctx, &builders, &parsed_inputs)?;
-
-    let (padded_aud_list, h_aud_list) =
-        pad_aud_list_and_hash::<Config>(&circuit_ctx.poseidon_params, &parsed_inputs.aud_list)?;
+    // 4. 증명 생성
+    log::info!("[ZKAP-v2] Step 4: Generating proofs...");
+    let generator =
+        ProofGenerator::<Config>::new(request.pk_path.clone(), builder.circuit_context().clone());
 
     #[cfg(feature = "use-optimized")]
-    {
-        let (proofs, public_inputs) = prove_streaming::<Config>(
-            pk_path,
-            &circuit_ctx,
-            &builders,
-            &raw_pk_ops,
-            &raw_merkle_paths,
-            &raw_leaf_indices,
-            &parsed_inputs,
-            &anchor_ctx,
-            &padded_aud_list,
-            h_aud_list,
-        )?;
-
-        Ok((proofs, public_inputs))
-    }
+    let output = generator.generate_streaming(&circuit_inputs)?;
 
     #[cfg(not(feature = "use-optimized"))]
-    {
-        log::info!("[ZKAP] Prover mode: default (generate_proof)");
-        let (proofs, public_inputs) = generate_proof::<Config>(
-            pk_path,
-            &circuit_ctx,
-            &builders,
-            &raw_pk_ops,
-            &raw_merkle_paths,
-            &raw_leaf_indices,
-            &parsed_inputs,
-            &anchor_ctx,
-            &padded_aud_list,
-            h_aud_list,
-        )?;
-        return Ok((proofs, public_inputs));
-    }
+    let output = generator.generate(&circuit_inputs)?;
+
+    log::info!(
+        "[ZKAP-v2] Step 4 completed: {} proofs generated",
+        output.proofs.len()
+    );
+
+    Ok((output.proofs, output.public_inputs))
 }

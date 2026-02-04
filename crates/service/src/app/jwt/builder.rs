@@ -34,6 +34,7 @@ pub struct JwtCircuitWitness {
     pub claim_indices: Vec<ClaimIndices>,
 }
 
+#[derive(Clone)]
 pub struct TokenBuilder {
     pub header_b64: String,
     pub payload_b64: String,

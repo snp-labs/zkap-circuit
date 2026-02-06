@@ -46,7 +46,10 @@ use gadget::{
         get_base64_table,
         mod_v2::IndexBits,
     },
-    bigint::constraints::BigNatCircuitParams,
+    bigint::{
+        constraints::{BigNatCircuitParams, BigNatVar},
+        utils::BigNat,
+    },
     hashes::{
         poseidon::{constraints::chain_hash_gadget, get_poseidon_params},
         sha256::constraints::SHA256Gadget,
@@ -203,6 +206,12 @@ where
 
         let pk_op = PublicKeyVar::<C::BaseField, BNP>::new_witness(cs.clone(), || Ok(self.pk_op))?;
 
+        // [ZKAPCIR-001] RSA 공개지수 e = 65537 강제
+        // e가 자유 witness이므로 공격자가 e=1로 설정해 서명 위조가 가능.
+        // e를 65537로 고정하여 서명 검증 우회를 방지.
+        let expected_e = BigNatVar::<C::BaseField, BNP>::constant(&BigNat::from(65537u64))?;
+        pk_op.e.enforce_equal_when_carried(&expected_e)?;
+
         let signature_op =
             SignatureVar::<C::BaseField, BNP>::new_witness(cs.clone(), || Ok(self.signature_op))?;
 
@@ -268,6 +277,42 @@ where
             .iter()
             .map(|u8| u8.to_fp())
             .collect::<ark_relations::r1cs::Result<Vec<_>>>()?;
+
+        // [ZKAPCIR-002] JWT payload 경계를 '.' 구분자와 바인딩
+        // payload_offset_b64/payload_len_b64가 실제 JWT '.' 위치와 무관하면
+        // 공격자가 header 등 임의 구간을 payload로 지정하여 클레임을 위조할 수 있음.
+        let dot_char = FpVar::<C::BaseField>::Constant(C::BaseField::from(b'.' as u64));
+        let payload_offset_fp = Boolean::le_bits_to_fp(&payload_offset_b64.to_bits_le()?)?;
+        let payload_len_fp = Boolean::le_bits_to_fp(&payload_len_b64.to_bits_le()?)?;
+
+        // 방어 심층: payload_offset >= 1 (offset=0이면 필드 underflow 발생)
+        let offset_ge_1 = is_less_than(
+            &zero.to_bits_le_with_top_bits_zero(16)?.0,
+            &payload_offset_fp.to_bits_le_with_top_bits_zero(16)?.0,
+        )?;
+        offset_ge_1.enforce_equal(&Boolean::constant(true))?;
+
+        // 방어 심층: payload_offset + payload_len < buffer_len (버퍼 범위 초과 방지)
+        let buf_len = FpVar::<C::BaseField>::Constant(C::BaseField::from(
+            sha_pad_payload_b64_to_fp.len() as u64,
+        ));
+        let second_dot_idx = &payload_offset_fp + &payload_len_fp;
+        let idx_in_range = is_less_than(
+            &second_dot_idx.to_bits_le_with_top_bits_zero(16)?.0,
+            &buf_len.to_bits_le_with_top_bits_zero(16)?.0,
+        )?;
+        idx_in_range.enforce_equal(&Boolean::constant(true))?;
+
+        // 첫 번째 '.' : payload 시작 바로 전 (header.payload 사이)
+        let first_dot_idx = &payload_offset_fp - &one;
+        let first_dot_char = single_multiplexer(&sha_pad_payload_b64_to_fp, &first_dot_idx)?;
+        first_dot_char.enforce_equal(&dot_char)?;
+        // 두 번째 '.' : payload 끝 바로 다음 (payload.signature 사이)
+        let second_dot_char = single_multiplexer(&sha_pad_payload_b64_to_fp, &second_dot_idx)?;
+        second_dot_char.enforce_equal(&dot_char)?;
+
+        gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Payload Boundary Binding");
+
         let payload_b64 = slice_v2::slice_efficient(
             &sha_pad_payload_b64_to_fp,
             &payload_offset_b64,

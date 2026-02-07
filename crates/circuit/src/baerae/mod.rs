@@ -56,7 +56,10 @@ use gadget::{
     },
     matrix::{VandermondeMatrix, constraints_v2::VandermondeMatrixVar},
     mekletree::tree_config::{Empty, MerkleTreeParams, MerkleTreeParamsVar},
-    signature::rsa::{PublicKey, Signature, constraints::{PublicKeyVar, SignatureVar}},
+    signature::rsa::{
+        PublicKey, Signature,
+        constraints::{PublicKeyVar, SignatureVar},
+    },
     utils::{
         bit_bytes_v2::pack_decompose_bytes_unchecked,
         comparison_v2::is_less_than,
@@ -290,6 +293,10 @@ where
             &zero.to_bits_le_with_top_bits_zero(16)?.0,
             &payload_offset_fp.to_bits_le_with_top_bits_zero(16)?.0,
         )?;
+
+        gadget::dbg_r1cs_eq!("Payload Offset >= 1", offset_ge_1, Boolean::constant(true));
+        gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Payload Offset >= 1");
+
         offset_ge_1.enforce_equal(&Boolean::constant(true))?;
 
         // 방어 심층: payload_offset + payload_len < buffer_len (버퍼 범위 초과 방지)
@@ -301,17 +308,24 @@ where
             &second_dot_idx.to_bits_le_with_top_bits_zero(16)?.0,
             &buf_len.to_bits_le_with_top_bits_zero(16)?.0,
         )?;
+
+        gadget::dbg_r1cs_eq!(
+            "Payload Index Range Check",
+            idx_in_range,
+            Boolean::constant(true)
+        );
+        gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Payload Index Range Check");
+
         idx_in_range.enforce_equal(&Boolean::constant(true))?;
 
         // 첫 번째 '.' : payload 시작 바로 전 (header.payload 사이)
         let first_dot_idx = &payload_offset_fp - &one;
         let first_dot_char = single_multiplexer(&sha_pad_payload_b64_to_fp, &first_dot_idx)?;
-        first_dot_char.enforce_equal(&dot_char)?;
-        // 두 번째 '.' : payload 끝 바로 다음 (payload.signature 사이)
-        let second_dot_char = single_multiplexer(&sha_pad_payload_b64_to_fp, &second_dot_idx)?;
-        second_dot_char.enforce_equal(&dot_char)?;
 
-        gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Payload Boundary Binding");
+        gadget::dbg_r1cs_eq!("Payload Boundary Binding", first_dot_char, dot_char);
+        gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Payload Boundary Check");
+
+        first_dot_char.enforce_equal(&dot_char)?;
 
         let payload_b64 = slice_v2::slice_efficient(
             &sha_pad_payload_b64_to_fp,

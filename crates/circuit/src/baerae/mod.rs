@@ -209,9 +209,7 @@ where
 
         let pk_op = PublicKeyVar::<C::BaseField, BNP>::new_witness(cs.clone(), || Ok(self.pk_op))?;
 
-        // [ZKAPCIR-001] RSA 공개지수 e = 65537 강제
-        // e가 자유 witness이므로 공격자가 e=1로 설정해 서명 위조가 가능.
-        // e를 65537로 고정하여 서명 검증 우회를 방지.
+        // [ZKAPCIR-001] RSA e=65537 강제
         let expected_e = BigNatVar::<C::BaseField, BNP>::constant(&BigNat::from(65537u64))?;
         pk_op.e.enforce_equal_when_carried(&expected_e)?;
 
@@ -323,9 +321,17 @@ where
         let first_dot_char = single_multiplexer(&sha_pad_payload_b64_to_fp, &first_dot_idx)?;
 
         gadget::dbg_r1cs_eq!("Payload Boundary Binding", first_dot_char, dot_char);
-        gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Payload Boundary Check");
 
         first_dot_char.enforce_equal(&dot_char)?;
+
+        // payload 끝 바로 다음: SHA-256 패딩 마커 0x80 검증
+        // sha_pad_payload_b64 버퍼는 header_rest + "." + payload + SHA256패딩 구조이므로
+        // payload 끝 다음 바이트는 '.'이 아닌 SHA-256 패딩 시작 바이트 0x80
+        let sha_pad_marker = FpVar::<C::BaseField>::Constant(C::BaseField::from(0x80u64));
+        let second_boundary_char = single_multiplexer(&sha_pad_payload_b64_to_fp, &second_dot_idx)?;
+        second_boundary_char.enforce_equal(&sha_pad_marker)?;
+
+        gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Payload Boundary Check");
 
         let payload_b64 = slice_v2::slice_efficient(
             &sha_pad_payload_b64_to_fp,

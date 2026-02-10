@@ -324,12 +324,11 @@ where
 
         first_dot_char.enforce_equal(&dot_char)?;
 
-        // payload 끝 바로 다음: SHA-256 패딩 마커 0x80 검증
-        // sha_pad_payload_b64 버퍼는 header_rest + "." + payload + SHA256패딩 구조이므로
-        // payload 끝 다음 바이트는 '.'이 아닌 SHA-256 패딩 시작 바이트 0x80
-        let sha_pad_marker = FpVar::<C::BaseField>::Constant(C::BaseField::from(0x80u64));
-        let second_boundary_char = single_multiplexer(&sha_pad_payload_b64_to_fp, &second_dot_idx)?;
-        second_boundary_char.enforce_equal(&sha_pad_marker)?;
+        // ZKAPCIR-002: payload 끝 위치 == SHA-256 패딩 시작 위치 구조적 바인딩
+        // SHA-256 gadget(constraints.rs:L403)이 이미 buffer[pad_start_in_suffix] == 0x80을 검증하므로
+        // 여기서는 위치만 바인딩하면 충분
+        let pad_start_fp = pad_start_in_suffix.to_fp()?;
+        second_dot_idx.enforce_equal(&pad_start_fp)?;
 
         gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Payload Boundary Check");
 

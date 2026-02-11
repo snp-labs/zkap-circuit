@@ -86,7 +86,7 @@ where
     pub h_ctx: C::BaseField,
     pub root: C::BaseField,
     pub h_sign_user_op: C::BaseField,
-    pub block_timestamp: C::BaseField,
+    pub jwt_exp: C::BaseField,
     pub partial_rhs: C::BaseField,
     pub lhs: C::BaseField,
     pub h_aud_list: C::BaseField,
@@ -157,8 +157,7 @@ where
         let h_sign_user_op =
             FpVar::<C::BaseField>::new_input(cs.clone(), || Ok(self.h_sign_user_op))?;
 
-        let block_timestamp =
-            FpVar::<C::BaseField>::new_input(cs.clone(), || Ok(self.block_timestamp))?;
+        let jwt_exp = FpVar::<C::BaseField>::new_input(cs.clone(), || Ok(self.jwt_exp))?;
 
         let partial_rhs = FpVar::<C::BaseField>::new_input(cs.clone(), || Ok(self.partial_rhs))?;
 
@@ -390,14 +389,15 @@ where
         gadget::dbg_r1cs_eq!("MerkleVerify", result, Boolean::constant(true));
         gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Issuer-PublicKey MerkleVerify");
 
-        // [2.2] expiry check: block_timestamp < exp
-        let result = is_less_than(
-            &block_timestamp.to_bits_le_with_top_bits_zero(64)?.0,
-            &exp.to_bits_le_with_top_bits_zero(64)?.0,
-        )?;
+        // [2.2] expiry check: jwt_exp == exp
+        let result = exp.is_eq(&jwt_exp)?;
         result.enforce_equal(&Boolean::constant(true))?;
 
-        gadget::dbg_r1cs_eq!("Expiry Check (ts < exp)", result, Boolean::constant(true));
+        gadget::dbg_r1cs_eq!(
+            "Expiry Check (jwt_exp == exp)",
+            result,
+            Boolean::constant(true)
+        );
         gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Expiry Check");
 
         gadget::dbg_cs_delta!(&cs, &mut phase2_total_last, "[Phase 2] Validation Total");
@@ -583,7 +583,7 @@ where
             h_ctx: C::BaseField::default(),
             root: C::BaseField::default(),
             h_sign_user_op: C::BaseField::default(),
-            block_timestamp: C::BaseField::default(),
+            jwt_exp: C::BaseField::default(),
             partial_rhs: C::BaseField::default(),
             lhs: C::BaseField::default(),
             h_aud_list: C::BaseField::default(),
@@ -622,7 +622,7 @@ where
         h_ctx: C::BaseField,
         root: C::BaseField,
         h_sign_user_op: C::BaseField,
-        block_timestamp: C::BaseField,
+        jwt_exp: C::BaseField,
         partial_rhs: C::BaseField,
         lhs: C::BaseField,
         h_aud_list: C::BaseField,
@@ -655,7 +655,7 @@ where
             h_ctx,
             root,
             h_sign_user_op,
-            block_timestamp,
+            jwt_exp,
             partial_rhs,
             lhs,
             h_aud_list,
@@ -697,7 +697,7 @@ where
             self.h_ctx,
             self.root,
             self.h_sign_user_op,
-            self.block_timestamp,
+            self.jwt_exp,
             self.partial_rhs,
             self.lhs,
             self.h_aud_list,

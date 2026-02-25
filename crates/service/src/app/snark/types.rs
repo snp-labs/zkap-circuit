@@ -18,7 +18,6 @@ pub(crate) struct Intermediate {
 pub(crate) struct ParsedInputs {
     pub root: F,
     pub h_sign_user_op: F,
-    pub block_timestamp: F,
     pub random: F,
     pub anchor: PoseidonAnchor<F>,
     pub hanchor: F,

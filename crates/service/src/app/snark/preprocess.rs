@@ -55,14 +55,12 @@ pub(crate) fn validate_inputs<Config: ZkPasskeyConfig>(
 pub(crate) fn parse_inputs(
     raw_root: &str,
     raw_h_sign_user_op: &str,
-    raw_block_timestamp: &str,
     raw_random: &str,
     raw_anchor: &[String],
     raw_aud_list: &[String],
 ) -> Result<ParsedInputs, ApplicationError> {
     let root = hex_decimal_to_field::<F>(raw_root)?;
     let h_sign_user_op = hex_decimal_to_field::<F>(raw_h_sign_user_op)?;
-    let block_timestamp = hex_decimal_to_field::<F>(raw_block_timestamp)?;
     let random = hex_decimal_to_field::<F>(raw_random)?;
     let (anchor, hanchor) = convert_raw_anchor(raw_anchor)?;
     let aud_list = raw_aud_list
@@ -73,7 +71,6 @@ pub(crate) fn parse_inputs(
     Ok(ParsedInputs {
         root,
         h_sign_user_op,
-        block_timestamp,
         random,
         anchor,
         hanchor,

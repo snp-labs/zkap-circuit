@@ -28,7 +28,6 @@ pub fn generate_baerae_proof<Config: ZkPasskeyConfig>(
     raw_root: &str,
     raw_anchor: &[String],
     raw_h_sign_user_op: &str,
-    raw_block_timestamp: &str,
     raw_random: &str,
     raw_aud_list: &[String],
 ) -> Result<(Vec<Proof<BN254>>, Vec<Vec<F>>), ApplicationError> {
@@ -53,7 +52,6 @@ pub fn generate_baerae_proof<Config: ZkPasskeyConfig>(
     let parsed_inputs = parse_inputs(
         raw_root,
         raw_h_sign_user_op,
-        raw_block_timestamp,
         raw_random,
         raw_anchor,
         raw_aud_list,

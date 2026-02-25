@@ -109,22 +109,17 @@ pub fn jwt_nonce_hex_to_field<F: PrimeField>(
 
     // 4.2. 16진수 자릿수는 1~64자여야 함 (4비트~256비트)
     // 최소 1자
-    let _one = FpVar::<F>::Constant(F::one());
     let zero = FpVar::<F>::zero();
     let digit_count_ge_1 = hex_digit_count.is_neq(&zero)?;
     digit_count_ge_1.enforce_equal(&Boolean::TRUE)?;
 
-    // 최대 64자 (256비트)
+    // [ZKAPCIR-004] 최대 64자 (256비트) - 회로 내에서 실제로 enforce
+    // 기존 코드는 비교 결과를 제약하지 않아 65자 이상도 허용되었음.
     let max_hex_digits = FpVar::<F>::Constant(F::from(64u64));
     let digit_count_bits = hex_digit_count.to_bits_le()?;
     let max_bits = max_hex_digits.to_bits_le()?;
-
-    // hex_digit_count <= 64 검증
-    for i in 0..digit_count_bits.len().min(max_bits.len()) {
-        let _should_be_le = !&digit_count_bits[i] | &max_bits[i];
-        // 간단한 비교: 각 비트 위치에서 digit_count가 max보다 크지 않은지 확인
-        // 더 정확한 검증을 위해서는 a_lt_b 같은 함수 사용 가능
-    }
+    let digit_le_max = crate::utils::comparison_v2::is_less_or_equal(&digit_count_bits, &max_bits)?;
+    digit_le_max.enforce_equal(&Boolean::TRUE)?;
 
     Ok(accumulated_value)
 }

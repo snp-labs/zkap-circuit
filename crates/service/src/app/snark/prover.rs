@@ -36,6 +36,7 @@ pub(crate) fn make_circuit_factory<Config: ZkPasskeyConfig>(
     padded_aud_list: &[F],
     h_aud_list: F,
     proof_i: usize,
+    jwt_exp: F,
 ) -> impl FnMut() -> BaeraeLightWeightCircuit<CG, BNP, Config> {
     let partial_rhs = anchor_ctx.partial_rhs_list[proof_i];
     let current_idx = anchor_ctx.current_idx_list[proof_i];
@@ -47,7 +48,6 @@ pub(crate) fn make_circuit_factory<Config: ZkPasskeyConfig>(
     let hanchor = parsed_inputs.hanchor;
     let root = parsed_inputs.root;
     let h_sign_user_op = parsed_inputs.h_sign_user_op;
-    let block_timestamp = parsed_inputs.block_timestamp;
     let random = parsed_inputs.random;
     let anchor = parsed_inputs.anchor.clone();
 
@@ -73,7 +73,7 @@ pub(crate) fn make_circuit_factory<Config: ZkPasskeyConfig>(
             h_ctx,
             root,
             h_sign_user_op,
-            block_timestamp,
+            jwt_exp,
             partial_rhs,
             lhs,
             h_aud_list,
@@ -120,10 +120,17 @@ pub(crate) fn phase_a_part1<Config: ZkPasskeyConfig>(
             ApplicationError::InvalidFormat(format!("Failed to build circuit witness: {}", e))
         })?;
 
+        // JWT에서 exp 클레임을 추출하여 jwt_exp로 사용
+        let exp_str = builders[i].get_claim_by("exp").map_err(|e| {
+            ApplicationError::InvalidFormat(format!("Failed to get exp claim: {}", e))
+        })?;
+        let jwt_exp: F = exp_str.parse::<u64>()
+            .map(F::from)
+            .map_err(|e| ApplicationError::InvalidFormat(format!("Failed to parse exp as u64: {}", e)))?;
+
         let li = raw_leaf_indices[i];
         let path = build_mp(&raw_merkle_paths[i], li)?;
 
-        // ✅ make_circuit_factory에 slice를 넘김
         let circuit_factory = make_circuit_factory::<Config>(
             circuit_ctx,
             parsed_inputs,
@@ -131,9 +138,10 @@ pub(crate) fn phase_a_part1<Config: ZkPasskeyConfig>(
             li,
             witness,
             path,
-            padded_aud_list, // ✅ move 없음
+            padded_aud_list,
             h_aud_list,
             i,
+            jwt_exp,
         );
 
         #[cfg(feature = "use-optimized")]
@@ -217,6 +225,14 @@ pub(crate) fn prove_streaming<Config: ZkPasskeyConfig>(
             .build::<Config>(&raw_pk_ops[i])
             .map_err(|e| ApplicationError::InvalidFormat(e.to_string()))?;
 
+        // JWT에서 exp 클레임을 추출하여 jwt_exp로 사용
+        let exp_str = builders[i].get_claim_by("exp").map_err(|e| {
+            ApplicationError::InvalidFormat(format!("Failed to get exp claim: {}", e))
+        })?;
+        let jwt_exp: F = exp_str.parse::<u64>()
+            .map(F::from)
+            .map_err(|e| ApplicationError::InvalidFormat(format!("Failed to parse exp as u64: {}", e)))?;
+
         let leaf_idx = raw_leaf_indices[i];
         let path = build_mp(&raw_merkle_paths[i], leaf_idx)?;
 
@@ -230,6 +246,7 @@ pub(crate) fn prove_streaming<Config: ZkPasskeyConfig>(
             padded_aud_list,
             h_aud_list,
             i,
+            jwt_exp,
         );
 
         let (h, instance, w) = Groth16::<BN254>::create_proof_part1_witness_h(circuit_factory)

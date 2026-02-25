@@ -18,7 +18,6 @@ pub fn generate_baerae_proof<Config: ZkPasskeyConfig>(
     root: &str,
     anchor_parts: &[String],
     h_sign_userop: &str,
-    block_timestamp: &str,
     random: &str,
     aud_list: &[String],
 ) -> Result<(Vec<Proof<Bn254>>, Vec<Vec<F>>), ApplicationError> {
@@ -31,7 +30,6 @@ pub fn generate_baerae_proof<Config: ZkPasskeyConfig>(
         root,
         anchor_parts,
         h_sign_userop,
-        block_timestamp,
         random,
         aud_list,
     )

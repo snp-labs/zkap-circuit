@@ -153,7 +153,7 @@ impl<Config: ZkPasskeyConfig> ProofContextBuilder<Config> {
                 h_a: anchor_ctx.h_a,
                 root: self.request.merkle.root,
                 h_sign_user_op: self.request.execution.h_sign_user_op,
-                block_timestamp: self.request.execution.block_timestamp,
+                jwt_exp: self.request.execution.jwt_exp[proof_index],
                 partial_rhs: anchor_ctx.partial_rhs_for(proof_index),
                 lhs: anchor_ctx.lhs,
                 h_aud_list: audience_ctx.h_aud_list,

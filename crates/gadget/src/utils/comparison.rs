@@ -18,6 +18,13 @@ pub fn a_lt_b<F: PrimeField>(
     a_bits: &[Boolean<F>],
     b_bits: &[Boolean<F>],
 ) -> Result<Boolean<F>, SynthesisError> {
+    // [ZKAPCIR-003] 비트 길이 불일치 시 zip이 상위 비트를 무시하는 문제 방지
+    assert_eq!(
+        a_bits.len(),
+        b_bits.len(),
+        "Bit lengths must be equal for comparison"
+    );
+
     let mut less = Boolean::constant(false);
     let mut equal = Boolean::constant(true);
 
@@ -43,6 +50,13 @@ pub fn a_gt_b<F: PrimeField>(
     a_bits: &[Boolean<F>],
     b_bits: &[Boolean<F>],
 ) -> Result<Boolean<F>, SynthesisError> {
+    // [ZKAPCIR-003] 비트 길이 불일치 시 zip이 상위 비트를 무시하는 문제 방지
+    assert_eq!(
+        a_bits.len(),
+        b_bits.len(),
+        "Bit lengths must be equal for comparison"
+    );
+
     let mut greater = Boolean::constant(false);
     let mut equal = Boolean::constant(true);
 

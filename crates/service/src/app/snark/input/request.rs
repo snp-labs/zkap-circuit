@@ -28,7 +28,7 @@ pub struct AudienceData {
 #[derive(Clone)]
 pub struct ExecutionBindingData {
     pub h_sign_user_op: F,
-    pub block_timestamp: F,
+    pub jwt_exp: Vec<F>,
     pub random: F,
 }
 
@@ -115,10 +115,21 @@ impl ProofRequest {
             })
             .collect::<Result<Vec<_>, _>>()?;
 
+        // 각 JWT 토큰에서 exp 클레임 추출
+        let jwt_exp: Vec<F> = token_builders
+            .iter()
+            .enumerate()
+            .map(|(i, tb)| {
+                let exp_str = tb.get_claim_by("exp").map_err(|e| {
+                    ApplicationError::InvalidFormat(format!("exp claim not found in token[{}]: {}", i, e))
+                })?;
+                hex_decimal_to_field::<F>(exp_str).map_err(Into::into)
+            })
+            .collect::<Result<Vec<F>, ApplicationError>>()?;
+
         // 필드 요소 파싱
         let root = hex_decimal_to_field::<F>(&raw.root)?;
         let h_sign_user_op = hex_decimal_to_field::<F>(&raw.h_sign_user_op)?;
-        let block_timestamp = hex_decimal_to_field::<F>(&raw.block_timestamp)?;
         let random = hex_decimal_to_field::<F>(&raw.random)?;
 
         // Anchor 파싱
@@ -143,7 +154,7 @@ impl ProofRequest {
             anchor: anchor_data,
             execution: ExecutionBindingData {
                 h_sign_user_op,
-                block_timestamp,
+                jwt_exp,
                 random,
             },
             audience: AudienceData { raw_list: aud_list },

@@ -234,6 +234,16 @@ impl TokenBuilder {
             aud: aud.expect("Missing 'aud' claim"),
         }
     }
+
+    // Claims에서 특정 키에 해당하는 값을 반환합니다.
+    pub fn get_claim_by(&self, key: &str) -> Result<&str, TokenError> {
+        for claim in &self.claims {
+            if claim.key == key {
+                return Ok(&claim.value);
+            }
+        }
+        Err(TokenError::NotFoundKeyError(key.to_string()))
+    }
 }
 
 /// Helper: SHA-256 Padding

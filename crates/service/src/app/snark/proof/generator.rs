@@ -127,7 +127,7 @@ impl<Config: ZkPasskeyConfig> ProofGenerator<Config> {
                 h_a: input.public.h_a,
                 root: input.public.root,
                 h_sign_user_op: input.public.h_sign_user_op,
-                block_timestamp: input.public.block_timestamp,
+                jwt_exp: input.public.jwt_exp,
                 partial_rhs: input.public.partial_rhs,
                 lhs: input.public.lhs,
                 h_aud_list: input.public.h_aud_list,

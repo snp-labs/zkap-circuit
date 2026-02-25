@@ -27,9 +27,6 @@ pub struct RawProofRequest {
     /// 서명된 UserOperation 해시
     pub h_sign_user_op: String,
 
-    /// 블록 타임스탬프
-    pub block_timestamp: String,
-
     /// 블라인딩을 위한 랜덤 값
     pub random: String,
 
@@ -49,7 +46,6 @@ impl RawProofRequest {
         root: String,
         anchor: Vec<String>,
         h_sign_user_op: String,
-        block_timestamp: String,
         random: String,
         aud_list: Vec<String>,
     ) -> Self {
@@ -62,7 +58,6 @@ impl RawProofRequest {
             root,
             anchor,
             h_sign_user_op,
-            block_timestamp,
             random,
             aud_list,
         }

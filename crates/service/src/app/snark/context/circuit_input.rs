@@ -31,8 +31,8 @@ pub struct PublicInputs {
     /// H(sign_user_op)
     pub h_sign_user_op: F,
 
-    /// 블록 타임스탬프
-    pub block_timestamp: F,
+    /// JWT Exp (Expiration timestamp)
+    pub jwt_exp: F,
 
     /// partial_rhs[current_idx]
     pub partial_rhs: F,
@@ -159,7 +159,7 @@ impl CircuitInput {
             self.public.h_a,
             self.public.root,
             self.public.h_sign_user_op,
-            self.public.block_timestamp,
+            self.public.jwt_exp,
             self.public.partial_rhs,
             self.public.lhs,
             self.public.h_aud_list,

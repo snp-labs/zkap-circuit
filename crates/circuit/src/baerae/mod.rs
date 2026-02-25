@@ -48,7 +48,10 @@ use gadget::{
         get_base64_table,
         mod_v2::IndexBits,
     },
-    bigint::constraints::BigNatCircuitParams,
+    bigint::{
+        constraints::{BigNatCircuitParams, BigNatVar},
+        utils::BigNat,
+    },
     hashes::{
         poseidon::{constraints::chain_hash_gadget, get_poseidon_params},
         sha256::constraints::SHA256Gadget,
@@ -85,7 +88,7 @@ where
     pub h_a: C::BaseField,
     pub root: C::BaseField,
     pub h_sign_user_op: C::BaseField,
-    pub block_timestamp: C::BaseField,
+    pub jwt_exp: C::BaseField,
     pub partial_rhs: C::BaseField,
     pub lhs: C::BaseField,
     pub h_aud_list: C::BaseField,
@@ -156,8 +159,7 @@ where
         let h_sign_user_op =
             FpVar::<C::BaseField>::new_input(cs.clone(), || Ok(self.h_sign_user_op))?;
 
-        let block_timestamp =
-            FpVar::<C::BaseField>::new_input(cs.clone(), || Ok(self.block_timestamp))?;
+        let jwt_exp = FpVar::<C::BaseField>::new_input(cs.clone(), || Ok(self.jwt_exp))?;
 
         let partial_rhs = FpVar::<C::BaseField>::new_input(cs.clone(), || Ok(self.partial_rhs))?;
 
@@ -207,6 +209,10 @@ where
             IndexBitsVar::<C::BaseField>::new_witness(cs.clone(), || Ok(self.index_bits))?;
 
         let pk_op = PublicKeyVar::<C::BaseField, BNP>::new_witness(cs.clone(), || Ok(self.pk_op))?;
+
+        // [ZKAPCIR-001] RSA e=65537 강제
+        let expected_e = BigNatVar::<C::BaseField, BNP>::constant(&BigNat::from(65537u64))?;
+        pk_op.e.enforce_equal_when_carried(&expected_e)?;
 
         let signature_op =
             SignatureVar::<C::BaseField, BNP>::new_witness(cs.clone(), || Ok(self.signature_op))?;
@@ -273,6 +279,60 @@ where
             .iter()
             .map(|u8| u8.to_fp())
             .collect::<ark_relations::r1cs::Result<Vec<_>>>()?;
+
+        // [ZKAPCIR-002] JWT payload 경계를 '.' 구분자와 바인딩
+        // payload_offset_b64/payload_len_b64가 실제 JWT '.' 위치와 무관하면
+        // 공격자가 header 등 임의 구간을 payload로 지정하여 클레임을 위조할 수 있음.
+        let dot_char = FpVar::<C::BaseField>::Constant(C::BaseField::from(b'.' as u64));
+        let payload_offset_fp = Boolean::le_bits_to_fp(&payload_offset_b64.to_bits_le()?)?;
+        let payload_len_fp = Boolean::le_bits_to_fp(&payload_len_b64.to_bits_le()?)?;
+
+        // 방어 심층: payload_offset >= 1 (offset=0이면 필드 underflow 발생)
+        let offset_ge_1 = is_less_than(
+            &zero.to_bits_le_with_top_bits_zero(16)?.0,
+            &payload_offset_fp.to_bits_le_with_top_bits_zero(16)?.0,
+        )?;
+
+        gadget::dbg_r1cs_eq!("Payload Offset >= 1", offset_ge_1, Boolean::constant(true));
+        gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Payload Offset >= 1");
+
+        offset_ge_1.enforce_equal(&Boolean::constant(true))?;
+
+        // 방어 심층: payload_offset + payload_len < buffer_len (버퍼 범위 초과 방지)
+        let buf_len = FpVar::<C::BaseField>::Constant(C::BaseField::from(
+            sha_pad_payload_b64_to_fp.len() as u64,
+        ));
+        let second_dot_idx = &payload_offset_fp + &payload_len_fp;
+        let idx_in_range = is_less_than(
+            &second_dot_idx.to_bits_le_with_top_bits_zero(16)?.0,
+            &buf_len.to_bits_le_with_top_bits_zero(16)?.0,
+        )?;
+
+        gadget::dbg_r1cs_eq!(
+            "Payload Index Range Check",
+            idx_in_range,
+            Boolean::constant(true)
+        );
+        gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Payload Index Range Check");
+
+        idx_in_range.enforce_equal(&Boolean::constant(true))?;
+
+        // 첫 번째 '.' : payload 시작 바로 전 (header.payload 사이)
+        let first_dot_idx = &payload_offset_fp - &one;
+        let first_dot_char = single_multiplexer(&sha_pad_payload_b64_to_fp, &first_dot_idx)?;
+
+        gadget::dbg_r1cs_eq!("Payload Boundary Binding", first_dot_char, dot_char);
+
+        first_dot_char.enforce_equal(&dot_char)?;
+
+        // ZKAPCIR-002: payload 끝 위치 == SHA-256 패딩 시작 위치 구조적 바인딩
+        // SHA-256 gadget(constraints.rs:L403)이 이미 buffer[pad_start_in_suffix] == 0x80을 검증하므로
+        // 여기서는 위치만 바인딩하면 충분
+        let pad_start_fp = pad_start_in_suffix.to_fp()?;
+        second_dot_idx.enforce_equal(&pad_start_fp)?;
+
+        gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Payload Boundary Check");
+
         let payload_b64 = slice_v2::slice_efficient(
             &sha_pad_payload_b64_to_fp,
             &payload_offset_b64,
@@ -331,14 +391,15 @@ where
         gadget::dbg_r1cs_eq!("MerkleVerify", result, Boolean::constant(true));
         gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Issuer-PublicKey MerkleVerify");
 
-        // [2.2] expiry check: block_timestamp < exp
-        let result = is_less_than(
-            &block_timestamp.to_bits_le_with_top_bits_zero(64)?.0,
-            &exp.to_bits_le_with_top_bits_zero(64)?.0,
-        )?;
+        // [2.2] expiry check: jwt_exp == exp
+        let result = exp.is_eq(&jwt_exp)?;
         result.enforce_equal(&Boolean::constant(true))?;
 
-        gadget::dbg_r1cs_eq!("Expiry Check (ts < exp)", result, Boolean::constant(true));
+        gadget::dbg_r1cs_eq!(
+            "Expiry Check (jwt_exp == exp)",
+            result,
+            Boolean::constant(true)
+        );
         gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Expiry Check");
 
         gadget::dbg_cs_delta!(&cs, &mut phase2_total_last, "[Phase 2] Validation Total");
@@ -523,7 +584,7 @@ where
             h_a: C::BaseField::default(),
             root: C::BaseField::default(),
             h_sign_user_op: C::BaseField::default(),
-            block_timestamp: C::BaseField::default(),
+            jwt_exp: C::BaseField::default(),
             partial_rhs: C::BaseField::default(),
             lhs: C::BaseField::default(),
             h_aud_list: C::BaseField::default(),
@@ -563,7 +624,7 @@ where
             h_a: input.public_inputs.h_a,
             root: input.public_inputs.root,
             h_sign_user_op: input.public_inputs.h_sign_user_op,
-            block_timestamp: input.public_inputs.block_timestamp,
+            jwt_exp: input.public_inputs.jwt_exp,
             partial_rhs: input.public_inputs.partial_rhs,
             lhs: input.public_inputs.lhs,
             h_aud_list: input.public_inputs.h_aud_list,
@@ -605,7 +666,7 @@ where
             self.h_a,
             self.root,
             self.h_sign_user_op,
-            self.block_timestamp,
+            self.jwt_exp,
             self.partial_rhs,
             self.lhs,
             self.h_aud_list,

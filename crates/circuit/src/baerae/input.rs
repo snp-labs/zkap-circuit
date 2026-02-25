@@ -31,8 +31,8 @@ pub struct CircuitPublicInputs<F: PrimeField> {
     pub root: F,
     /// H(sign_user_op)
     pub h_sign_user_op: F,
-    /// 블록 타임스탬프
-    pub block_timestamp: F,
+    /// JWT 만료 시간
+    pub jwt_exp: F,
     /// partial_rhs[current_idx]
     pub partial_rhs: F,
     /// <a, anchor> * random
@@ -49,7 +49,7 @@ impl<F: PrimeField> CircuitPublicInputs<F> {
             self.h_a,
             self.root,
             self.h_sign_user_op,
-            self.block_timestamp,
+            self.jwt_exp,
             self.partial_rhs,
             self.lhs,
             self.h_aud_list,

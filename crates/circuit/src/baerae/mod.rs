@@ -1,6 +1,8 @@
 #![allow(unused_variables)]
 #![allow(unused_mut)]
 
+pub mod input;
+
 use ark_crypto_primitives::{
     crh::{
         CRHSchemeGadget,
@@ -83,7 +85,7 @@ where
 
     // public inputs
     pub hanchor: C::BaseField,
-    pub h_ctx: C::BaseField,
+    pub h_a: C::BaseField,
     pub root: C::BaseField,
     pub h_sign_user_op: C::BaseField,
     pub jwt_exp: C::BaseField,
@@ -150,7 +152,7 @@ where
 
         let hanchor = FpVar::<C::BaseField>::new_input(cs.clone(), || Ok(self.hanchor))?;
 
-        let h_ctx = FpVar::<C::BaseField>::new_input(cs.clone(), || Ok(self.h_ctx))?;
+        let h_a = FpVar::<C::BaseField>::new_input(cs.clone(), || Ok(self.h_a))?;
 
         let root = FpVar::<C::BaseField>::new_input(cs.clone(), || Ok(self.root))?;
 
@@ -266,7 +268,7 @@ where
             )?
             .to_bytes_le()?;
 
-        let result = RSA2048VerifyGadget::verify(&mut digest, &signature_op, &pk_op)?;
+        let result = RSA2048VerifyGadget::verify_opt(&mut digest, &signature_op, &pk_op)?;
         result.enforce_equal(&Boolean::constant(true))?;
 
         gadget::dbg_r1cs_eq!("RSA Verification", result, Boolean::constant(true));
@@ -438,14 +440,13 @@ where
         gadget::dbg_r1cs_eq!("Aud Membership", product, zero);
         gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Aud Membership");
 
-        // h_ctx == Poseidon(a_vector, random)
-        let mut ctx_inputs = a.clone();
-        ctx_inputs.push(random.clone());
-        let target_h_ctx =
-            PoseidonCRHGadget::<C::BaseField>::evaluate(&poseidon_param, &ctx_inputs)?;
-        target_h_ctx.enforce_equal(&h_ctx)?;
+        // h_a == Poseidon(a, random)
+        let mut a_inputs = a.clone();
+        a_inputs.push(random.clone());
+        let target_h_a = PoseidonCRHGadget::<C::BaseField>::evaluate(&poseidon_param, &a_inputs)?;
+        target_h_a.enforce_equal(&h_a)?;
 
-        gadget::dbg_r1cs_eq!("Context Binding", target_h_ctx, h_ctx);
+        gadget::dbg_r1cs_eq!("Context Binding", target_h_a, h_a);
         gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Context Binding");
 
         // h_aud_list == Poseidon(aud_list)
@@ -580,7 +581,7 @@ where
             base64_table,
 
             hanchor: C::BaseField::default(),
-            h_ctx: C::BaseField::default(),
+            h_a: C::BaseField::default(),
             root: C::BaseField::default(),
             h_sign_user_op: C::BaseField::default(),
             jwt_exp: C::BaseField::default(),
@@ -613,72 +614,40 @@ where
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        vandermonde_matrix: VandermondeMatrix<C::BaseField>,
-        poseidon_param: PoseidonConfig<C::BaseField>,
-        base64_table: Base64Table,
-        hanchor: C::BaseField,
-        h_ctx: C::BaseField,
-        root: C::BaseField,
-        h_sign_user_op: C::BaseField,
-        jwt_exp: C::BaseField,
-        partial_rhs: C::BaseField,
-        lhs: C::BaseField,
-        h_aud_list: C::BaseField,
-        random: C::BaseField,
-        leaf_idx: usize,
-        path: Path<MerkleTreeParams<C::BaseField>>,
-        anchor: PoseidonAnchor<C::BaseField>,
-        midstate: Vec<u32>,
-        nblocks: usize,
-        token_claim: Vec<ClaimIndices>,
-        payload_offset_b64: usize,
-        payload_len_b64: usize,
-        sha_pad_payload_b64: Vec<u8>,
-        index_bits: IndexBits,
-        pk_op: PublicKey,
-        signature_op: Signature,
-        a: Vec<C::BaseField>,
-        indices: Vec<u8>,
-        current_idx: usize,
-        aud_list: Vec<C::BaseField>,
-        total_len: usize,
-        pre_hash_block_len: usize,
-        pad_start_in_suffix: usize,
-    ) -> Self {
+    /// 구조화된 입력으로부터 회로 생성 (권장)
+    pub fn from_input(input: input::BaeraeCircuitInput<C::BaseField>) -> Self {
         Self {
-            vandermonde_matrix,
-            poseidon_param,
-            base64_table,
-            hanchor,
-            h_ctx,
-            root,
-            h_sign_user_op,
-            jwt_exp,
-            partial_rhs,
-            lhs,
-            h_aud_list,
-            random,
-            leaf_idx,
-            path,
-            anchor,
-            midstate,
-            nblocks,
-            token_claim,
-            payload_offset_b64,
-            payload_len_b64,
-            sha_pad_payload_b64,
-            index_bits,
-            pk_op,
-            signature_op,
-            a,
-            indices,
-            current_idx,
-            aud_list,
-            total_len,
-            pre_hash_block_len,
-            pad_start_in_suffix,
+            vandermonde_matrix: input.constants.vandermonde_matrix,
+            poseidon_param: input.constants.poseidon_param,
+            base64_table: input.constants.base64_table,
+            hanchor: input.public_inputs.hanchor,
+            h_a: input.public_inputs.h_a,
+            root: input.public_inputs.root,
+            h_sign_user_op: input.public_inputs.h_sign_user_op,
+            jwt_exp: input.public_inputs.jwt_exp,
+            partial_rhs: input.public_inputs.partial_rhs,
+            lhs: input.public_inputs.lhs,
+            h_aud_list: input.public_inputs.h_aud_list,
+            random: input.misc.random,
+            leaf_idx: input.merkle.leaf_idx,
+            path: input.merkle.path,
+            anchor: input.anchor.anchor,
+            midstate: input.jwt.midstate,
+            nblocks: input.jwt.nblocks,
+            token_claim: input.jwt.token_claim,
+            payload_offset_b64: input.jwt.payload_offset_b64,
+            payload_len_b64: input.jwt.payload_len_b64,
+            sha_pad_payload_b64: input.jwt.sha_pad_payload_b64,
+            index_bits: input.jwt.index_bits,
+            pk_op: input.jwt.pk_op,
+            signature_op: input.jwt.signature_op,
+            a: input.anchor.a,
+            indices: input.anchor.indices,
+            current_idx: input.anchor.current_idx,
+            aud_list: input.audience.aud_list,
+            total_len: input.jwt.total_len,
+            pre_hash_block_len: input.jwt.pre_hash_block_len,
+            pad_start_in_suffix: input.jwt.pad_start_in_suffix,
             _phantom: PhantomData,
         }
     }
@@ -694,7 +663,7 @@ where
     fn public_inputs(&self) -> Vec<C::BaseField> {
         vec![
             self.hanchor,
-            self.h_ctx,
+            self.h_a,
             self.root,
             self.h_sign_user_op,
             self.jwt_exp,

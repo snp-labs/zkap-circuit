@@ -6,6 +6,7 @@ pub use api::anchor::create_poseidon_anchor;
 pub use api::hash::poseidon_hash;
 pub use api::snark::generate_baerae_proof;
 pub use app::anchor::types::Secret;
+pub use app::snark::RawProofRequest;
 
 #[global_allocator]
 static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;

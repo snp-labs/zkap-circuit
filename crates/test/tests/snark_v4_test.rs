@@ -21,8 +21,7 @@ use gadget::{
         poseidon::get_poseidon_params,
     },
     matrix::VandermondeMatrix,
-    mekletree::tree_config::MerkleTreeParams,
-    signature::rsa::native::PublicKey,
+    mekletree::tree_config::MerkleTreeParams, signature::rsa::PublicKey,
 };
 use zkpasskey_service::{Secret, api::generate_baerae_proof, create_poseidon_anchor};
 
@@ -89,7 +88,7 @@ impl Default for AnchorConfig {
 /// 테스트용 임시 디렉토리 생성
 fn setup_test_dir() -> PathBuf {
     let test_dir =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_outputs/crs_n_6_k_3/baerae");
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../dist");
     if !test_dir.exists() {
         std::fs::create_dir_all(&test_dir).unwrap();
     }
@@ -271,6 +270,7 @@ fn test_generate_baerae_proof_single() {
     let leaf_index_vec = vec![0; k];
 
     let h_sign_userop = "67890";
+    let block_timestamp = "1753676658";
     let random = "12345";
     let aud_list: Vec<String> = vec![
         "1537516906439034952305634351122994193921181616590605158358594959574076457504".to_string(),
@@ -334,6 +334,7 @@ fn test_generate_baerae_proof_single() {
     println!(" - root: {}", root_str);
     println!(" - anchor_parts: {:?}", anchor_parts);
     println!(" - h_sign_userop: {}", h_sign_userop);
+    println!(" - block_timestamp: {}", block_timestamp);
     println!(" - random: {}", random);
     println!(" - aud_list: {:?}", aud_list);
 
@@ -347,6 +348,7 @@ fn test_generate_baerae_proof_single() {
         &root_str,
         &anchor_parts,
         h_sign_userop,
+        block_timestamp,
         random,
         &aud_list,
     );

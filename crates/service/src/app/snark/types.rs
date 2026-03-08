@@ -3,36 +3,11 @@ use std::marker::PhantomData;
 use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;
 use common::constants::{AnchorConfig, F, ZkPasskeyConfig};
 use gadget::{
-    anchor::poseidon::{PoseidonAnchor, PoseidonAnchorPublicKey},
+    anchor::poseidon::PoseidonAnchorPublicKey,
     base64::{Base64Table, get_base64_table},
     hashes::poseidon::get_poseidon_params,
     matrix::VandermondeMatrix,
 };
-
-pub(crate) struct Intermediate {
-    pub h: Vec<F>,
-    pub instance: Vec<F>,
-    pub witness: Vec<F>,
-}
-
-pub(crate) struct ParsedInputs {
-    pub root: F,
-    pub h_sign_user_op: F,
-    pub random: F,
-    pub anchor: PoseidonAnchor<F>,
-    pub hanchor: F,
-    pub aud_list: Vec<F>,
-}
-
-pub(crate) struct AnchorContext {
-    pub selector: Vec<u8>,
-    pub anchor_witness_a: Vec<F>,
-    pub h_ctx: F,
-    pub lhs: F,
-
-    pub partial_rhs_list: Vec<F>,
-    pub current_idx_list: Vec<usize>,
-}
 
 #[derive(Clone)]
 pub(crate) struct CircuitContext<Config: ZkPasskeyConfig> {

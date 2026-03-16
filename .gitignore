@@ -9,6 +9,18 @@ dist/
 # legacy files
 legacy/
 
+# Claude / OMC local config
+.claude/
+.omc/
+**/.omc/
+
+# Generated reports & tests
+crates/gadget/reports/
+crates/gadget/tests/
+
+# Packages (WIP, not yet tracked)
+packages/
+
 # macOS
 .DS_Store
 **/.DS_Store

@@ -4,6 +4,7 @@ members = [
     # "bindings/frb",
     "bindings/craby",
     "bindings/napi",
+    "bindings/wasm",
 
     "crates/circuit",
     "crates/gadget",

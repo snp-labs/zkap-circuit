@@ -1,5 +1,6 @@
 # Build outputs
 /target
+**/pkg/
 
 # Test artifacts / generated files
 crates/test/test_outputs/

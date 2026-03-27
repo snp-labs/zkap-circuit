@@ -1,7 +1,7 @@
 pub mod poseidon;
 pub mod types;
 
-use common::constants::{F, ZkPasskeyConfig};
+use circuit::constants::{F, ZkPasskeyConfig};
 use gadget::matrix::VandermondeMatrix;
 
 /// Anchor configuration derived from ZkPasskeyConfig.

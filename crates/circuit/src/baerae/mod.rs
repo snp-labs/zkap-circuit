@@ -33,7 +33,7 @@ use crate::{
         constraints::{ClaimIndicesVar, RSA2048VerifyGadget},
     },
 };
-use common::constants::ZkPasskeyConfig;
+use crate::constants::ZkPasskeyConfig;
 use gadget::{
     anchor::poseidon::{
         PoseidonAnchor,

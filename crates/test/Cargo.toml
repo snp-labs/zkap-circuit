@@ -4,10 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-gadget = { workspace = true }
+gadget = { workspace = true, default-features = false, features = ["full"] }
 circuit = { workspace = true }
 zkpasskey-service = { workspace = true }
-common = { workspace = true }
 
 ark-groth16           = { workspace = true }
 ark-ec                = { workspace = true }

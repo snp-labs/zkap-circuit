@@ -1,6 +1,6 @@
 use ark_serialize::CanonicalSerialize;
 use ark_std::rand::{self, RngCore, SeedableRng, rngs::OsRng};
-use common::constants::{ZkapConfig, ZkPasskeyConfig};
+use circuit::constants::{ZkapConfig, ZkPasskeyConfig};
 use std::{
     env::args,
     fs::File,
@@ -38,7 +38,7 @@ fn main() {
 
 #[allow(unused)]
 fn generate_crs_files(file_path: &str, mut rng: rand::rngs::StdRng) {
-    use common::evm::groth16_verifier_solidity::SolidityContractGenerator;
+    use circuit::evm::groth16_verifier_solidity::SolidityContractGenerator;
     use gadget::bigint::constraints::BigNatCircuitParams;
     use gadget::hashes::mimc7;
 

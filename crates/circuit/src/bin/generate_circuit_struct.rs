@@ -11,7 +11,7 @@ fn main() {
 
 fn generate_r1cs_files(file_path: &str) {
     use ark_serialize::CanonicalSerialize;
-    use common::constants::{BNP, CG, ZkapConfig, ZkPasskeyConfig};
+    use circuit::constants::{BNP, CG, ZkapConfig, ZkPasskeyConfig};
     use std::fs::File;
     use std::io::Write;
 

@@ -3,7 +3,7 @@ use std::fs::File;
 use ark_crypto_primitives::crh::CRHScheme;
 use ark_ff::PrimeField;
 use clap::{Args, Parser, Subcommand, command};
-use common::constants::{BNP, CG, F, PoseidonHash, ZkPasskeyConfig, ZkapConfig};
+use circuit::constants::{BNP, CG, F, PoseidonHash, ZkPasskeyConfig, ZkapConfig};
 use gadget::{
     base64::mod_v2::decode_any_base64, hashes::poseidon::get_poseidon_params, signature::rsa::PublicKey, utils::str_to_limbs
 };

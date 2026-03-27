@@ -1,4 +1,4 @@
-use common::constants::F;
+use circuit::constants::F;
 
 use crate::{
     app,

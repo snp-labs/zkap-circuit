@@ -1,4 +1,4 @@
-use common::constants::F;
+use circuit::constants::F;
 
 /// 앵커 검증을 위한 계산된 컨텍스트
 #[derive(Clone)]

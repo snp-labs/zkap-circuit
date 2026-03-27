@@ -1,4 +1,4 @@
-use common::constants::{F, ZkPasskeyConfig};
+use circuit::constants::{F, ZkPasskeyConfig};
 use gadget::anchor::poseidon::PoseidonAnchor;
 
 use crate::{Secret, app, error::ApplicationError};

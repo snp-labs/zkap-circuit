@@ -6,7 +6,7 @@ pub mod constraints;
 // pub mod dl;
 pub mod error;
 pub mod poseidon;
-#[cfg(feature = "full")]
+#[cfg(feature = "rsa")]
 pub mod utils;
 
 /// Anchor Scheme의 핵심 트레잇 V3

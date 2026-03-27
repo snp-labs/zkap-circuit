@@ -30,17 +30,24 @@ base64 = { workspace = true, optional = true }
 derivative = { workspace = true, optional = true }
 rsa = { workspace = true, optional = true }
 # regex removed — unused in gadget src/ (used by circuit directly)
-ark-groth16 = { workspace = true, optional = true }
-ark-poly = { workspace = true, optional = true }
+# ark-groth16 and ark-poly removed — unused in gadget src/
 
 [features]
-default = ["full"]
-full = [
-    "hex", "num", "num-integer", "num-bigint", "num-traits", "rand",
-    "sha2", "blake2", "base64", "derivative", "rsa",
-    "ark-groth16", "ark-poly",
-]
-# Note: regex removed — unused in gadget (used by circuit directly)
+default = []
+
+# Core module features
+anchor = ["hashes-poseidon"]
+base64 = ["dep:base64"]
+hashes-poseidon = []
+hashes-sha256 = ["dep:sha2"]
+merkletree = ["hashes-poseidon"]
+rsa = ["dep:rsa", "dep:num-bigint", "dep:num-integer", "dep:num-traits", "dep:num", "dep:sha2", "dep:hex", "dep:rand", "dep:derivative", "dep:blake2"]
+
+# Bundle features
+crypto = ["hashes-poseidon", "hashes-sha256", "anchor", "merkletree"]
+full = ["crypto", "base64", "rsa"]
+
+# Debug features
 print-trace = ["ark-std/print-trace"]
 constraints-logging = []
 num-cs-logging = []

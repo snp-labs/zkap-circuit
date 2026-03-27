@@ -1,17 +1,25 @@
 extern crate alloc;
 
-// WASM-compatible modules (always available)
-pub mod anchor;
+// Always available
 pub mod utils;
-pub mod matrix;
-pub mod hashes;
-pub mod mekletree;
 pub mod debug;
 
-// Full-only modules (require std-dependent deps like rsa, num-bigint, etc.)
-#[cfg(feature = "full")]
+// Feature-gated modules
+#[cfg(feature = "anchor")]
+pub mod anchor;
+#[cfg(feature = "anchor")]
+pub mod matrix;
+
+#[cfg(feature = "hashes-poseidon")]
+pub mod hashes;
+
+#[cfg(feature = "merkletree")]
+pub mod mekletree;
+
+#[cfg(feature = "base64")]
 pub mod base64;
-#[cfg(feature = "full")]
+
+#[cfg(feature = "rsa")]
 pub mod bigint;
-#[cfg(feature = "full")]
+#[cfg(feature = "rsa")]
 pub mod signature;

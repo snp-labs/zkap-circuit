@@ -5,14 +5,14 @@ use error::HashError;
 use core::borrow::Borrow;
 use core::fmt::Debug;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "rsa")]
 pub mod blake2s256;
 pub mod constraints;
 pub mod error;
-#[cfg(feature = "full")]
+#[cfg(feature = "rsa")]
 pub mod mimc7;
 pub mod poseidon;
-#[cfg(feature = "full")]
+#[cfg(feature = "hashes-sha256")]
 pub mod sha256;
 
 pub trait CRHScheme {

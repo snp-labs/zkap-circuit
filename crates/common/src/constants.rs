@@ -1,11 +1,7 @@
 use std::fmt::Debug;
 
 use ark_crypto_primitives::crh::poseidon::CRH;
-use gadget::{
-    bigint::constraints::BigNatCircuitParams,
-    hashes::blake2s256::{Blake2s256, constraints::Blake2s256Gadget},
-    matrix::VandermondeMatrix,
-};
+use gadget::bigint::constraints::BigNatCircuitParams;
 
 pub trait ZkPasskeyConfig: Clone + Debug + Send + Sync {
     // === JWT Constraints ===
@@ -40,8 +36,6 @@ impl BigNatCircuitParams for BigNat2048Params {
 pub type CG = ark_ed_on_bn254::EdwardsProjective;
 pub type F = <CG as ark_ec::CurveGroup>::BaseField;
 pub type PoseidonHash = CRH<F>;
-pub type Blake2 = Blake2s256;
-pub type Blake2Gadget = Blake2s256Gadget;
 pub type BigNatTestParams = BigNat2048Params;
 pub type BN254 = ark_bn254::Bn254;
 pub type CV = ark_ed_on_bn254::constraints::EdwardsVar;
@@ -52,27 +46,4 @@ pub struct ZkapConfig;
 
 include!(concat!(env!("OUT_DIR"), "/generated_config.rs"));
 
-#[derive(Debug, Clone)]
-pub struct AnchorConfig {
-    pub matrix_rows: usize,
-    pub matrix_cols: usize,
-    pub max_aud_len: usize,
-    pub max_iss_len: usize,
-    pub max_sub_len: usize,
-    pub pad_char: char,
-    pub matrix: VandermondeMatrix<F>,
-}
-
-impl AnchorConfig {
-    pub fn from_config<C: ZkPasskeyConfig>() -> Self {
-        Self {
-            matrix_rows: C::N,
-            matrix_cols: C::K,
-            max_aud_len: C::MAX_AUD_LEN,
-            max_iss_len: C::MAX_ISS_LEN,
-            max_sub_len: C::MAX_SUB_LEN,
-            pad_char: C::PAD_CHAR,
-            matrix: VandermondeMatrix::<F>::new(C::N, C::K),
-        }
-    }
-}
+// AnchorConfig moved to zkpasskey-service crate (depends on gadget::matrix::VandermondeMatrix)

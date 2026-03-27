@@ -56,6 +56,7 @@ napi-build = { version = "2" }
 serde_json = { version = "1.0.145" }
 anyhow = { version = "1.0.100" } 
 clap = { version = "4.5.53" }
+ctor = { version = "0.2" }
 
 log = "0.4"
 android_logger = { version = "0.13" }
@@ -73,3 +74,4 @@ ark-relations = { path = "vendor/ark-relations-0.5.1" }
 [profile.release]
 lto = true
 strip = "symbols"
+panic = "abort"

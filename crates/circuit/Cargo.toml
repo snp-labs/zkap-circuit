@@ -27,10 +27,10 @@ clap = { workspace = true, features = ["derive"] }
 
 [features]
 default = []
-print-trace = []
+print-trace = ["gadget/print-trace"]
 constraints-logging = ["gadget/constraints-logging"]
 baerae = []
-num-cs-logging = []
+num-cs-logging = ["gadget/num-cs-logging"]
 
 [[bin]]
 name = "generate_baerae_crs"

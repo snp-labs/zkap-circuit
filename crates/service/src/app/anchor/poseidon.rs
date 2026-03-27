@@ -4,11 +4,12 @@ use ark_crypto_primitives::{
 };
 use ark_ff::PrimeField;
 use common::{
-    constants::{AnchorConfig, F, PoseidonHash, ZkPasskeyConfig},
+    constants::{F, PoseidonHash, ZkPasskeyConfig},
     field_parser::ascii_to_field_be,
     text::pad,
 };
 
+use super::AnchorConfig;
 use crate::{Secret, error::ApplicationError};
 
 use gadget::{

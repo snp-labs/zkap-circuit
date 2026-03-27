@@ -1,7 +1,8 @@
 use std::marker::PhantomData;
 
 use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;
-use common::constants::{AnchorConfig, F, ZkPasskeyConfig};
+use common::constants::{F, ZkPasskeyConfig};
+use crate::app::anchor::AnchorConfig;
 use gadget::{
     anchor::poseidon::PoseidonAnchorPublicKey,
     base64::{Base64Table, get_base64_table},

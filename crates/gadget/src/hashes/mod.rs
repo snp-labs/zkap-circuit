@@ -2,14 +2,17 @@ use ark_ff::Field;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::hash::Hash;
 use error::HashError;
-use std::borrow::Borrow;
-use std::fmt::Debug;
+use core::borrow::Borrow;
+use core::fmt::Debug;
 
+#[cfg(feature = "full")]
 pub mod blake2s256;
 pub mod constraints;
 pub mod error;
+#[cfg(feature = "full")]
 pub mod mimc7;
 pub mod poseidon;
+#[cfg(feature = "full")]
 pub mod sha256;
 
 pub trait CRHScheme {

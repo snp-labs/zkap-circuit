@@ -1,4 +1,4 @@
-use std::borrow::Borrow;
+use core::borrow::Borrow;
 
 use ark_crypto_primitives::{
     crh::poseidon::constraints::CRHParametersVar, merkle_tree::constraints::PathVar, sponge::Absorb,

@@ -60,9 +60,7 @@ impl<F: PrimeField> CircuitPublicInputs<F> {
 /// JWT 관련 Witness (SHA256 + Base64 + RSA)
 #[derive(Clone, CanonicalSerialize, CanonicalDeserialize)]
 pub struct JwtWitness {
-    /// SHA256 중간 상태
-    pub state: Vec<u32>,
-    /// SHA256 블록 수
+    /// SHA256 블록 수 (final block index, 0-indexed)
     pub nblocks: usize,
     /// Claim 인덱스들
     pub claim_indices: Vec<ClaimIndices>,
@@ -70,20 +68,18 @@ pub struct JwtWitness {
     pub pay_offset_b64: usize,
     /// Payload Base64 길이
     pub pay_len_b64: usize,
-    /// SHA 패딩된 Payload
-    pub sha_pad_payload_b64: Vec<u8>,
+    /// SHA 패딩된 Full JWT (header.payload with SHA256 padding)
+    pub sha_pad_jwt_b64: Vec<u8>,
     /// Base64 인덱스 비트
     pub index_bits: IndexBits,
     /// RSA 공개키
     pub pk: PublicKey,
     /// RSA 서명
     pub sig: Signature,
-    /// 전체 JWT 길이
+    /// 전체 JWT 길이 (padding 전)
     pub total_len: usize,
-    /// Pre-hash 블록 길이
-    pub pre_hash_block_len: usize,
-    /// Suffix 내 패딩 시작 위치
-    pub pad_start_in_suffix: usize,
+    /// 패딩 시작 바이트 인덱스 (절대 위치)
+    pub pad_start_byte_idx: usize,
 }
 
 /// 앵커/Threshold 관련 Witness

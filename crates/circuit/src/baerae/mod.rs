@@ -98,12 +98,11 @@ where
     pub leaf_idx: usize,
     pub path: Path<MerkleTreeParams<C::BaseField>>,
     pub anchor: PoseidonAnchor<C::BaseField>,
-    pub midstate: Vec<u32>,
     pub nblocks: usize,
     pub token_claim: Vec<ClaimIndices>,
     pub payload_offset_b64: usize,
     pub payload_len_b64: usize,
-    pub sha_pad_payload_b64: Vec<u8>,
+    pub sha_pad_jwt_b64: Vec<u8>,
     pub index_bits: IndexBits,
     pub pk_op: PublicKey,
     pub signature_op: Signature,
@@ -112,8 +111,7 @@ where
     pub current_idx: usize,
     pub aud_list: Vec<C::BaseField>,
     pub total_len: usize,
-    pub pre_hash_block_len: usize,
-    pub pad_start_in_suffix: usize,
+    pub pad_start_byte_idx: usize,
 
     // phantom
     _phantom: PhantomData<(BNP, Config)>,
@@ -181,9 +179,6 @@ where
         let anchor =
             PoseidonAnchorVar::<C::BaseField>::new_witness(cs.clone(), || Ok(self.anchor))?;
 
-        let mut midstate =
-            SHA256Gadget::<C::BaseField>::new_witness(cs.clone(), || Ok(self.midstate))?;
-
         let nblocks = FpVar::<C::BaseField>::new_witness(cs.clone(), || {
             Ok(C::BaseField::from(self.nblocks as u64))
         })?;
@@ -197,9 +192,9 @@ where
         let payload_len_b64 =
             UInt16::<C::BaseField>::new_witness(cs.clone(), || Ok(self.payload_len_b64 as u16))?;
 
-        let sha_pad_payload_b64 = Vec::<UInt8<C::BaseField>>::new_witness(cs.clone(), || {
+        let sha_pad_jwt_b64 = Vec::<UInt8<C::BaseField>>::new_witness(cs.clone(), || {
             Ok(self
-                .sha_pad_payload_b64
+                .sha_pad_jwt_b64
                 .iter()
                 .map(|&b| b)
                 .collect::<Vec<u8>>())
@@ -236,13 +231,10 @@ where
         let total_len =
             UInt16::<C::BaseField>::new_witness(cs.clone(), || Ok(self.total_len as u16))?;
 
-        let pre_hash_block_len =
-            UInt16::<C::BaseField>::new_witness(cs.clone(), || Ok(self.pre_hash_block_len as u16))?;
-
-        let pad_start_in_suffix =
+        let pad_start_byte_idx =
             UInt16::<C::BaseField>::new_witness(
                 cs.clone(),
-                || Ok(self.pad_start_in_suffix as u16),
+                || Ok(self.pad_start_byte_idx as u16),
             )?;
 
         let zero = FpVar::<C::BaseField>::Constant(C::BaseField::from(0u64));
@@ -257,16 +249,14 @@ where
         let phase1_start = cs.num_constraints();
         let mut phase1_total_last = phase1_start;
 
-        // [1.1] RSA-2048 서명 검증
-        let mut digest = midstate
-            .digest_with_pad_checked(
-                &sha_pad_payload_b64,
-                nblocks,
-                &pre_hash_block_len,
-                &total_len,
-                &pad_start_in_suffix,
-            )?
-            .to_bytes_le()?;
+        // [1.1] SHA256 Full Digest (from initial H constants) + RSA-2048 서명 검증
+        let mut digest = SHA256Gadget::<C::BaseField>::digest_full_with_pad_checked(
+            &sha_pad_jwt_b64,
+            nblocks,
+            &total_len,
+            &pad_start_byte_idx,
+        )?
+        .to_bytes_le()?;
 
         let result = RSA2048VerifyGadget::verify_opt(&mut digest, &signature_op, &pk_op)?;
         result.enforce_equal(&Boolean::constant(true))?;
@@ -275,7 +265,7 @@ where
         gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - RSA Verification");
 
         // [1.2] Base64 디코딩 및 Claim 추출
-        let sha_pad_payload_b64_to_fp = sha_pad_payload_b64
+        let sha_pad_jwt_b64_to_fp = sha_pad_jwt_b64
             .iter()
             .map(|u8| u8.to_fp())
             .collect::<ark_relations::r1cs::Result<Vec<_>>>()?;
@@ -300,7 +290,7 @@ where
 
         // 방어 심층: payload_offset + payload_len < buffer_len (버퍼 범위 초과 방지)
         let buf_len = FpVar::<C::BaseField>::Constant(C::BaseField::from(
-            sha_pad_payload_b64_to_fp.len() as u64,
+            sha_pad_jwt_b64_to_fp.len() as u64,
         ));
         let second_dot_idx = &payload_offset_fp + &payload_len_fp;
         let idx_in_range = is_less_than(
@@ -319,22 +309,22 @@ where
 
         // 첫 번째 '.' : payload 시작 바로 전 (header.payload 사이)
         let first_dot_idx = &payload_offset_fp - &one;
-        let first_dot_char = single_multiplexer(&sha_pad_payload_b64_to_fp, &first_dot_idx)?;
+        let first_dot_char = single_multiplexer(&sha_pad_jwt_b64_to_fp, &first_dot_idx)?;
 
         gadget::dbg_r1cs_eq!("Payload Boundary Binding", first_dot_char, dot_char);
 
         first_dot_char.enforce_equal(&dot_char)?;
 
         // ZKAPCIR-002: payload 끝 위치 == SHA-256 패딩 시작 위치 구조적 바인딩
-        // SHA-256 gadget(constraints.rs:L403)이 이미 buffer[pad_start_in_suffix] == 0x80을 검증하므로
+        // SHA-256 gadget이 이미 buffer[pad_start_byte_idx] == 0x80을 검증하므로
         // 여기서는 위치만 바인딩하면 충분
-        let pad_start_fp = pad_start_in_suffix.to_fp()?;
+        let pad_start_fp = pad_start_byte_idx.to_fp()?;
         second_dot_idx.enforce_equal(&pad_start_fp)?;
 
         gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Payload Boundary Check");
 
         let payload_b64 = slice_v2::slice_efficient(
-            &sha_pad_payload_b64_to_fp,
+            &sha_pad_jwt_b64_to_fp,
             &payload_offset_b64,
             &payload_len_b64,
             Config::MAX_PAYLOAD_B64_LEN,
@@ -593,12 +583,11 @@ where
             leaf_idx: 0,
             path: Path::empty(Config::TREE_HEIGHT),
             anchor: PoseidonAnchor::empty(Config::N - Config::K + 1),
-            midstate: vec![0u32; 8],
             nblocks: 0,
             token_claim: vec![ClaimIndices::default(); Config::CLAIMS.len()],
             payload_offset_b64: 0,
             payload_len_b64: 0,
-            sha_pad_payload_b64: vec![0; Config::MAX_JWT_B64_LEN],
+            sha_pad_jwt_b64: vec![0; Config::MAX_JWT_B64_LEN],
             index_bits: IndexBits::empty(Config::MAX_PAYLOAD_B64_LEN),
             pk_op: PublicKey::empty(),
             signature_op: Signature::default(),
@@ -607,8 +596,7 @@ where
             current_idx: 0,
             aud_list: vec![C::BaseField::default(); Config::NUM_AUDIENCE_LIMIT],
             total_len: 0,
-            pre_hash_block_len: 0,
-            pad_start_in_suffix: 0,
+            pad_start_byte_idx: 0,
 
             _phantom: PhantomData,
         }
@@ -632,12 +620,11 @@ where
             leaf_idx: input.merkle.leaf_idx,
             path: input.merkle.path,
             anchor: input.anchor.anchor,
-            midstate: input.jwt.state,
             nblocks: input.jwt.nblocks,
             token_claim: input.jwt.claim_indices,
             payload_offset_b64: input.jwt.pay_offset_b64,
             payload_len_b64: input.jwt.pay_len_b64,
-            sha_pad_payload_b64: input.jwt.sha_pad_payload_b64,
+            sha_pad_jwt_b64: input.jwt.sha_pad_jwt_b64,
             index_bits: input.jwt.index_bits,
             pk_op: input.jwt.pk,
             signature_op: input.jwt.sig,
@@ -646,8 +633,7 @@ where
             current_idx: input.anchor.current_idx,
             aud_list: input.audience.aud_list,
             total_len: input.jwt.total_len,
-            pre_hash_block_len: input.jwt.pre_hash_block_len,
-            pad_start_in_suffix: input.jwt.pad_start_in_suffix,
+            pad_start_byte_idx: input.jwt.pad_start_byte_idx,
             _phantom: PhantomData,
         }
     }

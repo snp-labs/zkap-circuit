@@ -446,6 +446,246 @@ impl<F: PrimeField> SHA256Gadget<F> {
         )?;
         self.digest_with_pad(data, nblocks_idx)
     }
+
+    /// Process full input from initial SHA-256 state (H constants) with padding verification.
+    ///
+    /// Unlike `digest_with_pad_checked()` which continues from a midstate,
+    /// this method starts from the initial H constants and processes all blocks.
+    ///
+    /// # Arguments
+    /// * `data` - Full message with SHA256 padding applied (must be 64-byte aligned)
+    /// * `nblocks_idx` - Index of the block containing the final hash (0-indexed, i.e., total_blocks - 1)
+    /// * `total_len_wo_pad_bytes` - Original message length in bytes (before padding)
+    /// * `pad_start_byte_idx` - Byte index where padding starts (position of 0x80)
+    ///
+    /// # Returns
+    /// * `DigestVar<F>` - The SHA256 digest
+    ///
+    /// # SHA256 Padding Format
+    /// ```text
+    /// <==message==> <==sha2 padding==>
+    /// 0101010101....101010 1 00...00 01010101
+    /// <--------L---------> 1 <--K--> <--64-->
+    /// ```
+    /// Where:
+    /// - L = message length in bits
+    /// - K = smallest non-negative integer such that L + 1 + K + 64 ≡ 0 (mod 512)
+    pub fn digest_full_with_pad_checked(
+        data: &[UInt8<F>],
+        nblocks_idx: FpVar<F>,
+        total_len_wo_pad_bytes: &UInt16<F>,
+        pad_start_byte_idx: &UInt16<F>,
+    ) -> Result<DigestVar<F>, SynthesisError> {
+        // Verify SHA256 padding for full message (no prefix blocks)
+        Self::enforce_sha2_pad_verifier_full(
+            data,
+            &nblocks_idx,
+            total_len_wo_pad_bytes,
+            pad_start_byte_idx,
+        )?;
+
+        // Create gadget with initial H state and process all blocks
+        let mut gadget = Self::default();
+        gadget.digest_with_pad(data, nblocks_idx)
+    }
+
+    /// Verify SHA256 padding is correct for full message (starting from initial H).
+    ///
+    /// This is a simplified version of `enforce_sha2_pad_verifier` that doesn't
+    /// require `prefix_blocks` since we always start from the initial state.
+    ///
+    /// # Verification checks:
+    /// 1. Length encoding: last 8 bytes of final block encode (total_len * 8) in big-endian
+    /// 2. Padding marker: byte at pad_start_byte_idx == 0x80
+    /// 3. Zero padding: bytes between pad_start+1 and length field are all 0x00
+    /// 4. Trailing zeros: all bytes after the final block are 0x00
+    fn enforce_sha2_pad_verifier_full(
+        data: &[UInt8<F>],
+        nblocks_idx: &FpVar<F>,
+        total_len_wo_pad_bytes: &UInt16<F>,
+        pad_start_byte_idx: &UInt16<F>,
+    ) -> Result<(), SynthesisError> {
+        // SHA-256 uses 64-byte blocks
+        assert!(data.len() % 64 == 0);
+        let max_blocks = data.len() / 64;
+
+        // ------------------------------------------------------------
+        // 0) Create one-hot flags for selecting the final block
+        //    flags[b] == 1 <=> nblocks_idx == b
+        // ------------------------------------------------------------
+        let mut flags: Vec<FpVar<F>> = Vec::with_capacity(max_blocks);
+        for i in 0..max_blocks {
+            let i_fp = FpVar::<F>::constant(F::from(i as u64));
+            flags.push(i_fp.is_eq(nblocks_idx)?.into());
+        }
+
+        // Enforce one-hot: sum(flags) == 1
+        let sum_flags = flags
+            .iter()
+            .fold(FpVar::<F>::zero(), |acc, f| acc + f.clone());
+        sum_flags.enforce_equal(&FpVar::<F>::one())?;
+
+        // ------------------------------------------------------------
+        // 1) Calculate total message length in bits
+        //    total_len_bits = total_len_wo_pad_bytes * 8
+        // ------------------------------------------------------------
+        let total_len_bits_fp =
+            total_len_wo_pad_bytes.to_fp()? * FpVar::<F>::constant(F::from(8u64));
+
+        // ------------------------------------------------------------
+        // 2) Verify SHA-256 length field encoding
+        //    The last 8 bytes of the selected block should encode total_len_bits in big-endian
+        // ------------------------------------------------------------
+        let mut enc_bytes: [FpVar<F>; 8] = core::array::from_fn(|_| FpVar::<F>::zero());
+        for (b, flag) in flags.iter().enumerate() {
+            let base = b * 64 + 56;
+            for j in 0..8 {
+                enc_bytes[j] += flag.clone() * data[base + j].to_fp()?;
+            }
+        }
+
+        // Convert big-endian bytes to integer
+        let mut enc_fp = FpVar::<F>::zero();
+        let mut base = F::from(1u64);
+        for j in (0..8).rev() {
+            enc_fp += enc_bytes[j].clone() * FpVar::<F>::constant(base);
+            base *= F::from(256u64);
+        }
+
+        // Enforce: encoded_length == total_len_bits
+        enc_fp.enforce_equal(&total_len_bits_fp)?;
+
+        // ------------------------------------------------------------
+        // 3) Verify pad_start position is valid
+        //
+        // Valid pad_start positions:
+        //  (A) Within final block:       b*64 <= pad_start < b*64+56
+        //  (B) In previous block tail:   (b-1)*64+56 <= pad_start < b*64 (only if b>0)
+        // ------------------------------------------------------------
+        let pad_start_fp = pad_start_byte_idx.to_fp()?;
+        let pad_bits = pad_start_fp.to_bits_le_with_top_bits_zero(16)?.0;
+
+        // Calculate block_start and lenfield_start for the selected block
+        let mut block_start_fp = FpVar::<F>::zero();
+        let mut lenfield_start_fp = FpVar::<F>::zero();
+        for (b, flag) in flags.iter().enumerate() {
+            block_start_fp += flag.clone() * FpVar::<F>::constant(F::from((b * 64) as u64));
+            lenfield_start_fp += flag.clone() * FpVar::<F>::constant(F::from((b * 64 + 56) as u64));
+        }
+
+        let block_start_bits = block_start_fp.to_bits_le_with_top_bits_zero(16)?.0;
+        let in_last_block = is_greater_or_equal(&pad_bits, &block_start_bits)?;
+
+        // Verify position is valid for the selected block
+        let mut pos_ok_acc = FpVar::<F>::zero();
+        for b in 0..max_blocks {
+            let flag_b = flags[b].clone();
+
+            // cond_last: b*64 <= pad_start < b*64+56
+            let last_lo_bits = UInt16::constant((b * 64) as u16).to_bits_le()?;
+            let last_hi_bits = UInt16::constant((b * 64 + 56) as u16).to_bits_le()?;
+            let ge_last_lo = is_greater_or_equal(&pad_bits, &last_lo_bits)?;
+            let lt_last_hi = is_less_than(&pad_bits, &last_hi_bits)?;
+            let cond_last = ge_last_lo & lt_last_hi;
+
+            // cond_prev: (b-1)*64+56 <= pad_start < b*64 (b>0 only)
+            let cond_prev = if b == 0 {
+                Boolean::<F>::FALSE
+            } else {
+                let prev_lo_bits = UInt16::constant(((b - 1) * 64 + 56) as u16).to_bits_le()?;
+                let prev_hi_bits = UInt16::constant((b * 64) as u16).to_bits_le()?;
+                let ge_prev_lo = is_greater_or_equal(&pad_bits, &prev_lo_bits)?;
+                let lt_prev_hi = is_less_than(&pad_bits, &prev_hi_bits)?;
+                ge_prev_lo & lt_prev_hi
+            };
+
+            let cond_b = cond_last | cond_prev;
+            let cond_b_fp: FpVar<F> = cond_b.into();
+
+            pos_ok_acc += flag_b * cond_b_fp;
+        }
+
+        // Enforce: position is valid for selected block
+        pos_ok_acc.enforce_equal(&FpVar::<F>::one())?;
+
+        // ------------------------------------------------------------
+        // 4) Verify pad_start == total_len (for full message, no prefix blocks)
+        //    This ensures the padding starts immediately after the message
+        // ------------------------------------------------------------
+        let total_len_fp = total_len_wo_pad_bytes.to_fp()?;
+        pad_start_fp.enforce_equal(&total_len_fp)?;
+
+        // ------------------------------------------------------------
+        // 5) Verify padding bytes
+        //    padding_len = lenfield_start - pad_start
+        //    - in_last_block:      padding_len ∈ [1..56]
+        //    - in_prev_block_tail: padding_len ∈ [57..64]
+        // ------------------------------------------------------------
+        let padding_len_fp = &lenfield_start_fp - &pad_start_fp;
+        let padding_len_bits = padding_len_fp.to_bits_le_with_top_bits_zero(16)?.0;
+
+        // padding_len >= 1
+        let one_bits = UInt16::constant(1u16).to_bits_le()?;
+        let lt_one = is_less_than(&padding_len_bits, &one_bits)?;
+        lt_one.not().enforce_equal(&Boolean::TRUE)?;
+
+        // padding_len <= 64 <=> padding_len < 65
+        let sixty_five_bits = UInt16::constant(65u16).to_bits_le()?;
+        is_less_than(&padding_len_bits, &sixty_five_bits)?.enforce_equal(&Boolean::TRUE)?;
+
+        // in_last_block implies padding_len < 57, otherwise padding_len >= 57
+        let fifty_seven_bits = UInt16::constant(57u16).to_bits_le()?;
+        let padding_lt_57 = is_less_than(&padding_len_bits, &fifty_seven_bits)?;
+        padding_lt_57.enforce_equal(&in_last_block)?;
+
+        let padding_len_u16 = UInt16::from_bits_le(&padding_len_bits);
+
+        // Convert to FpVar for slice_efficient
+        let data_fp: Vec<FpVar<F>> = data
+            .iter()
+            .map(|b| b.to_fp())
+            .collect::<Result<Vec<_>, _>>()?;
+
+        // Extract padding region (max 64 bytes)
+        const PAD_REGION_MAX: usize = 64;
+        let pad_region = slice_v2::slice_efficient(
+            &data_fp,
+            pad_start_byte_idx,
+            &padding_len_u16,
+            PAD_REGION_MAX,
+        )?;
+
+        // First byte must be SHA256_PAD_MARKER (0x80)
+        pad_region[0].enforce_equal(&FpVar::<F>::constant(F::from(
+            crate::constants::SHA256_PAD_MARKER as u64,
+        )))?;
+
+        // Remaining padding bytes must be 0
+        for i in 1..PAD_REGION_MAX {
+            pad_region[i].enforce_equal(&FpVar::<F>::zero())?;
+        }
+
+        // ------------------------------------------------------------
+        // 6) Verify all bytes after the final block are 0
+        //    (trailing zero verification)
+        // ------------------------------------------------------------
+        let mut prefix_sum = FpVar::<F>::zero();
+        for b in 0..max_blocks {
+            // prefix_sum == 1 means b > last_block
+            let after_mask = prefix_sum.clone();
+
+            for off in 0..64 {
+                let idx = b * 64 + off;
+                let byte_fp = data[idx].to_fp()?;
+                let prod = after_mask.clone() * byte_fp;
+                prod.enforce_equal(&FpVar::<F>::zero())?;
+            }
+
+            prefix_sum += flags[b].clone();
+        }
+
+        Ok(())
+    }
 }
 
 fn ch_selector_u32<F: PrimeField>(
@@ -594,6 +834,7 @@ mod tests {
     use super::*;
     use ark_bn254::Fr;
     use ark_relations::r1cs::ConstraintSystem;
+    use sha2::{Sha256, Digest};
 
     #[test]
     fn test_update_state_constraints() -> Result<(), SynthesisError> {
@@ -620,6 +861,134 @@ mod tests {
             "Number of constraints after update_state: {}",
             num_constraints
         );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_digest_full_with_pad_checked() -> Result<(), SynthesisError> {
+        use crate::hashes::sha256::utils::sha256_pad_with_len;
+
+        // Test message (simulating JWT header.payload)
+        let message = b"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0";
+        let message_len = message.len();
+
+        // Compute expected digest using native SHA256
+        let mut hasher = Sha256::new();
+        hasher.update(message);
+        let expected_digest: [u8; 32] = hasher.finalize().into();
+
+        // Apply SHA256 padding
+        let padded = sha256_pad_with_len(message, message_len);
+        assert_eq!(padded.len() % 64, 0);
+        let nblocks = padded.len() / 64 - 1; // 0-indexed
+
+        // Extend to circuit buffer size (e.g., 1024 bytes)
+        let mut circuit_data = padded.clone();
+        circuit_data.resize(1024, 0);
+
+        // Create constraint system
+        let cs = ConstraintSystem::<Fr>::new_ref();
+
+        // Allocate witnesses
+        let data_vars: Vec<UInt8<Fr>> = circuit_data
+            .iter()
+            .map(|&b| UInt8::new_witness(cs.clone(), || Ok(b)))
+            .collect::<Result<_, _>>()?;
+
+        let nblocks_idx = FpVar::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(nblocks as u64)))?;
+        let total_len = UInt16::<Fr>::new_witness(cs.clone(), || Ok(message_len as u16))?;
+        let pad_start = UInt16::<Fr>::new_witness(cs.clone(), || Ok(message_len as u16))?;
+
+        // Call the new method
+        let digest = SHA256Gadget::digest_full_with_pad_checked(
+            &data_vars,
+            nblocks_idx,
+            &total_len,
+            &pad_start,
+        )?;
+
+        // Verify constraints are satisfied
+        assert!(cs.is_satisfied()?, "Constraints not satisfied");
+
+        // Verify digest matches expected
+        let circuit_digest = digest.value()?;
+        assert_eq!(
+            circuit_digest, expected_digest,
+            "Digest mismatch!\nExpected: {:?}\nGot: {:?}",
+            expected_digest, circuit_digest
+        );
+
+        println!("test_digest_full_with_pad_checked passed!");
+        println!("Message length: {} bytes", message_len);
+        println!("Padded length: {} bytes ({} blocks)", padded.len(), padded.len() / 64);
+        println!("Number of constraints: {}", cs.num_constraints());
+        println!("Digest: {:?}", hex::encode(circuit_digest));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_digest_full_with_pad_checked_jwt() -> Result<(), SynthesisError> {
+        use crate::hashes::sha256::utils::sha256_pad_with_len;
+
+        // Real JWT header.payload (from the provided test JWT)
+        let jwt = "eyJhbGciOiJSUzI1NiIsImtpZCI6ImUyNmQ5MTdiMWZlOGRlMTMzODJhYTdjYzlhMWQ2ZTkzMjYyZjMzZTIiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmdvb2dsZS5jb20iLCJhenAiOiI0MDgwNjA2OTkwMzQtMGVjMGV1ajE3MnZzc2VtaDRpZW1ycWZnNXNkanVqbDQuYXBwcy5nb29nbGV1c2VyY29udGVudC5jb20iLCJhdWQiOiI0MDgwNjA2OTkwMzQtMGVjMGV1ajE3MnZzc2VtaDRpZW1ycWZnNXNkanVqbDQuYXBwcy5nb29nbGV1c2VyY29udGVudC5jb20iLCJzdWIiOiIxMTEyNjg2ODYxOTQyOTAyNDI1NDQiLCJoZCI6ImtsYXl0bi5mb3VuZGF0aW9uIiwiZW1haWwiOiJjb2xpbi5rbGF5dG5Aa2xheXRuLmZvdW5kYXRpb24iLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwiYXRfaGFzaCI6IkI0NmhtZklMVU9TS1RHSlRDQ3RteHciLCJub25jZSI6IjB4MDU0NjE2NWRmYTUwNGM4MmRhMWU0YWQ5ZmNiZWRkNGY4NTA4NGFkNjVmNjE1M2NjZWE1NTFlNGQxYmVmMTQ3MiIsImlhdCI6MTcyMjQ0MTkzMCwiZXhwIjoxNzIyNDQ1NTMwfQ";
+        let parts: Vec<&str> = jwt.split('.').collect();
+        let header_payload = format!("{}.{}", parts[0], parts[1]);
+        let message = header_payload.as_bytes();
+        let message_len = message.len();
+
+        // Compute expected digest using native SHA256
+        let mut hasher = Sha256::new();
+        hasher.update(message);
+        let expected_digest: [u8; 32] = hasher.finalize().into();
+
+        // Apply SHA256 padding
+        let padded = sha256_pad_with_len(message, message_len);
+        assert_eq!(padded.len() % 64, 0);
+        let nblocks = padded.len() / 64 - 1;
+
+        // Extend to circuit buffer size
+        let mut circuit_data = padded.clone();
+        circuit_data.resize(2048, 0); // Larger buffer for full JWT
+
+        // Create constraint system
+        let cs = ConstraintSystem::<Fr>::new_ref();
+
+        // Allocate witnesses
+        let data_vars: Vec<UInt8<Fr>> = circuit_data
+            .iter()
+            .map(|&b| UInt8::new_witness(cs.clone(), || Ok(b)))
+            .collect::<Result<_, _>>()?;
+
+        let nblocks_idx = FpVar::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(nblocks as u64)))?;
+        let total_len = UInt16::<Fr>::new_witness(cs.clone(), || Ok(message_len as u16))?;
+        let pad_start = UInt16::<Fr>::new_witness(cs.clone(), || Ok(message_len as u16))?;
+
+        // Call the new method
+        let digest = SHA256Gadget::digest_full_with_pad_checked(
+            &data_vars,
+            nblocks_idx,
+            &total_len,
+            &pad_start,
+        )?;
+
+        // Verify constraints are satisfied
+        assert!(cs.is_satisfied()?, "Constraints not satisfied");
+
+        // Verify digest matches expected
+        let circuit_digest = digest.value()?;
+        assert_eq!(
+            circuit_digest, expected_digest,
+            "Digest mismatch for real JWT!"
+        );
+
+        println!("test_digest_full_with_pad_checked_jwt passed!");
+        println!("JWT header.payload length: {} bytes", message_len);
+        println!("Padded length: {} bytes ({} blocks)", padded.len(), padded.len() / 64);
+        println!("Number of constraints: {}", cs.num_constraints());
+        println!("Digest: {}", hex::encode(circuit_digest));
 
         Ok(())
     }

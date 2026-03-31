@@ -9,7 +9,7 @@ use ark_crypto_primitives::{
         poseidon::{self, constraints::CRHGadget as PoseidonCRHGadget},
     },
     merkle_tree::{Path, constraints::PathVar},
-    sponge::{Absorb, poseidon::PoseidonConfig},
+    sponge::Absorb,
 };
 use ark_ec::CurveGroup;
 use ark_ff::PrimeField;
@@ -43,7 +43,7 @@ use gadget::{
         },
     },
     base64::{
-        Base64Table, Base64TableVar,
+        Base64TableVar,
         constraints_v2::{Base64DecoderGadget, IndexBitsVar},
         get_base64_table,
         mod_v2::IndexBits,
@@ -70,6 +70,16 @@ use gadget::{
     },
 };
 
+/// ZK-Passkey 회로 (Baerae Lightweight)
+///
+/// 논리적 그룹으로 구조화된 필드:
+/// - `constants`: 회로 상수 (Vandermonde, Poseidon, Base64)
+/// - `public_inputs`: 검증자에게 공개되는 입력
+/// - `jwt`: JWT 관련 witness (SHA256, Base64, RSA)
+/// - `anchor`: Threshold anchor witness
+/// - `merkle`: Merkle tree witness
+/// - `audience`: Audience list witness
+/// - `misc`: 기타 witness (random)
 #[derive(Clone, CanonicalSerialize, CanonicalDeserialize)]
 pub struct BaeraeLightWeightCircuit<C, BNP, Config>
 where
@@ -78,42 +88,21 @@ where
     BNP: BigNatCircuitParams + Send + Sync,
     Config: ZkPasskeyConfig + Send + Sync,
 {
-    // constants
-    pub vandermonde_matrix: VandermondeMatrix<C::BaseField>,
-    pub poseidon_param: PoseidonConfig<C::BaseField>,
-    pub base64_table: Base64Table,
-
-    // public inputs
-    pub hanchor: C::BaseField,
-    pub h_a: C::BaseField,
-    pub root: C::BaseField,
-    pub h_sign_user_op: C::BaseField,
-    pub jwt_exp: C::BaseField,
-    pub partial_rhs: C::BaseField,
-    pub lhs: C::BaseField,
-    pub h_aud_list: C::BaseField,
-
-    // witnesses
-    pub random: C::BaseField,
-    pub leaf_idx: usize,
-    pub path: Path<MerkleTreeParams<C::BaseField>>,
-    pub anchor: PoseidonAnchor<C::BaseField>,
-    pub nblocks: usize,
-    pub token_claim: Vec<ClaimIndices>,
-    pub payload_offset_b64: usize,
-    pub payload_len_b64: usize,
-    pub sha_pad_jwt_b64: Vec<u8>,
-    pub index_bits: IndexBits,
-    pub pk_op: PublicKey,
-    pub signature_op: Signature,
-    pub a: Vec<C::BaseField>,
-    pub indices: Vec<u8>,
-    pub current_idx: usize,
-    pub aud_list: Vec<C::BaseField>,
-    pub total_len: usize,
-    pub pad_start_byte_idx: usize,
-
-    // phantom
+    /// 회로 상수 (Setup 시점에 결정)
+    pub constants: input::CircuitConstants<C::BaseField>,
+    /// 공개 입력 (검증자에게 공개)
+    pub public_inputs: input::CircuitPublicInputs<C::BaseField>,
+    /// JWT 관련 Witness
+    pub jwt: input::JwtWitness,
+    /// Anchor/Threshold Witness
+    pub anchor: input::AnchorWitness<C::BaseField>,
+    /// Merkle Tree Witness
+    pub merkle: input::MerkleWitness<C::BaseField>,
+    /// Audience Witness
+    pub audience: input::AudienceWitness<C::BaseField>,
+    /// 기타 Witness
+    pub misc: input::MiscWitness<C::BaseField>,
+    /// Phantom data for type parameters
     _phantom: PhantomData<(BNP, Config)>,
 }
 
@@ -129,113 +118,116 @@ where
         self,
         cs: ark_relations::r1cs::ConstraintSystemRef<C::BaseField>,
     ) -> ark_relations::r1cs::Result<()> {
-        assert!(self.indices.len() == Config::N);
+        assert!(self.anchor.selector.len() == Config::N);
         // Implement the constraint generation logic here
 
         let initial_constraints = cs.num_constraints();
         let mut cs_last = initial_constraints;
 
+        // ============ Constants ============
         let vandermonde_matrix = VandermondeMatrixVar::<C::BaseField>::new_constant(
             cs.clone(),
-            self.vandermonde_matrix,
+            self.constants.vandermonde_matrix,
         )?;
 
         let poseidon_param = poseidon::constraints::CRHParametersVar::<C::BaseField>::new_constant(
             cs.clone(),
-            self.poseidon_param,
+            self.constants.poseidon_param,
         )?;
 
         let base64_table =
-            Base64TableVar::<C::BaseField>::new_constant(cs.clone(), self.base64_table)?;
+            Base64TableVar::<C::BaseField>::new_constant(cs.clone(), self.constants.base64_table)?;
 
-        let hanchor = FpVar::<C::BaseField>::new_input(cs.clone(), || Ok(self.hanchor))?;
+        // ============ Public Inputs ============
+        let hanchor = FpVar::<C::BaseField>::new_input(cs.clone(), || Ok(self.public_inputs.hanchor))?;
 
-        let h_a = FpVar::<C::BaseField>::new_input(cs.clone(), || Ok(self.h_a))?;
+        let h_a = FpVar::<C::BaseField>::new_input(cs.clone(), || Ok(self.public_inputs.h_a))?;
 
-        let root = FpVar::<C::BaseField>::new_input(cs.clone(), || Ok(self.root))?;
+        let root = FpVar::<C::BaseField>::new_input(cs.clone(), || Ok(self.public_inputs.root))?;
 
         let h_sign_user_op =
-            FpVar::<C::BaseField>::new_input(cs.clone(), || Ok(self.h_sign_user_op))?;
+            FpVar::<C::BaseField>::new_input(cs.clone(), || Ok(self.public_inputs.h_sign_user_op))?;
 
-        let jwt_exp = FpVar::<C::BaseField>::new_input(cs.clone(), || Ok(self.jwt_exp))?;
+        let jwt_exp = FpVar::<C::BaseField>::new_input(cs.clone(), || Ok(self.public_inputs.jwt_exp))?;
 
-        let partial_rhs = FpVar::<C::BaseField>::new_input(cs.clone(), || Ok(self.partial_rhs))?;
+        let partial_rhs = FpVar::<C::BaseField>::new_input(cs.clone(), || Ok(self.public_inputs.partial_rhs))?;
 
-        let lhs = FpVar::<C::BaseField>::new_input(cs.clone(), || Ok(self.lhs))?;
+        let lhs = FpVar::<C::BaseField>::new_input(cs.clone(), || Ok(self.public_inputs.lhs))?;
 
-        let h_aud_list = FpVar::<C::BaseField>::new_input(cs.clone(), || Ok(self.h_aud_list))?;
+        let h_aud_list = FpVar::<C::BaseField>::new_input(cs.clone(), || Ok(self.public_inputs.h_aud_list))?;
 
-        let random = FpVar::<C::BaseField>::new_witness(cs.clone(), || Ok(self.random))?;
+        // ============ Misc Witness ============
+        let random = FpVar::<C::BaseField>::new_witness(cs.clone(), || Ok(self.misc.random))?;
 
+        // ============ Merkle Witness ============
         let leaf_idx =
-            UInt16::<C::BaseField>::new_witness(cs.clone(), || Ok(self.leaf_idx as u16))?;
+            UInt16::<C::BaseField>::new_witness(cs.clone(), || Ok(self.merkle.leaf_idx as u16))?;
 
         let mut path = PathVar::<
             MerkleTreeParams<C::BaseField>,
             C::BaseField,
             MerkleTreeParamsVar<C::BaseField>,
-        >::new_witness(cs.clone(), || Ok(self.path))?;
+        >::new_witness(cs.clone(), || Ok(self.merkle.path))?;
 
+        // ============ Anchor Witness ============
         let anchor =
-            PoseidonAnchorVar::<C::BaseField>::new_witness(cs.clone(), || Ok(self.anchor))?;
+            PoseidonAnchorVar::<C::BaseField>::new_witness(cs.clone(), || Ok(self.anchor.anchor))?;
 
-        let nblocks = FpVar::<C::BaseField>::new_witness(cs.clone(), || {
-            Ok(C::BaseField::from(self.nblocks as u64))
-        })?;
-
-        let token_claim =
-            Vec::<ClaimIndicesVar<C::BaseField>>::new_witness(cs.clone(), || Ok(self.token_claim))?;
-
-        let payload_offset_b64 =
-            UInt16::<C::BaseField>::new_witness(cs.clone(), || Ok(self.payload_offset_b64 as u16))?;
-
-        let payload_len_b64 =
-            UInt16::<C::BaseField>::new_witness(cs.clone(), || Ok(self.payload_len_b64 as u16))?;
-
-        let sha_pad_jwt_b64 = Vec::<UInt8<C::BaseField>>::new_witness(cs.clone(), || {
-            Ok(self
-                .sha_pad_jwt_b64
-                .iter()
-                .map(|&b| b)
-                .collect::<Vec<u8>>())
-        })?;
-
-        let index_bits =
-            IndexBitsVar::<C::BaseField>::new_witness(cs.clone(), || Ok(self.index_bits))?;
-
-        let pk_op = PublicKeyVar::<C::BaseField, BNP>::new_witness(cs.clone(), || Ok(self.pk_op))?;
-
-        // [ZKAPCIR-001] RSA e=65537 강제
-        let expected_e = BigNatVar::<C::BaseField, BNP>::constant(&BigNat::from(gadget::constants::RSA_DEFAULT_EXPONENT))?;
-        pk_op.e.enforce_equal_when_carried(&expected_e)?;
-
-        let signature_op =
-            SignatureVar::<C::BaseField, BNP>::new_witness(cs.clone(), || Ok(self.signature_op))?;
-
-        let a = Vec::<FpVar<C::BaseField>>::new_witness(cs.clone(), || Ok(self.a))?;
+        let a = Vec::<FpVar<C::BaseField>>::new_witness(cs.clone(), || Ok(self.anchor.a))?;
 
         let indices = Vec::<FpVar<C::BaseField>>::new_witness(cs.clone(), || {
             Ok(self
-                .indices
+                .anchor.selector
                 .iter()
                 .map(|&i| C::BaseField::from(i as u64))
                 .collect::<Vec<C::BaseField>>())
         })?;
 
         let current_idx = FpVar::<C::BaseField>::new_witness(cs.clone(), || {
-            Ok(C::BaseField::from(self.current_idx as u64))
+            Ok(C::BaseField::from(self.anchor.current_idx as u64))
         })?;
 
-        let aud_list = Vec::<FpVar<C::BaseField>>::new_witness(cs.clone(), || Ok(self.aud_list))?;
+        // ============ JWT Witness ============
+        let nblocks = FpVar::<C::BaseField>::new_witness(cs.clone(), || {
+            Ok(C::BaseField::from(self.jwt.nblocks as u64))
+        })?;
+
+        let token_claim =
+            Vec::<ClaimIndicesVar<C::BaseField>>::new_witness(cs.clone(), || Ok(self.jwt.claim_indices))?;
+
+        let payload_offset_b64 =
+            UInt16::<C::BaseField>::new_witness(cs.clone(), || Ok(self.jwt.pay_offset_b64 as u16))?;
+
+        let payload_len_b64 =
+            UInt16::<C::BaseField>::new_witness(cs.clone(), || Ok(self.jwt.pay_len_b64 as u16))?;
+
+        let sha_pad_jwt_b64 = Vec::<UInt8<C::BaseField>>::new_witness(cs.clone(), || {
+            Ok(self.jwt.sha_pad_jwt_b64.clone())
+        })?;
+
+        let index_bits =
+            IndexBitsVar::<C::BaseField>::new_witness(cs.clone(), || Ok(self.jwt.index_bits))?;
+
+        let pk_op = PublicKeyVar::<C::BaseField, BNP>::new_witness(cs.clone(), || Ok(self.jwt.pk))?;
+
+        // [ZKAPCIR-001] RSA e=65537 강제
+        let expected_e = BigNatVar::<C::BaseField, BNP>::constant(&BigNat::from(gadget::constants::RSA_DEFAULT_EXPONENT))?;
+        pk_op.e.enforce_equal_when_carried(&expected_e)?;
+
+        let signature_op =
+            SignatureVar::<C::BaseField, BNP>::new_witness(cs.clone(), || Ok(self.jwt.sig))?;
 
         let total_len =
-            UInt16::<C::BaseField>::new_witness(cs.clone(), || Ok(self.total_len as u16))?;
+            UInt16::<C::BaseField>::new_witness(cs.clone(), || Ok(self.jwt.total_len as u16))?;
 
         let pad_start_byte_idx =
             UInt16::<C::BaseField>::new_witness(
                 cs.clone(),
-                || Ok(self.pad_start_byte_idx as u16),
+                || Ok(self.jwt.pad_start_byte_idx as u16),
             )?;
+
+        // ============ Audience Witness ============
+        let aud_list = Vec::<FpVar<C::BaseField>>::new_witness(cs.clone(), || Ok(self.audience.aud_list))?;
 
         let zero = FpVar::<C::BaseField>::Constant(C::BaseField::from(0u64));
         let one = FpVar::<C::BaseField>::Constant(C::BaseField::from(1u64));
@@ -559,45 +551,50 @@ where
     Config: ZkPasskeyConfig + Send + Sync,
 {
     pub fn generate_mock_circuit() -> Self {
-        let vandermonde_matrix = VandermondeMatrix::new(Config::N, Config::K);
-
-        let poseidon_param = get_poseidon_params();
-
-        let base64_table = get_base64_table();
-
         Self {
-            vandermonde_matrix,
-            poseidon_param,
-            base64_table,
-
-            hanchor: C::BaseField::default(),
-            h_a: C::BaseField::default(),
-            root: C::BaseField::default(),
-            h_sign_user_op: C::BaseField::default(),
-            jwt_exp: C::BaseField::default(),
-            partial_rhs: C::BaseField::default(),
-            lhs: C::BaseField::default(),
-            h_aud_list: C::BaseField::default(),
-
-            random: C::BaseField::default(),
-            leaf_idx: 0,
-            path: Path::empty(Config::TREE_HEIGHT),
-            anchor: PoseidonAnchor::empty(Config::N - Config::K + 1),
-            nblocks: 0,
-            token_claim: vec![ClaimIndices::default(); Config::CLAIMS.len()],
-            payload_offset_b64: 0,
-            payload_len_b64: 0,
-            sha_pad_jwt_b64: vec![0; Config::MAX_JWT_B64_LEN],
-            index_bits: IndexBits::empty(Config::MAX_PAYLOAD_B64_LEN),
-            pk_op: PublicKey::empty(),
-            signature_op: Signature::default(),
-            a: vec![C::BaseField::default(); Config::N - Config::K + 1],
-            indices: vec![0; Config::N],
-            current_idx: 0,
-            aud_list: vec![C::BaseField::default(); Config::NUM_AUDIENCE_LIMIT],
-            total_len: 0,
-            pad_start_byte_idx: 0,
-
+            constants: input::CircuitConstants {
+                vandermonde_matrix: VandermondeMatrix::new(Config::N, Config::K),
+                poseidon_param: get_poseidon_params(),
+                base64_table: get_base64_table(),
+            },
+            public_inputs: input::CircuitPublicInputs {
+                hanchor: C::BaseField::default(),
+                h_a: C::BaseField::default(),
+                root: C::BaseField::default(),
+                h_sign_user_op: C::BaseField::default(),
+                jwt_exp: C::BaseField::default(),
+                partial_rhs: C::BaseField::default(),
+                lhs: C::BaseField::default(),
+                h_aud_list: C::BaseField::default(),
+            },
+            jwt: input::JwtWitness {
+                nblocks: 0,
+                claim_indices: vec![ClaimIndices::default(); Config::CLAIMS.len()],
+                pay_offset_b64: 0,
+                pay_len_b64: 0,
+                sha_pad_jwt_b64: vec![0; Config::MAX_JWT_B64_LEN],
+                index_bits: IndexBits::empty(Config::MAX_PAYLOAD_B64_LEN),
+                pk: PublicKey::empty(),
+                sig: Signature::default(),
+                total_len: 0,
+                pad_start_byte_idx: 0,
+            },
+            anchor: input::AnchorWitness {
+                anchor: PoseidonAnchor::empty(Config::N - Config::K + 1),
+                a: vec![C::BaseField::default(); Config::N - Config::K + 1],
+                selector: vec![0; Config::N],
+                current_idx: 0,
+            },
+            merkle: input::MerkleWitness {
+                path: Path::empty(Config::TREE_HEIGHT),
+                leaf_idx: 0,
+            },
+            audience: input::AudienceWitness {
+                aud_list: vec![C::BaseField::default(); Config::NUM_AUDIENCE_LIMIT],
+            },
+            misc: input::MiscWitness {
+                random: C::BaseField::default(),
+            },
             _phantom: PhantomData,
         }
     }
@@ -605,35 +602,13 @@ where
     /// 구조화된 입력으로부터 회로 생성 (권장)
     pub fn from_input(input: input::BaeraeCircuitInput<C::BaseField>) -> Self {
         Self {
-            vandermonde_matrix: input.constants.vandermonde_matrix,
-            poseidon_param: input.constants.poseidon_param,
-            base64_table: input.constants.base64_table,
-            hanchor: input.public_inputs.hanchor,
-            h_a: input.public_inputs.h_a,
-            root: input.public_inputs.root,
-            h_sign_user_op: input.public_inputs.h_sign_user_op,
-            jwt_exp: input.public_inputs.jwt_exp,
-            partial_rhs: input.public_inputs.partial_rhs,
-            lhs: input.public_inputs.lhs,
-            h_aud_list: input.public_inputs.h_aud_list,
-            random: input.misc.random,
-            leaf_idx: input.merkle.leaf_idx,
-            path: input.merkle.path,
-            anchor: input.anchor.anchor,
-            nblocks: input.jwt.nblocks,
-            token_claim: input.jwt.claim_indices,
-            payload_offset_b64: input.jwt.pay_offset_b64,
-            payload_len_b64: input.jwt.pay_len_b64,
-            sha_pad_jwt_b64: input.jwt.sha_pad_jwt_b64,
-            index_bits: input.jwt.index_bits,
-            pk_op: input.jwt.pk,
-            signature_op: input.jwt.sig,
-            a: input.anchor.a,
-            indices: input.anchor.selector,
-            current_idx: input.anchor.current_idx,
-            aud_list: input.audience.aud_list,
-            total_len: input.jwt.total_len,
-            pad_start_byte_idx: input.jwt.pad_start_byte_idx,
+            constants: input.constants,
+            public_inputs: input.public_inputs,
+            jwt: input.jwt,
+            anchor: input.anchor,
+            merkle: input.merkle,
+            audience: input.audience,
+            misc: input.misc,
             _phantom: PhantomData,
         }
     }
@@ -647,15 +622,6 @@ where
     Config: ZkPasskeyConfig + Send + Sync,
 {
     fn public_inputs(&self) -> Vec<C::BaseField> {
-        vec![
-            self.hanchor,
-            self.h_a,
-            self.root,
-            self.h_sign_user_op,
-            self.jwt_exp,
-            self.partial_rhs,
-            self.lhs,
-            self.h_aud_list,
-        ]
+        self.public_inputs.to_vec()
     }
 }

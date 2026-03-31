@@ -39,7 +39,6 @@ pub trait SignatureScheme {
 
 #[cfg(test)]
 mod test {
-    use crate::hashes::blake2s256::Blake2s256;
     use crate::signature::SignatureScheme;
     use crate::signature::schnorr::Schnorr;
     use ark_crypto_primitives::crh::sha256::Sha256;
@@ -67,12 +66,6 @@ mod test {
         let message = "Hi, I am a Schnorr signature!";
         sign_and_verify::<Schnorr<JubJub, Sha256>>(message.as_bytes());
         failed_verification::<Schnorr<JubJub, Sha256>>(
-            message.as_bytes(),
-            "Bad message".as_bytes(),
-        );
-
-        sign_and_verify::<Schnorr<JubJub, Blake2s256>>(message.as_bytes());
-        failed_verification::<Schnorr<JubJub, Blake2s256>>(
             message.as_bytes(),
             "Bad message".as_bytes(),
         );

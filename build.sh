@@ -16,6 +16,7 @@ set -e  # 에러 발생 시 즉시 중단
 #   --output, -o <경로>   출력 디렉토리 (기본: ./output)
 #   --no-package          패키징(tar.gz) 건너뛰기
 #   --dry-run             실제 빌드 없이 설정만 확인
+#   --yes, -y             대화형 프롬프트 자동 승인 (CI용)
 #   --help, -h            도움말 출력
 #
 # 예시:
@@ -45,6 +46,11 @@ DO_CLEAN=true
 OUTPUT_DIR="./output"
 DO_PACKAGE=true
 DRY_RUN=false
+AUTO_YES=false
+
+# 호스트 OS 및 아키텍처 감지
+HOST_OS="$(uname -s)"
+HOST_ARCH="$(uname -m)"
 
 # 사용 가능한 환경 목록
 AVAILABLE_ENVS=("macos-arm64" "macos-x64" "linux-x64" "linux-arm64" "linux-musl" "windows")
@@ -73,9 +79,20 @@ log_step() {
 
 # 도움말 출력
 show_help() {
-    sed -n '8,27p' "$0" | sed 's/^# //' | sed 's/^#//'
+    sed -n '8,28p' "$0" | sed 's/^# //' | sed 's/^#//'
     exit 0
 }
+
+# cleanup 함수 (trap용)
+cleanup() {
+    local exit_code=$?
+    # pushd 스택이 남아있으면 복귀
+    if [ "$(dirs -p | wc -l)" -gt 1 ]; then
+        popd > /dev/null 2>&1 || true
+    fi
+    exit $exit_code
+}
+trap cleanup EXIT
 
 # .env 파일 로드
 load_env_file() {
@@ -89,6 +106,30 @@ load_env_file() {
     fi
 }
 
+# 크로스 컴파일 필요 여부 판단 (호스트 OS/아키텍처 기반)
+needs_cross_compile_for_env() {
+    local env=$1
+    case "$HOST_OS-$HOST_ARCH" in
+        Darwin-arm64)
+            # Apple Silicon Mac
+            [[ "$env" != "macos-arm64" ]] && return 0
+            ;;
+        Darwin-x86_64)
+            # Intel Mac
+            [[ "$env" != "macos-x64" ]] && return 0
+            ;;
+        Linux-x86_64)
+            # Linux x64
+            [[ "$env" != "linux-x64" ]] && return 0
+            ;;
+        Linux-aarch64)
+            # Linux ARM64
+            [[ "$env" != "linux-arm64" ]] && return 0
+            ;;
+    esac
+    return 1
+}
+
 # 필수 도구 검증
 check_prerequisites() {
     local missing_tools=()
@@ -99,21 +140,23 @@ check_prerequisites() {
         missing_tools+=("cargo (Rust)")
     fi
 
-    if ! command -v npm &> /dev/null; then
-        missing_tools+=("npm (Node.js)")
+    # npm은 NAPI 빌드 시에만 필요
+    if [ "$KEYS_ONLY" != true ]; then
+        if ! command -v npm &> /dev/null; then
+            missing_tools+=("npm (Node.js)")
+        fi
     fi
 
-    # 크로스 컴파일 필요 여부 확인
+    # 크로스 컴파일 필요 여부 확인 (호스트 기반)
     for env in "${ENVIRONMENTS[@]}"; do
-        case $env in
-            linux-x64|linux-arm64|linux-musl|windows)
-                needs_cross_compile=true
-                ;;
-        esac
+        if needs_cross_compile_for_env "$env"; then
+            needs_cross_compile=true
+            break
+        fi
     done
 
     # 크로스 컴파일 시 zig 필요
-    if [ "$needs_cross_compile" = true ]; then
+    if [ "$needs_cross_compile" = true ] && [ "$KEYS_ONLY" != true ]; then
         if ! command -v zig &> /dev/null; then
             missing_tools+=("zig (크로스 컴파일용)")
         fi
@@ -127,24 +170,26 @@ check_prerequisites() {
         exit 1
     fi
 
-    # Rust 타겟 확인
+    # Rust 타겟 확인 (NAPI 빌드 시에만)
     local missing_targets=()
-    for env in "${ENVIRONMENTS[@]}"; do
-        local target=""
-        case $env in
-            macos-x64) target="x86_64-apple-darwin" ;;
-            linux-x64) target="x86_64-unknown-linux-gnu" ;;
-            linux-arm64) target="aarch64-unknown-linux-gnu" ;;
-            linux-musl) target="x86_64-unknown-linux-musl" ;;
-            windows) target="x86_64-pc-windows-msvc" ;;
-        esac
+    if [ "$KEYS_ONLY" != true ]; then
+        for env in "${ENVIRONMENTS[@]}"; do
+            local target=""
+            case $env in
+                macos-x64) target="x86_64-apple-darwin" ;;
+                linux-x64) target="x86_64-unknown-linux-gnu" ;;
+                linux-arm64) target="aarch64-unknown-linux-gnu" ;;
+                linux-musl) target="x86_64-unknown-linux-musl" ;;
+                windows) target="x86_64-pc-windows-msvc" ;;
+            esac
 
-        if [ -n "$target" ]; then
-            if ! rustup target list --installed | grep -q "^${target}$"; then
-                missing_targets+=("$target")
+            if [ -n "$target" ]; then
+                if ! rustup target list --installed | grep -q "^${target}$"; then
+                    missing_targets+=("$target")
+                fi
             fi
-        fi
-    done
+        done
+    fi
 
     if [ ${#missing_targets[@]} -gt 0 ]; then
         log_warn "설치되지 않은 Rust 타겟이 있습니다:"
@@ -152,9 +197,23 @@ check_prerequisites() {
             echo "  rustup target add $target"
         done
         echo ""
-        read -p "자동으로 설치할까요? [y/N] " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
+
+        local do_install=false
+        if [ "$AUTO_YES" = true ]; then
+            log_info "자동 승인 모드 (--yes)"
+            do_install=true
+        elif [ -t 0 ]; then
+            # 대화형 모드
+            read -p "자동으로 설치할까요? [y/N] " -n 1 -r
+            echo
+            [[ $REPLY =~ ^[Yy]$ ]] && do_install=true
+        else
+            # 비대화형 모드 (CI)
+            log_error "비대화형 환경입니다. --yes 옵션을 사용하거나 수동으로 타겟을 설치하세요."
+            exit 1
+        fi
+
+        if [ "$do_install" = true ]; then
             for target in "${missing_targets[@]}"; do
                 log_info "설치 중: $target"
                 rustup target add "$target"
@@ -171,6 +230,10 @@ check_prerequisites() {
 while [[ $# -gt 0 ]]; do
     case $1 in
         --env|-e)
+            if [[ -z "$2" || "$2" == -* ]]; then
+                log_error "--env 옵션에 값이 필요합니다"
+                exit 1
+            fi
             ENVIRONMENTS+=("$2")
             shift 2
             ;;
@@ -187,6 +250,10 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --output|-o)
+            if [[ -z "$2" || "$2" == -* ]]; then
+                log_error "--output 옵션에 값이 필요합니다"
+                exit 1
+            fi
             OUTPUT_DIR="$2"
             shift 2
             ;;
@@ -196,6 +263,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --dry-run)
             DRY_RUN=true
+            shift
+            ;;
+        --yes|-y)
+            AUTO_YES=true
             shift
             ;;
         --help|-h)
@@ -279,9 +350,18 @@ setup_env_vars() {
     export ZK_NUM_AUDIENCE_LIMIT="${ZK_NUM_AUDIENCE_LIMIT:-5}"
 
     # macOS에서 크로스 컴파일을 위해 llvm 경로 추가
+    local llvm_path=""
     if [ -d "/opt/homebrew/opt/llvm@20/bin" ]; then
-        export PATH="/opt/homebrew/opt/llvm@20/bin:$PATH"
-        log_info "LLVM 경로 추가됨: /opt/homebrew/opt/llvm@20/bin"
+        # Apple Silicon Mac
+        llvm_path="/opt/homebrew/opt/llvm@20/bin"
+    elif [ -d "/usr/local/opt/llvm@20/bin" ]; then
+        # Intel Mac
+        llvm_path="/usr/local/opt/llvm@20/bin"
+    fi
+
+    if [ -n "$llvm_path" ]; then
+        export PATH="$llvm_path:$PATH"
+        log_info "LLVM 경로 추가됨: $llvm_path"
     fi
 
     log_success "환경 변수 설정 완료"
@@ -349,31 +429,25 @@ build_napi_for_env() {
     local target=""
     local cross_compile=false
 
+    # 환경별 타겟 설정
     case $env in
-        macos-arm64)
-            # 네이티브 빌드 (타겟 지정 불필요)
-            target=""
-            ;;
-        macos-x64)
-            target="x86_64-apple-darwin"
-            ;;
-        linux-x64)
-            target="x86_64-unknown-linux-gnu"
-            cross_compile=true
-            ;;
-        linux-arm64)
-            target="aarch64-unknown-linux-gnu"
-            cross_compile=true
-            ;;
-        linux-musl)
-            target="x86_64-unknown-linux-musl"
-            cross_compile=true
-            ;;
-        windows)
-            target="x86_64-pc-windows-msvc"
-            cross_compile=true
-            ;;
+        macos-arm64) target="aarch64-apple-darwin" ;;
+        macos-x64) target="x86_64-apple-darwin" ;;
+        linux-x64) target="x86_64-unknown-linux-gnu" ;;
+        linux-arm64) target="aarch64-unknown-linux-gnu" ;;
+        linux-musl) target="x86_64-unknown-linux-musl" ;;
+        windows) target="x86_64-pc-windows-msvc" ;;
     esac
+
+    # 호스트 기반 크로스 컴파일 여부 판단
+    if needs_cross_compile_for_env "$env"; then
+        cross_compile=true
+    fi
+
+    # 네이티브 빌드 시 타겟 지정 생략 가능
+    if [ "$cross_compile" = false ]; then
+        target=""
+    fi
 
     log_info "빌드 중: $env"
 

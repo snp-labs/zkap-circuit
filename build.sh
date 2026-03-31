@@ -17,6 +17,8 @@ set -e  # 에러 발생 시 즉시 중단
 #   --no-package          패키징(tar.gz) 건너뛰기
 #   --dry-run             실제 빌드 없이 설정만 확인
 #   --yes, -y             대화형 프롬프트 자동 승인 (CI용)
+#   -n <값>               ZK_N 값 설정 (기본: 3)
+#   -k <값>               ZK_K 값 설정 (기본: 3)
 #   --help, -h            도움말 출력
 #
 # 예시:
@@ -48,6 +50,8 @@ OUTPUT_DIR="./output"
 DO_PACKAGE=true
 DRY_RUN=false
 AUTO_YES=false
+ZK_N_VALUE=3
+ZK_K_VALUE=3
 
 # 호스트 OS 및 아키텍처 감지
 HOST_OS="$(uname -s)"
@@ -283,6 +287,22 @@ while [[ $# -gt 0 ]]; do
             AUTO_YES=true
             shift
             ;;
+        -n)
+            if [[ -z "$2" || "$2" == -* ]]; then
+                log_error "-n 옵션에 값이 필요합니다"
+                exit 1
+            fi
+            ZK_N_VALUE="$2"
+            shift 2
+            ;;
+        -k)
+            if [[ -z "$2" || "$2" == -* ]]; then
+                log_error "-k 옵션에 값이 필요합니다"
+                exit 1
+            fi
+            ZK_K_VALUE="$2"
+            shift 2
+            ;;
         --help|-h)
             show_help
             ;;
@@ -343,6 +363,8 @@ log_info "키만 생성: $KEYS_ONLY"
 log_info "클린 빌드: $DO_CLEAN"
 log_info "패키징: $DO_PACKAGE"
 log_info "Dry Run: $DRY_RUN"
+log_info "ZK_N: $ZK_N_VALUE"
+log_info "ZK_K: $ZK_K_VALUE"
 
 # Dry run 모드일 경우 여기서 종료
 if [ "$DRY_RUN" = true ]; then
@@ -367,8 +389,8 @@ setup_env_vars() {
     export ZK_MAX_ISS_LEN="${ZK_MAX_ISS_LEN:-93}"
     export ZK_MAX_NONCE_LEN="${ZK_MAX_NONCE_LEN:-93}"
     export ZK_MAX_SUB_LEN="${ZK_MAX_SUB_LEN:-93}"
-    export ZK_N="${ZK_N:-6}"
-    export ZK_K="${ZK_K:-3}"
+    export ZK_N="${ZK_N:-$ZK_N_VALUE}"
+    export ZK_K="${ZK_K:-$ZK_K_VALUE}"
     export ZK_TREE_HEIGHT="${ZK_TREE_HEIGHT:-16}"
     export ZK_NUM_AUDIENCE_LIMIT="${ZK_NUM_AUDIENCE_LIMIT:-5}"
 

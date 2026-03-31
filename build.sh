@@ -26,6 +26,7 @@ set -e  # 에러 발생 시 즉시 중단
 #   ./build.sh --napi-only -e windows             # Windows NAPI만 빌드
 #   ./build.sh --keys-only                        # 키 생성만 수행
 #   ./build.sh --dry-run -e linux-x64             # 설정 확인만
+#   ./build.sh --yes -e linux-x64                 # CI 환경 (자동 승인)
 # =============================================================================
 
 # 스크립트 루트 디렉토리 저장
@@ -79,7 +80,7 @@ log_step() {
 
 # 도움말 출력
 show_help() {
-    sed -n '8,28p' "$0" | sed 's/^# //' | sed 's/^#//'
+    sed -n '8,29p' "$0" | sed 's/^# //' | sed 's/^#//'
     exit 0
 }
 
@@ -173,9 +174,14 @@ check_prerequisites() {
     # Rust 타겟 확인 (NAPI 빌드 시에만)
     local missing_targets=()
     if [ "$KEYS_ONLY" != true ]; then
+        # rustup 호출을 한 번만 수행 (성능 최적화)
+        local installed_targets
+        installed_targets=$(rustup target list --installed 2>/dev/null || echo "")
+
         for env in "${ENVIRONMENTS[@]}"; do
             local target=""
             case $env in
+                macos-arm64) target="aarch64-apple-darwin" ;;
                 macos-x64) target="x86_64-apple-darwin" ;;
                 linux-x64) target="x86_64-unknown-linux-gnu" ;;
                 linux-arm64) target="aarch64-unknown-linux-gnu" ;;
@@ -184,8 +190,11 @@ check_prerequisites() {
             esac
 
             if [ -n "$target" ]; then
-                if ! rustup target list --installed | grep -q "^${target}$"; then
-                    missing_targets+=("$target")
+                if ! echo "$installed_targets" | grep -q "^${target}$"; then
+                    # 중복 타겟 방지
+                    if [[ ! " ${missing_targets[*]} " =~ " ${target} " ]]; then
+                        missing_targets+=("$target")
+                    fi
                 fi
             fi
         done
@@ -521,6 +530,9 @@ package_output() {
 
     log_step "결과물 패키징"
 
+    # 빈 디렉토리 정리
+    find "$OUTPUT_DIR" -type d -empty -delete 2>/dev/null || true
+
     TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
     # 빌드된 환경 목록을 파일명에 포함
@@ -556,6 +568,8 @@ print_summary() {
 
 # 메인 실행
 main() {
+    local start_time=$SECONDS
+
     check_prerequisites
     setup_env_vars
     do_clean
@@ -564,6 +578,11 @@ main() {
     build_napi
     package_output
     print_summary
+
+    local elapsed=$((SECONDS - start_time))
+    local mins=$((elapsed / 60))
+    local secs=$((elapsed % 60))
+    log_info "총 소요 시간: ${mins}분 ${secs}초"
 }
 
 main

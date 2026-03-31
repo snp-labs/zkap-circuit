@@ -2549,6 +2549,7 @@ dependencies = [
  "ark-std",
  "gadget",
  "getrandom 0.2.17",
+ "hex",
  "serde",
  "serde-wasm-bindgen",
  "wasm-bindgen",

@@ -8,7 +8,7 @@ use ark_crypto_primitives::{
 use ark_ff::{BigInteger, PrimeField};
 use ark_groth16::{Groth16, VerifyingKey};
 use ark_serialize::CanonicalSerialize;
-use common::{
+use circuit::{
     constants::{ZkPasskeyConfig, ZkapConfig},
     field_parser::ascii_to_field_be,
     io::load_key_uncompressed,

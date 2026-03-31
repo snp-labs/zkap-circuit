@@ -10,8 +10,8 @@ use circuit::{
     AnchorWitnessData, AudienceWitnessData, BaeraeCircuitInput, CircuitConstants,
     CircuitPublicInputs, JwtWitnessData, MerkleWitnessData, MiscWitnessData,
 };
-use common::constants::{BN254, BNP, CG, F, ZkPasskeyConfig};
-use common::io::load_key_uncompressed;
+use circuit::constants::{BN254, BNP, CG, F, ZkPasskeyConfig};
+use circuit::io::load_key_uncompressed;
 use rand::rngs::OsRng;
 
 use crate::app::snark::context::CircuitInput;

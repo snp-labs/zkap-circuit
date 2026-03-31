@@ -1,9 +1,25 @@
-pub mod anchor;
+extern crate alloc;
+
+// Always available
 pub mod utils;
-pub mod matrix;
-pub mod hashes;
-pub mod base64;
-pub mod bigint;
-pub mod signature;
-pub mod mekletree;
 pub mod debug;
+
+// Feature-gated modules
+#[cfg(feature = "anchor")]
+pub mod anchor;
+#[cfg(feature = "anchor")]
+pub mod matrix;
+
+#[cfg(feature = "hashes-poseidon")]
+pub mod hashes;
+
+#[cfg(feature = "merkletree")]
+pub mod mekletree;
+
+#[cfg(feature = "base64")]
+pub mod base64;
+
+#[cfg(feature = "rsa")]
+pub mod bigint;
+#[cfg(feature = "rsa")]
+pub mod signature;

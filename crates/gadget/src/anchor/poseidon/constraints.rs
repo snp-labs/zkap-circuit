@@ -1,4 +1,4 @@
-use std::{borrow::Borrow, marker::PhantomData};
+use core::{borrow::Borrow, marker::PhantomData};
 
 use ark_crypto_primitives::{crh::poseidon::constraints::CRHParametersVar, sponge::Absorb};
 use ark_ff::PrimeField;

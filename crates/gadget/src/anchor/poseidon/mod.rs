@@ -208,7 +208,7 @@ impl<F: PrimeField + Absorb> HashedSecretsCache<F> {
 // ==================== Poseidon Anchor Scheme V3 ====================
 
 pub struct PoseidonAnchorScheme<F: PrimeField> {
-    _phantom: std::marker::PhantomData<F>,
+    _phantom: core::marker::PhantomData<F>,
 }
 
 impl<F: PrimeField + Absorb> AnchorUtils for PoseidonAnchorScheme<F> {

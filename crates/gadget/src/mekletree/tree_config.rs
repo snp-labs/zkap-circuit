@@ -1,7 +1,7 @@
 use ark_crypto_primitives::sponge::Absorb;
 use ark_ff::PrimeField;
 use ark_r1cs_std::fields::fp::FpVar;
-use std::marker::PhantomData;
+use core::marker::PhantomData;
 
 use ark_crypto_primitives::merkle_tree::{
     Config, IdentityDigestConverter, Path, constraints::ConfigGadget,

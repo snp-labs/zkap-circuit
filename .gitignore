@@ -22,6 +22,9 @@ crates/gadget/tests/
 # Packages (WIP, not yet tracked)
 packages/
 
+# Environment
+.env
+
 # macOS
 .DS_Store
 **/.DS_Store

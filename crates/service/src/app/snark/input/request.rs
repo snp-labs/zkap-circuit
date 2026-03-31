@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use common::constants::{F, ZkPasskeyConfig};
+use circuit::constants::{F, ZkPasskeyConfig};
 use gadget::anchor::poseidon::PoseidonAnchor;
 
 use crate::{app::jwt::builder::TokenBuilder, error::ApplicationError};
@@ -102,7 +102,7 @@ impl ProofRequest {
 
     /// Raw 입력을 도메인 객체로 파싱
     fn parse<Config: ZkPasskeyConfig>(raw: RawProofRequest) -> Result<Self, ApplicationError> {
-        use common::field_parser::hex_decimal_to_field;
+        use circuit::field_parser::hex_decimal_to_field;
 
         // TokenBuilder 생성
         let token_builders: Vec<TokenBuilder> = raw
@@ -163,7 +163,7 @@ impl ProofRequest {
 
     /// Anchor 문자열 배열 파싱
     fn parse_anchor(raw_anchor: &[String]) -> Result<AnchorData, ApplicationError> {
-        use common::field_parser::hex_decimal_to_field;
+        use circuit::field_parser::hex_decimal_to_field;
 
         if raw_anchor.is_empty() {
             return Err(ApplicationError::InvalidFormat(

@@ -5,7 +5,7 @@
 #![allow(dead_code)]
 
 use ark_crypto_primitives::merkle_tree::Path;
-use common::constants::F;
+use circuit::constants::F;
 use gadget::{
     anchor::poseidon::PoseidonAnchor,
     mekletree::tree_config::MerkleTreeParams,

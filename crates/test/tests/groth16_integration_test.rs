@@ -4,7 +4,7 @@
 // use ark_ff::BigInteger;
 // use ark_groth16::{Groth16, VerifyingKey};
 // use ark_serialize::CanonicalSerialize;
-// use common::gadget::anchor::AnchorScheme;
+// use circuit::gadget::anchor::AnchorScheme;
 // use common_gadget::{
 //     anchor::poseidon::{PoseidonAnchor, PoseidonAnchorWitness},
 //     hashes::poseidon::{constraints::chain_hash_gadget, get_poseidon_params},
@@ -43,7 +43,7 @@
 // /// 테스트용 Anchor Key 생성
 // fn create_test_anchor_key(path: &PathBuf) {
 //     use ark_std::rand::rngs::OsRng;
-//     use common::gadget::anchor::poseidon::PoseidonAnchorScheme;
+//     use circuit::gadget::anchor::poseidon::PoseidonAnchorScheme;
 
 //     let mut rng = OsRng;
 //     let n = 6;
@@ -97,8 +97,8 @@
 
 // fn create_test_leaf(iss: &str, n: &str) -> AppField {
 //     use ark_crypto_primitives::crh::CRHScheme;
-//     use common::codec::point::ascii_to_field_be;
-//     use common::gadget::signature::rsa::native::PublicKey;
+//     use circuit::codec::point::ascii_to_field_be;
+//     use circuit::gadget::signature::rsa::native::PublicKey;
 //     use common_gadget::base64::decode_any_base64;
 //     use common_gadget::hashes::poseidon::get_poseidon_params;
 //     use zkpasskey_crypto_modules::service::constants::{AppCurve, AppField, BNP, PoseidonHash};

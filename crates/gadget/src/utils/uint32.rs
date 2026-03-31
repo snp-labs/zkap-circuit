@@ -1,4 +1,4 @@
-use std::iter;
+use core::iter;
 
 use ark_ff::PrimeField;
 use ark_r1cs_std::{prelude::Boolean, prelude::ToBitsGadget, uint8::UInt8, uint32::UInt32};

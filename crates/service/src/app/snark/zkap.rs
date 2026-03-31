@@ -35,7 +35,7 @@
 //! ```
 
 use ark_groth16::Proof;
-use common::constants::{BN254, F, ZkPasskeyConfig};
+use circuit::constants::{BN254, F, ZkPasskeyConfig};
 use log;
 
 use crate::error::ApplicationError;

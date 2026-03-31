@@ -1,21 +1,18 @@
 [workspace]
 resolver = "3"
 members = [
-    # "bindings/frb",
-    "bindings/craby",
     "bindings/napi",
+    "bindings/uniffi",
     "bindings/wasm",
 
     "crates/circuit",
     "crates/gadget",
     "crates/service",
     "crates/test",
-    "crates/common"
 ]
 
 [workspace.dependencies]
-common                    = { path = "crates/common" }
-gadget                    = { path = "crates/gadget" }
+gadget                    = { path = "crates/gadget", default-features = false }
 circuit                   = { path = "crates/circuit" }
 zkpasskey-service         = { path = "crates/service" }
 
@@ -43,19 +40,19 @@ num-integer = { version = "0.1.46" }
 num-bigint = { version = "0.4.6" }
 num-traits = { version = "0.2.19" }
 blake2 = { version = "0.10" }
-dotenv = { version = "0.15" }
+dotenvy = { version = "0.15" }
 hex = { version = "0.4" }
 rand = { version = "0.8" }
 sha2 = { version = "0.10" }
 jsonwebtoken = { version = "10", features = ["aws_lc_rs"] }
 
-flutter_rust_bridge = "=2.11.1"
 napi = { version = "3.3.0" }
 napi-derive = { version = "3.0.0" }
 napi-build = { version = "2" }
 serde_json = { version = "1.0.145" }
 anyhow = { version = "1.0.100" } 
 clap = { version = "4.5.53" }
+ctor = { version = "0.2" }
 
 log = "0.4"
 android_logger = { version = "0.13" }
@@ -73,3 +70,4 @@ ark-relations = { path = "vendor/ark-relations-0.5.1" }
 [profile.release]
 lto = true
 strip = "symbols"
+panic = "abort"

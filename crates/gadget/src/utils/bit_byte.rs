@@ -1,4 +1,4 @@
-use std::borrow::Cow;
+use alloc::borrow::Cow;
 
 use ark_ff::PrimeField;
 use ark_r1cs_std::{

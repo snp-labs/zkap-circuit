@@ -1,7 +1,6 @@
 pub mod constraints;
 
 use std::marker::PhantomData;
-use std::panic::{self, AssertUnwindSafe};
 
 use crate::bigint::{constraints::BigNatCircuitParams, utils::nat_to_limbs};
 use crate::signature::{SignatureScheme, errors::SignatureError};
@@ -93,18 +92,8 @@ where
         let bits = BNP::LIMB_WIDTH * BNP::N_LIMBS; // 2048 bits for RSA-2048
         let mut rng = OsRng; // Use OsRng for cryptographic randomness
 
-        // TODO: 반복되는 에러처리 코드 개선
-        let result = panic::catch_unwind(AssertUnwindSafe(|| RsaPrivateKey::new(&mut rng, bits)));
-
-        let priv_key = match result {
-            Ok(Ok(key)) => key,
-            Ok(Err(_e)) => return Err(SignatureError::GenerateLibKeyError),
-            Err(_) => {
-                return Err(SignatureError::Panic(
-                    "lib priv_key generation panicked".to_string(),
-                ));
-            }
-        };
+        let priv_key = RsaPrivateKey::new(&mut rng, bits)
+            .map_err(|_| SignatureError::GenerateLibKeyError)?;
 
         let pub_key = RsaPublicKey::from(&priv_key);
         let pub_key = PublicKey {
@@ -129,25 +118,13 @@ where
         message: &[u8],
         _rng: &mut R,
     ) -> Result<Signature, SignatureError> {
-        // TODO: 반복되는 에러처리 코드 개선
-        let result = panic::catch_unwind(move || {
-            RsaPrivateKey::from_components(
-                sk.n.clone(),
-                BigUint::from_bytes_be(&sk.pk.e),
-                sk.d.clone(),
-                sk.primes.clone(),
-            )
-        });
-
-        let priv_key = match result {
-            Ok(Ok(key)) => key,
-            Ok(Err(_e)) => return Err(SignatureError::GenerateLibKeyError),
-            Err(_) => {
-                return Err(SignatureError::Panic(
-                    "lib priv_key generation panicked".to_string(),
-                ));
-            }
-        };
+        let priv_key = RsaPrivateKey::from_components(
+            sk.n.clone(),
+            BigUint::from_bytes_be(&sk.pk.e),
+            sk.d.clone(),
+            sk.primes.clone(),
+        )
+        .map_err(|_| SignatureError::GenerateLibKeyError)?;
 
         let mut rng = OsRng; // Use OsRng for cryptographic randomness
         let signing_key = SigningKey::<D>::new(priv_key);
@@ -162,20 +139,11 @@ where
         message: &[u8],
         signature: &Signature,
     ) -> Result<bool, SignatureError> {
-        // TODO: 반복되는 에러처리 코드 개선
-        let result = panic::catch_unwind(move || {
-            RsaPublicKey::new(BigUint::from_bytes_be(&pk.n), BigUint::from_bytes_be(&pk.e))
-        });
-
-        let pub_key = match result {
-            Ok(Ok(key)) => key,
-            Ok(Err(_e)) => return Err(SignatureError::GenerateLibKeyError),
-            Err(_) => {
-                return Err(SignatureError::Panic(
-                    "lib pub_key generation panicked".to_string(),
-                ));
-            }
-        };
+        let pub_key = RsaPublicKey::new(
+            BigUint::from_bytes_be(&pk.n),
+            BigUint::from_bytes_be(&pk.e),
+        )
+        .map_err(|_| SignatureError::GenerateLibKeyError)?;
 
         let verifying_key = VerifyingKey::<D>::new(pub_key);
         let signature = CrateSignature::try_from(signature.0.as_slice())

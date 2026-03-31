@@ -1,6 +1,6 @@
 use ark_bn254::Bn254;
 use ark_groth16::Proof;
-use common::constants::{F, ZkPasskeyConfig};
+use circuit::constants::{F, ZkPasskeyConfig};
 
 use crate::{RawProofRequest, app, error::ApplicationError};
 

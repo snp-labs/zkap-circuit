@@ -4,9 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-gadget = { workspace = true }
+gadget = { workspace = true, default-features = false, features = ["crypto", "base64", "rsa"] }
 circuit = { workspace = true }
-common = { workspace = true }
 
 thiserror = { workspace = true }
 serde     = { workspace = true }
@@ -35,7 +34,6 @@ android_logger = { workspace = true }
 num-traits  = { workspace = true }
 
 blake2 = { workspace = true }
-dotenv = { workspace = true }
 hex    = { workspace = true }
 rand   = { workspace = true }
 sha2   = { workspace = true }
@@ -50,6 +48,5 @@ mimalloc = { workspace = true }
 
 [features]
 default = []
-legacy = []
 use-optimized = [] # 이 플래그가 켜지면 최적화 함수 호출
 constraints-logging = ["gadget/constraints-logging", "circuit/constraints-logging"]

@@ -1,5 +1,5 @@
 use circuit::token::{Claim, ClaimIndices, error::TokenError, parse_claim_from_str};
-use common::constants::ZkPasskeyConfig;
+use circuit::constants::ZkPasskeyConfig;
 use gadget::{
     base64::mod_v2::{IndexBits, decode_any_base64, decode_any_base64_to_string},
     hashes::sha256::{H, utils::update},

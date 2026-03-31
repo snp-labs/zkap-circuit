@@ -1,4 +1,4 @@
-use std::ops::Mul;
+use core::ops::Mul;
 
 use ark_ff::PrimeField;
 use ark_r1cs_std::{

@@ -1,4 +1,4 @@
-use common::error::{FieldParseError, TextError};
+use circuit::error::{FieldParseError, TextError};
 use gadget::anchor::error::AnchorError;
 use thiserror::Error;
 

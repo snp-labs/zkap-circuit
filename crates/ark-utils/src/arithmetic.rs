@@ -1,15 +1,8 @@
 use core::ops::Mul;
 
 use ark_ff::PrimeField;
-use ark_r1cs_std::{
-    R1CSVar,
-    eq::EqGadget,
-    fields::{FieldVar, fp::FpVar},
-    prelude::{Boolean, ToBitsGadget},
-};
+use ark_r1cs_std::{R1CSVar, fields::{FieldVar, fp::FpVar}};
 use ark_relations::r1cs::SynthesisError;
-
-use crate::a_lt_b;
 
 /// 두 벡터의 스칼라 곱(내적)을 계산합니다: `Σ (in1[i] * in2[i])`
 ///
@@ -50,27 +43,11 @@ where
     a.iter().zip(b.iter()).map(|(a_i, b_i)| a_i * b_i).collect()
 }
 
-/// 정수 관계식 `a = q * m + r`과 `r < m` 조건을 검증합니다.
-pub fn verify_integer_relation<F: PrimeField>(
-    a: &FpVar<F>,
-    q: &FpVar<F>,
-    r: &FpVar<F>,
-    m: &FpVar<F>,
-) -> Result<(), SynthesisError> {
-    let rhs = q * m + r;
-    a.enforce_equal(&rhs)?;
-
-    let result = a_lt_b(&r.to_bits_le()?, &m.to_bits_le()?)?;
-    result.enforce_equal(&Boolean::TRUE)?;
-
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use ark_bn254::Fr;
-    use ark_r1cs_std::{alloc::AllocVar, eq};
+    use ark_r1cs_std::{alloc::AllocVar, eq::EqGadget};
     use ark_relations::r1cs::ConstraintSystem;
 
     #[test]
@@ -271,98 +248,5 @@ mod tests {
         let b = vec![FpVar::new_witness(cs.clone(), || Ok(Fr::from(3u64))).unwrap()];
 
         let _ = hadamard_product(&a, &b);
-    }
-
-    #[test]
-    fn test_verify_integer_relation_valid() {
-        let cs = ConstraintSystem::<Fr>::new_ref();
-
-        // 17 = 3 * 5 + 2, where 2 < 5
-        let a = FpVar::new_witness(cs.clone(), || Ok(Fr::from(17u64))).unwrap();
-        let q = FpVar::new_witness(cs.clone(), || Ok(Fr::from(3u64))).unwrap();
-        let r = FpVar::new_witness(cs.clone(), || Ok(Fr::from(2u64))).unwrap();
-        let m = FpVar::new_witness(cs.clone(), || Ok(Fr::from(5u64))).unwrap();
-
-        let result = verify_integer_relation(&a, &q, &r, &m);
-        assert!(result.is_ok());
-        assert!(cs.is_satisfied().unwrap());
-    }
-
-    #[test]
-    fn test_verify_integer_relation_zero_quotient() {
-        let cs = ConstraintSystem::<Fr>::new_ref();
-
-        // 3 = 0 * 5 + 3, where 3 < 5
-        let a = FpVar::new_witness(cs.clone(), || Ok(Fr::from(3u64))).unwrap();
-        let q = FpVar::zero();
-        let r = FpVar::new_witness(cs.clone(), || Ok(Fr::from(3u64))).unwrap();
-        let m = FpVar::new_witness(cs.clone(), || Ok(Fr::from(5u64))).unwrap();
-
-        let result = verify_integer_relation(&a, &q, &r, &m);
-        assert!(result.is_ok());
-        assert!(cs.is_satisfied().unwrap());
-    }
-
-    #[test]
-    fn test_verify_integer_relation_zero_remainder() {
-        let cs = ConstraintSystem::<Fr>::new_ref();
-
-        // 15 = 3 * 5 + 0, where 0 < 5
-        let a = FpVar::new_witness(cs.clone(), || Ok(Fr::from(15u64))).unwrap();
-        let q = FpVar::new_witness(cs.clone(), || Ok(Fr::from(3u64))).unwrap();
-        let r = FpVar::zero();
-        let m = FpVar::new_witness(cs.clone(), || Ok(Fr::from(5u64))).unwrap();
-
-        let result = verify_integer_relation(&a, &q, &r, &m);
-        assert!(result.is_ok());
-        assert!(cs.is_satisfied().unwrap());
-    }
-
-    #[test]
-    fn test_verify_integer_relation_invalid_equation() {
-        let cs = ConstraintSystem::<Fr>::new_ref();
-
-        // 17 != 3 * 5 + 3 (should be 18)
-        let a = FpVar::new_witness(cs.clone(), || Ok(Fr::from(17u64))).unwrap();
-        let q = FpVar::new_witness(cs.clone(), || Ok(Fr::from(3u64))).unwrap();
-        let r = FpVar::new_witness(cs.clone(), || Ok(Fr::from(3u64))).unwrap();
-        let m = FpVar::new_witness(cs.clone(), || Ok(Fr::from(5u64))).unwrap();
-
-        let result = verify_integer_relation(&a, &q, &r, &m);
-        // 제약 조건 추가는 성공하지만, 회로가 만족되지 않아야 함
-        assert!(result.is_ok());
-        assert!(!cs.is_satisfied().unwrap());
-    }
-
-    #[test]
-    fn test_verify_integer_relation_remainder_not_less_than_modulus() {
-        let cs = ConstraintSystem::<Fr>::new_ref();
-
-        // 17 = 2 * 5 + 7, but 7 >= 5 (invalid remainder)
-        let a = FpVar::new_witness(cs.clone(), || Ok(Fr::from(17u64))).unwrap();
-        let q = FpVar::new_witness(cs.clone(), || Ok(Fr::from(2u64))).unwrap();
-        let r = FpVar::new_witness(cs.clone(), || Ok(Fr::from(7u64))).unwrap();
-        let m = FpVar::new_witness(cs.clone(), || Ok(Fr::from(5u64))).unwrap();
-
-        let result = verify_integer_relation(&a, &q, &r, &m);
-        // 제약 조건 추가는 성공하지만, 회로가 만족되지 않아야 함
-        assert!(result.is_ok());
-        assert!(!cs.is_satisfied().unwrap());
-    }
-
-    #[test]
-    fn test_verify_integer_relation_remainder_equal_to_modulus() {
-        let cs = ConstraintSystem::<Fr>::new_ref();
-
-        // 15 = 2 * 5 + 5, but 5 == 5 (invalid, remainder must be strictly less)
-        let a = FpVar::new_witness(cs.clone(), || Ok(Fr::from(15u64))).unwrap();
-        let q = FpVar::new_witness(cs.clone(), || Ok(Fr::from(2u64))).unwrap();
-        let r = FpVar::new_witness(cs.clone(), || Ok(Fr::from(5u64))).unwrap();
-        let m = FpVar::new_witness(cs.clone(), || Ok(Fr::from(5u64))).unwrap();
-
-        let result = verify_integer_relation(&a, &q, &r, &m);
-        // 제약 조건 추가는 성공하지만, 회로가 만족되지 않아야 함
-        assert!(result.is_ok());
-        assert!(!cs.is_satisfied().unwrap());
     }
 }

@@ -48,18 +48,6 @@ pub fn is_less_or_equal<F: PrimeField>(
     Ok(&less | &equal)
 }
 
-/// A > B (Greater Than)
-pub fn is_greater_than<F: PrimeField>(
-    a_bits: &[Boolean<F>],
-    b_bits: &[Boolean<F>],
-) -> Result<Boolean<F>, SynthesisError> {
-    let (less, equal) = compare_bits_raw(a_bits, b_bits)?;
-    // A > B 는 "NOT (A <= B)" 와 동일합니다.
-    // 즉, !(less | equal) 혹은 (!less & !equal)
-    let less_or_equal = &less | &equal;
-    Ok(!less_or_equal)
-}
-
 /// A >= B (Greater or Equal)
 pub fn is_greater_or_equal<F: PrimeField>(
     a_bits: &[Boolean<F>],

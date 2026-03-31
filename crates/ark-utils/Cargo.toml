@@ -12,5 +12,8 @@ ark-r1cs-std = { workspace = true }
 ark-relations = { workspace = true }
 ark-std = { workspace = true }
 
+[dev-dependencies]
+ark-bn254 = { workspace = true }
+
 [features]
 default = []

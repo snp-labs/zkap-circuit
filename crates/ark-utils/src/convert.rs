@@ -66,18 +66,6 @@ impl<F: PrimeField> ToField<F> for Vec<&String> {
     }
 }
 
-pub fn str_to_packed_field<F: PrimeField>(
-    str: &str,
-    pad_char: u8,
-    max_claim_len: usize,
-) -> Result<Vec<F>, UtilError> {
-    let mut bytes = str.as_bytes().to_vec();
-    bytes.resize(max_claim_len, pad_char);
-    let bytes_string = String::from_utf8(bytes).map_err(|_| UtilError::ConversionError)?;
-    let result = bytes_string.as_str().to_fields()?;
-    Ok(result)
-}
-
 pub fn str_to_fields<F: PrimeField>(s: &str) -> Vec<F> {
     let bytes = s.as_bytes();
 
@@ -93,6 +81,10 @@ pub fn str_to_fields<F: PrimeField>(s: &str) -> Vec<F> {
         .collect()
 }
 
+/// 문자열을 패딩 후 필드 원소 벡터로 변환합니다.
+///
+/// 문자열을 `target_len` 길이까지 `pad` 문자로 패딩한 후,
+/// limb 단위로 분할하여 필드 원소 벡터로 변환합니다.
 pub fn str_to_limbs<F: PrimeField>(s: &str, target_len: usize, pad: u8) -> Vec<F> {
     let mut bytes = s.as_bytes().to_vec();
     bytes.resize(target_len, pad);

@@ -39,38 +39,6 @@ pub fn a_lt_b<F: PrimeField>(
     Ok(less)
 }
 
-/// 비트 슬라이스를 비교하여 `a > b`를 반환합니다.
-///
-/// MSB부터 LSB로 순회하며 두 플래그를 유지합니다:
-/// - `greater`: `a > b`가 확정되면 true (sticky)
-/// - `equal`: 현재까지 모든 비트가 동일하면 true
-///
-/// 각 비트에서 `greater |= equal & a_bit & !b_bit`, `equal &= a_bit XNOR b_bit`를 수행합니다.
-pub fn a_gt_b<F: PrimeField>(
-    a_bits: &[Boolean<F>],
-    b_bits: &[Boolean<F>],
-) -> Result<Boolean<F>, SynthesisError> {
-    // [ZKAPCIR-003] 비트 길이 불일치 시 zip이 상위 비트를 무시하는 문제 방지
-    assert_eq!(
-        a_bits.len(),
-        b_bits.len(),
-        "Bit lengths must be equal for comparison"
-    );
-
-    let mut greater = Boolean::constant(false);
-    let mut equal = Boolean::constant(true);
-
-    for (a_bit, b_bit) in a_bits.iter().rev().zip(b_bits.iter().rev()) {
-        let a_gt_b_at_current_bit = &equal & (a_bit & !b_bit);
-        greater = &greater | a_gt_b_at_current_bit;
-
-        let bits_are_equal_at_current_bit = !(a_bit ^ b_bit);
-        equal = &equal & bits_are_equal_at_current_bit;
-    }
-
-    Ok(greater)
-}
-
 /// `i < index`일 때 `out[i] = 1`인 비트 벡터를 생성합니다.
 ///
 /// `index - 1`의 원-핫 벡터를 생성한 후, 접미사 OR 스캔을 수행하여

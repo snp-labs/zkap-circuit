@@ -1,3 +1,30 @@
+//! Custom comparison gadgets for arkworks circuits.
+//!
+//! # Why Custom Implementation?
+//!
+//! This module provides custom comparison operations instead of using
+//! `ark-r1cs-std`'s built-in `enforce_cmp` method due to a known bug in
+//! arkworks 0.5.0.
+//!
+//! ## arkworks Bug Reference
+//!
+//! The `FpVar::enforce_cmp` method in ark-r1cs-std 0.5.0 has incorrect behavior
+//! when comparing field elements. This is tracked in:
+//! - GitHub Issue: <https://github.com/arkworks-rs/r1cs-std/issues/161>
+//!
+//! ## Our Solution
+//!
+//! We implement comparison using bit decomposition, comparing bits from MSB to LSB.
+//! This approach:
+//! - Correctly handles all comparison cases
+//! - Works with Little-Endian bit vectors (from `to_bits_le()`)
+//! - Provides `is_less_than`, `is_less_or_equal`, `is_greater_than`, `is_greater_or_equal`
+//!
+//! ## Usage Notes
+//!
+//! Input bit vectors must have equal lengths. Use `to_bits_le_with_top_bits_zero(n)`
+//! to ensure consistent bit widths before comparison.
+
 use ark_ff::PrimeField;
 use ark_r1cs_std::prelude::*;
 use ark_relations::r1cs::SynthesisError;

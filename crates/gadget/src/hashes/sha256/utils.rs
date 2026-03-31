@@ -20,8 +20,8 @@ pub fn sha256_pad_with_len(input: &[u8], max_len: usize) -> Vec<u8> {
     let block_size = 64; // Block size in bytes
     let mut padded = input.to_vec();
 
-    // Append the '1' bit as 0x80
-    padded.push(0x80);
+    // Append the '1' bit as SHA256_PAD_MARKER (0x80)
+    padded.push(crate::constants::SHA256_PAD_MARKER);
 
     // Calculate the number of zero bytes to add
     let zero_pad_len = (block_size - ((padded.len() + 8) % block_size)) % block_size;

@@ -211,7 +211,7 @@ where
         let pk_op = PublicKeyVar::<C::BaseField, BNP>::new_witness(cs.clone(), || Ok(self.pk_op))?;
 
         // [ZKAPCIR-001] RSA e=65537 강제
-        let expected_e = BigNatVar::<C::BaseField, BNP>::constant(&BigNat::from(65537u64))?;
+        let expected_e = BigNatVar::<C::BaseField, BNP>::constant(&BigNat::from(gadget::constants::RSA_DEFAULT_EXPONENT))?;
         pk_op.e.enforce_equal_when_carried(&expected_e)?;
 
         let signature_op =
@@ -632,17 +632,17 @@ where
             leaf_idx: input.merkle.leaf_idx,
             path: input.merkle.path,
             anchor: input.anchor.anchor,
-            midstate: input.jwt.midstate,
+            midstate: input.jwt.state,
             nblocks: input.jwt.nblocks,
-            token_claim: input.jwt.token_claim,
-            payload_offset_b64: input.jwt.payload_offset_b64,
-            payload_len_b64: input.jwt.payload_len_b64,
+            token_claim: input.jwt.claim_indices,
+            payload_offset_b64: input.jwt.pay_offset_b64,
+            payload_len_b64: input.jwt.pay_len_b64,
             sha_pad_payload_b64: input.jwt.sha_pad_payload_b64,
             index_bits: input.jwt.index_bits,
-            pk_op: input.jwt.pk_op,
-            signature_op: input.jwt.signature_op,
+            pk_op: input.jwt.pk,
+            signature_op: input.jwt.sig,
             a: input.anchor.a,
-            indices: input.anchor.indices,
+            indices: input.anchor.selector,
             current_idx: input.anchor.current_idx,
             aud_list: input.audience.aud_list,
             total_len: input.jwt.total_len,

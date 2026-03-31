@@ -1,6 +1,7 @@
 extern crate alloc;
 
 // Always available
+pub mod constants;
 pub mod utils;
 pub mod debug;
 

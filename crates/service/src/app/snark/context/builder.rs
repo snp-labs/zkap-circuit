@@ -1,5 +1,9 @@
 use ark_crypto_primitives::crh::CRHScheme;
 use ark_crypto_primitives::merkle_tree::Path;
+use circuit::{
+    AnchorWitness, AudienceWitness, BaeraeCircuitInput, CircuitConstants, CircuitPublicInputs,
+    JwtWitness, MerkleWitness, MiscWitness,
+};
 use circuit::constants::{F, PoseidonHash, ZkPasskeyConfig};
 use circuit::field_parser::{ascii_to_field_be, hex_decimal_to_field};
 use circuit::text::pad;
@@ -15,7 +19,6 @@ use crate::error::ApplicationError;
 
 use super::anchor::AnchorContext;
 use super::audience::AudienceContext;
-use super::circuit_input::{AnchorWitness, CircuitInput, JwtWitness, MerkleWitness, PublicInputs};
 
 /// 증명 컨텍스트 빌더
 ///
@@ -122,11 +125,11 @@ impl<Config: ZkPasskeyConfig> ProofContextBuilder<Config> {
         Ok(self)
     }
 
-    /// i번째 증명을 위한 CircuitInput 생성
+    /// i번째 증명을 위한 BaeraeCircuitInput 생성
     pub fn build_circuit_input(
         &self,
         proof_index: usize,
-    ) -> Result<CircuitInput, ApplicationError> {
+    ) -> Result<BaeraeCircuitInput<F>, ApplicationError> {
         let anchor_ctx = self
             .anchor_ctx
             .as_ref()
@@ -147,8 +150,13 @@ impl<Config: ZkPasskeyConfig> ProofContextBuilder<Config> {
 
         let leaf_idx = self.request.merkle.leaf_indices[proof_index];
 
-        Ok(CircuitInput {
-            public: PublicInputs {
+        Ok(BaeraeCircuitInput {
+            constants: CircuitConstants {
+                vandermonde_matrix: self.circuit_ctx.vandermonde_matrix.clone(),
+                poseidon_param: self.circuit_ctx.poseidon_params.clone(),
+                base64_table: self.circuit_ctx.base64_table.clone(),
+            },
+            public_inputs: CircuitPublicInputs {
                 hanchor: self.request.anchor.hanchor,
                 h_a: anchor_ctx.h_a,
                 root: self.request.merkle.root,
@@ -158,7 +166,20 @@ impl<Config: ZkPasskeyConfig> ProofContextBuilder<Config> {
                 lhs: anchor_ctx.lhs,
                 h_aud_list: audience_ctx.h_aud_list,
             },
-            jwt: JwtWitness::from(jwt_witness),
+            jwt: JwtWitness {
+                state: jwt_witness.state,
+                nblocks: jwt_witness.nblocks,
+                claim_indices: jwt_witness.claim_indices,
+                pay_offset_b64: jwt_witness.pay_offset_b64,
+                pay_len_b64: jwt_witness.pay_len_b64,
+                sha_pad_payload_b64: jwt_witness.sha_pad_payload_b64,
+                index_bits: jwt_witness.index_bits,
+                pk: jwt_witness.pk,
+                sig: jwt_witness.sig,
+                total_len: jwt_witness.total_len,
+                pre_hash_block_len: jwt_witness.pre_hash_block_len,
+                pad_start_in_suffix: jwt_witness.pad_start_in_suffix,
+            },
             anchor: AnchorWitness {
                 anchor: self.request.anchor.anchor.clone(),
                 a: anchor_ctx.a.clone(),
@@ -169,21 +190,20 @@ impl<Config: ZkPasskeyConfig> ProofContextBuilder<Config> {
                 path: merkle_path,
                 leaf_idx,
             },
-            aud_list: audience_ctx.padded_list.clone(),
-            random: self.request.execution.random,
+            audience: AudienceWitness {
+                aud_list: audience_ctx.padded_list.clone(),
+            },
+            misc: MiscWitness {
+                random: self.request.execution.random,
+            },
         })
     }
 
-    /// 모든 증명을 위한 CircuitInput 생성
-    pub fn build_all_circuit_inputs(&self) -> Result<Vec<CircuitInput>, ApplicationError> {
+    /// 모든 증명을 위한 BaeraeCircuitInput 생성
+    pub fn build_all_circuit_inputs(&self) -> Result<Vec<BaeraeCircuitInput<F>>, ApplicationError> {
         (0..Config::K)
             .map(|i| self.build_circuit_input(i))
             .collect()
-    }
-
-    /// CircuitContext 참조 반환
-    pub fn circuit_context(&self) -> &CircuitContext<Config> {
-        &self.circuit_ctx
     }
 
     // ============ Private Helper Methods ============

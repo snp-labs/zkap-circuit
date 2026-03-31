@@ -183,7 +183,7 @@ impl TokenBuilder {
 
         // Public Key 구성 (Exponent는 65537 고정)
         let n_decoded = decode_any_base64(pk_modulus_b64)?;
-        let e_decoded = decode_any_base64("AQAB")?;
+        let e_decoded = decode_any_base64(gadget::constants::RSA_DEFAULT_EXPONENT_B64)?;
 
         let pk = PublicKey {
             n: n_decoded,
@@ -251,8 +251,8 @@ fn sha256_pad_with_len(input: &[u8], total_len: usize) -> Vec<u8> {
     let block_size = 64;
     let mut padded = input.to_vec();
 
-    // 1. Append '1' bit (0x80 byte)
-    padded.push(0x80);
+    // 1. Append '1' bit (SHA256_PAD_MARKER = 0x80)
+    padded.push(gadget::constants::SHA256_PAD_MARKER);
 
     // 2. Calculate zero padding
     // 패딩 계산 시, 현재 padded 길이만 고려하는 게 아니라

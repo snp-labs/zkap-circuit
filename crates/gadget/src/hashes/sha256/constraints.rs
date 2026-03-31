@@ -79,9 +79,9 @@ impl<F: PrimeField> SHA256Gadget<F> {
             bytes.iter().map(|&b| UInt8::constant(b)).collect()
         };
 
-        // Padding starts with a 1 followed by some number of zeros (0x80 = 0b10000000)
+        // Padding starts with a 1 followed by some number of zeros (SHA256_PAD_MARKER = 0x80 = 0b10000000)
         let mut pending = vec![UInt8::constant(0); 72];
-        pending[0] = UInt8::constant(0x80);
+        pending[0] = UInt8::constant(crate::constants::SHA256_PAD_MARKER);
 
         // We'll either append to the 56+8 = 64 byte boundary or the 120+8 = 128 byte boundary,
         // depending on whether we have at least 56 unprocessed bytes
@@ -399,8 +399,8 @@ impl<F: PrimeField> SHA256Gadget<F> {
             PAD_REGION_MAX,
         )?;
 
-        // 첫 바이트는 0x80
-        pad_region[0].enforce_equal(&FpVar::<F>::constant(F::from(0x80u64)))?;
+        // 첫 바이트는 SHA256_PAD_MARKER (0x80)
+        pad_region[0].enforce_equal(&FpVar::<F>::constant(F::from(crate::constants::SHA256_PAD_MARKER as u64)))?;
 
         // 나머지 바이트는 모두 0
         for i in 1..PAD_REGION_MAX {

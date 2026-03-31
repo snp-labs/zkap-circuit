@@ -171,7 +171,7 @@ check_prerequisites() {
         exit 1
     fi
 
-    # Rust 타겟 확인 (NAPI 빌드 시에만)
+    # Rust 타겟 확인 (NAPI 빌드 + 크로스 컴파일 시에만)
     local missing_targets=()
     if [ "$KEYS_ONLY" != true ]; then
         # rustup 호출을 한 번만 수행 (성능 최적화)
@@ -179,6 +179,11 @@ check_prerequisites() {
         installed_targets=$(rustup target list --installed 2>/dev/null || echo "")
 
         for env in "${ENVIRONMENTS[@]}"; do
+            # 네이티브 빌드는 타겟 설치 불필요
+            if ! needs_cross_compile_for_env "$env"; then
+                continue
+            fi
+
             local target=""
             case $env in
                 macos-arm64) target="aarch64-apple-darwin" ;;
@@ -310,6 +315,15 @@ fi
 if [[ " ${ENVIRONMENTS[*]} " =~ " all " ]]; then
     ENVIRONMENTS=("${AVAILABLE_ENVS[@]}")
 fi
+
+# 중복 환경 제거
+unique_envs=()
+for env in "${ENVIRONMENTS[@]}"; do
+    if [[ ! " ${unique_envs[*]} " =~ " ${env} " ]]; then
+        unique_envs+=("$env")
+    fi
+done
+ENVIRONMENTS=("${unique_envs[@]}")
 
 # 유효한 환경인지 검증
 for env in "${ENVIRONMENTS[@]}"; do

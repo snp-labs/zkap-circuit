@@ -248,7 +248,7 @@ build_napi_for_env() {
 
     log_info "빌드 중: $env"
 
-    local output_dir="$OUTPUT_DIR/napi/$env"
+    local output_dir="../../$OUTPUT_DIR/napi/$env"
 
     # 빌드 명령어 구성
     local cmd="npx napi build --platform --release --output-dir \"$output_dir\" --features constraints-logging"

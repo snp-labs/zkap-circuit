@@ -57,7 +57,7 @@ use gadget::{
         sha256::constraints::SHA256Gadget,
     },
     matrix::{VandermondeMatrix, constraints_v2::VandermondeMatrixVar},
-    mekletree::tree_config::{Empty, MerkleTreeParams, MerkleTreeParamsVar},
+    merkletree::tree_config::{Empty, MerkleTreeParams, MerkleTreeParamsVar},
     signature::rsa::{
         PublicKey, Signature,
         constraints::{PublicKeyVar, SignatureVar},

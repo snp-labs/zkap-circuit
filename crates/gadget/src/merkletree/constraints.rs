@@ -13,7 +13,7 @@ use ark_r1cs_std::{
 };
 use ark_relations::r1cs::{Namespace, SynthesisError};
 
-use crate::mekletree::{
+use crate::merkletree::{
     MerkleCircuitInput,
     tree_config::{MerkleTreeParams, MerkleTreeParamsVar},
 };
@@ -125,7 +125,7 @@ mod tests {
     use crate::{
         bigint::constraints::BigNatCircuitParams,
         hashes::poseidon::get_poseidon_params,
-        mekletree::tree_config::{MerkleTreeParams, MerkleTreeParamsVar},
+        merkletree::tree_config::{MerkleTreeParams, MerkleTreeParamsVar},
     };
 
     const LAMBDA: usize = 2048; // 2048 bits

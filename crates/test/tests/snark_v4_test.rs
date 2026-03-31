@@ -21,7 +21,7 @@ use gadget::{
         poseidon::get_poseidon_params,
     },
     matrix::VandermondeMatrix,
-    mekletree::tree_config::MerkleTreeParams, signature::rsa::PublicKey,
+    merkletree::tree_config::MerkleTreeParams, signature::rsa::PublicKey,
 };
 use zkpasskey_service::{Secret, api::generate_baerae_proof, create_poseidon_anchor};
 

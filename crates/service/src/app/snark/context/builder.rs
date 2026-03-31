@@ -9,7 +9,7 @@ use circuit::field_parser::{ascii_to_field_be, hex_decimal_to_field};
 use circuit::text::pad;
 use gadget::anchor::AnchorUtils;
 use gadget::anchor::poseidon::{PoseidonAnchorScheme, PoseidonAnchorWitness, build_anchor_witness};
-use gadget::mekletree::tree_config::MerkleTreeParams;
+use gadget::merkletree::tree_config::MerkleTreeParams;
 
 use crate::Secret;
 use crate::app::anchor::poseidon::{derive_selector_from_x_list_and_anchor, derive_x_from_secret};

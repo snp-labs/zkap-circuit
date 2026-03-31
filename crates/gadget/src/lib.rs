@@ -15,7 +15,7 @@ pub mod matrix;
 pub mod hashes;
 
 #[cfg(feature = "merkletree")]
-pub mod mekletree;
+pub mod merkletree;
 
 #[cfg(feature = "base64")]
 pub mod base64;

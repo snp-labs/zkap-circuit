@@ -6,7 +6,7 @@ use gadget::{
     anchor::poseidon::PoseidonAnchor,
     base64::{Base64Table, mod_v2::IndexBits},
     matrix::VandermondeMatrix,
-    mekletree::tree_config::MerkleTreeParams,
+    merkletree::tree_config::MerkleTreeParams,
     signature::rsa::{PublicKey, Signature},
 };
 

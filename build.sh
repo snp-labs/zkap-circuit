@@ -15,6 +15,8 @@ set -e  # 에러 발생 시 즉시 중단
 #   --no-clean            클린 빌드 건너뛰기
 #   --output, -o <경로>   출력 디렉토리 (기본: ./output)
 #   --no-package          패키징(tar.gz) 건너뛰기
+#   --dry-run             실제 빌드 없이 설정만 확인
+#   --yes, -y             대화형 프롬프트 자동 승인 (CI용)
 #   --help, -h            도움말 출력
 #
 # 예시:
@@ -23,7 +25,12 @@ set -e  # 에러 발생 시 즉시 중단
 #   ./build.sh -e macos-arm64 -e linux-x64        # 여러 환경 빌드
 #   ./build.sh --napi-only -e windows             # Windows NAPI만 빌드
 #   ./build.sh --keys-only                        # 키 생성만 수행
+#   ./build.sh --dry-run -e linux-x64             # 설정 확인만
+#   ./build.sh --yes -e linux-x64                 # CI 환경 (자동 승인)
 # =============================================================================
+
+# 스크립트 루트 디렉토리 저장
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # 색상 정의
 RED='\033[0;31m'
@@ -39,6 +46,12 @@ KEYS_ONLY=false
 DO_CLEAN=true
 OUTPUT_DIR="./output"
 DO_PACKAGE=true
+DRY_RUN=false
+AUTO_YES=false
+
+# 호스트 OS 및 아키텍처 감지
+HOST_OS="$(uname -s)"
+HOST_ARCH="$(uname -m)"
 
 # 사용 가능한 환경 목록
 AVAILABLE_ENVS=("macos-arm64" "macos-x64" "linux-x64" "linux-arm64" "linux-musl" "windows")
@@ -67,14 +80,174 @@ log_step() {
 
 # 도움말 출력
 show_help() {
-    sed -n '8,26p' "$0" | sed 's/^# //' | sed 's/^#//'
+    sed -n '8,29p' "$0" | sed 's/^# //' | sed 's/^#//'
     exit 0
+}
+
+# cleanup 함수 (trap용)
+cleanup() {
+    local exit_code=$?
+    # pushd 스택이 남아있으면 복귀
+    if [ "$(dirs -p | wc -l)" -gt 1 ]; then
+        popd > /dev/null 2>&1 || true
+    fi
+    exit $exit_code
+}
+trap cleanup EXIT
+
+# .env 파일 로드
+load_env_file() {
+    local env_file="$SCRIPT_DIR/.env"
+    if [ -f "$env_file" ]; then
+        log_info ".env 파일 로드 중: $env_file"
+        set -a
+        # shellcheck source=/dev/null
+        source "$env_file"
+        set +a
+    fi
+}
+
+# 크로스 컴파일 필요 여부 판단 (호스트 OS/아키텍처 기반)
+needs_cross_compile_for_env() {
+    local env=$1
+    case "$HOST_OS-$HOST_ARCH" in
+        Darwin-arm64)
+            # Apple Silicon Mac
+            [[ "$env" != "macos-arm64" ]] && return 0
+            ;;
+        Darwin-x86_64)
+            # Intel Mac
+            [[ "$env" != "macos-x64" ]] && return 0
+            ;;
+        Linux-x86_64)
+            # Linux x64
+            [[ "$env" != "linux-x64" ]] && return 0
+            ;;
+        Linux-aarch64)
+            # Linux ARM64
+            [[ "$env" != "linux-arm64" ]] && return 0
+            ;;
+    esac
+    return 1
+}
+
+# 필수 도구 검증
+check_prerequisites() {
+    local missing_tools=()
+    local needs_cross_compile=false
+
+    # 기본 도구 확인
+    if ! command -v cargo &> /dev/null; then
+        missing_tools+=("cargo (Rust)")
+    fi
+
+    # npm은 NAPI 빌드 시에만 필요
+    if [ "$KEYS_ONLY" != true ]; then
+        if ! command -v npm &> /dev/null; then
+            missing_tools+=("npm (Node.js)")
+        fi
+    fi
+
+    # 크로스 컴파일 필요 여부 확인 (호스트 기반)
+    for env in "${ENVIRONMENTS[@]}"; do
+        if needs_cross_compile_for_env "$env"; then
+            needs_cross_compile=true
+            break
+        fi
+    done
+
+    # 크로스 컴파일 시 zig 필요
+    if [ "$needs_cross_compile" = true ] && [ "$KEYS_ONLY" != true ]; then
+        if ! command -v zig &> /dev/null; then
+            missing_tools+=("zig (크로스 컴파일용)")
+        fi
+    fi
+
+    if [ ${#missing_tools[@]} -gt 0 ]; then
+        log_error "필수 도구가 설치되지 않았습니다:"
+        for tool in "${missing_tools[@]}"; do
+            echo "  - $tool"
+        done
+        exit 1
+    fi
+
+    # Rust 타겟 확인 (NAPI 빌드 + 크로스 컴파일 시에만)
+    local missing_targets=()
+    if [ "$KEYS_ONLY" != true ]; then
+        # rustup 호출을 한 번만 수행 (성능 최적화)
+        local installed_targets
+        installed_targets=$(rustup target list --installed 2>/dev/null || echo "")
+
+        for env in "${ENVIRONMENTS[@]}"; do
+            # 네이티브 빌드는 타겟 설치 불필요
+            if ! needs_cross_compile_for_env "$env"; then
+                continue
+            fi
+
+            local target=""
+            case $env in
+                macos-arm64) target="aarch64-apple-darwin" ;;
+                macos-x64) target="x86_64-apple-darwin" ;;
+                linux-x64) target="x86_64-unknown-linux-gnu" ;;
+                linux-arm64) target="aarch64-unknown-linux-gnu" ;;
+                linux-musl) target="x86_64-unknown-linux-musl" ;;
+                windows) target="x86_64-pc-windows-msvc" ;;
+            esac
+
+            if [ -n "$target" ]; then
+                if ! echo "$installed_targets" | grep -q "^${target}$"; then
+                    # 중복 타겟 방지
+                    if [[ ! " ${missing_targets[*]} " =~ " ${target} " ]]; then
+                        missing_targets+=("$target")
+                    fi
+                fi
+            fi
+        done
+    fi
+
+    if [ ${#missing_targets[@]} -gt 0 ]; then
+        log_warn "설치되지 않은 Rust 타겟이 있습니다:"
+        for target in "${missing_targets[@]}"; do
+            echo "  rustup target add $target"
+        done
+        echo ""
+
+        local do_install=false
+        if [ "$AUTO_YES" = true ]; then
+            log_info "자동 승인 모드 (--yes)"
+            do_install=true
+        elif [ -t 0 ]; then
+            # 대화형 모드
+            read -p "자동으로 설치할까요? [y/N] " -n 1 -r
+            echo
+            [[ $REPLY =~ ^[Yy]$ ]] && do_install=true
+        else
+            # 비대화형 모드 (CI)
+            log_error "비대화형 환경입니다. --yes 옵션을 사용하거나 수동으로 타겟을 설치하세요."
+            exit 1
+        fi
+
+        if [ "$do_install" = true ]; then
+            for target in "${missing_targets[@]}"; do
+                log_info "설치 중: $target"
+                rustup target add "$target"
+            done
+        else
+            exit 1
+        fi
+    fi
+
+    log_success "필수 도구 검증 완료"
 }
 
 # 인자 파싱
 while [[ $# -gt 0 ]]; do
     case $1 in
         --env|-e)
+            if [[ -z "$2" || "$2" == -* ]]; then
+                log_error "--env 옵션에 값이 필요합니다"
+                exit 1
+            fi
             ENVIRONMENTS+=("$2")
             shift 2
             ;;
@@ -91,11 +264,23 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --output|-o)
+            if [[ -z "$2" || "$2" == -* ]]; then
+                log_error "--output 옵션에 값이 필요합니다"
+                exit 1
+            fi
             OUTPUT_DIR="$2"
             shift 2
             ;;
         --no-package)
             DO_PACKAGE=false
+            shift
+            ;;
+        --dry-run)
+            DRY_RUN=true
+            shift
+            ;;
+        --yes|-y)
+            AUTO_YES=true
             shift
             ;;
         --help|-h)
@@ -109,6 +294,18 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# 상호 배타 옵션 검증
+if [ "$NAPI_ONLY" = true ] && [ "$KEYS_ONLY" = true ]; then
+    log_error "--napi-only와 --keys-only는 동시에 사용할 수 없습니다"
+    exit 1
+fi
+
+# OUTPUT_DIR을 절대경로로 변환
+if [[ "$OUTPUT_DIR" != /* ]]; then
+    # 상대경로에서 ./ 제거 후 절대경로로 변환
+    OUTPUT_DIR="$SCRIPT_DIR/${OUTPUT_DIR#./}"
+fi
+
 # 환경이 지정되지 않으면 all로 설정
 if [ ${#ENVIRONMENTS[@]} -eq 0 ]; then
     ENVIRONMENTS=("all")
@@ -118,6 +315,15 @@ fi
 if [[ " ${ENVIRONMENTS[*]} " =~ " all " ]]; then
     ENVIRONMENTS=("${AVAILABLE_ENVS[@]}")
 fi
+
+# 중복 환경 제거
+unique_envs=()
+for env in "${ENVIRONMENTS[@]}"; do
+    if [[ ! " ${unique_envs[*]} " =~ " ${env} " ]]; then
+        unique_envs+=("$env")
+    fi
+done
+ENVIRONMENTS=("${unique_envs[@]}")
 
 # 유효한 환경인지 검증
 for env in "${ENVIRONMENTS[@]}"; do
@@ -136,28 +342,49 @@ log_info "NAPI만 빌드: $NAPI_ONLY"
 log_info "키만 생성: $KEYS_ONLY"
 log_info "클린 빌드: $DO_CLEAN"
 log_info "패키징: $DO_PACKAGE"
+log_info "Dry Run: $DRY_RUN"
+
+# Dry run 모드일 경우 여기서 종료
+if [ "$DRY_RUN" = true ]; then
+    log_step "필수 도구 검증 (Dry Run)"
+    check_prerequisites
+    log_success "Dry run 완료 - 실제 빌드는 수행되지 않았습니다"
+    exit 0
+fi
 
 # 환경 변수 설정
 setup_env_vars() {
     log_step "환경 변수 설정"
 
-    # ZK Circuit Constraints
-    export ZK_MAX_JWT_B64_LEN=1024
-    export ZK_MAX_PAYLOAD_B64_LEN=896
-    export ZK_MAX_AUD_LEN=155
-    export ZK_MAX_EXP_LEN=20
-    export ZK_MAX_ISS_LEN=93
-    export ZK_MAX_NONCE_LEN=93
-    export ZK_MAX_SUB_LEN=93
-    export ZK_N=6
-    export ZK_K=3
-    export ZK_TREE_HEIGHT=16
-    export ZK_NUM_AUDIENCE_LIMIT=5
+    # .env 파일이 있으면 먼저 로드
+    load_env_file
 
-    # macOS에서 Windows 빌드를 위해 llvm 경로 추가
+    # .env에서 설정되지 않은 경우 기본값 사용
+    export ZK_MAX_JWT_B64_LEN="${ZK_MAX_JWT_B64_LEN:-1024}"
+    export ZK_MAX_PAYLOAD_B64_LEN="${ZK_MAX_PAYLOAD_B64_LEN:-896}"
+    export ZK_MAX_AUD_LEN="${ZK_MAX_AUD_LEN:-155}"
+    export ZK_MAX_EXP_LEN="${ZK_MAX_EXP_LEN:-20}"
+    export ZK_MAX_ISS_LEN="${ZK_MAX_ISS_LEN:-93}"
+    export ZK_MAX_NONCE_LEN="${ZK_MAX_NONCE_LEN:-93}"
+    export ZK_MAX_SUB_LEN="${ZK_MAX_SUB_LEN:-93}"
+    export ZK_N="${ZK_N:-6}"
+    export ZK_K="${ZK_K:-3}"
+    export ZK_TREE_HEIGHT="${ZK_TREE_HEIGHT:-16}"
+    export ZK_NUM_AUDIENCE_LIMIT="${ZK_NUM_AUDIENCE_LIMIT:-5}"
+
+    # macOS에서 크로스 컴파일을 위해 llvm 경로 추가
+    local llvm_path=""
     if [ -d "/opt/homebrew/opt/llvm@20/bin" ]; then
-        export PATH="/opt/homebrew/opt/llvm@20/bin:$PATH"
-        log_info "LLVM 경로 추가됨: /opt/homebrew/opt/llvm@20/bin"
+        # Apple Silicon Mac
+        llvm_path="/opt/homebrew/opt/llvm@20/bin"
+    elif [ -d "/usr/local/opt/llvm@20/bin" ]; then
+        # Intel Mac
+        llvm_path="/usr/local/opt/llvm@20/bin"
+    fi
+
+    if [ -n "$llvm_path" ]; then
+        export PATH="$llvm_path:$PATH"
+        log_info "LLVM 경로 추가됨: $llvm_path"
     fi
 
     log_success "환경 변수 설정 완료"
@@ -184,12 +411,19 @@ do_clean() {
 create_output_dirs() {
     log_step "출력 디렉토리 생성"
 
-    mkdir -p "$OUTPUT_DIR/keys"
+    # 키 생성이 필요한 경우에만 keys 디렉토리 생성
+    if [ "$NAPI_ONLY" != true ]; then
+        mkdir -p "$OUTPUT_DIR/keys"
+        log_info "생성됨: $OUTPUT_DIR/keys"
+    fi
 
-    for env in "${ENVIRONMENTS[@]}"; do
-        mkdir -p "$OUTPUT_DIR/napi/$env"
-        log_info "생성됨: $OUTPUT_DIR/napi/$env"
-    done
+    # NAPI 빌드가 필요한 경우에만 napi 디렉토리 생성
+    if [ "$KEYS_ONLY" != true ]; then
+        for env in "${ENVIRONMENTS[@]}"; do
+            mkdir -p "$OUTPUT_DIR/napi/$env"
+            log_info "생성됨: $OUTPUT_DIR/napi/$env"
+        done
+    fi
 
     log_success "디렉토리 생성 완료"
 }
@@ -216,57 +450,49 @@ generate_keys() {
 build_napi_for_env() {
     local env=$1
     local target=""
-    local extra_flags=""
-    local env_vars=""
+    local cross_compile=false
 
+    # 환경별 타겟 설정
     case $env in
-        macos-arm64)
-            # 네이티브 빌드 (타겟 지정 불필요)
-            target=""
-            ;;
-        macos-x64)
-            target="x86_64-apple-darwin"
-            ;;
-        linux-x64)
-            target="x86_64-unknown-linux-gnu"
-            extra_flags="--cross-compile"
-            ;;
-        linux-arm64)
-            target="aarch64-unknown-linux-gnu"
-            extra_flags="--cross-compile"
-            ;;
-        linux-musl)
-            target="x86_64-unknown-linux-musl"
-            extra_flags="--cross-compile"
-            env_vars="CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_RUSTFLAGS=\"-C target-feature=-crt-static\""
-            ;;
-        windows)
-            target="x86_64-pc-windows-msvc"
-            extra_flags="--cross-compile"
-            ;;
+        macos-arm64) target="aarch64-apple-darwin" ;;
+        macos-x64) target="x86_64-apple-darwin" ;;
+        linux-x64) target="x86_64-unknown-linux-gnu" ;;
+        linux-arm64) target="aarch64-unknown-linux-gnu" ;;
+        linux-musl) target="x86_64-unknown-linux-musl" ;;
+        windows) target="x86_64-pc-windows-msvc" ;;
     esac
+
+    # 호스트 기반 크로스 컴파일 여부 판단
+    if needs_cross_compile_for_env "$env"; then
+        cross_compile=true
+    fi
+
+    # 네이티브 빌드 시 타겟 지정 생략 가능
+    if [ "$cross_compile" = false ]; then
+        target=""
+    fi
 
     log_info "빌드 중: $env"
 
-    local output_dir="../../$OUTPUT_DIR/napi/$env"
+    local output_dir="$OUTPUT_DIR/napi/$env"
 
-    # 빌드 명령어 구성
-    local cmd="npx napi build --platform --release --output-dir \"$output_dir\" --features constraints-logging"
+    # 빌드 명령어 배열 구성
+    local cmd_args=(npx napi build --platform --release --output-dir "$output_dir" --features constraints-logging)
 
     if [ -n "$target" ]; then
-        cmd="$cmd --target $target"
+        cmd_args+=(--target "$target")
     fi
 
-    if [ -n "$extra_flags" ]; then
-        cmd="$cmd $extra_flags"
+    if [ "$cross_compile" = true ]; then
+        cmd_args+=(--cross-compile)
     fi
 
-    if [ -n "$env_vars" ]; then
-        cmd="$env_vars $cmd"
+    # linux-musl 특수 처리
+    if [ "$env" = "linux-musl" ]; then
+        CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_RUSTFLAGS="-C target-feature=-crt-static" "${cmd_args[@]}"
+    else
+        "${cmd_args[@]}"
     fi
-
-    # 빌드 실행
-    eval $cmd
 
     log_success "완료: $env -> $output_dir"
 }
@@ -280,13 +506,17 @@ build_napi() {
 
     log_step "NAPI 바인딩 빌드"
 
-    # bindings/napi 디렉토리로 이동
-    cd bindings/napi
+    # bindings/napi 디렉토리로 이동 (pushd 사용으로 안전한 복귀 보장)
+    pushd "$SCRIPT_DIR/bindings/napi" > /dev/null
 
-    # node_modules 확인
+    # node_modules 확인 및 설치
     if [ ! -d "node_modules" ]; then
         log_info "npm 의존성 설치 중..."
-        npm install
+        if ! npm install; then
+            log_error "npm install 실패"
+            popd > /dev/null
+            exit 1
+        fi
     fi
 
     # 각 환경별 빌드
@@ -300,7 +530,7 @@ build_napi() {
     done
 
     # 원래 디렉토리로 복귀
-    cd ../..
+    popd > /dev/null
 
     log_success "NAPI 빌드 완료"
 }
@@ -314,6 +544,9 @@ package_output() {
 
     log_step "결과물 패키징"
 
+    # 빈 디렉토리 정리
+    find "$OUTPUT_DIR" -type d -empty -delete 2>/dev/null || true
+
     TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
     # 빌드된 환경 목록을 파일명에 포함
@@ -324,10 +557,11 @@ package_output() {
     fi
 
     TAR_NAME="zkup-release-${ENV_SUFFIX}-${TIMESTAMP}.tar.gz"
+    TAR_PATH="$OUTPUT_DIR/$TAR_NAME"
 
-    tar -czvf "$TAR_NAME" -C "$OUTPUT_DIR" .
+    tar -czvf "$TAR_PATH" -C "$OUTPUT_DIR" --exclude="*.tar.gz" .
 
-    log_success "패키지 생성 완료: $TAR_NAME"
+    log_success "패키지 생성 완료: $TAR_PATH"
 }
 
 # 결과 요약
@@ -348,6 +582,9 @@ print_summary() {
 
 # 메인 실행
 main() {
+    local start_time=$SECONDS
+
+    check_prerequisites
     setup_env_vars
     do_clean
     create_output_dirs
@@ -355,6 +592,11 @@ main() {
     build_napi
     package_output
     print_summary
+
+    local elapsed=$((SECONDS - start_time))
+    local mins=$((elapsed / 60))
+    local secs=$((elapsed % 60))
+    log_info "총 소요 시간: ${mins}분 ${secs}초"
 }
 
 main

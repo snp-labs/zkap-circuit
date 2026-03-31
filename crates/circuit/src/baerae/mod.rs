@@ -64,7 +64,7 @@ use gadget::{
     },
     utils::{
         bit_bytes_v2::pack_decompose_bytes_unchecked,
-        comparison_v2::is_less_than,
+        comparison::is_less_than,
         single_multiplexer, slice_v2,
         string_v2::{jwt_exp_to_field, jwt_nonce_hex_to_field},
     },

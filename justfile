@@ -40,9 +40,9 @@ setup:
 test-debug:
     cargo test --release --features print-trace,constraints-logging --package test
 
-# Prove (optimized)
+# Prove
 prove:
-    cargo test --release --features use-optimized,memory-logging --package test --test snark_v4_test test_generate_baerae_proof_single -- --nocapture
+    cargo test --release --package test --test snark_v4_test test_generate_baerae_proof_single -- --nocapture
 
 # Build all targets
 build-all: build-wasm build-napi build-ios build-android

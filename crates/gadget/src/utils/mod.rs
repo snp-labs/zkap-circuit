@@ -9,8 +9,6 @@ pub mod slice;
 pub mod slice_v2;
 pub mod string_v2;
 pub mod uint32;
-pub mod indexing;
-pub mod shifting;
 pub mod comparison_v2;
 
 pub use arithmetic::*;

@@ -5,7 +5,7 @@ use ark_r1cs_std::{
 };
 use ark_relations::r1cs::SynthesisError;
 
-use crate::utils::one_bit_vector;
+use crate::one_bit_vector;
 
 /// 비트 슬라이스를 비교하여 `a < b`를 반환합니다.
 ///
@@ -146,7 +146,7 @@ mod tests {
     };
     use ark_relations::r1cs::{ConstraintSystem, ConstraintSystemRef};
 
-    use crate::utils::{gt_bit_vector, lt_bit_vector};
+    use crate::{gt_bit_vector, lt_bit_vector};
 
     type F = ark_bn254::Fr;
 

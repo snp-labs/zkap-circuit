@@ -10,7 +10,7 @@ use ark_relations::r1cs::{ConstraintSystemRef, SynthesisError};
 use ark_std::log2;
 use core::ops::BitXor;
 
-use crate::utils::{
+use crate::{
     a_lt_b, divide_mod_power_of_2_circuit, lt_bit_vector, multi_mux, pack_byte_fps_to_fp,
     select_array_element, unpack_fp_to_byte_fps,
 };
@@ -1122,8 +1122,8 @@ mod tests {
     };
     use ark_relations::r1cs::ConstraintSystem;
 
-    use crate::utils::slice_v2::{log_base_2, segments_to_num_be, slice_efficient, slice_grouped};
-    use crate::utils::{slice, slice_from_start, slice_unopt, slice_v2};
+    use crate::slice_v2::{log_base_2, segments_to_num_be, slice_efficient, slice_grouped};
+    use crate::{slice, slice_from_start, slice_unopt, slice_v2};
 
     type F = ark_bn254::Fr;
 

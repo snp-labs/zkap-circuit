@@ -5,6 +5,7 @@ members = [
     "bindings/uniffi",
     "bindings/wasm",
 
+    "crates/ark-utils",
     "crates/circuit",
     "crates/gadget",
     "crates/service",
@@ -12,6 +13,7 @@ members = [
 ]
 
 [workspace.dependencies]
+ark-utils                 = { path = "crates/ark-utils" }
 gadget                    = { path = "crates/gadget", default-features = false }
 circuit                   = { path = "crates/circuit" }
 zkpasskey-service         = { path = "crates/service" }

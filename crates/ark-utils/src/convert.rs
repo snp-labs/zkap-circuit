@@ -1,6 +1,6 @@
 use ark_ff::PrimeField;
 
-use crate::utils::error::UtilError;
+use crate::error::UtilError;
 
 pub trait ToField<F: PrimeField> {
     type Output;
@@ -114,7 +114,7 @@ mod tests {
     use ark_ff::PrimeField;
     use ark_r1cs_std::{R1CSVar, alloc::AllocVar, fields::fp::FpVar};
 
-    use crate::utils::{ToField, pack_byte_fps_to_fp};
+    use crate::{ToField, pack_byte_fps_to_fp};
 
     type Bn254Fr = ark_bn254::Fr;
 

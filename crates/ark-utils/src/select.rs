@@ -8,7 +8,7 @@ use ark_r1cs_std::{
 };
 use ark_relations::r1cs::SynthesisError;
 
-use crate::utils::scalar_product;
+use crate::scalar_product;
 
 /// 2차원 배열에서 `selector` 인덱스에 해당하는 열을 선택합니다.
 ///
@@ -157,7 +157,7 @@ mod tests {
     use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar};
     use ark_relations::r1cs::ConstraintSystem;
 
-    use crate::utils::{gt_bit_vector, lt_bit_vector, one_bit_vector};
+    use crate::{gt_bit_vector, lt_bit_vector, one_bit_vector};
 
     type F = ark_bn254::Fr;
 

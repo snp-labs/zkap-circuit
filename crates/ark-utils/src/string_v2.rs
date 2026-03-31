@@ -120,7 +120,7 @@ pub fn jwt_nonce_hex_to_field<F: PrimeField>(
     let max_hex_digits = FpVar::<F>::Constant(F::from(64u64));
     let digit_count_bits = hex_digit_count.to_bits_le()?;
     let max_bits = max_hex_digits.to_bits_le()?;
-    let digit_le_max = crate::utils::comparison_v2::is_less_or_equal(&digit_count_bits, &max_bits)?;
+    let digit_le_max = crate::comparison_v2::is_less_or_equal(&digit_count_bits, &max_bits)?;
     crate::enforce_true_internal!("nonce_digit_le_max", digit_le_max)?;
 
     Ok(accumulated_value)

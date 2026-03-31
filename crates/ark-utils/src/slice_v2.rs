@@ -7,7 +7,7 @@ use ark_r1cs_std::{
 };
 use ark_relations::r1cs::SynthesisError;
 
-use crate::utils::{
+use crate::{
     divide_mod_power_of_2_circuit, multi_mux,
     slice_in_binary_tree, ceil,
 };

@@ -229,7 +229,7 @@ mod tests {
     use ark_ff::PrimeField;
     use ark_r1cs_std::{R1CSVar, alloc::AllocVar, fields::fp::FpVar};
 
-    use crate::utils::pack_byte_fps_to_fp;
+    use crate::pack_byte_fps_to_fp;
 
     type Bn254fr = ark_bn254::Fr;
 

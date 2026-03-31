@@ -9,7 +9,7 @@ use ark_r1cs_std::{
 };
 use ark_relations::r1cs::SynthesisError;
 
-use crate::utils::a_lt_b;
+use crate::a_lt_b;
 
 /// 두 벡터의 스칼라 곱(내적)을 계산합니다: `Σ (in1[i] * in2[i])`
 ///

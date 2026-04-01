@@ -46,33 +46,6 @@ pub fn lt_bit_vector<F: PrimeField>(
     Ok(out)
 }
 
-/// `i > index`일 때 `out[i] = 1`인 비트 벡터를 생성합니다.
-///
-/// `index`의 원-핫 벡터를 생성한 후, 접두사 OR 스캔을 수행하여
-/// 온도계 인코딩을 구현합니다. 범위 제약: `0 <= index < n`.
-///
-/// 예시: `n=5, index=2` → `[0, 0, 0, 1, 1]`
-pub fn gt_bit_vector<F>(index: &FpVar<F>, n: usize) -> Result<Vec<FpVar<F>>, SynthesisError>
-where
-    F: PrimeField,
-{
-    if n == 0 {
-        return Ok(Vec::new());
-    }
-
-    let eq: Vec<FpVar<F>> = one_bit_vector(index, n)?;
-
-    let mut out = Vec::with_capacity(n);
-    out.push(FpVar::<F>::zero());
-
-    for i in 1..n {
-        let next_out = &out[i - 1] + &eq[i - 1];
-        out.push(next_out);
-    }
-
-    Ok(out)
-}
-
 // =============================================================================
 // Boolean 비트 벡터 비교 함수 (comparison_v2에서 통합)
 // =============================================================================
@@ -107,16 +80,6 @@ pub fn is_greater_or_equal<F: PrimeField>(
 ) -> Result<Boolean<F>, SynthesisError> {
     let (less, _) = compare_bits_raw(a_bits, b_bits)?;
     Ok(!less)
-}
-
-/// A > B (Strictly Greater) - Boolean 비트 벡터용
-///
-/// Little-Endian 비트 벡터를 입력받아 비교합니다.
-pub fn is_greater_than<F: PrimeField>(
-    a_bits: &[Boolean<F>],
-    b_bits: &[Boolean<F>],
-) -> Result<Boolean<F>, SynthesisError> {
-    is_less_than(b_bits, a_bits)
 }
 
 /// 비트 단위 비교를 수행하여 (is_less, is_equal) 튜플을 반환합니다.
@@ -160,51 +123,9 @@ mod tests {
     };
     use ark_relations::r1cs::{ConstraintSystem, ConstraintSystemRef};
 
-    use crate::{gt_bit_vector, lt_bit_vector};
+    use crate::lt_bit_vector;
 
     type F = ark_bn254::Fr;
-
-    fn test_generic_gt_bit_vector(index: usize, n: usize) {
-        let cs = ConstraintSystem::<F>::new_ref();
-
-        let index_var = FpVar::<F>::new_witness(cs.clone(), || Ok(F::from(index as u64))).unwrap();
-
-        let expected = {
-            let mut vec = Vec::with_capacity(n);
-            for i in 0..n {
-                if i > index {
-                    vec.push(FpVar::<F>::one());
-                } else {
-                    vec.push(FpVar::<F>::zero());
-                }
-            }
-            vec
-        };
-
-        let result = gt_bit_vector(&index_var, n).unwrap();
-        println!(
-            "number of constraints for {}: {}",
-            std::any::type_name::<FpVar<F>>(),
-            cs.num_constraints()
-        );
-        expected.enforce_equal(&result).unwrap();
-        assert!(cs.is_satisfied().unwrap());
-        println!(
-            "number of constraints for {}: {}",
-            std::any::type_name::<FpVar<F>>(),
-            cs.num_constraints()
-        );
-    }
-
-    #[test]
-    fn test_gt_bit_vector_as_boolean() {
-        test_generic_gt_bit_vector(2, 5);
-    }
-
-    #[test]
-    fn test_gt_bit_vector_as_fpvar() {
-        test_generic_gt_bit_vector(2, 5);
-    }
 
     #[test]
     fn test_lt_bit_vector() {

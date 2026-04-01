@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 gadget = { workspace = true, default-features = false, features = ["crypto", "base64", "rsa"] }
+ark-utils = { workspace = true }
 
 ark-groth16 = { workspace = true }
 ark-ec = { workspace = true }

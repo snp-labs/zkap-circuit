@@ -545,6 +545,7 @@ dependencies = [
  "ark-relations",
  "ark-serialize",
  "ark-std",
+ "ark-utils",
  "clap",
  "dotenvy",
  "gadget",

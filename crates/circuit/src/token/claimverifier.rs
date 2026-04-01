@@ -3,10 +3,12 @@ use ark_r1cs_std::{
     eq::EqGadget,
     fields::{FieldVar, fp::FpVar},
     prelude::{Boolean, ToBitsGadget},
+    select::CondSelectGadget,
     uint16::UInt16,
 };
 use ark_relations::r1cs::SynthesisError;
-use gadget::utils::{a_lt_b, gt_bit_vector, hadamard_product, lt_bit_vector, single_multiplexer, slice_from_start, slice_v2};
+use gadget::utils::{single_multiplexer, slice_from_start, slice_v2};
+use gadget::utils::comparison_v2::is_less_than;
 
 use crate::token::constraints::ClaimIndicesVar;
 
@@ -25,7 +27,7 @@ pub fn claim_extractor_v2<F: PrimeField>(
     let key_len = key_with_quotes.len();
     let key_len_uint = UInt16::constant(key_len as u16);
 
-    // Extract the entire claim from payload
+    // Extract the entire claim from payload (needed for format verification)
     let claim = slice_v2::slice_efficient(payload, &pos.offset, &pos.claim_len, max_len)?;
 
     // Extract key name from claim using slice_from_start
@@ -34,8 +36,13 @@ pub fn claim_extractor_v2<F: PrimeField>(
     let pad_char = FpVar::<F>::Constant(F::from(b'0'));
     let result_name = slice_from_start(&claim, &key_len_uint.to_fp()?, key_len, &pad_char)?;
 
-    // Extract value from claim
-    let result_value = slice_v2::slice_efficient(&claim, &pos.value_idx, &pos.value_len, max_len)?;
+    // Extract value directly from payload using absolute offset
+    // This eliminates one slice_efficient call (~50k constraints saved)
+    // absolute_value_offset = pos.offset + pos.value_idx
+    let absolute_value_offset =
+        UInt16::<F>::wrapping_add_many(&[pos.offset.clone(), pos.value_idx.clone()])?;
+    let result_value =
+        slice_v2::slice_efficient(payload, &absolute_value_offset, &pos.value_len, max_len)?;
 
     // Verify that extracted name matches the key (with quotes)
     result_name.enforce_equal(&key_bytes)?;
@@ -139,15 +146,48 @@ fn enforce_range_is_whitespace_v2<F: PrimeField>(
     is_not_whitespace_flags: &[FpVar<F>],
     max_len: usize,
 ) -> Result<(), SynthesisError> {
-    let is_gt_start = gt_bit_vector(start_idx, max_len)?;
-    let is_lt_end = lt_bit_vector(end_idx, max_len)?;
-    let selection_mask = hadamard_product(&is_gt_start, &is_lt_end);
+    // Build prefix sums: prefix[i] = sum(is_not_whitespace_flags[0..i])
+    // prefix[0] = 0, prefix[1] = flags[0], ..., prefix[max_len] = sum of all flags
+    let mut prefix_sums = Vec::with_capacity(max_len + 1);
+    prefix_sums.push(FpVar::<F>::zero());
+    let mut running_sum = FpVar::<F>::zero();
+    for flag in is_not_whitespace_flags.iter().take(max_len) {
+        running_sum = running_sum + flag;
+        prefix_sums.push(running_sum.clone());
+    }
 
-    let non_whitespace_sum: FpVar<F> = hadamard_product(&selection_mask, is_not_whitespace_flags)
-        .iter()
-        .sum();
+    // We want sum of flags[i] for i in the open interval (start_idx, end_idx).
+    // That equals prefix[end_idx] - prefix[start_idx + 1].
+    //
+    // When the range is empty (end_idx <= start_idx), we must produce 0.
+    // We clamp the lower lookup index: use end_idx instead of start_idx+1 when
+    // end_idx <= start_idx, making both lookups identical and the difference 0.
+    //
+    // Compute: is_nonempty = (start_idx + 1 <= end_idx), i.e., start_idx < end_idx.
+    // Then: lookup_start = if is_nonempty { start_idx + 1 } else { end_idx }
+    let start_idx_plus_1 = start_idx + FpVar::one();
 
-    non_whitespace_sum.enforce_equal(&FpVar::zero())?;
+    // Use 16-bit LE representation (indices fit in 16 bits since max_len <= ~500)
+    let start_plus_1_bits = start_idx_plus_1.to_bits_le()?;
+    let end_bits = end_idx.to_bits_le()?;
+    let bits_16 = 16usize;
+    let start_plus_1_bits_16 = &start_plus_1_bits[..bits_16];
+    let end_bits_16 = &end_bits[..bits_16];
+
+    // is_nonempty = start_idx + 1 <= end_idx  (equivalently: start_idx + 1 < end_idx OR equal)
+    let is_lt = is_less_than(start_plus_1_bits_16, end_bits_16)?;
+    let is_eq_end = start_idx_plus_1.is_eq(end_idx)?;
+    let is_nonempty = is_lt | is_eq_end;
+
+    // Clamp: if nonempty use start_idx+1, else use end_idx (range sum becomes 0)
+    let lookup_start = FpVar::conditionally_select(&is_nonempty, &start_idx_plus_1, end_idx)?;
+
+    let prefix_at_lookup_start = single_multiplexer(&prefix_sums, &lookup_start)?;
+    let prefix_at_end = single_multiplexer(&prefix_sums, end_idx)?;
+
+    // range_sum = prefix[end] - prefix[lookup_start]; enforced to be 0
+    let range_sum = prefix_at_end - prefix_at_lookup_start;
+    range_sum.enforce_equal(&FpVar::zero())?;
 
     Ok(())
 }

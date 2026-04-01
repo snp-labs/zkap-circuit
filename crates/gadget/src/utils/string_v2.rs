@@ -1,5 +1,7 @@
-use ark_ff::PrimeField;
+use ark_ff::{BigInteger, PrimeField};
 use ark_r1cs_std::{
+    R1CSVar,
+    alloc::AllocVar,
     eq::EqGadget,
     fields::{FieldVar, fp::FpVar},
     prelude::{Boolean, ToBitsGadget},
@@ -133,43 +135,139 @@ pub fn jwt_nonce_hex_to_field<F: PrimeField>(
 /// * `(value, is_valid)` - 변환된 값(0-15)과 유효성 플래그
 ///
 /// # 제약 조건
-/// - 정확히 하나의 16진수 문자와 매칭되어야 함
-/// - 대소문자 모두 지원 ('a'-'f' 및 'A'-'F')
+/// - byte를 8비트로 한 번 분해 후 비트 패턴으로 3개 범위를 효율적으로 검사
+/// - '0'-'9': 0x30..=0x39 → 상위 4비트 == 0011, 하위 4비트 <= 9
+/// - 'A'-'F': 0x41..=0x46 → 상위 4비트 == 0100, 하위 4비트 <= 5  (단, bit6=0, bit7=0)
+/// - 'a'-'f': 0x61..=0x66 → 상위 4비트 == 0110, 하위 4비트 <= 5  (단, bit7=0)
+///
+/// # 건전성
+/// - byte를 8비트 분해 + 재구성 enforce_equal로 byte in [0,255] 보장
+/// - 상위 비트 패턴 검사는 Boolean 상수와의 XOR(무비용)로 구현
+/// - 하위 비트 범위 검사는 4비트 is_less_or_equal로 구현
 fn hex_char_to_value<F: PrimeField>(
     byte: &FpVar<F>,
 ) -> Result<(FpVar<F>, Boolean<F>), SynthesisError> {
-    let mut result = FpVar::<F>::zero();
-    let mut is_valid = Boolean::<F>::FALSE;
-
-    // 16진수 테이블: 0-9, a-f (소문자만)
-    let hex_chars = b"0123456789abcdef";
-
-    for (i, &hex_char) in hex_chars.iter().enumerate() {
-        let char_const = FpVar::<F>::Constant(F::from(hex_char));
-        let is_equal = byte.is_eq(&char_const)?;
-
-        // 값 누적
-        let value_to_add = FpVar::from(is_equal.clone()) * FpVar::<F>::Constant(F::from(i as u64));
-        result += &value_to_add;
-
-        // 유효성 플래그 업데이트
-        is_valid = is_valid | is_equal;
+    // byte를 8비트 witness로 분해하고 재구성을 강제 (byte in [0, 255] 보장)
+    let cs = byte.cs();
+    let byte_val = byte.value().unwrap_or_default();
+    let mut b: Vec<Boolean<F>> = Vec::with_capacity(8);
+    for i in 0..8usize {
+        let bit_val = byte_val.into_bigint().get_bit(i);
+        let bit = if cs.is_none() {
+            Boolean::constant(bit_val)
+        } else {
+            Boolean::new_witness(cs.clone(), || Ok(bit_val))?
+        };
+        b.push(bit);
     }
+    // b[0]..b[7]: b[0]=LSB, b[7]=MSB
 
-    // 대문자 'A'-'F' 처리
-    let uppercase_hex_chars = b"ABCDEF";
-    for (i, &hex_char) in uppercase_hex_chars.iter().enumerate() {
-        let char_const = FpVar::<F>::Constant(F::from(hex_char));
-        let is_equal = byte.is_eq(&char_const)?;
-
-        // 값 누적 (A=10, B=11, ..., F=15)
-        let value_to_add =
-            FpVar::from(is_equal.clone()) * FpVar::<F>::Constant(F::from((10 + i) as u64));
-        result += &value_to_add;
-
-        // 유효성 플래그 업데이트
-        is_valid = is_valid | is_equal;
+    // 재구성 강제: reconstructed == byte
+    let mut reconstructed = FpVar::<F>::zero();
+    let mut power = F::one();
+    for bit in &b {
+        let bit_fp = FpVar::from(bit.clone());
+        reconstructed += bit_fp * FpVar::Constant(power);
+        power.double_in_place();
     }
+    reconstructed.enforce_equal(byte)?;
+
+    // 하위 4비트 (nibble): b[0..4]
+    // 상위 4비트: b[4..8]
+    let lo_nibble = &b[0..4]; // bits 0-3
+    let hi_nibble = &b[4..8]; // bits 4-7
+
+    // 상위 4비트 패턴 검사 (모두 상수 비트와 XOR → 비용 거의 0)
+    // '0'-'9': 0x3? → hi = 0011 (b4=1,b5=1,b6=0,b7=0)
+    // 'A'-'F': 0x4? → hi = 0100 (b4=0,b5=0,b6=1,b7=0)  + lower nibble check
+    // 'a'-'f': 0x6? → hi = 0110 (b4=0,b5=1,b6=1,b7=0)  + lower nibble check
+    //
+    // hi_nibble[0]=b4, hi_nibble[1]=b5, hi_nibble[2]=b6, hi_nibble[3]=b7
+
+    // '0'-'9': b7=0, b6=0, b5=1, b4=1
+    let hi_is_3 = {
+        let b4_eq_1 = hi_nibble[0].clone(); // b4==1
+        let b5_eq_1 = hi_nibble[1].clone(); // b5==1
+        let b6_eq_0 = !&hi_nibble[2];       // b6==0
+        let b7_eq_0 = !&hi_nibble[3];       // b7==0
+        &(&b4_eq_1 & &b5_eq_1) & &(&b6_eq_0 & &b7_eq_0)
+    };
+
+    // 'A'-'F': b7=0, b6=1, b5=0, b4=0 (0x4?)
+    let hi_is_4 = {
+        let b4_eq_0 = !&hi_nibble[0];
+        let b5_eq_0 = !&hi_nibble[1];
+        let b6_eq_1 = hi_nibble[2].clone();
+        let b7_eq_0 = !&hi_nibble[3];
+        &(&b4_eq_0 & &b5_eq_0) & &(&b6_eq_1 & &b7_eq_0)
+    };
+
+    // 'a'-'f': b7=0, b6=1, b5=1, b4=0 (0x6?)
+    let hi_is_6 = {
+        let b4_eq_0 = !&hi_nibble[0];
+        let b5_eq_1 = hi_nibble[1].clone();
+        let b6_eq_1 = hi_nibble[2].clone();
+        let b7_eq_0 = !&hi_nibble[3];
+        &(&b4_eq_0 & &b5_eq_1) & &(&b6_eq_1 & &b7_eq_0)
+    };
+
+    // 하위 nibble 범위 검사
+    // '0'-'9': lo_nibble <= 9 (0x9 = 1001)
+    // 'A'-'F': lo_nibble <= 5 (0x5 = 0101) AND lo_nibble >= 1 (0x41='A', lo=1)
+    // 'a'-'f': lo_nibble <= 5 AND lo_nibble >= 1 (0x61='a', lo=1)
+    //
+    // Note: 0x40='@' (lo=0), 0x60='`' (lo=0) 은 유효하지 않으므로 lo >= 1 검사 필요
+    let nine_bits: Vec<Boolean<F>> = vec![
+        Boolean::constant(true),  // bit0: 1
+        Boolean::constant(false), // bit1: 0
+        Boolean::constant(false), // bit2: 0
+        Boolean::constant(true),  // bit3: 1
+    ]; // 9 = 0b1001
+    let six_bits: Vec<Boolean<F>> = vec![
+        Boolean::constant(false), // bit0: 0
+        Boolean::constant(true),  // bit1: 1
+        Boolean::constant(true),  // bit2: 1
+        Boolean::constant(false), // bit3: 0
+    ]; // 6 = 0b0110
+    let one_bits: Vec<Boolean<F>> = vec![
+        Boolean::constant(true),  // bit0: 1
+        Boolean::constant(false), // bit1: 0
+        Boolean::constant(false), // bit2: 0
+        Boolean::constant(false), // bit3: 0
+    ]; // 1 = 0b0001
+
+    let lo_le_9 = crate::comparison::is_less_or_equal(lo_nibble, &nine_bits)?;
+    let lo_le_6 = crate::comparison::is_less_or_equal(lo_nibble, &six_bits)?;
+    let lo_ge_1 = crate::comparison::is_less_or_equal(&one_bits, lo_nibble)?;
+
+    // 범위 매칭
+    let is_digit = &hi_is_3 & &lo_le_9;            // '0'-'9'
+    let is_upper = &hi_is_4 & &(&lo_ge_1 & &lo_le_6); // 'A'-'F'
+    let is_lower = &hi_is_6 & &(&lo_ge_1 & &lo_le_6); // 'a'-'f'
+
+    // 유효성 플래그
+    let is_valid = &is_digit | &(&is_upper | &is_lower);
+
+    // hex 값 계산
+    // digit_value = lo_nibble 값 (0-9) = byte - 0x30
+    // upper_value = lo_nibble 값 - 1 + 10 = lo_nibble + 9 = byte - 0x41 + 10
+    // lower_value = lo_nibble 값 - 1 + 10 = byte - 0x61 + 10
+    let ten = FpVar::Constant(F::from(10u64));
+    let digit_value = byte - FpVar::Constant(F::from(48u64)); // 0-9
+    let upper_value = byte - FpVar::Constant(F::from(55u64)); // 'A'=65 → 65-55=10, 'F'=70 → 70-55=15
+    let lower_value = byte - FpVar::Constant(F::from(87u64)); // 'a'=97 → 97-87=10, 'f'=102 → 102-87=15
+
+    // lo_nibble >= 1이고 hi 패턴이 맞으면 upper/lower 값이 10-15 범위임
+    // upper_value = byte - 55 = (0x40 + lo) - 55 = lo + 9, lo in [1,5] → [10,14] ✓
+    // lower_value = byte - 87 = (0x60 + lo) - 87 = lo + 9, lo in [1,5] → [10,14] ✓
+    // Wait: 'F'=70 → 70-55=15, 'f'=102 → 102-87=15 ✓
+
+    // 조건부 선택: is_digit → digit값, is_upper → upper값, else → lower값
+    let value_if_upper_or_lower = is_upper.select(&upper_value, &lower_value)?;
+    let result = is_digit.select(&digit_value, &value_if_upper_or_lower)?;
+
+    // 미사용 변수 제거
+    let _ = ten;
 
     Ok((result, is_valid))
 }

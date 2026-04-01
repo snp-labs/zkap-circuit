@@ -293,7 +293,11 @@ where
 
         // 첫 번째 '.' : payload 시작 바로 전 (header.payload 사이)
         let first_dot_idx = &payload_offset_fp - &one;
-        let first_dot_char = single_multiplexer(&sha_pad_jwt_b64_to_fp, &first_dot_idx)?;
+        // Binary tree selector: O(log n) vs O(n) constraints
+        // sha_pad_jwt_b64_to_fp.len() == MAX_JWT_B64_LEN == 1024 == 2^10, so 10 bits suffice
+        let first_dot_bits = first_dot_idx.to_bits_le()?;
+        let first_dot_char =
+            ark_utils::select_array_element(&sha_pad_jwt_b64_to_fp, &first_dot_bits[..10])?;
 
         gadget::enforce_eq_debug!("Payload Boundary Binding", first_dot_char, dot_char)?;
 

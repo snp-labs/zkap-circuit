@@ -1,3 +1,5 @@
+pub mod debug;
+
 pub mod arithmetic;
 pub mod bit_byte;
 pub mod bit_bytes_v2;

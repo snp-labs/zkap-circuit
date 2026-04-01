@@ -251,9 +251,7 @@ where
         .to_bytes_le()?;
 
         let result = RSA2048VerifyGadget::verify_opt(&mut digest, &signature_op, &pk_op)?;
-        result.enforce_equal(&Boolean::constant(true))?;
-
-        gadget::dbg_r1cs_eq!("RSA Verification", result, Boolean::constant(true));
+        gadget::enforce_true_debug!("RSA Verification", result)?;
         gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - RSA Verification");
 
         // [1.2] Base64 디코딩 및 Claim 추출
@@ -275,10 +273,9 @@ where
             &payload_offset_fp.to_bits_le_with_top_bits_zero(16)?.0,
         )?;
 
-        gadget::dbg_r1cs_eq!("Payload Offset >= 1", offset_ge_1, Boolean::constant(true));
         gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Payload Offset >= 1");
 
-        offset_ge_1.enforce_equal(&Boolean::constant(true))?;
+        gadget::enforce_true_debug!("Payload Offset >= 1", offset_ge_1)?;
 
         // 방어 심층: payload_offset + payload_len < buffer_len (버퍼 범위 초과 방지)
         let buf_len = FpVar::<C::BaseField>::Constant(C::BaseField::from(
@@ -290,22 +287,15 @@ where
             &buf_len.to_bits_le_with_top_bits_zero(16)?.0,
         )?;
 
-        gadget::dbg_r1cs_eq!(
-            "Payload Index Range Check",
-            idx_in_range,
-            Boolean::constant(true)
-        );
         gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Payload Index Range Check");
 
-        idx_in_range.enforce_equal(&Boolean::constant(true))?;
+        gadget::enforce_true_debug!("Payload Index Range Check", idx_in_range)?;
 
         // 첫 번째 '.' : payload 시작 바로 전 (header.payload 사이)
         let first_dot_idx = &payload_offset_fp - &one;
         let first_dot_char = single_multiplexer(&sha_pad_jwt_b64_to_fp, &first_dot_idx)?;
 
-        gadget::dbg_r1cs_eq!("Payload Boundary Binding", first_dot_char, dot_char);
-
-        first_dot_char.enforce_equal(&dot_char)?;
+        gadget::enforce_eq_debug!("Payload Boundary Binding", first_dot_char, dot_char)?;
 
         // ZKAPCIR-002: payload 끝 위치 == SHA-256 패딩 시작 위치 구조적 바인딩
         // SHA-256 gadget이 이미 buffer[pad_start_byte_idx] == 0x80을 검증하므로
@@ -327,9 +317,7 @@ where
             &payload_b64,
             &index_bits,
         )?;
-        valid.enforce_equal(&Boolean::constant(true))?;
-
-        gadget::dbg_r1cs_eq!("Base64 Decoding Valid", valid, Boolean::constant(true));
+        gadget::enforce_true_debug!("Base64 Decoding Valid", valid)?;
         gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Base64 Decoding");
 
         let aud_bytes = claim_extractor_v2("aud", &payload, &token_claim[0], Config::MAX_AUD_LEN)?;
@@ -368,20 +356,12 @@ where
 
         path.set_leaf_position(leaf_idx.to_bits_le()?);
         let result = path.verify_membership(&poseidon_param, &poseidon_param, &root, &[leaf])?;
-        result.enforce_equal(&Boolean::constant(true))?;
-
-        gadget::dbg_r1cs_eq!("MerkleVerify", result, Boolean::constant(true));
+        gadget::enforce_true_debug!("MerkleVerify", result)?;
         gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Issuer-PublicKey MerkleVerify");
 
         // [2.2] expiry check: jwt_exp == exp
         let result = exp.is_eq(&jwt_exp)?;
-        result.enforce_equal(&Boolean::constant(true))?;
-
-        gadget::dbg_r1cs_eq!(
-            "Expiry Check (jwt_exp == exp)",
-            result,
-            Boolean::constant(true)
-        );
+        gadget::enforce_true_debug!("Expiry Check (jwt_exp == exp)", result)?;
         gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Expiry Check");
 
         gadget::dbg_cs_delta!(&cs, &mut phase2_total_last, "[Phase 2] Validation Total");
@@ -394,9 +374,7 @@ where
 
         // h_anchor == Poseidon(anchor)
         let target_hanchor = chain_hash_gadget(cs.clone(), &poseidon_param, &anchor.anchor)?;
-        target_hanchor.enforce_equal(&hanchor)?;
-
-        gadget::dbg_r1cs_eq!("Anchor Binding", target_hanchor, hanchor);
+        gadget::enforce_eq_debug!("Anchor Binding", target_hanchor, hanchor)?;
         gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Anchor Binding");
 
         // Nonce binding: nonce == Poseidon(h_sign_userop, random)
@@ -405,9 +383,7 @@ where
         nonce_inputs.push(random.clone());
         let target_nonce =
             PoseidonCRHGadget::<C::BaseField>::evaluate(&poseidon_param, &nonce_inputs)?;
-        target_nonce.enforce_equal(&nonce)?;
-
-        gadget::dbg_r1cs_eq!("Nonce Binding", target_nonce, nonce);
+        gadget::enforce_eq_debug!("Nonce Binding", target_nonce, nonce)?;
         gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Nonce Binding");
 
         // aud membership: Poseidon(aud) ∈ aud_list (product trick)
@@ -417,26 +393,20 @@ where
             let diff = target_aud.clone() - valid_aud.clone();
             product *= diff;
         }
-        product.enforce_equal(&zero)?;
-
-        gadget::dbg_r1cs_eq!("Aud Membership", product, zero);
+        gadget::enforce_eq_debug!("Aud Membership", product, zero)?;
         gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Aud Membership");
 
         // h_a == Poseidon(a, random)
         let mut a_inputs = a.clone();
         a_inputs.push(random.clone());
         let target_h_a = PoseidonCRHGadget::<C::BaseField>::evaluate(&poseidon_param, &a_inputs)?;
-        target_h_a.enforce_equal(&h_a)?;
-
-        gadget::dbg_r1cs_eq!("Context Binding", target_h_a, h_a);
+        gadget::enforce_eq_debug!("Context Binding", target_h_a, h_a)?;
         gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Context Binding");
 
         // h_aud_list == Poseidon(aud_list)
         let target_h_aud_list =
             PoseidonCRHGadget::<C::BaseField>::evaluate(&poseidon_param, &aud_list)?;
-        target_h_aud_list.enforce_equal(&h_aud_list)?;
-
-        gadget::dbg_r1cs_eq!("Aud List Binding", target_h_aud_list, h_aud_list);
+        gadget::enforce_eq_debug!("Aud List Binding", target_h_aud_list, h_aud_list)?;
 
         gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Aud List Binding");
         gadget::dbg_cs_delta!(&cs, &mut phase3_total_last, "[Phase 3] Binding Total");
@@ -448,7 +418,7 @@ where
         let mut phase4_total_last = phase4_start;
 
         let result = PoseidonAnchorSchemeGadget::<C::BaseField>::is_a_nonzero(&a)?;
-        result.enforce_equal(&Boolean::constant(true))?;
+        gadget::enforce_true_debug!("A Vector Nonzero", result)?;
 
         gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - A Vector Nonzero");
 
@@ -467,15 +437,11 @@ where
         gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Boolean Selectors");
 
         let result = PoseidonAnchorSchemeGadget::<C::BaseField>::is_b_sparsity(&b, &indices)?;
-        result.enforce_equal(&Boolean::constant(true))?;
-
-        gadget::dbg_r1cs_eq!("Sparsity Check", result, Boolean::constant(true));
+        gadget::enforce_true_debug!("Sparsity Check", result)?;
 
         let k_fp = FpVar::<C::BaseField>::Constant(C::BaseField::from(Config::K as u64));
         let result = enforce_selector_cardinality_debug(&indices, &k_fp)?;
-        result.enforce_equal(&Boolean::constant(true))?;
-
-        gadget::dbg_r1cs_eq!("Selector Cardinality", result, Boolean::constant(true));
+        gadget::enforce_true_debug!("Selector Cardinality", result)?;
         gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Selector Cardinality");
 
         let is_one = single_multiplexer(&indices, &current_idx)?;
@@ -494,9 +460,7 @@ where
             &current_idx.to_bits_le_with_top_bits_zero(8)?.0,
             &n.to_bits_le_with_top_bits_zero(8)?.0,
         )?;
-        result.enforce_equal(&Boolean::constant(true))?;
-
-        gadget::dbg_r1cs_eq!("Index Range Check", result, Boolean::constant(true));
+        gadget::enforce_true_debug!("Index Range Check", result)?;
 
         gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Index Range Check");
         gadget::dbg_cs_delta!(&cs, &mut phase4_total_last, "[Phase 4] Logic Total");
@@ -526,9 +490,7 @@ where
         // lhs = <a, anchor> * random
         let beta = single_multiplexer(&b, &current_idx)?;
         let calc_rhs = beta * h_id.clone() * random.clone();
-        calc_rhs.enforce_equal(&partial_rhs)?;
-
-        gadget::dbg_r1cs_eq!("RHS Calculation", calc_rhs, partial_rhs);
+        gadget::enforce_eq_debug!("RHS Calculation", calc_rhs, partial_rhs)?;
 
         let lhs_ = PoseidonAnchorSchemeGadget::<C::BaseField>::inner_product(&anchor.anchor, &a)?;
         let calc_lhs = lhs_ * random.clone();

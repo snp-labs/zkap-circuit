@@ -53,9 +53,9 @@ pub fn jwt_nonce_hex_to_field<F: PrimeField>(
     let sixteen = FpVar::Constant(F::from(16u8));
 
     // --- 1. 고정 접두사 검증: "0x ---
-    quote_char.enforce_equal(&hex_bytes[0])?;
-    zero_char.enforce_equal(&hex_bytes[1])?;
-    x_char.enforce_equal(&hex_bytes[2])?;
+    crate::enforce_eq_internal!("nonce_prefix_quote", quote_char, hex_bytes[0])?;
+    crate::enforce_eq_internal!("nonce_prefix_zero", zero_char, hex_bytes[1])?;
+    crate::enforce_eq_internal!("nonce_prefix_x", x_char, hex_bytes[2])?;
 
     // --- 2. 누적 변수 초기화 ---
     let mut accumulated_value = FpVar::<F>::zero();
@@ -79,7 +79,7 @@ pub fn jwt_nonce_hex_to_field<F: PrimeField>(
         // --- 3.1. 닫는 따옴표 위치 검증 ---
         // "닫는 따옴표 위치라면 반드시 " 문자여야 함"
         let quote_pos_requirement = !&is_closing_quote_pos | &is_quote_char;
-        quote_pos_requirement.enforce_equal(&Boolean::TRUE)?;
+        crate::enforce_true_internal!("nonce_quote_pos", quote_pos_requirement)?;
 
         // --- 3.2. 16진수 파싱 (닫는 따옴표 이전에만) ---
         let should_parse = &is_before_closing_quote & !&is_closing_quote_pos;
@@ -89,7 +89,7 @@ pub fn jwt_nonce_hex_to_field<F: PrimeField>(
 
         // 유효성 검증: "파싱해야 한다면 반드시 유효한 16진수여야 함"
         let validity_requirement = !&should_parse | &is_valid_hex;
-        validity_requirement.enforce_equal(&Boolean::TRUE)?;
+        crate::enforce_true_internal!("nonce_hex_valid", validity_requirement)?;
 
         // 값 누적 (should_parse가 true일 때만)
         let potential_next_value = &accumulated_value * &sixteen + &hex_value;
@@ -105,13 +105,13 @@ pub fn jwt_nonce_hex_to_field<F: PrimeField>(
 
     // --- 4. 최종 검증 ---
     // 4.1. 닫는 따옴표를 반드시 찾았어야 함
-    found_closing_quote.enforce_equal(&Boolean::TRUE)?;
+    crate::enforce_true_internal!("nonce_closing_quote_found", found_closing_quote)?;
 
     // 4.2. 16진수 자릿수는 1~64자여야 함 (4비트~256비트)
     // 최소 1자
     let zero = FpVar::<F>::zero();
     let digit_count_ge_1 = hex_digit_count.is_neq(&zero)?;
-    digit_count_ge_1.enforce_equal(&Boolean::TRUE)?;
+    crate::enforce_true_internal!("nonce_digit_count_ge_1", digit_count_ge_1)?;
 
     // [ZKAPCIR-004] 최대 64자 (256비트) - 회로 내에서 실제로 enforce
     // 기존 코드는 비교 결과를 제약하지 않아 65자 이상도 허용되었음.
@@ -119,7 +119,7 @@ pub fn jwt_nonce_hex_to_field<F: PrimeField>(
     let digit_count_bits = hex_digit_count.to_bits_le()?;
     let max_bits = max_hex_digits.to_bits_le()?;
     let digit_le_max = crate::utils::comparison_v2::is_less_or_equal(&digit_count_bits, &max_bits)?;
-    digit_le_max.enforce_equal(&Boolean::TRUE)?;
+    crate::enforce_true_internal!("nonce_digit_le_max", digit_le_max)?;
 
     Ok(accumulated_value)
 }
@@ -326,7 +326,7 @@ pub fn jwt_exp_to_field<F: PrimeField>(
         let (digit_value, is_valid_digit) = decimal_byte_to_digit(current_byte)?;
 
         // 유효성 검증: 반드시 유효한 10진수여야 함
-        is_valid_digit.enforce_equal(&Boolean::TRUE)?;
+        crate::enforce_true_internal!("exp_digit_valid", is_valid_digit)?;
 
         // 값 누적: accumulated_value = accumulated_value * 10 + digit_value
         accumulated_value = &accumulated_value * &ten + &digit_value;
@@ -334,7 +334,7 @@ pub fn jwt_exp_to_field<F: PrimeField>(
 
     // --- 2. 나머지는 모두 0 패딩 검증 ---
     for i in 10..decimal_bytes.len() {
-        decimal_bytes[i].enforce_equal(&zero)?;
+        crate::enforce_eq_internal!("exp_padding_zero", decimal_bytes[i], zero)?;
     }
 
     Ok(accumulated_value)

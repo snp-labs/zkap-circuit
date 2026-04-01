@@ -112,7 +112,7 @@ fn find_index_in_table<F: PrimeField>(
         .fold(FpVar::Constant(F::zero()), |acc, ind| {
             acc + FpVar::from(ind.clone())
         });
-    sum.enforce_equal(&FpVar::Constant(F::one()))?;
+    crate::enforce_eq_internal!("base64_one_hot_sum", sum, FpVar::Constant(F::one()))?;
 
     // Compute the 6-bit index from indicators
     let mut index_bits = Vec::with_capacity(6);
@@ -141,7 +141,7 @@ fn verify_6bit_value_le<F: PrimeField>(
     let expected_ascii = select_array_element(table, value_bits_witness)?;
 
     // 2. 입력된 ASCII 값과 테이블에서 선택된 예상 ASCII 값이 같은지 강제
-    enc_ascii.enforce_equal(&expected_ascii)?;
+    crate::enforce_eq_internal!("base64_ascii_match", enc_ascii.clone(), expected_ascii)?;
 
     // 값 자체를 반환할 필요 없이, 검증만 수행하고 witness로 받은 비트를 사용
     Ok(())

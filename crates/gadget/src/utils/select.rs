@@ -88,7 +88,7 @@ where
     }
 
     // 합이 1임을 강제 (인덱스가 범위 내에 하나만 존재함)
-    sum_of_bits.enforce_equal(&FpVar::one())?;
+    crate::enforce_eq_internal!("one_bit_vector_sum", sum_of_bits, FpVar::one())?;
 
     Ok(eq_bits)
 }

@@ -52,7 +52,7 @@ pub fn pack_bytes_to_field_with_constraints<F: PrimeField>(
 
         // 8비트 초과 부분은 모두 0이어야 함을 강제
         for bit in byte_bits.iter().skip(BITS_PER_BYTE) {
-            bit.enforce_equal(&Boolean::FALSE)?;
+            crate::enforce_eq_internal!("byte_range_check", *bit, Boolean::<F>::FALSE)?;
         }
 
         // 하위 8비트만 저장

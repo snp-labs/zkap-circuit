@@ -41,6 +41,9 @@ impl ProofGenerator {
     ) -> Result<ProofOutput, ApplicationError> {
         log::info!("[ProofGenerator] Starting proof generation for {} inputs...", inputs.len());
 
+        // Validate CRS manifest before loading the key
+        crate::manifest::validate_crs_manifest::<Config>(&self.pk_path)?;
+
         let pk = self.load_proving_key()?;
         let mut rng = OsRng;
 

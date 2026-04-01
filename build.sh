@@ -17,12 +17,15 @@ set -e  # 에러 발생 시 즉시 중단
 #   --no-package          패키징(tar.gz) 건너뛰기
 #   --dry-run             실제 빌드 없이 설정만 확인
 #   --yes, -y             대화형 프롬프트 자동 승인 (CI용)
-#   -n <값>               ZK_N 값 설정 (기본: 3)
-#   -k <값>               ZK_K 값 설정 (기본: 3)
+#   --profile <값>        ZK_PROFILE 설정 (dev|prod, 기본: prod)
+#   --binding <type>      빌드할 바인딩 (napi|uniffi|wasm|all, 여러 개 가능, 기본: all)
+#   -n <값>               ZK_N 값 override
+#   -k <값>               ZK_K 값 override
 #   --help, -h            도움말 출력
 #
 # 예시:
-#   ./build.sh                                    # 전체 빌드 (모든 환경)
+#   ./build.sh                                    # 전체 빌드 (prod profile)
+#   ./build.sh --profile dev                      # dev profile로 빌드
 #   ./build.sh -e macos-arm64                     # macOS ARM64만 빌드
 #   ./build.sh -e macos-arm64 -e linux-x64        # 여러 환경 빌드
 #   ./build.sh --napi-only -e windows             # Windows NAPI만 빌드
@@ -50,8 +53,11 @@ OUTPUT_DIR="./output"
 DO_PACKAGE=true
 DRY_RUN=false
 AUTO_YES=false
-ZK_N_VALUE=3
-ZK_K_VALUE=3
+ZK_PROFILE_VALUE="prod"
+ZK_N_VALUE=""
+ZK_K_VALUE=""
+BINDINGS=()
+AVAILABLE_BINDINGS=("napi" "uniffi" "wasm")
 
 # 호스트 OS 및 아키텍처 감지
 HOST_OS="$(uname -s)"
@@ -146,9 +152,16 @@ check_prerequisites() {
     fi
 
     # npm은 NAPI 빌드 시에만 필요
-    if [ "$KEYS_ONLY" != true ]; then
+    if [ "$KEYS_ONLY" != true ] && [[ " ${BINDINGS[*]} " =~ " napi " ]]; then
         if ! command -v npm &> /dev/null; then
             missing_tools+=("npm (Node.js)")
+        fi
+    fi
+
+    # wasm-pack은 WASM 빌드 시에만 필요
+    if [ "$KEYS_ONLY" != true ] && [[ " ${BINDINGS[*]} " =~ " wasm " ]]; then
+        if ! command -v wasm-pack &> /dev/null; then
+            missing_tools+=("wasm-pack (cargo install wasm-pack)")
         fi
     fi
 
@@ -287,6 +300,22 @@ while [[ $# -gt 0 ]]; do
             AUTO_YES=true
             shift
             ;;
+        --profile)
+            if [[ -z "$2" || "$2" == -* ]]; then
+                log_error "--profile 옵션에 값이 필요합니다 (dev|prod)"
+                exit 1
+            fi
+            ZK_PROFILE_VALUE="$2"
+            shift 2
+            ;;
+        --binding)
+            if [[ -z "$2" || "$2" == -* ]]; then
+                log_error "--binding 옵션에 값이 필요합니다 (napi|uniffi|wasm|all)"
+                exit 1
+            fi
+            BINDINGS+=("$2")
+            shift 2
+            ;;
         -n)
             if [[ -z "$2" || "$2" == -* ]]; then
                 log_error "-n 옵션에 값이 필요합니다"
@@ -354,17 +383,36 @@ for env in "${ENVIRONMENTS[@]}"; do
     fi
 done
 
+# 바인딩이 지정되지 않으면 all로 설정
+if [ ${#BINDINGS[@]} -eq 0 ]; then
+    BINDINGS=("all")
+fi
+if [[ " ${BINDINGS[*]} " =~ " all " ]]; then
+    BINDINGS=("${AVAILABLE_BINDINGS[@]}")
+fi
+
+# 유효한 바인딩인지 검증
+for binding in "${BINDINGS[@]}"; do
+    if [[ ! " ${AVAILABLE_BINDINGS[*]} " =~ " ${binding} " ]]; then
+        log_error "잘못된 바인딩: $binding"
+        log_info "사용 가능한 바인딩: ${AVAILABLE_BINDINGS[*]} all"
+        exit 1
+    fi
+done
+
 # 설정 출력
 log_step "빌드 설정"
 log_info "타겟 환경: ${ENVIRONMENTS[*]}"
+log_info "바인딩: ${BINDINGS[*]}"
 log_info "출력 디렉토리: $OUTPUT_DIR"
 log_info "NAPI만 빌드: $NAPI_ONLY"
 log_info "키만 생성: $KEYS_ONLY"
 log_info "클린 빌드: $DO_CLEAN"
 log_info "패키징: $DO_PACKAGE"
 log_info "Dry Run: $DRY_RUN"
-log_info "ZK_N: $ZK_N_VALUE"
-log_info "ZK_K: $ZK_K_VALUE"
+log_info "ZK_PROFILE: $ZK_PROFILE_VALUE"
+[ -n "$ZK_N_VALUE" ] && log_info "ZK_N override: $ZK_N_VALUE"
+[ -n "$ZK_K_VALUE" ] && log_info "ZK_K override: $ZK_K_VALUE"
 
 # Dry run 모드일 경우 여기서 종료
 if [ "$DRY_RUN" = true ]; then
@@ -381,18 +429,14 @@ setup_env_vars() {
     # .env 파일이 있으면 먼저 로드
     load_env_file
 
-    # .env에서 설정되지 않은 경우 기본값 사용
-    export ZK_MAX_JWT_B64_LEN="${ZK_MAX_JWT_B64_LEN:-1024}"
-    export ZK_MAX_PAYLOAD_B64_LEN="${ZK_MAX_PAYLOAD_B64_LEN:-896}"
-    export ZK_MAX_AUD_LEN="${ZK_MAX_AUD_LEN:-155}"
-    export ZK_MAX_EXP_LEN="${ZK_MAX_EXP_LEN:-20}"
-    export ZK_MAX_ISS_LEN="${ZK_MAX_ISS_LEN:-93}"
-    export ZK_MAX_NONCE_LEN="${ZK_MAX_NONCE_LEN:-93}"
-    export ZK_MAX_SUB_LEN="${ZK_MAX_SUB_LEN:-93}"
-    export ZK_N="${ZK_N:-$ZK_N_VALUE}"
-    export ZK_K="${ZK_K:-$ZK_K_VALUE}"
-    export ZK_TREE_HEIGHT="${ZK_TREE_HEIGHT:-16}"
-    export ZK_NUM_AUDIENCE_LIMIT="${ZK_NUM_AUDIENCE_LIMIT:-5}"
+    # Profile 설정 (build.rs가 profile 기반으로 기본값 결정)
+    export ZK_PROFILE="${ZK_PROFILE:-$ZK_PROFILE_VALUE}"
+
+    # CLI -n/-k 옵션이 설정된 경우에만 개별 override
+    [ -n "$ZK_N_VALUE" ] && export ZK_N="$ZK_N_VALUE"
+    [ -n "$ZK_K_VALUE" ] && export ZK_K="$ZK_K_VALUE"
+
+    log_info "ZK_PROFILE=$ZK_PROFILE (개별 override는 build.rs에서 처리)"
 
     # macOS에서 크로스 컴파일을 위해 llvm 경로 추가
     local llvm_path=""
@@ -439,11 +483,25 @@ create_output_dirs() {
         log_info "생성됨: $OUTPUT_DIR/keys"
     fi
 
-    # NAPI 빌드가 필요한 경우에만 napi 디렉토리 생성
+    # 바인딩 디렉토리 생성
     if [ "$KEYS_ONLY" != true ]; then
-        for env in "${ENVIRONMENTS[@]}"; do
-            mkdir -p "$OUTPUT_DIR/napi/$env"
-            log_info "생성됨: $OUTPUT_DIR/napi/$env"
+        for binding in "${BINDINGS[@]}"; do
+            case $binding in
+                napi)
+                    for env in "${ENVIRONMENTS[@]}"; do
+                        mkdir -p "$OUTPUT_DIR/napi/$env"
+                        log_info "생성됨: $OUTPUT_DIR/napi/$env"
+                    done
+                    ;;
+                wasm)
+                    mkdir -p "$OUTPUT_DIR/wasm/web" "$OUTPUT_DIR/wasm/nodejs"
+                    log_info "생성됨: $OUTPUT_DIR/wasm/"
+                    ;;
+                uniffi)
+                    mkdir -p "$OUTPUT_DIR/uniffi/swift" "$OUTPUT_DIR/uniffi/kotlin"
+                    log_info "생성됨: $OUTPUT_DIR/uniffi/"
+                    ;;
+            esac
         done
     fi
 
@@ -525,6 +583,9 @@ build_napi() {
         log_warn "NAPI 빌드 건너뛰기 (--keys-only)"
         return
     fi
+    if [[ ! " ${BINDINGS[*]} " =~ " napi " ]]; then
+        return
+    fi
 
     log_step "NAPI 바인딩 빌드"
 
@@ -555,6 +616,112 @@ build_napi() {
     popd > /dev/null
 
     log_success "NAPI 빌드 완료"
+}
+
+# WASM 빌드
+build_wasm() {
+    if [ "$KEYS_ONLY" = true ]; then
+        log_warn "WASM 빌드 건너뛰기 (--keys-only)"
+        return
+    fi
+    if [[ ! " ${BINDINGS[*]} " =~ " wasm " ]]; then
+        return
+    fi
+
+    log_step "WASM 바인딩 빌드"
+
+    if ! command -v wasm-pack &> /dev/null; then
+        log_error "wasm-pack이 설치되지 않았습니다."
+        log_info "설치 방법: cargo install wasm-pack"
+        exit 1
+    fi
+
+    pushd "$SCRIPT_DIR/bindings/wasm" > /dev/null
+
+    log_info "WASM 빌드 중 (target: web)..."
+    wasm-pack build --release --target web --out-dir "$OUTPUT_DIR/wasm/web"
+
+    log_info "WASM 빌드 중 (target: nodejs)..."
+    wasm-pack build --release --target nodejs --out-dir "$OUTPUT_DIR/wasm/nodejs"
+
+    popd > /dev/null
+    log_success "WASM 빌드 완료"
+}
+
+# UniFFI 빌드
+build_uniffi() {
+    if [ "$KEYS_ONLY" = true ]; then
+        log_warn "UniFFI 빌드 건너뛰기 (--keys-only)"
+        return
+    fi
+    if [[ ! " ${BINDINGS[*]} " =~ " uniffi " ]]; then
+        return
+    fi
+
+    log_step "UniFFI 바인딩 빌드"
+
+    pushd "$SCRIPT_DIR/bindings/uniffi" > /dev/null
+
+    log_info "UniFFI 라이브러리 빌드 중..."
+    cargo build --release
+
+    # 플랫폼별 라이브러리 확장자
+    local lib_ext="dylib"
+    case "$HOST_OS" in
+        Linux) lib_ext="so" ;;
+        Darwin) lib_ext="dylib" ;;
+    esac
+    local lib_path="$SCRIPT_DIR/target/release/libuniffi_bindings.$lib_ext"
+
+    if [ ! -f "$lib_path" ]; then
+        log_error "UniFFI 라이브러리를 찾을 수 없습니다: $lib_path"
+        popd > /dev/null
+        exit 1
+    fi
+
+    log_info "Swift 바인딩 생성 중..."
+    cargo run --release --bin uniffi-bindgen generate \
+        --library "$lib_path" \
+        --language swift --out-dir "$OUTPUT_DIR/uniffi/swift"
+
+    log_info "Kotlin 바인딩 생성 중..."
+    cargo run --release --bin uniffi-bindgen generate \
+        --library "$lib_path" \
+        --language kotlin --out-dir "$OUTPUT_DIR/uniffi/kotlin"
+
+    # 네이티브 라이브러리도 복사
+    cp "$lib_path" "$OUTPUT_DIR/uniffi/"
+    log_info "네이티브 라이브러리 복사됨: $OUTPUT_DIR/uniffi/"
+
+    popd > /dev/null
+    log_success "UniFFI 빌드 완료"
+}
+
+# Config 정합성 검증
+validate_config() {
+    if [ "$KEYS_ONLY" = true ] || [ "$NAPI_ONLY" = true ]; then
+        return
+    fi
+
+    log_step "Config 정합성 검증"
+
+    local manifest="$OUTPUT_DIR/keys/manifest.json"
+    if [ -f "$manifest" ]; then
+        if command -v jq &> /dev/null; then
+            local manifest_profile
+            manifest_profile=$(jq -r '.profile' "$manifest")
+            if [ "$manifest_profile" != "$ZK_PROFILE" ]; then
+                log_error "Config 불일치: 키는 '$manifest_profile' profile로 생성, 현재 profile은 '$ZK_PROFILE'"
+                log_error "키를 재생성하세요: ZK_PROFILE=$ZK_PROFILE ./build.sh --keys-only"
+                exit 1
+            fi
+            log_success "Config 정합성 검증 통과 (profile: $manifest_profile)"
+        else
+            log_warn "jq가 설치되지 않아 manifest 검증을 건너뜁니다"
+        fi
+    else
+        log_warn "manifest.json 없음 — 키 재생성을 권장합니다"
+    fi
 }
 
 # 패키징
@@ -612,6 +779,9 @@ main() {
     create_output_dirs
     generate_keys
     build_napi
+    build_wasm
+    build_uniffi
+    validate_config
     package_output
     print_summary
 

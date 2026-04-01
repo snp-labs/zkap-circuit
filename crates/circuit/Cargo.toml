@@ -36,6 +36,12 @@ constraints-logging = ["gadget/constraints-logging"]
 baerae = []
 num-cs-logging = ["gadget/num-cs-logging"]
 
+[dev-dependencies]
+rsa = { workspace = true }
+sha2 = { workspace = true }
+rand = { workspace = true }
+base64 = { workspace = true }
+
 [[bin]]
 name = "generate_baerae_crs"
 path = "src/bin/generate_baerae_crs.rs"
@@ -43,3 +49,7 @@ path = "src/bin/generate_baerae_crs.rs"
 [[bin]]
 name = "generate_hash"
 path = "src/bin/generate_hash.rs"
+
+[[test]]
+name = "groth16_integration"
+required-features = ["baerae"]

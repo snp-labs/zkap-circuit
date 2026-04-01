@@ -9,7 +9,6 @@ members = [
     "crates/circuit",
     "crates/gadget",
     "crates/service",
-    "crates/test",
 ]
 
 [workspace.dependencies]

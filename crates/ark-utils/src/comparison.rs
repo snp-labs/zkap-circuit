@@ -7,38 +7,6 @@ use ark_relations::r1cs::SynthesisError;
 
 use crate::one_bit_vector;
 
-/// 비트 슬라이스를 비교하여 `a < b`를 반환합니다.
-///
-/// MSB부터 LSB로 순회하며 두 플래그를 유지합니다:
-/// - `less`: `a < b`가 확정되면 true (sticky)
-/// - `equal`: 현재까지 모든 비트가 동일하면 true
-///
-/// 각 비트에서 `less |= equal & !a_bit & b_bit`, `equal &= a_bit XNOR b_bit`를 수행합니다.
-pub fn a_lt_b<F: PrimeField>(
-    a_bits: &[Boolean<F>],
-    b_bits: &[Boolean<F>],
-) -> Result<Boolean<F>, SynthesisError> {
-    // [ZKAPCIR-003] 비트 길이 불일치 시 zip이 상위 비트를 무시하는 문제 방지
-    assert_eq!(
-        a_bits.len(),
-        b_bits.len(),
-        "Bit lengths must be equal for comparison"
-    );
-
-    let mut less = Boolean::constant(false);
-    let mut equal = Boolean::constant(true);
-
-    for (a_bit, b_bit) in a_bits.iter().rev().zip(b_bits.iter().rev()) {
-        let a_lt_b_at_current_bit = &equal & (&!a_bit & b_bit);
-        less = &less | a_lt_b_at_current_bit;
-
-        let bits_are_equal_at_current_bit = !(a_bit ^ b_bit);
-        equal = &equal & bits_are_equal_at_current_bit;
-    }
-
-    Ok(less)
-}
-
 /// `i < index`일 때 `out[i] = 1`인 비트 벡터를 생성합니다.
 ///
 /// `index - 1`의 원-핫 벡터를 생성한 후, 접미사 OR 스캔을 수행하여
@@ -141,11 +109,21 @@ pub fn is_greater_or_equal<F: PrimeField>(
     Ok(!less)
 }
 
+/// A > B (Strictly Greater) - Boolean 비트 벡터용
+///
+/// Little-Endian 비트 벡터를 입력받아 비교합니다.
+pub fn is_greater_than<F: PrimeField>(
+    a_bits: &[Boolean<F>],
+    b_bits: &[Boolean<F>],
+) -> Result<Boolean<F>, SynthesisError> {
+    is_less_than(b_bits, a_bits)
+}
+
 /// 비트 단위 비교를 수행하여 (is_less, is_equal) 튜플을 반환합니다.
 ///
 /// * 입력: Little-Endian으로 구성된 Boolean 벡터 (예: to_bits_le()의 결과)
 /// * 출력: (a < b, a == b)
-fn compare_bits_raw<F: PrimeField>(
+pub fn compare_bits_raw<F: PrimeField>(
     a_bits: &[Boolean<F>],
     b_bits: &[Boolean<F>],
 ) -> Result<(Boolean<F>, Boolean<F>), SynthesisError> {

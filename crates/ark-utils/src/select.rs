@@ -50,6 +50,33 @@ where
     Ok(res)
 }
 
+/// 배열에서 `idx` 인덱스에 해당하는 요소를 선택합니다 (스칼라 곱 버전).
+///
+/// `one_bit_vector`와 스칼라 곱을 사용하여 `output = Σ(eq[i] * inp[i])`를 구현합니다.
+/// `n`을 명시적으로 지정하여 원-핫 벡터의 크기를 제어합니다.
+///
+/// # Panics
+/// `inp`가 비어 있거나 `n`이 0인 경우 패닉 발생.
+pub fn single_multiplexer_v2<F: PrimeField>(
+    inp: &[FpVar<F>],
+    idx: &FpVar<F>,
+    n: usize,
+) -> Result<FpVar<F>, SynthesisError>
+{
+    assert!(!inp.is_empty(), "inputs cannot be empty");
+    assert!(n > 0, "n must be greater than 0");
+
+    let eq_bits: Vec<FpVar<F>> = one_bit_vector(idx, n)?;
+
+    let result = inp
+        .iter()
+        .zip(eq_bits.iter())
+        .map(|(val, bit)| val * bit)
+        .fold(FpVar::zero(), |acc, x| acc + x);
+
+    Ok(result)
+}
+
 /// 인덱스를 원-핫 벡터로 변환하고 범위를 강제합니다.
 ///
 /// `index` 위치만 1이고 나머지는 0인 벡터를 생성합니다.

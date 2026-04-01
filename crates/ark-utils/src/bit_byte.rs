@@ -1,5 +1,3 @@
-use alloc::borrow::Cow;
-
 use ark_ff::PrimeField;
 use ark_r1cs_std::{
     fields::{FieldVar, fp::FpVar},
@@ -204,25 +202,6 @@ pub fn pack_byte_fps_to_fp<F: PrimeField>(
     Ok(packed_fp_result)
 }
 
-pub fn pack_decompose_bytes<F: PrimeField>(
-    decompose_bytes: &[FpVar<F>],
-    limb_width: usize,
-    pad_char: &FpVar<F>,
-) -> Result<Vec<FpVar<F>>, SynthesisError> {
-    let mut packed_fields = Vec::new();
-    for chunk in decompose_bytes.chunks(limb_width) {
-        let chunk_with_padding: Cow<[FpVar<F>]> = if chunk.len() < limb_width {
-            let mut padded_chunk = chunk.to_vec();
-            padded_chunk.resize(limb_width, pad_char.clone());
-            Cow::Owned(padded_chunk)
-        } else {
-            Cow::Borrowed(chunk)
-        };
-        let packed_field = pack_byte_fps_to_fp(&chunk_with_padding, limb_width)?;
-        packed_fields.push(packed_field);
-    }
-    Ok(packed_fields)
-}
 
 #[cfg(test)]
 mod tests {

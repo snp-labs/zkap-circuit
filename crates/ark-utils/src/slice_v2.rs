@@ -3,13 +3,13 @@ use ark_r1cs_std::{
     fields::{FieldVar, fp::FpVar},
     prelude::{Boolean, ToBitsGadget},
     uint16::UInt16,
-    eq::EqGadget,
 };
 use ark_relations::r1cs::SynthesisError;
 
 use crate::{
     divide_mod_power_of_2_circuit, multi_mux,
     slice_in_binary_tree, ceil,
+    slice_from_start,
 };
 
 /// x가 2의 거듭제곱인지 확인하고, 그렇다면 log2(x)를 반환합니다.
@@ -97,120 +97,6 @@ pub fn num_to_segments_be<F: PrimeField>(
     }
 
     Ok(segments)
-}
-
-/// 원-핫 벡터를 생성합니다 (Circom의 OneBitVector와 동일).
-/// 
-/// index 위치에만 1이 있고 나머지는 0인 벡터를 반환합니다.
-/// 
-/// # Arguments
-/// * `index` - 1을 설정할 인덱스 (0부터 시작)
-/// * `n` - 출력 벡터의 크기
-/// 
-/// # Returns
-/// * 원-핫 벡터
-fn one_bit_vector<F: PrimeField>(
-    index: &FpVar<F>,
-    n: usize,
-) -> Result<Vec<FpVar<F>>, SynthesisError> {
-    if n == 0 {
-        return Ok(vec![]);
-    }
-
-    let mut eq_bits = Vec::with_capacity(n);
-    let mut sum_of_bits = FpVar::<F>::zero();
-
-    for i in 0..n {
-        let i_const = FpVar::<F>::Constant(F::from(i as u64));
-        let is_equal = index.is_eq(&i_const)?;
-        let is_equal_fp = FpVar::from(is_equal.clone());
-        sum_of_bits += &is_equal_fp;
-        eq_bits.push(is_equal_fp);
-    }
-
-    // 합이 1임을 강제 (인덱스가 범위 내에 하나만 존재함)
-    sum_of_bits.enforce_equal(&FpVar::one())?;
-
-    Ok(eq_bits)
-}
-
-/// LTBitVector를 생성합니다 (Circom의 LTBitVector와 동일).
-/// 
-/// i < index일 때 out[i] = 1, 아니면 0인 벡터를 반환합니다.
-/// 
-/// # Arguments
-/// * `index` - 비교 기준 인덱스 (1부터 n까지)
-/// * `n` - 출력 벡터의 크기
-/// 
-/// # Returns
-/// * LT 비트 벡터
-/// 
-/// # Range checks
-/// * index in (0, n]. 범위를 벗어나면 실패합니다.
-fn lt_bit_vector<F: PrimeField>(
-    index: &FpVar<F>,
-    n: usize,
-) -> Result<Vec<FpVar<F>>, SynthesisError> {
-    if n == 0 {
-        return Ok(Vec::new());
-    }
-
-    // eq[i] = 1 if i == (index - 1), 0 otherwise
-    let index_minus_one = index - FpVar::<F>::one();
-    let eq = one_bit_vector(&index_minus_one, n)?;
-
-    // out[n-1] = eq[n-1]
-    // out[i] = eq[i] + out[i+1] for i = n-2 down to 0
-    let mut out = eq.clone();
-    for i in (0..(n - 1)).rev() {
-        out[i] = &out[i] + &out[i + 1];
-    }
-
-    Ok(out)
-}
-
-/// 
-/// 배열의 시작부터 가변 길이 슬라이스를 반환합니다.
-/// 즉, in[0:length] + [0] * (out_len - length)를 반환합니다.
-/// 
-/// # Arguments
-/// * `input` - 입력 배열
-/// * `length` - 슬라이스 길이
-/// * `out_len` - 출력 배열 크기
-/// 
-/// # Returns
-/// * 슬라이스된 배열
-/// 
-/// # Range checks
-/// * length in (0, out_len]
-/// * in_len > 0
-/// * out_len in (0, in_len]
-fn slice_from_start<F: PrimeField>(
-    input: &[FpVar<F>],
-    length: &FpVar<F>,
-    out_len: usize,
-) -> Result<Vec<FpVar<F>>, SynthesisError> {
-    let in_len = input.len();
-    
-    // Range checks (asserts)
-    assert!(out_len > 0, "out_len must be > 0");
-    assert!(out_len <= in_len, "out_len must be <= in_len");
-    
-    // RangeCheck: length in [1, out_len]
-    // lt_bit_vector는 내부적으로 length가 [1, n] 범위인지 확인합니다
-    
-    // lt[i] = 1 if i < length, 0 otherwise
-    let lts = lt_bit_vector(length, out_len)?;
-    
-    // out[i] = in[i] * lts[i]
-    // Circom의 원래 구현과 동일하게 0으로 패딩
-    let mut out = Vec::with_capacity(out_len);
-    for i in 0..out_len {
-        let result = &input[i] * &lts[i];
-        out.push(result);
-    }
-    
-    Ok(out)
 }
 
 /// 그룹화된 슬라이스 함수 (Circom의 SliceGrouped와 동일).
@@ -340,7 +226,8 @@ pub fn slice_grouped<F: PrimeField>(
     
     // --- 최종적으로 길이만큼만 자르고 나머지는 패딩 ---
     let length_fp = Boolean::le_bits_to_fp(&length.to_bits_le()?)?;
-    let output = slice_from_start(&out_with_suffix, &length_fp, max_len)?;
+    let pad_zero = FpVar::zero();
+    let output = slice_from_start(&out_with_suffix, &length_fp, max_len, &pad_zero)?;
     
     Ok(output)
 }
@@ -537,7 +424,8 @@ mod tests {
         let length = FpVar::<F>::new_witness(cs.clone(), || Ok(F::from(10u64))).unwrap();
         let out_len = 15;
 
-        let result = slice_from_start(&input_var, &length, out_len).unwrap();
+        let pad_zero = FpVar::<F>::zero();
+        let result = slice_from_start(&input_var, &length, out_len, &pad_zero).unwrap();
         assert!(cs.is_satisfied().unwrap());
         
         println!("slice_from_start - number of constraints: {}", cs.num_constraints());

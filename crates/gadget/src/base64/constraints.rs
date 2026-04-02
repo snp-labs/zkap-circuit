@@ -1,168 +1,20 @@
 use ark_ff::PrimeField;
-use ark_r1cs_std::{alloc::AllocVar, eq::EqGadget, fields::fp::FpVar, prelude::Boolean};
+use ark_r1cs_std::{
+    alloc::AllocVar, eq::EqGadget, fields::fp::FpVar, prelude::Boolean, select::CondSelectGadget,
+};
 use ark_relations::r1cs::SynthesisError;
 
-use crate::base64::Base64Table;
-use crate::utils::select_array_element;
-
-/// Optimized base64 decoder using witness bits
-pub fn base64_decoder<F: PrimeField>(
-    table: &[FpVar<F>],
-    enc_asciis: &[FpVar<F>],
-    bits_witness: &[[Boolean<F>; 6]],
-) -> Result<Vec<FpVar<F>>, SynthesisError> {
-    assert_eq!(enc_asciis.len(), bits_witness.len());
-    assert!(enc_asciis.len() % 4 == 0);
-
-    let mut result = Vec::with_capacity(enc_asciis.len() / 4 * 3);
-    for (enc_chunk, bits_witness_chunk) in enc_asciis.chunks(4).zip(bits_witness.chunks(4)) {
-        let out = encoded_chunk_to_decoded_chunk(table, enc_chunk, bits_witness_chunk)?;
-        result.extend_from_slice(&out);
-    }
-    Ok(result)
-}
-
-/// Non-optimized base64 decoder that searches through the table
-/// This version doesn't use witness bits, instead it searches the table for each character
-pub fn base64_decoder_unopt<F: PrimeField>(
-    table: &[FpVar<F>],
-    enc_asciis: &[FpVar<F>],
-) -> Result<Vec<FpVar<F>>, SynthesisError> {
-    assert_eq!(table.len(), 64);
-    assert!(enc_asciis.len() % 4 == 0);
-
-    let mut result = Vec::with_capacity(enc_asciis.len() / 4 * 3);
-    for enc_chunk in enc_asciis.chunks(4) {
-        let out = encoded_chunk_to_decoded_chunk_unopt(table, enc_chunk)?;
-        result.extend_from_slice(&out);
-    }
-    Ok(result)
-}
-
-fn encoded_chunk_to_decoded_chunk<F: PrimeField>(
-    table: &[FpVar<F>],
-    encoded_chunk: &[FpVar<F>],
-    bits_witness: &[[Boolean<F>; 6]],
-) -> Result<Vec<FpVar<F>>, SynthesisError> {
-    let mut all_bits = Vec::with_capacity(4 * 6);
-
-    for (enc_ascii, value_bits_witness) in encoded_chunk.iter().zip(bits_witness.iter()) {
-        verify_6bit_value_le(table, enc_ascii, value_bits_witness)?;
-
-        let value_bits_witness_reversed =
-            value_bits_witness.iter().rev().cloned().collect::<Vec<_>>();
-
-        all_bits.extend_from_slice(&value_bits_witness_reversed);
-    }
-
-    let result = all_bits
-        .chunks_mut(8)
-        .map(|chunk| {
-            chunk.reverse();
-            Boolean::le_bits_to_fp(chunk)
-        })
-        .collect::<Result<Vec<FpVar<F>>, _>>()?;
-
-    Ok(result)
-}
-
-fn encoded_chunk_to_decoded_chunk_unopt<F: PrimeField>(
-    table: &[FpVar<F>],
-    encoded_chunk: &[FpVar<F>],
-) -> Result<Vec<FpVar<F>>, SynthesisError> {
-    let mut all_bits = Vec::with_capacity(4 * 6);
-
-    for enc_ascii in encoded_chunk.iter() {
-        // Search through the table to find the index
-        let value_bits = find_index_in_table(table, enc_ascii)?;
-
-        let value_bits_reversed = value_bits.iter().rev().cloned().collect::<Vec<_>>();
-        all_bits.extend_from_slice(&value_bits_reversed);
-    }
-
-    let result = all_bits
-        .chunks_mut(8)
-        .map(|chunk| {
-            chunk.reverse();
-            Boolean::le_bits_to_fp(chunk)
-        })
-        .collect::<Result<Vec<FpVar<F>>, _>>()?;
-
-    Ok(result)
-}
-
-/// Find the index of enc_ascii in the table by checking equality with each element
-/// Returns the 6-bit representation of the index
-fn find_index_in_table<F: PrimeField>(
-    table: &[FpVar<F>],
-    enc_ascii: &FpVar<F>,
-) -> Result<Vec<Boolean<F>>, SynthesisError> {
-    assert_eq!(table.len(), 64);
-
-    // Create indicator variables for each table position
-    let mut indicators = Vec::with_capacity(64);
-    for table_entry in table.iter() {
-        let is_equal = enc_ascii.is_eq(table_entry)?;
-        indicators.push(is_equal);
-    }
-
-    // Enforce that exactly one indicator is true
-    let sum = indicators
-        .iter()
-        .fold(FpVar::Constant(F::zero()), |acc, ind| {
-            acc + FpVar::from(ind.clone())
-        });
-    crate::enforce_eq_internal!("base64_one_hot_sum", sum, FpVar::Constant(F::one()))?;
-
-    // Compute the 6-bit index from indicators
-    let mut index_bits = Vec::with_capacity(6);
-    for bit_pos in 0..6 {
-        let mut bit_value = Boolean::FALSE;
-        for (i, indicator) in indicators.iter().enumerate() {
-            if (i >> bit_pos) & 1 == 1 {
-                bit_value = &bit_value | indicator;
-            }
-        }
-        index_bits.push(bit_value);
-    }
-
-    Ok(index_bits)
-}
-
-/// Witness로 제공된 6비트 값을 검증하고, 해당 비트를 반환 (회로 내)
-/// Prover는 입력 `enc_ascii`에 해당하는 올바른 6비트 값(`value_bits_witness`)을 제공해야 함
-fn verify_6bit_value_le<F: PrimeField>(
-    table: &[FpVar<F>],                // Base64 ASCII 테이블 (상수)
-    enc_ascii: &FpVar<F>,              // 입력 Base64 문자 (ASCII)
-    value_bits_witness: &[Boolean<F>], // Prover가 제공하는 6비트 값 (witness)
-) -> Result<(), SynthesisError> {
-    // 1. Witness로 제공된 6비트 인덱스를 사용하여 테이블에서 예상되는 ASCII 값 선택
-    //    select_array_element는 테이블 크기(64)에 맞는 인덱스 비트(6개) 필요
-    let expected_ascii = select_array_element(table, value_bits_witness)?;
-
-    // 2. 입력된 ASCII 값과 테이블에서 선택된 예상 ASCII 값이 같은지 강제
-    crate::enforce_eq_internal!("base64_ascii_match", enc_ascii.clone(), expected_ascii)?;
-
-    // 값 자체를 반환할 필요 없이, 검증만 수행하고 witness로 받은 비트를 사용
-    Ok(())
-}
+use crate::{
+    base64::{
+        Base64Table,
+        decoder::{Base64CharBits, IndexBits},
+    },
+    utils::select_array_element_be,
+};
 
 #[derive(Clone, Debug)]
 pub struct Base64TableVar<F: PrimeField> {
     pub table: Vec<FpVar<F>>,
-}
-
-impl<F> Base64TableVar<F>
-where
-    F: PrimeField,
-{
-    pub fn decode(
-        &self,
-        enc_asciis: &[FpVar<F>],
-        bits_witness: &[[Boolean<F>; 6]],
-    ) -> Result<Vec<FpVar<F>>, SynthesisError> {
-        base64_decoder(&self.table, enc_asciis, bits_witness)
-    }
 }
 
 impl<F> AllocVar<Base64Table, F> for Base64TableVar<F>
@@ -185,223 +37,368 @@ where
     }
 }
 
-pub fn encoded_table<F: PrimeField>() -> Vec<FpVar<F>> {
-    let str = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-    str.bytes().map(|b| FpVar::Constant(F::from(b))).collect()
+/// Base64CharBits의 회로 변수 표현. 6bits 여야함.
+#[derive(Clone)]
+pub struct Base64CharBitsVar<F: PrimeField> {
+    pub bits: Vec<Boolean<F>>,
+}
+
+pub struct IndexBitsVar<F: PrimeField> {
+    pub inner: Vec<Base64CharBitsVar<F>>,
+}
+
+pub struct Base64DecoderGadget<F: PrimeField> {
+    _phantom: std::marker::PhantomData<F>,
+}
+
+impl<F: PrimeField> Base64DecoderGadget<F> {
+    /// Optimized base64 decoder with hard enforcement.
+    ///
+    /// Uses hard enforcement instead of soft validation (is_valid Boolean chain),
+    /// direct enforce_equal, saving ~3 constraints per character.
+    ///
+    /// NULL padding handling: enc_ascii=0 is normalized to 'A'(65) before
+    /// enforcement. This ensures index_bits must be 0 for padding positions
+    /// (any other index_bits would produce expected != 65, failing enforce_equal).
+    pub fn decode(
+        table: &Base64TableVar<F>,
+        enc_asciis: &[FpVar<F>],
+        index_bits: &IndexBitsVar<F>,
+    ) -> Result<Vec<FpVar<F>>, SynthesisError> {
+        assert_eq!(enc_asciis.len(), index_bits.inner.len());
+        assert!(enc_asciis.len() % 4 == 0);
+
+        let padding_char = FpVar::Constant(F::from(65u8)); // ASCII 'A'
+        let zero = FpVar::Constant(F::zero());
+        let mut all_bits = Vec::with_capacity(enc_asciis.len() * 6);
+
+        for (enc_ascii, char_bits) in enc_asciis.iter().zip(index_bits.inner.iter()) {
+            let expected_ascii = Self::select_array_element_table(table, char_bits)?;
+
+            let is_zero = enc_ascii.is_eq(&zero)?;
+            let normalized =
+                CondSelectGadget::conditionally_select(&is_zero, &padding_char, enc_ascii)?;
+
+            normalized.enforce_equal(&expected_ascii)?;
+
+            all_bits.extend_from_slice(&char_bits.bits);
+        }
+
+        let result = all_bits
+            .chunks_mut(8)
+            .map(|chunk| {
+                chunk.reverse();
+                Boolean::le_bits_to_fp(chunk)
+            })
+            .collect::<Result<Vec<FpVar<F>>, _>>()?;
+
+        Ok(result)
+    }
+
+    /// 비트 인덱스(Big-Endian)를 사용하여 배열에서 요소를 선택합니다.
+    ///
+    /// 입력 `idx_bits`는 [MSB, ..., LSB] 순서여야 합니다.
+    /// `idx_bits[0]`(MSB)를 기준으로 상위 절반(Right)과 하위 절반(Left)을 재귀적으로 분할합니다.
+    fn select_array_element_table(
+        table: &Base64TableVar<F>,
+        idx_bits: &Base64CharBitsVar<F>,
+    ) -> Result<FpVar<F>, SynthesisError> {
+        assert_eq!(table.table.len(), 64);
+        assert_eq!(idx_bits.bits.len(), 6);
+
+        select_array_element_be(&table.table, &idx_bits.bits)
+    }
+}
+
+impl<F: PrimeField> AllocVar<Base64CharBits, F> for Base64CharBitsVar<F> {
+    fn new_variable<T: std::borrow::Borrow<Base64CharBits>>(
+        cs: impl Into<ark_relations::r1cs::Namespace<F>>,
+        f: impl FnOnce() -> Result<T, SynthesisError>,
+        mode: ark_r1cs_std::prelude::AllocationMode,
+    ) -> Result<Self, SynthesisError> {
+        let ns = cs.into();
+        let cs = ns.cs();
+
+        f().and_then(|val| {
+            assert_eq!(
+                val.borrow().bits.len(),
+                6,
+                "Base64CharBits must have exactly 6 bits"
+            );
+
+            let bits = val
+                .borrow()
+                .bits
+                .iter()
+                .map(|b| Boolean::new_variable(cs.clone(), || Ok(*b), mode))
+                .collect::<Result<Vec<Boolean<F>>, SynthesisError>>()?;
+
+            Ok(Self { bits })
+        })
+    }
+}
+
+impl<F: PrimeField> AllocVar<IndexBits, F> for IndexBitsVar<F> {
+    fn new_variable<T: std::borrow::Borrow<IndexBits>>(
+        cs: impl Into<ark_relations::r1cs::Namespace<F>>,
+        f: impl FnOnce() -> Result<T, SynthesisError>,
+        mode: ark_r1cs_std::prelude::AllocationMode,
+    ) -> Result<Self, SynthesisError> {
+        let ns = cs.into();
+        let cs = ns.cs();
+
+        f().and_then(|val| {
+            let inner = val
+                .borrow()
+                .inner
+                .iter()
+                .map(|char_bits| {
+                    Base64CharBitsVar::new_variable(cs.clone(), || Ok(char_bits), mode)
+                })
+                .collect::<Result<Vec<Base64CharBitsVar<F>>, SynthesisError>>()?;
+            Ok(Self { inner })
+        })
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use ark_r1cs_std::{R1CSVar, alloc::AllocVar, fields::fp::FpVar, prelude::Boolean};
+    use super::*;
+    use crate::base64::{decoder::IndexBits, get_base64_table};
+    use ark_r1cs_std::{R1CSVar, prelude::AllocationMode};
+    use ark_relations::r1cs::ConstraintSystem;
 
-    use crate::base64::utils::base64_to_6bit_bools;
-
-    use super::{
-        base64_decoder, base64_decoder_unopt, encoded_chunk_to_decoded_chunk, encoded_table,
-        verify_6bit_value_le,
-    };
     type F = ark_bn254::Fr;
 
-    fn test_base64_decoder(enc: &str) {
-        let cs = ark_relations::r1cs::ConstraintSystem::<F>::new_ref();
-        let table = encoded_table::<F>();
-        let enc_bytes = enc.as_bytes();
-        let input_bits = base64_to_6bit_bools(enc.as_bytes()).unwrap();
-
-        let enc_asciis: Vec<FpVar<F>> = enc_bytes
-            .iter()
-            .map(|&byte| FpVar::new_witness(cs.clone(), || Ok(F::from(byte as u64))).unwrap())
-            .collect();
-        let bits_witnesss = input_bits
-            .chunks(6)
-            .map(|bits| {
-                bits.iter()
-                    .map(|&bit| Boolean::new_witness(cs.clone(), || Ok(bit)).unwrap())
-                    .collect::<Vec<_>>()
-                    .try_into()
-                    .unwrap()
-            })
-            .collect::<Vec<[Boolean<F>; 6]>>();
-        let result = base64_decoder(&table, &enc_asciis, &bits_witnesss).unwrap();
-        assert!(cs.is_satisfied().unwrap());
-        println!("number of constraints: {}", cs.num_constraints());
-        // println!("result: {:?}", result.value().unwrap());
-        println!("result_len: {:?}", result.len());
-    }
-
     #[test]
-    fn test_base64_decoder_opt_trivial1() {
-        let enc = "TWFu";
-        let enc = enc.repeat(1);
-        test_base64_decoder(&enc);
-    }
+    fn test_decode_basic() {
+        let cs = ConstraintSystem::<F>::new_ref();
+        let input = "TWFu";
+        let padded_len = 4;
 
-    fn test_base64_decoder_unopt(enc: &str) {
-        let cs = ark_relations::r1cs::ConstraintSystem::<F>::new_ref();
-        let table = encoded_table::<F>();
-        let enc_bytes = enc.as_bytes();
-
-        let enc_asciis: Vec<FpVar<F>> = enc_bytes
+        let table = get_base64_table();
+        let table_var =
+            Base64TableVar::new_variable(cs.clone(), || Ok(&table), AllocationMode::Constant)
+                .unwrap();
+        let index_bits = IndexBits::from_base64_url(input, padded_len).unwrap();
+        let index_bits_var =
+            IndexBitsVar::new_variable(cs.clone(), || Ok(&index_bits), AllocationMode::Witness)
+                .unwrap();
+        let enc_asciis: Vec<FpVar<F>> = input
+            .as_bytes()
             .iter()
             .map(|&byte| FpVar::new_witness(cs.clone(), || Ok(F::from(byte as u64))).unwrap())
             .collect();
 
-        let result = base64_decoder_unopt(&table, &enc_asciis).unwrap();
+        let result =
+            Base64DecoderGadget::decode(&table_var, &enc_asciis, &index_bits_var).unwrap();
+
         assert!(cs.is_satisfied().unwrap());
-        println!(
-            "number of constraints (unoptimized): {}",
-            cs.num_constraints()
-        );
-        println!("result_len: {:?}", result.len());
-    }
+        assert_eq!(result.len(), 3);
 
-    #[test]
-    fn test_base64_decoder_unopt_trivial1() {
-        let enc = "TWFu";
-        let enc = enc.repeat(1);
-        test_base64_decoder_unopt(&enc);
-    }
-
-    #[test]
-    fn test_compare_opt_vs_unopt() {
-        println!("\n=== Comparing Optimized vs Unoptimized Base64 Decoder ===\n");
-
-        let test_cases = vec![
-            ("TWFu", 1), // 4 chars (1 chunk)
-            ("TWFu", 2), // 8 chars (2 chunks)
-            ("TWFu", 4), // 16 chars (4 chunks)
-            ("TWFu", 8), // 32 chars (8 chunks)
-        ];
-
-        for (base, repeat) in test_cases {
-            let enc = base.repeat(repeat);
-            let num_chars = enc.len();
-
-            println!(
-                "Testing with {} characters ({} chunks):",
-                num_chars,
-                num_chars / 4
-            );
-
-            // Test optimized version
-            let cs_opt = ark_relations::r1cs::ConstraintSystem::<F>::new_ref();
-            let table = encoded_table::<F>();
-            let enc_bytes = enc.as_bytes();
-            let input_bits = base64_to_6bit_bools(enc.as_bytes()).unwrap();
-
-            let enc_asciis_opt: Vec<FpVar<F>> = enc_bytes
-                .iter()
-                .map(|&byte| {
-                    FpVar::new_witness(cs_opt.clone(), || Ok(F::from(byte as u64))).unwrap()
-                })
-                .collect();
-            let bits_witnesss = input_bits
-                .chunks(6)
-                .map(|bits| {
-                    bits.iter()
-                        .map(|&bit| Boolean::new_witness(cs_opt.clone(), || Ok(bit)).unwrap())
-                        .collect::<Vec<_>>()
-                        .try_into()
-                        .unwrap()
-                })
-                .collect::<Vec<[Boolean<F>; 6]>>();
-
-            let _result_opt = base64_decoder(&table, &enc_asciis_opt, &bits_witnesss).unwrap();
-            assert!(cs_opt.is_satisfied().unwrap());
-            let constraints_opt = cs_opt.num_constraints();
-
-            // Test unoptimized version
-            let cs_unopt = ark_relations::r1cs::ConstraintSystem::<F>::new_ref();
-            let table = encoded_table::<F>();
-            let enc_asciis_unopt: Vec<FpVar<F>> = enc_bytes
-                .iter()
-                .map(|&byte| {
-                    FpVar::new_witness(cs_unopt.clone(), || Ok(F::from(byte as u64))).unwrap()
-                })
-                .collect();
-
-            let _result_unopt = base64_decoder_unopt(&table, &enc_asciis_unopt).unwrap();
-            assert!(cs_unopt.is_satisfied().unwrap());
-            let constraints_unopt = cs_unopt.num_constraints();
-
-            println!("  Optimized:     {} constraints", constraints_opt);
-            println!("  Unoptimized:   {} constraints", constraints_unopt);
-            println!(
-                "  Difference:    {} constraints",
-                constraints_unopt as i64 - constraints_opt as i64
-            );
-            println!(
-                "  Ratio:         {:.2}x\n",
-                constraints_unopt as f64 / constraints_opt as f64
-            );
+        // "Man" = [77, 97, 110]
+        let expected_values = vec![77u64, 97u64, 110u64];
+        for (i, (r, &expected)) in result.iter().zip(expected_values.iter()).enumerate() {
+            let actual = r.value().unwrap().into_bigint().0[0];
+            assert_eq!(actual, expected, "Byte {} mismatch", i);
         }
+        println!("decode basic: {} constraints", cs.num_constraints());
     }
 
     #[test]
-    fn test_encoded_chunk_to_decoded_chunk1() {
-        let table = encoded_table::<F>();
-        let cs = ark_relations::r1cs::ConstraintSystem::<F>::new_ref();
-        let enc = "TWFu";
-        let enc_bytes = enc.as_bytes();
+    fn test_decode_longer() {
+        let cs = ConstraintSystem::<F>::new_ref();
+        let input = "SGVsbG8";
+        let padded_len = 8;
 
-        let input_bits: [[bool; 6]; 4] = [
-            [true, true, false, false, true, false],  // T
-            [false, true, true, false, true, false],  // W
-            [true, false, true, false, false, false], // F
-            [false, true, true, true, false, true],   // u
-        ];
-
-        let bits_witness: [[Boolean<F>; 6]; 4] = input_bits
-            .iter()
-            .map(|bits| {
-                bits.iter()
-                    .map(|&bit| Boolean::new_witness(cs.clone(), || Ok(bit)).unwrap())
-                    .collect::<Vec<_>>()
-                    .try_into()
-                    .unwrap()
-            })
-            .collect::<Vec<_>>()
-            .try_into()
-            .unwrap();
-        println!("bits_witness_constraints: {:?}", cs.num_constraints());
-        let enc_chunk: Vec<FpVar<F>> = enc_bytes
-            .iter()
-            .map(|&byte| FpVar::new_witness(cs.clone(), || Ok(F::from(byte as u64))).unwrap())
-            .collect();
-        let result = encoded_chunk_to_decoded_chunk(&table, &enc_chunk, &bits_witness).unwrap();
-        assert!(cs.is_satisfied().unwrap());
-        println!("number of constraints: {}", cs.num_constraints());
-        println!("result: {:?}", result.value().unwrap());
-        println!(
-            "str: {:?}",
-            // String::from_utf8([130, 66, 194].to_vec()).unwrap()
-            b"ABC"
-        );
-    }
-
-    #[test]
-    fn test_verify_and_get_6bit_value() {
-        let chars = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-        let str = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-
-        let table = encoded_table::<F>();
-
-        for (i, char) in chars.iter().enumerate() {
-            let cs = ark_relations::r1cs::ConstraintSystem::<F>::new_ref();
-            let enc_ascii = FpVar::new_witness(cs.clone(), || Ok(F::from(*char as u64))).unwrap();
-            let value_bits_witness = (0..6)
-                .map(|j| Boolean::new_witness(cs.clone(), || Ok((i >> j) & 1 == 1)))
-                .collect::<Result<Vec<Boolean<F>>, _>>()
+        let table = get_base64_table();
+        let table_var =
+            Base64TableVar::new_variable(cs.clone(), || Ok(&table), AllocationMode::Constant)
+                .unwrap();
+        let index_bits = IndexBits::from_base64_url(input, padded_len).unwrap();
+        let index_bits_var =
+            IndexBitsVar::new_variable(cs.clone(), || Ok(&index_bits), AllocationMode::Witness)
                 .unwrap();
 
-            // Call the function to verify and get the 6-bit value
-            verify_6bit_value_le(&table, &enc_ascii, &value_bits_witness).unwrap();
+        let mut padded_input = input.to_string();
+        padded_input.push('A');
+        let enc_asciis: Vec<FpVar<F>> = padded_input
+            .as_bytes()
+            .iter()
+            .map(|&byte| FpVar::new_witness(cs.clone(), || Ok(F::from(byte as u64))).unwrap())
+            .collect();
+
+        let result =
+            Base64DecoderGadget::decode(&table_var, &enc_asciis, &index_bits_var).unwrap();
+
+        assert!(cs.is_satisfied().unwrap());
+        assert_eq!(result.len(), 6);
+        println!("decode longer: {} constraints", cs.num_constraints());
+    }
+
+    #[test]
+    fn test_decode_failure_wrong_ascii() {
+        let cs = ConstraintSystem::<F>::new_ref();
+        let input = "TWFu";
+        let padded_len = 4;
+
+        let table = get_base64_table();
+        let table_var =
+            Base64TableVar::new_variable(cs.clone(), || Ok(&table), AllocationMode::Constant)
+                .unwrap();
+        let index_bits = IndexBits::from_base64_url(input, padded_len).unwrap();
+        let index_bits_var =
+            IndexBitsVar::new_variable(cs.clone(), || Ok(&index_bits), AllocationMode::Witness)
+                .unwrap();
+
+        // Wrong ASCII: "XXXX" instead of "TWFu"
+        let wrong_input = "XXXX";
+        let enc_asciis: Vec<FpVar<F>> = wrong_input
+            .as_bytes()
+            .iter()
+            .map(|&byte| FpVar::new_witness(cs.clone(), || Ok(F::from(byte as u64))).unwrap())
+            .collect();
+
+        let _result =
+            Base64DecoderGadget::decode(&table_var, &enc_asciis, &index_bits_var).unwrap();
+
+        // Hard enforcement: constraint system must be unsatisfied
+        assert!(!cs.is_satisfied().unwrap());
+        println!("decode wrong ascii: correctly unsatisfied");
+    }
+
+    #[test]
+    fn test_decode_failure_partial_mismatch() {
+        let cs = ConstraintSystem::<F>::new_ref();
+        let correct_input = "TWFu";
+        let padded_len = 4;
+
+        let table = get_base64_table();
+        let table_var =
+            Base64TableVar::new_variable(cs.clone(), || Ok(&table), AllocationMode::Constant)
+                .unwrap();
+        let index_bits = IndexBits::from_base64_url(correct_input, padded_len).unwrap();
+        let index_bits_var =
+            IndexBitsVar::new_variable(cs.clone(), || Ok(&index_bits), AllocationMode::Witness)
+                .unwrap();
+
+        // First char wrong: "XWFu"
+        let partial_wrong = "XWFu";
+        let enc_asciis: Vec<FpVar<F>> = partial_wrong
+            .as_bytes()
+            .iter()
+            .map(|&byte| FpVar::new_witness(cs.clone(), || Ok(F::from(byte as u64))).unwrap())
+            .collect();
+
+        let _result =
+            Base64DecoderGadget::decode(&table_var, &enc_asciis, &index_bits_var).unwrap();
+
+        assert!(!cs.is_satisfied().unwrap());
+        println!("decode partial mismatch: correctly unsatisfied");
+    }
+
+    #[test]
+    fn test_decode_null_padding() {
+        let cs = ConstraintSystem::<F>::new_ref();
+        // "TW" with 2 NULL padding positions
+        let input = "TW";
+        let padded_len = 4;
+
+        let table = get_base64_table();
+        let table_var =
+            Base64TableVar::new_variable(cs.clone(), || Ok(&table), AllocationMode::Constant)
+                .unwrap();
+        let index_bits = IndexBits::from_base64_url(input, padded_len).unwrap();
+        let index_bits_var =
+            IndexBitsVar::new_variable(cs.clone(), || Ok(&index_bits), AllocationMode::Witness)
+                .unwrap();
+
+        // enc_asciis: 'T', 'W', 0 (NULL), 0 (NULL)
+        let enc_bytes: Vec<u8> = vec![b'T', b'W', 0, 0];
+        let enc_asciis: Vec<FpVar<F>> = enc_bytes
+            .iter()
+            .map(|&byte| FpVar::new_witness(cs.clone(), || Ok(F::from(byte as u64))).unwrap())
+            .collect();
+
+        let result =
+            Base64DecoderGadget::decode(&table_var, &enc_asciis, &index_bits_var).unwrap();
+
+        // NULL padding with index_bits=0 ('A') should satisfy constraints
+        assert!(cs.is_satisfied().unwrap());
+        assert_eq!(result.len(), 3);
+        println!("decode null padding: satisfied, {} constraints", cs.num_constraints());
+    }
+
+    #[test]
+    fn test_decode_null_padding_wrong_bits() {
+        let cs = ConstraintSystem::<F>::new_ref();
+        let padded_len = 4;
+
+        let table = get_base64_table();
+        let table_var =
+            Base64TableVar::new_variable(cs.clone(), || Ok(&table), AllocationMode::Constant)
+                .unwrap();
+
+        // Manually create index_bits: first 2 valid, last 2 with non-zero bits (attack)
+        let mut index_bits = IndexBits::from_base64_url("TW", padded_len).unwrap();
+        // Tamper: set padding position index to 1 ('B') instead of 0 ('A')
+        index_bits.inner[2] = crate::base64::decoder::Base64CharBits::from_index(1);
+        index_bits.inner[3] = crate::base64::decoder::Base64CharBits::from_index(1);
+
+        let index_bits_var =
+            IndexBitsVar::new_variable(cs.clone(), || Ok(&index_bits), AllocationMode::Witness)
+                .unwrap();
+
+        // enc_asciis: 'T', 'W', 0 (NULL), 0 (NULL)
+        let enc_bytes: Vec<u8> = vec![b'T', b'W', 0, 0];
+        let enc_asciis: Vec<FpVar<F>> = enc_bytes
+            .iter()
+            .map(|&byte| FpVar::new_witness(cs.clone(), || Ok(F::from(byte as u64))).unwrap())
+            .collect();
+
+        let _result =
+            Base64DecoderGadget::decode(&table_var, &enc_asciis, &index_bits_var).unwrap();
+
+        // Soundness: NULL + wrong index_bits → normalized='A'(65) but expected=table[1]='B'(66)
+        // enforce_equal fails → constraint system unsatisfied
+        assert!(!cs.is_satisfied().unwrap());
+        println!("decode null padding wrong bits: correctly unsatisfied (soundness)");
+    }
+
+    #[test]
+    fn test_decode_constraint_count() {
+        println!("\n=== decode 제약조건 측정 ===");
+
+        for input_len in [4, 8, 16, 32] {
+            let input_str = "A".repeat(input_len);
+
+            let cs = ConstraintSystem::<F>::new_ref();
+            let table = get_base64_table();
+            let table_var =
+                Base64TableVar::new_variable(cs.clone(), || Ok(&table), AllocationMode::Constant)
+                    .unwrap();
+            let index_bits = IndexBits::from_base64_url(&input_str, input_len).unwrap();
+            let index_bits_var = IndexBitsVar::new_variable(
+                cs.clone(),
+                || Ok(&index_bits),
+                AllocationMode::Witness,
+            )
+            .unwrap();
+            let enc_asciis: Vec<FpVar<F>> = input_str
+                .as_bytes()
+                .iter()
+                .map(|&byte| {
+                    FpVar::new_witness(cs.clone(), || Ok(F::from(byte as u64))).unwrap()
+                })
+                .collect();
+            let _result =
+                Base64DecoderGadget::decode(&table_var, &enc_asciis, &index_bits_var)
+                    .unwrap();
+            let constraints = cs.num_constraints();
+            let per_char = constraints as f64 / input_len as f64;
+
             assert!(cs.is_satisfied().unwrap());
-            println!(
-                "char: {:?}, bits: {:?}",
-                str.chars().nth(i).unwrap(),
-                value_bits_witness.value().unwrap()
-            );
+            println!("입력 길이: {} chars → {} constraints ({:.1}/char)", input_len, constraints, per_char);
         }
     }
 }

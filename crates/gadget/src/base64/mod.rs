@@ -1,12 +1,10 @@
 pub mod constraints;
+pub mod decoder;
 pub mod error;
-pub mod utils;
-pub mod constraints_v2;
-pub mod mod_v2;
 
 pub use constraints::*;
+pub use decoder::*;
 pub use error::*;
-pub use utils::*;
 
 use ark_serialize::{CanonicalSerialize, CanonicalDeserialize};
 

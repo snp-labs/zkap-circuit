@@ -1,7 +1,7 @@
 use circuit::token::{Claim, ClaimIndices, error::TokenError, parse_claim_from_str};
 use circuit::constants::ZkPasskeyConfig;
 use gadget::{
-    base64::mod_v2::{IndexBits, decode_any_base64, decode_any_base64_to_string},
+    base64::{IndexBits, decode_any_base64, decode_any_base64_to_string},
     signature::rsa::{PublicKey, Signature},
 };
 

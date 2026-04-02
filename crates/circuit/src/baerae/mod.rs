@@ -44,9 +44,9 @@ use gadget::{
     },
     base64::{
         Base64TableVar,
-        constraints_v2::{Base64DecoderGadget, IndexBitsVar},
+        constraints::{Base64DecoderGadget, IndexBitsVar},
         get_base64_table,
-        mod_v2::IndexBits,
+        IndexBits,
     },
     bigint::{
         constraints::{BigNatCircuitParams, BigNatVar},
@@ -316,12 +316,11 @@ where
             Config::MAX_PAYLOAD_B64_LEN,
         )?;
 
-        let (payload, valid) = Base64DecoderGadget::<C::BaseField>::decode_v2(
+        let payload = Base64DecoderGadget::<C::BaseField>::decode(
             &base64_table,
             &payload_b64,
             &index_bits,
         )?;
-        gadget::enforce_true_debug!("Base64 Decoding Valid", valid)?;
         gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Base64 Decoding");
 
         let aud_bytes = claim_extractor_v2("aud", &payload, &token_claim[0], Config::MAX_AUD_LEN)?;

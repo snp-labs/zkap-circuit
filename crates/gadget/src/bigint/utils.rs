@@ -1,10 +1,8 @@
-use ark_ec::pairing::Pairing;
 use ark_ff::BigInteger;
 use ark_ff::fields::PrimeField;
 use num_bigint::BigUint;
 use num_traits::One;
 use std::borrow::Borrow;
-use std::str::FromStr; // Add this line
 
 pub type BigNat = BigUint;
 
@@ -39,24 +37,8 @@ pub fn limbs_to_nat<F: PrimeField>(limbs: &Vec<F>, limb_width: usize) -> BigNat 
     })
 }
 
-// Fits a natural number to the minimum number limbs of given width
 pub fn fit_nat_to_limbs<F: PrimeField>(n: &BigNat, limb_width: usize) -> Vec<F> {
-    //let bit_capacity = <F::Params as FpParameters>::CAPACITY as usize;
     nat_to_limbs(n, limb_width, n.bits() as usize / limb_width + 1)
-}
-
-pub fn u64_vec_to_field_vec<E>(u64_limbs: &Vec<u64>) -> Vec<E::ScalarField>
-where
-    E: Pairing,
-{
-    u64_limbs
-        .iter() //.rev()
-        .map(|int64| <E as Pairing>::ScalarField::from(*int64))
-        .collect::<Vec<E::ScalarField>>()
-}
-
-pub fn str_to_bignat(s: &str) -> BigNat {
-    BigUint::from_str(s).unwrap()
 }
 
 #[inline]

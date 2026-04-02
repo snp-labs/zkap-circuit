@@ -34,7 +34,6 @@ pub enum RangeMode {
     Unchecked,
 }
 
-//TODO: Track word_size in number of bits rather than value
 #[derive(Clone, Default)]
 pub struct BigNatVar<ConstraintF: PrimeField, P: BigNatCircuitParams> {
     pub limbs: Vec<FpVar<ConstraintF>>, // Must be of length P::N_LIMBS
@@ -89,7 +88,7 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
     #[inline(always)]
     fn maybe_enforce_limb_range(&self, mode: RangeMode) -> Result<(), SynthesisError> {
         if matches!(mode, RangeMode::Checked) {
-            // Skip range check for un-normalized representations
+            // Only enforce range check for canonical (normalized) representations
             // where word_size > 2^LIMB_WIDTH - 1
             let max_canonical_word_size = (BigNat::one() << P::LIMB_WIDTH as u32) - BigNat::one();
             if self.word_size <= max_canonical_word_size {
@@ -99,7 +98,6 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
         Ok(())
     }
 
-    /// 상수 생성 (제약 시스템에 연결하지 않음)
     /// Create constant without reference to constraint system
     pub fn constant(nat: &BigNat) -> Result<Self, SynthesisError> {
         let limbs = nat_to_limbs::<ConstraintF>(nat, P::LIMB_WIDTH, P::N_LIMBS);
@@ -115,48 +113,48 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
         })
     }
 
-    /// BigNatVar를 canonical limb 표현으로 “정규화(reduce)”하는 함수
-    /// - 입력 limb를 range-check로 정리
-    /// - 같은 값을 나타내는지(carry 고려) out과의 동등성 제약을 추가
+    /// Reduce BigNatVar to a canonical limb representation.
+    /// - Range-checks all input limbs
+    /// - Adds an equality constraint (carry-aware) between self and the reduced output
     pub fn reduce(&self) -> Result<Self, SynthesisError> {
-        // 입력 limb가 <2^w 임을 강제
+        // Enforce each limb < 2^w
         self.enforce_limb_range_via_bits()?;
 
         let cs = self.cs();
         if cs != ConstraintSystemRef::None {
-            // 동일한 value로 새로운 witness를 만들고(out), out도 canonical 강제
-            // 그리고 carry를 허용한 동등성(self == out)을 제약으로 연결
+            // Allocate a fresh witness with the same value, enforce canonical form,
+            // then constrain self == out via carry-aware equality.
             let reduced = Self::new_witness(cs.clone(), || Ok(&self.value))?;
             reduced.enforce_limb_range_via_bits()?;
             self.enforce_equal_when_carried(&reduced)?;
             Ok(reduced)
         } else {
-            // CS가 없으면 그냥 constant로 반환
+            // No constraint system — return as constant
             Ok(Self::constant(&self.value)?)
         }
     }
 
-    /// 덧셈(Checked): 입력 limb range-check 포함 + 출력은 canonical
+    /// Addition (checked): range-checks input limbs; output is canonical
     pub fn add(&self, other: &Self) -> Result<Self, SynthesisError> {
         self.add_mode(other, RangeMode::Checked)
     }
 
-    /// 덧셈(Unchecked): 입력 range-check 생략 + 출력만 canonical
+    /// Addition (unchecked): skips input range-check; output is canonical
     pub fn add_unchecked(&self, other: &Self) -> Result<Self, SynthesisError> {
         self.add_mode(other, RangeMode::Unchecked)
     }
 
-    /// 덧셈 공통 로직:
-    /// - (선택) 입력 range-check
-    /// - field wrap(모듈러 필드에서 값이 접히는 현상) 위험이면 Unsatisfiable로 실패
-    /// - tmp=self+other(캐리 미전파)와 out(정규화 witness)을 carry-동등성으로 연결
+    /// Common addition logic:
+    /// - (optional) input range-check
+    /// - fails with Unsatisfiable if accumulated word_size exceeds field size (field wrap risk)
+    /// - connects tmp=self+other (no carry propagation) to out (canonical witness) via carry-equality
     pub fn add_mode(&self, other: &Self, mode: RangeMode) -> Result<Self, SynthesisError> {
         self.maybe_enforce_limb_range(mode)?;
         other.maybe_enforce_limb_range(mode)?;
 
         let cs = self.cs().or(other.cs());
 
-        // 누산 상계가 필드 크기 이상이면 FpVar 덧셈이 “정수 덧셈” 의미를 잃을 수 있으므로 실패
+        // If the accumulated word bound >= field size, FpVar addition loses integer semantics
         let field_char = field_characteristic_to_nat::<ConstraintF>();
         let max_word_size = &self.word_size + &other.word_size;
         if max_word_size >= field_char {
@@ -165,10 +163,10 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
 
         let sum_value = &self.value + &other.value;
         let out = Self::new_witness(cs.clone(), || Ok(sum_value.clone()))?;
-        out.enforce_limb_range_via_bits()?; // 출력 canonical
+        out.enforce_limb_range_via_bits()?; // output is canonical
 
-        // tmp는 limb-wise로 단순 합(캐리 전파 전) 상태를 표현
-        // tmp == out 을 carry를 허용한 형태로 제약하여 정수 의미를 보존
+        // tmp represents the limb-wise sum before carry propagation;
+        // constrain tmp == out via carry-aware equality to preserve integer semantics
         let tmp_limbs = self
             .limbs
             .iter()
@@ -187,21 +185,21 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
         Ok(out)
     }
 
-    /// 뺄셈(Checked): 입력 range-check 포함 + 출력 canonical
+    /// Subtraction (checked): range-checks inputs; output is canonical
     pub fn sub(&self, other: &Self) -> Result<Self, SynthesisError> {
         self.sub_mode(other, RangeMode::Checked)
     }
 
-    /// 뺄셈(Unchecked): 입력 range-check 생략 + 출력 canonical
+    /// Subtraction (unchecked): skips input range-check; output is canonical
     pub fn sub_unchecked(&self, other: &Self) -> Result<Self, SynthesisError> {
         self.sub_mode(other, RangeMode::Unchecked)
     }
 
-    /// 뺄셈 공통 로직:
-    /// - (선택) 입력 range-check
-    /// - field wrap 방지 상계 체크
-    /// - diff를 witness로 만들고 canonical 강제
-    /// - other + diff == self 를 carry-동등성으로 연결(뺄셈의 정수 의미를 제약으로 확보)
+    /// Common subtraction logic:
+    /// - (optional) input range-check
+    /// - checks word_size bound to prevent field wrap
+    /// - allocates diff as a witness and enforces canonical form
+    /// - constrains other + diff == self via carry-aware equality (preserving integer semantics)
     pub fn sub_mode(&self, other: &Self, mode: RangeMode) -> Result<Self, SynthesisError> {
         self.maybe_enforce_limb_range(mode)?;
         other.maybe_enforce_limb_range(mode)?;
@@ -214,8 +212,8 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
             return Err(SynthesisError::Unsatisfiable);
         }
 
-        // off-circuit로 diff 계산(언더플로우는 0으로 클램프)
-        // 실제 의미(자연수 뺄셈) 보장은 아래 제약(other+diff==self)로 강제됨
+        // Compute diff off-circuit (clamped to 0 on underflow);
+        // integer semantics are enforced below via the constraint other+diff==self
         let diff_value = if self.value >= other.value {
             &self.value - &other.value
         } else {
@@ -223,29 +221,28 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
         };
 
         let diff = Self::new_witness(cs.clone(), || Ok(diff_value.clone()))?;
-        diff.enforce_limb_range_via_bits()?; // 출력 canonical
+        diff.enforce_limb_range_via_bits()?; // output is canonical
 
-        // other + diff == self 를 제약으로 강제(캐리 포함)
+        // Enforce other + diff == self (carry-aware)
         let sum = other.add_mode(&diff, RangeMode::Unchecked)?;
         self.enforce_equal_when_carried(&sum)?;
         Ok(diff)
     }
 
-    /// 곱셈(Checked): 입력 range-check 포함
-
+    /// Multiplication (checked): range-checks both inputs
     pub fn mult(&self, other: &Self) -> Result<Self, SynthesisError> {
         self.mult_mode(other, RangeMode::Checked)
     }
 
-    /// 곱셈(Unchecked): 입력 range-check 생략
+    /// Multiplication (unchecked): skips input range-check
     pub fn mult_unchecked(&self, other: &Self) -> Result<Self, SynthesisError> {
         self.mult_mode(other, RangeMode::Unchecked)
     }
 
-    /// 곱셈 공통 로직:
-    /// - (선택) 입력 range-check
-    /// - 누산 상계(word_size)가 필드보다 커지면 정수 의미가 깨질 수 있으므로 실패
-    /// - limb 컨볼루션(2N-1) 형태로 곱 결과 limb 표현을 구성(캐리 전파는 하지 않음)
+    /// Common multiplication logic:
+    /// - (optional) input range-check
+    /// - fails if accumulated word_size exceeds field size (integer semantics would break)
+    /// - builds the product limb representation as a (2N-1)-term convolution (no carry propagation)
     pub fn mult_mode(&self, other: &Self, mode: RangeMode) -> Result<Self, SynthesisError> {
         self.maybe_enforce_limb_range(mode)?;
         other.maybe_enforce_limb_range(mode)?;
@@ -257,7 +254,7 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
             return Err(SynthesisError::Unsatisfiable);
         }
 
-        // 학교식(long multiplication) 컨볼루션(캐리 미포함)
+        // Schoolbook long-multiplication convolution (no carry propagation)
         let mut prod_limbs = vec![FpVar::<ConstraintF>::zero(); 2 * P::N_LIMBS - 1];
         for i in 0..P::N_LIMBS {
             for j in 0..P::N_LIMBS {
@@ -274,19 +271,19 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
         })
     }
 
-    /// 모듈러 곱(Checked): 일반 목적(제네릭) 구현
+    /// Modular multiplication (checked): generic implementation
     pub fn mult_mod(&self, other: &Self, modulus: &Self) -> Result<Self, SynthesisError> {
         self.mult_mod_mode(other, modulus, RangeMode::Checked)
     }
 
-    /// 모듈러 곱(Unchecked): RSA2048 signature verify 최적화를 위한 fast-path 엔트리
+    /// Modular multiplication (unchecked): fast-path entry optimized for RSA2048 signature verification
     pub fn mult_mod_unchecked(&self, other: &Self, modulus: &Self) -> Result<Self, SynthesisError> {
         self.mult_mod_mode(other, modulus, RangeMode::Unchecked)
     }
 
-    /// mult_mod 통합 엔트리:
-    /// - Checked: 제네릭한 안전 구현(quotient를 2N limb로 잡아도 안전)
-    /// - Unchecked: RSA2048 signature verify용 fast-path(입력 range-check만 생략 + quotient를 N limb로 제한)
+    /// Dispatch for mult_mod.
+    /// - Checked: generic safe implementation (quotient allocated with 2N limbs)
+    /// - Unchecked: fast-path for RSA2048 signature verify — skips input range-check and limits quotient to N limbs
     pub fn mult_mod_mode(
         &self,
         other: &Self,
@@ -299,11 +296,11 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
         }
     }
 
-    /// (제네릭) 모듈러 곱:
-    /// rem = self*other mod modulus 를 증명하기 위해 quotient/rem을 witness로 두고,
-    /// self*other == modulus*quotient + rem 과 rem < modulus 를 제약으로 강제
+    /// Generic modular multiplication:
+    /// proves rem = self*other mod modulus by allocating quotient/rem as witnesses and
+    /// constraining self*other == modulus*quotient + rem and rem < modulus
     fn mult_mod_checked_impl(&self, other: &Self, modulus: &Self) -> Result<Self, SynthesisError> {
-        // Skip range check for un-normalized representations
+        // Only enforce range check for canonical (normalized) representations
         let max_canonical_word_size = (BigNat::one() << P::LIMB_WIDTH as u32) - BigNat::one();
         if self.word_size <= max_canonical_word_size {
             self.enforce_limb_range_via_bits()?;
@@ -316,7 +313,7 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
         }
         let cs = self.cs().or(other.cs()).or(modulus.cs());
 
-        // modulus != 0 강제
+        // Enforce modulus != 0
         if cs != ConstraintSystemRef::None {
             let zero = FpVar::<ConstraintF>::zero();
             let mut all_zero = Boolean::<ConstraintF>::TRUE;
@@ -326,7 +323,7 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
             crate::enforce_eq_internal!("bigint_modulus_nonzero", all_zero, Boolean::FALSE)?;
         }
 
-        // witness: quotient, rem 은 off-circuit(BigNat)로 계산하여 회로에서는 관계식으로만 검증
+        // Compute quotient and rem off-circuit; the circuit only verifies the relation
         let left_value = self.value.clone();
         let right_value = other.value.clone();
         let mod_value = modulus.value.clone();
@@ -341,7 +338,7 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
         let rem = Self::new_witness(cs.clone(), || Ok(rem_value.clone()))?;
         rem.enforce_limb_range_via_bits()?;
 
-        // quotient는 일반적으로 최대 2N limb까지 필요할 수 있어 2N으로 잡아 안전하게 수용
+        // Quotient may need up to 2N limbs in the general case; allocate 2N for safety
         let num_quotient_limbs: usize = 2 * P::N_LIMBS;
         let mut quotient_value_limbs = fit_nat_to_limbs(&quotient_value, P::LIMB_WIDTH);
         quotient_value_limbs.resize(num_quotient_limbs, ConstraintF::zero());
@@ -357,7 +354,7 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
             _params: PhantomData,
         };
 
-        // STRICT: rem < modulus 를 강제하여 "나머지 표현"의 유일성을 확보
+        // STRICT: enforce rem < modulus to ensure uniqueness of the remainder representation
         Self::enforce_lt_strict_borrow_chain(cs.clone(), &rem, modulus)?;
 
         let lr_len = 2 * P::N_LIMBS - 1;
@@ -389,9 +386,8 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
             rhs_limbs[i] += &rem.limbs[i];
         }
 
-        // lhs/rhs limb 배열 구성 후 carry 허용 등식으로
-        // self*other == modulus*quotient + rem
-        // 을 강제 (carry는 내부에서 witness로 전파)
+        // Enforce self*other == modulus*quotient + rem via carry-aware equality
+        // (carry is propagated internally as a witness)
         let lhs_word_size = BigNat::from(P::N_LIMBS) * &self.word_size * &other.word_size;
         let rhs_word_size =
             BigNat::from(P::N_LIMBS) * &modulus.word_size * &quotient.word_size + &rem.word_size;
@@ -407,12 +403,10 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
         Ok(rem)
     }
 
-    /// (unchecked) 모듈러 곱셈: 입력 range-check를 생략하는 fast-path
-    /// - Unchecked의 의미는 "입력 limb range-check 생략"이며, 출력(rem)과 내부 witness(quotient)는
-    ///   관계식 검증을 위해 필요한 최소한의 range-check만 수행합니다.
-    /// - ⚠️ 이 구현은 RSA2048 signature verify 최적화를 염두에 둔 경로입니다.
-    /// - 특히 quotient limb 수를 `num_quotient_limbs = N`으로 고정합니다.
-    ///   (RSA 경로에서는 operand들이 modulus보다 작게 유지되는 구조라 quotient가 상대적으로 작아지는 전제를 사용해 제약조건을 줄이기 위함)
+    /// Modular multiplication fast-path: skips input range-checks.
+    /// "Unchecked" means input limb range-checks are omitted; rem and quotient still
+    /// receive the minimum range-checks needed for relation verification.
+    /// Quotient is limited to N_LIMBS (assumes operands < modulus, as in RSA).
     fn mult_mod_unchecked_impl(
         &self,
         other: &Self,
@@ -420,39 +414,10 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
     ) -> Result<Self, SynthesisError> {
         let cs = self.cs().or(other.cs()).or(modulus.cs());
 
-        let left_value = self.value.clone();
-        let right_value = other.value.clone();
-        let mod_value = modulus.value.clone();
-        let (quotient_value, rem_value) = if mod_value.is_zero() {
-            (BigNat::zero(), BigNat::zero())
-        } else {
-            let prod = &left_value * &right_value;
-            (&prod / &mod_value, &prod % &mod_value)
-        };
+        let prod_value = &self.value * &other.value;
+        let lhs_word_size = BigNat::from(P::N_LIMBS) * &self.word_size * &other.word_size;
 
-        // rem을 witness로 두고 canonical(range-check) 강제: rem < 2^w 형태 보장
-        let rem = Self::new_witness(cs.clone(), || Ok(rem_value.clone()))?;
-        rem.enforce_limb_range_via_bits()?;
-
-        // RSA2048 verify 최적화: quotient limb 수를 N으로 유지(고정)
-        let num_quotient_limbs: usize = P::N_LIMBS;
-        let mut quotient_value_limbs = fit_nat_to_limbs(&quotient_value, P::LIMB_WIDTH);
-        quotient_value_limbs.resize(num_quotient_limbs, ConstraintF::zero());
-        let quotient_limbs =
-            Vec::<FpVar<ConstraintF>>::new_witness(cs.clone(), || Ok(&quotient_value_limbs[..]))?;
-        for q in quotient_limbs.iter() {
-            let _ = q.to_bits_le_with_top_bits_zero(P::LIMB_WIDTH)?;
-        }
-        let quotient = BigNatVar::<ConstraintF, P> {
-            limbs: quotient_limbs,
-            value: quotient_value.clone(),
-            word_size: (BigNat::one() << P::LIMB_WIDTH as u32) - BigNat::one(),
-            _params: PhantomData,
-        };
-
-        // rem < modulus(STRICT) 강제: mod 결과의 유일성/정의 유지
-        Self::enforce_lt_strict_borrow_chain(cs.clone(), &rem, modulus)?;
-
+        // Full schoolbook multiplication
         let lr_len = 2 * P::N_LIMBS - 1;
         let mut lr_prod_limbs = vec![FpVar::<ConstraintF>::zero(); lr_len];
         for i in 0..P::N_LIMBS {
@@ -461,107 +426,40 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
             }
         }
 
-        let mq_len = P::N_LIMBS + num_quotient_limbs - 1;
-        let mut mq_prod_limbs = vec![FpVar::<ConstraintF>::zero(); mq_len];
-        for i in 0..P::N_LIMBS {
-            for j in 0..num_quotient_limbs {
-                mq_prod_limbs[i + j] += &modulus.limbs[i] * &quotient.limbs[j];
-            }
-        }
-        let eq_len = core::cmp::max(lr_len, mq_len);
-        let mut lhs_limbs = vec![FpVar::<ConstraintF>::zero(); eq_len];
-        for i in 0..lr_len {
-            lhs_limbs[i] += &lr_prod_limbs[i];
-        }
-        let mut rhs_limbs = vec![FpVar::<ConstraintF>::zero(); eq_len];
-        for i in 0..mq_len {
-            rhs_limbs[i] += &mq_prod_limbs[i];
-        }
-        for i in 0..P::N_LIMBS {
-            rhs_limbs[i] += &rem.limbs[i];
-        }
-
-        // carry 전파용 상계(word_size): 등식 검증에서 field wrap-around 위험을 피하기 위한 보수적 bound
-        let lhs_word_size = BigNat::from(P::N_LIMBS) * &self.word_size * &other.word_size;
-        let rhs_word_size =
-            BigNat::from(P::N_LIMBS) * &modulus.word_size * &quotient.word_size + &rem.word_size;
-        let eq_word_size = max(lhs_word_size, rhs_word_size);
-
-        Self::conditional_enforce_limbs_equal_when_carried(
-            cs.clone(),
-            &lhs_limbs,
-            &rhs_limbs,
-            &eq_word_size,
-            &Boolean::TRUE,
-        )?;
-
-        Ok(rem)
+        Self::verify_mod_relation(cs, &lr_prod_limbs, lr_len, modulus, &prod_value, &lhs_word_size)
     }
 
-    /// 모듈러 제곱(Checked): 일반 목적(제네릭) 구현
+    /// Modular squaring (checked): range-checks inputs, then delegates to the core impl
     pub fn square_mod(&self, modulus: &Self) -> Result<Self, SynthesisError> {
         self.square_mod_mode(modulus, RangeMode::Checked)
     }
 
-    /// 모듈러 제곱(Unchecked): RSA2048 signature verify 최적화를 위한 fast-path 엔트리
+    /// Modular squaring (unchecked): entry point optimized for RSA2048 signature verification
     pub fn square_mod_unchecked(&self, modulus: &Self) -> Result<Self, SynthesisError> {
         self.square_mod_mode(modulus, RangeMode::Unchecked)
     }
 
-    /// square_mod 통합 엔트리:
-    /// - Checked: 제네릭한 안전 구현
-    /// - Unchecked: RSA2048 signature verify용 fast-path(입력 range-check만 생략)
+    /// Dispatch for square_mod. Both checked and unchecked modes use the same
+    /// core implementation; checked only adds input range checks via maybe_enforce_limb_range.
     pub fn square_mod_mode(&self, modulus: &Self, mode: RangeMode) -> Result<Self, SynthesisError> {
         self.maybe_enforce_limb_range(mode)?;
         modulus.maybe_enforce_limb_range(mode)?;
 
-        self.square_mod_unchecked_impl(modulus)
+        self.square_mod_impl(modulus)
     }
 
-    /// (unchecked) 모듈러 제곱: 입력 range-check를 생략하는 fast-path
-    /// - Unchecked의 의미는 "입력 limb range-check 생략"이며, 출력(rem)과 내부 witness(quotient)는
-    ///   관계식 검증을 위해 필요한 최소한의 range-check만 수행합니다.
-    /// - ⚠️ 이 구현은 RSA2048 signature verify 최적화를 염두에 둔 경로입니다.
-    /// - 특히 quotient limb 수를 `num_quotient_limbs = N`으로 고정합니다.
-    ///   (RSA 경로에서는 operand들이 modulus보다 작게 유지되는 구조라 quotient가 상대적으로 작아지는 전제를 사용해 제약조건을 줄이기 위함)
-    fn square_mod_unchecked_impl(&self, modulus: &Self) -> Result<Self, SynthesisError> {
+    /// Core modular squaring implementation.
+    /// Used by both checked and unchecked paths — input range checks are
+    /// handled by the caller (square_mod_mode).
+    /// Uses symmetric multiplication (upper triangle + doubling) to halve R1CS constraints.
+    /// Quotient is limited to N_LIMBS (assumes operands < modulus, as in RSA).
+    fn square_mod_impl(&self, modulus: &Self) -> Result<Self, SynthesisError> {
         let cs = self.cs().or(modulus.cs());
 
-        let left_value = self.value.clone();
-        let mod_value = modulus.value.clone();
+        let prod_value = &self.value * &self.value;
+        let lhs_word_size = BigNat::from(P::N_LIMBS) * &self.word_size * &self.word_size;
 
-        let (quotient_value, rem_value) = if mod_value.is_zero() {
-            (BigNat::zero(), BigNat::zero())
-        } else {
-            let prod = &left_value * &left_value;
-            (&prod / &mod_value, &prod % &mod_value)
-        };
-
-        // rem을 witness로 두고 canonical(range-check) 강제: rem < 2^w 형태 보장
-        let rem = Self::new_witness(cs.clone(), || Ok(rem_value.clone()))?;
-        rem.enforce_limb_range_via_bits()?;
-
-        // RSA2048 verify 최적화: quotient limb 수를 N으로 유지(고정)
-        let num_quotient_limbs: usize = P::N_LIMBS;
-        let mut quotient_value_limbs = fit_nat_to_limbs(&quotient_value, P::LIMB_WIDTH);
-        quotient_value_limbs.resize(num_quotient_limbs, ConstraintF::zero());
-        let quotient_limbs =
-            Vec::<FpVar<ConstraintF>>::new_witness(cs.clone(), || Ok(&quotient_value_limbs[..]))?;
-        for q in quotient_limbs.iter() {
-            let _ = q.to_bits_le_with_top_bits_zero(P::LIMB_WIDTH)?;
-        }
-        let quotient = BigNatVar::<ConstraintF, P> {
-            limbs: quotient_limbs,
-            value: quotient_value.clone(),
-            word_size: (BigNat::one() << P::LIMB_WIDTH as u32) - BigNat::one(),
-            _params: PhantomData,
-        };
-
-        // rem < modulus(STRICT) 강제: mod 결과의 유일성/정의 유지
-        Self::enforce_lt_strict_borrow_chain(cs.clone(), &rem, modulus)?;
-
-        // lr_prod_limbs: self*self의 limb-wise 누산
-        // - i<=j만 계산하고 i!=j는 2배하여 곱셈 항 수를 줄임(제약 감소)
+        // Symmetric schoolbook: compute only i<=j terms, double off-diagonal
         let lr_len = 2 * P::N_LIMBS - 1;
         let mut lr_prod_limbs = vec![FpVar::<ConstraintF>::zero(); lr_len];
         for i in 0..P::N_LIMBS {
@@ -575,6 +473,55 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
             }
         }
 
+        Self::verify_mod_relation(cs, &lr_prod_limbs, lr_len, modulus, &prod_value, &lhs_word_size)
+    }
+
+    /// Common verification for modular multiplication/squaring (unchecked path).
+    ///
+    /// Given lr_prod_limbs representing `a * b` (or `a * a`), verifies:
+    ///   lr_prod == modulus * quotient + remainder, where 0 <= remainder < modulus
+    ///
+    /// Allocates quotient (N_LIMBS) and remainder as witnesses, enforces range checks,
+    /// strict rem < modulus, and carry-propagation equality.
+    fn verify_mod_relation(
+        cs: ConstraintSystemRef<ConstraintF>,
+        lr_prod_limbs: &[FpVar<ConstraintF>],
+        lr_len: usize,
+        modulus: &Self,
+        prod_value: &BigNat,
+        lhs_word_size: &BigNat,
+    ) -> Result<Self, SynthesisError> {
+        let mod_value = &modulus.value;
+        let (quotient_value, rem_value) = if mod_value.is_zero() {
+            (BigNat::zero(), BigNat::zero())
+        } else {
+            (prod_value / mod_value, prod_value % mod_value)
+        };
+
+        // Allocate rem as a witness and enforce canonical form (rem < 2^w)
+        let rem = Self::new_witness(cs.clone(), || Ok(rem_value.clone()))?;
+        rem.enforce_limb_range_via_bits()?;
+
+        // Fix quotient to N limbs (operands assumed < modulus, so quotient stays small)
+        let num_quotient_limbs: usize = P::N_LIMBS;
+        let mut quotient_value_limbs = fit_nat_to_limbs(&quotient_value, P::LIMB_WIDTH);
+        quotient_value_limbs.resize(num_quotient_limbs, ConstraintF::zero());
+        let quotient_limbs =
+            Vec::<FpVar<ConstraintF>>::new_witness(cs.clone(), || Ok(&quotient_value_limbs[..]))?;
+        for q in quotient_limbs.iter() {
+            let _ = q.to_bits_le_with_top_bits_zero(P::LIMB_WIDTH)?;
+        }
+        let quotient = BigNatVar::<ConstraintF, P> {
+            limbs: quotient_limbs,
+            value: quotient_value.clone(),
+            word_size: (BigNat::one() << P::LIMB_WIDTH as u32) - BigNat::one(),
+            _params: PhantomData,
+        };
+
+        // STRICT: enforce rem < modulus to ensure uniqueness of the remainder
+        Self::enforce_lt_strict_borrow_chain(cs.clone(), &rem, modulus)?;
+
+        // Compute modulus * quotient
         let mq_len = P::N_LIMBS + num_quotient_limbs - 1;
         let mut mq_prod_limbs = vec![FpVar::<ConstraintF>::zero(); mq_len];
         for i in 0..P::N_LIMBS {
@@ -583,7 +530,8 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
             }
         }
 
-        let eq_len = lr_len;
+        // Build lhs (product) and rhs (mod*quot + rem) limb arrays
+        let eq_len = core::cmp::max(lr_len, mq_len);
         let mut lhs_limbs = vec![FpVar::<ConstraintF>::zero(); eq_len];
         for i in 0..lr_len {
             lhs_limbs[i] += &lr_prod_limbs[i];
@@ -596,11 +544,10 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
             rhs_limbs[i] += &rem.limbs[i];
         }
 
-        // carry 전파용 상계(word_size)
-        let lhs_word_size = BigNat::from(P::N_LIMBS) * &self.word_size * &self.word_size;
+        // Conservative word_size bound for carry propagation
         let rhs_word_size =
             BigNat::from(P::N_LIMBS) * &modulus.word_size * &quotient.word_size + &rem.word_size;
-        let eq_word_size = max(lhs_word_size, rhs_word_size);
+        let eq_word_size = max(lhs_word_size.clone(), rhs_word_size);
 
         Self::conditional_enforce_limbs_equal_when_carried(
             cs.clone(),
@@ -613,7 +560,7 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
         Ok(rem)
     }
 
-    /// 모듈러 거듭제곱(Checked): 일반 목적(제네릭) 구현
+    /// Modular exponentiation (checked): generic implementation
     pub fn pow_mod(
         &self,
         exp: &Self,
@@ -623,7 +570,7 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
         self.pow_mod_mode(exp, modulus, num_exp_bits, RangeMode::Checked)
     }
 
-    /// 모듈러 거듭제곱(Unchecked): RSA2048 signature verify 최적화를 위한 fast-path 엔트리
+    /// Modular exponentiation (unchecked): fast-path entry optimized for RSA2048 signature verification
     pub fn pow_mod_unchecked(
         &self,
         exp: &Self,
@@ -640,21 +587,21 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
         num_exp_bits: usize,
         mode: RangeMode,
     ) -> Result<Self, SynthesisError> {
-        // ✅ Unchecked = 입력 range-check만 생략
+        // Unchecked = skip input range-checks only
         self.maybe_enforce_limb_range(mode)?;
         exp.maybe_enforce_limb_range(mode)?;
         modulus.maybe_enforce_limb_range(mode)?;
 
-        // exp limb 표현이 너무 큰 word_size를 갖고 있으면 normalize (기존 로직 유지)
+        // Normalize exp if its word_size is abnormally large
         if exp.word_size >= (BigNat::one() << P::LIMB_WIDTH as u32) {
-            // reduce는 "checked 성격"이지만, 이 분기는 exp.word_size가 비정상적으로 큰 경우라
-            // 그대로 유지하는 편이 안전합니다.
+            // reduce() is checked in nature, but this branch only fires when word_size is out of range,
+            // so keeping it is the safe choice.
             return self.pow_mod_mode(&exp.reduce()?, modulus, num_exp_bits, mode);
         }
 
         let cs = self.cs().or(exp.cs()).or(modulus.cs());
 
-        // ✅ exp 상위비트 0 강제는 soundness 핵심이므로 유지 (mode와 무관)
+        // Enforcing zero high bits on exp is critical for soundness — always applied regardless of mode
         let exp_bits = exp.enforce_fits_in_bits(num_exp_bits)?;
 
         let window_size = if num_exp_bits < 8 {
@@ -671,8 +618,8 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
             6
         };
 
-        // ✅ base_powers는 반드시 STRICT rem < modulus를 보장해야 함.
-        // Unchecked에서도 mult_mod_checked_impl을 사용 (range-check만 생략)
+        // base_powers must guarantee STRICT rem < modulus.
+        // Even in unchecked mode, use mult_mod_checked_impl (only input range-checks are skipped)
         let base_powers = {
             let mut base_powers =
                 vec![Self::new_constant(cs.clone(), BigNat::one())?, self.clone()];
@@ -695,10 +642,10 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
         )
     }
 
-    /// (pow_mod 내부) Bauer window 방식 거듭제곱 재귀 헬퍼
-    /// - exp 비트를 window로 쪼갠 뒤, 각 chunk에 해당하는 base^k를 선택(select_index)
-    /// - 재귀적으로 누적(acc)을 만들고, chunk 길이만큼 square 후 multiply를 수행
-    /// - 이 구현에서는 soundness를 위해 mult_mod_checked_impl을 사용(STRICT rem < modulus 유지)
+    /// Recursive Bauer window exponentiation helper (used internally by pow_mod).
+    /// Splits exp bits into windows, selects the corresponding base^k via select_index,
+    /// then recursively accumulates: square chunk_len times, then multiply by the selected power.
+    /// Uses mult_mod_checked_impl throughout to maintain STRICT rem < modulus (soundness).
     fn bauer_power_helper_mode(
         cs: impl Into<Namespace<ConstraintF>>,
         base_powers: &[Self],
@@ -722,13 +669,13 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
                     mode,
                 )?;
 
-                // square step: chunk_len번 제곱 (acc = acc^(2^{chunk_len}))
+                // Square step: square chunk_len times (acc = acc^(2^{chunk_len}))
                 for _ in 0..chunk_len {
-                    // Unchecked에서도 checked_impl만 사용 (정의 유지)
+                    // Always use checked_impl to preserve correctness guarantees
                     acc = acc.mult_mod_checked_impl(&acc, modulus)?;
                 }
 
-                // multiply step: 선택된 base_power를 곱해 다음 상태로 진행
+                // Multiply step: apply the selected base_power to advance the accumulator
                 Ok(acc.mult_mod_checked_impl(&base_power, modulus)?)
             } else {
                 Ok(base_power)
@@ -738,8 +685,8 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
         }
     }
 
-    /// limb를 여러 개 묶어 “그룹 limb”로 결합하는 유틸
-    /// - carry 전파 검증에서 그룹 단위로 처리하면 제약을 줄일 수 있음
+    /// Combine multiple limbs into a single grouped limb.
+    /// Processing limbs in groups reduces constraint count during carry propagation verification.
     fn group_limbs(
         limbs: &Vec<FpVar<ConstraintF>>,
         limbs_per_group: usize,
@@ -759,8 +706,8 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
         grouped_limbs
     }
 
-    /// carry를 고려한 동등성 강제 (무조건 검증)
-    /// limb 간 carry 전파를 허용하며 두 BigNat이 같은 값을 나타내는지 검증
+    /// Unconditionally enforce carry-aware equality.
+    /// Verifies that two BigNats represent the same value, allowing carry propagation across limbs.
     pub fn enforce_equal_when_carried(&self, other: &Self) -> Result<(), SynthesisError> {
         let cs = self.cs().or(other.cs());
         let current_word_size = max(&self.word_size, &other.word_size);
@@ -773,27 +720,9 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
         )
     }
 
-    /// condition에 따라 carry를 고려한 동등성 강제
-    /// condition이 TRUE일 때만 동등성 검증 수행
-    pub fn conditional_enforce_equal_when_carried(
-        &self,
-        other: &Self,
-        condition: &Boolean<ConstraintF>,
-    ) -> Result<(), SynthesisError> {
-        let cs = self.cs().or(other.cs());
-        let current_word_size = max(&self.word_size, &other.word_size);
-        Self::conditional_enforce_limbs_equal_when_carried(
-            cs,
-            &self.limbs,
-            &other.limbs,
-            current_word_size,
-            condition,
-        )
-    }
-
-    /// limb 배열에 대해 carry 전파를 고려한 동등성 강제 (내부 헬퍼)
-    /// left_limbs와 right_limbs가 carry를 고려했을 때 동일한 값을 나타내는지 검증
-    /// current_word_size: 각 limb의 최대 가능 값 (carry bound 계산에 사용)
+    /// Internal helper: enforce carry-aware equality over limb arrays.
+    /// Verifies that left_limbs and right_limbs represent the same value under carry propagation.
+    /// current_word_size: maximum possible value per limb (used to compute carry bounds).
     fn conditional_enforce_limbs_equal_when_carried(
         cs: impl Into<Namespace<ConstraintF>>,
         left_limbs: &Vec<FpVar<ConstraintF>>,
@@ -882,8 +811,8 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
         Ok(())
     }
 
-    /// BigNat이 n_bits 이하의 비트 수로 표현 가능한지 강제하고 비트 배열 반환
-    /// 상위 limb들은 0이어야 하며, 최상위 non-zero limb는 n_bits % LIMB_WIDTH 비트 이하
+    /// Enforce that BigNat fits in n_bits and return the bit array.
+    /// Upper limbs must be zero; the topmost non-zero limb must fit in n_bits % LIMB_WIDTH bits.
     pub fn enforce_fits_in_bits(
         &self,
         n_bits: usize,
@@ -905,7 +834,7 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
         Ok(bit_vars)
     }
 
-    /// 단일 limb가 n_bits 이하로 표현 가능한지 강제 (무조건 검증)
+    /// Unconditionally enforce that a single limb fits in n_bits.
     pub fn enforce_limb_fits_in_bits(
         limb: &FpVar<ConstraintF>,
         n_bits: usize,
@@ -913,8 +842,8 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
         Self::conditional_enforce_limb_fits_in_bits(limb, n_bits, &Boolean::TRUE)
     }
 
-    /// condition에 따라 단일 limb가 n_bits 이하로 표현 가능한지 강제
-    /// field wrap-around 방지를 위해 modulus bit size - 1로 상한 제한
+    /// Conditionally enforce that a single limb fits in n_bits.
+    /// Caps n_bits at modulus_bit_size - 1 to prevent field wrap-around.
     fn conditional_enforce_limb_fits_in_bits(
         limb: &FpVar<ConstraintF>,
         n_bits: usize,
@@ -922,16 +851,16 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
     ) -> Result<Vec<Boolean<ConstraintF>>, SynthesisError> {
         let cs = limb.cs();
 
-        // field wrap-around 회피를 위해 modulus bit size - 1로 상한
+        // Cap at modulus_bit_size - 1 to avoid field wrap-around
         let n_bits = core::cmp::min(ConstraintF::MODULUS_BIT_SIZE as usize - 1, n_bits);
 
-        // ✅ BigInt "표현(repr)"의 전체 비트 길이 (버전 독립)
+        // Total bit length of the BigInt representation (version-independent)
         let repr_bits = core::mem::size_of::<<ConstraintF as PrimeField>::BigInt>() * 8;
 
         let limb_value = limb.value().unwrap_or_default();
 
-        // BitIteratorBE는 repr_bits 전부(=shaved bits 포함)를 순회하므로,
-        // 최하위 n_bits만 취하기 위해 상위 repr_bits - n_bits를 skip
+        // BitIteratorBE iterates all repr_bits (including shaved bits),
+        // so skip the top repr_bits - n_bits to retain only the lowest n_bits
         let skip = repr_bits.saturating_sub(n_bits);
 
         let mut bits_be = Vec::with_capacity(n_bits);
@@ -939,7 +868,7 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
             bits_be.push(b);
         }
 
-        // 기존 코드가 bits.iter().rev()로 LE witness를 만들었으므로 동일 유지
+        // Existing code built LE witnesses via bits.iter().rev() — preserve that ordering
         let mut bit_vars = Vec::with_capacity(n_bits);
         if cs != ConstraintSystemRef::None {
             for b in bits_be.iter().rev() {
@@ -955,12 +884,12 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
         Ok(bit_vars)
     }
 
-    /// BigNat이 주어진 비트 배열과 동일한지 강제 (무조건 검증)
+    /// Unconditionally enforce that BigNat equals the given bit array.
     pub fn enforce_equals_bits(&self, bits: &[Boolean<ConstraintF>]) -> Result<(), SynthesisError> {
         self.conditional_enforce_equals_bits(bits, &Boolean::TRUE)
     }
 
-    /// condition에 따라 BigNat이 주어진 비트 배열과 동일한지 강제
+    /// Conditionally enforce that BigNat equals the given bit array.
     pub fn conditional_enforce_equals_bits(
         &self,
         bits: &[Boolean<ConstraintF>],
@@ -988,7 +917,7 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
         Ok(())
     }
 
-    /// condition에 따라 단일 limb가 주어진 비트 배열과 동일한지 강제 (내부 헬퍼)
+    /// Internal helper: conditionally enforce that a single limb equals the given bit array.
     fn conditional_enforce_limb_equals_bits(
         limb: &FpVar<ConstraintF>,
         bits: &[Boolean<ConstraintF>],
@@ -1001,8 +930,8 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
         Ok(())
     }
 
-    /// 비트 배열로부터 단일 limb (FpVar) 생성
-    /// 리틀 엔디안 순서로 비트를 조합하여 field element 생성
+    /// Construct a single limb (FpVar) from a bit array.
+    /// Combines bits in little-endian order to produce a field element.
     pub fn limb_from_bits(
         bits: &[Boolean<ConstraintF>],
     ) -> Result<FpVar<ConstraintF>, SynthesisError> {
@@ -1016,8 +945,8 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
         Ok(bit_sum)
     }
 
-    /// 모든 limb가 LIMB_WIDTH 비트 이하로 표현 가능한지 range check
-    /// 각 limb를 비트 분해하여 범위 강제 (canonical 형태 보장)
+    /// Range-check all limbs: enforce each limb fits in LIMB_WIDTH bits.
+    /// Decomposes each limb into bits to guarantee canonical form.
     pub fn enforce_limb_range_via_bits(&self) -> Result<(), SynthesisError> {
         for limb in self.limbs.iter() {
             let _ = limb.to_bits_le_with_top_bits_zero(P::LIMB_WIDTH)?;
@@ -1152,6 +1081,7 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> EqGadget<ConstraintF>
         self.limbs.is_eq(&other.limbs)
     }
 }
+// TODO(P4-5): This limb-wise comparison is semantically incorrect for non-canonical representations. Use enforce_equal_when_carried for semantic equality.
 
 pub fn log2(x: usize) -> u32 {
     if x == 0 {
@@ -1758,7 +1688,7 @@ mod test {
     #[test]
     fn pow_mod_full_test() {
         pow_mod_test(
-            vec![1, 1, 1, 3], // 587 // 2048 bit의 vec를 만들어주세요
+            vec![1, 1, 1, 3], // 587
             vec![0, 0, 2, 1], // 17
             vec![0, 5, 7, 0], // (587^17) % 2801 = 376
             vec![5, 3, 6, 1], // prime mod = 2801
@@ -1771,7 +1701,7 @@ mod test {
         )
     }
 
-    /// BigNat2048TestParams 정의
+    /// BigNat2048TestParams definition
     #[derive(Clone, PartialEq, Eq, Debug)]
     pub struct BigNat2048TestParams;
 
@@ -1786,7 +1716,7 @@ mod test {
         use num_traits::One;
         use rand::{RngCore, thread_rng};
 
-        // BigUint를 Big-Endian u64 limb 벡터로 변환하는 헬퍼 함수
+        // Helper: convert BigUint to a big-endian u64 limb vector
         let to_be_limbs = |n: &BigUint| -> Vec<u64> {
             let limb_bytes = BigNat2048TestParams::LIMB_WIDTH / 8;
             let num_bytes = BigNat2048TestParams::N_LIMBS * limb_bytes;
@@ -1800,41 +1730,41 @@ mod test {
                 .collect::<Vec<u64>>()
         };
 
-        // 1. 테스트용 RSA 스타일 값 설정
+        // 1. Set up RSA-style test values
         let mut rng = thread_rng();
 
-        // Exponent (e = 65537, 17비트)
+        // Exponent (e = 65537, 17-bit)
         let exp_val = BigUint::from(65537u32);
         let num_exp_bits = 17;
 
-        // Base (Message, 2048-bit)
+        // Base (message, 2048-bit)
         let mut base_bytes = vec![0u8; 2048 / 8];
         rng.fill_bytes(&mut base_bytes);
         let base_val = BigUint::from_bytes_be(&base_bytes);
 
-        // Modulus (N, 2040-bit, 홀수 보장)
+        // Modulus (N, 2040-bit, guaranteed odd)
         let mut mod_bytes = vec![0u8; 2040 / 8];
         rng.fill_bytes(&mut mod_bytes);
-        // last_mut()으로 마지막 요소를 안전하게 가져와 홀수로 만듭니다.
+        // Use last_mut() to safely make the last byte odd
         if let Some(last_byte) = mod_bytes.last_mut() {
             *last_byte |= 1;
         }
         let mod_val = BigUint::from_bytes_be(&mod_bytes);
 
-        // 2. 예상 결과값 계산 (ciphertext = base^exp % mod)
+        // 2. Compute expected result (ciphertext = base^exp % mod)
         let expected_res_val = base_val.modpow(&exp_val, &mod_val);
 
-        // BigUint 값들을 회로 입력에 맞는 limb 벡터로 변환
+        // Convert BigUint values to limb vectors for circuit input
         let base_limbs = to_be_limbs(&base_val);
         let exp_limbs = to_be_limbs(&exp_val);
         let mod_limbs = to_be_limbs(&mod_val);
         let expected_res_limbs = to_be_limbs(&expected_res_val);
 
-        // 3. 제약 조건 시스템 설정
+        // 3. Set up constraint system
         let cs = ConstraintSystem::<Fq>::new_ref();
         let word_size: BigNat = (BigNat::one() << 64) - BigNat::one();
 
-        // 4. 회로 변수 할당
+        // 4. Allocate circuit variables
         let base_var = BigNatVar::<Fq, BigNat2048TestParams>::alloc_from_u64_limbs(
             cs.clone(),
             &base_limbs,
@@ -1864,22 +1794,22 @@ mod test {
         )
         .unwrap();
 
-        // 5. 회로 내에서 모듈러 거듭제곱 연산 수행
+        // 5. Compute modular exponentiation in the circuit
         let res_var = base_var.pow_mod(&exp_var, &mod_var, num_exp_bits).unwrap();
 
-        // 6. 회로 결과와 예상 결과가 같은지 제약 조건 추가
+        // 6. Add constraint: circuit result equals expected result
         expected_res_var
             .enforce_equal_when_carried(&res_var)
             .unwrap();
 
-        // 7. 모든 제약 조건이 만족하는지 확인
+        // 7. Verify all constraints are satisfied
         println!(
-            "RSA 스타일 17-bit pow_mod 제약 조건 수: {}",
+            "RSA-style 17-bit pow_mod constraint count: {}",
             cs.num_constraints()
         );
         assert!(
             cs.is_satisfied().unwrap(),
-            "RSA 스타일 17-bit pow_mod 제약 조건을 만족하지 못했습니다."
+            "RSA-style 17-bit pow_mod constraints are not satisfied."
         );
     }
 }

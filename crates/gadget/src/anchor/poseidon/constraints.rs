@@ -17,7 +17,7 @@ use crate::{
             PoseidonAnchor, PoseidonAnchorPublicKey, PoseidonAnchorScheme, PoseidonAnchorWitness,
         },
     },
-    matrix::constraints_v2::VandermondeMatrixVar,
+    matrix::constraints::VandermondeMatrixVar,
 };
 
 #[cfg(feature = "constraints-logging")]

@@ -1,4 +1,4 @@
-pub mod constraints_v2;
+pub mod constraints;
 pub mod error;
 
 use crate::matrix::error::VandermondeMatrixError;

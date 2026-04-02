@@ -56,7 +56,7 @@ use gadget::{
         poseidon::{constraints::chain_hash_gadget, get_poseidon_params},
         sha256::constraints::SHA256Gadget,
     },
-    matrix::{VandermondeMatrix, constraints_v2::VandermondeMatrixVar},
+    matrix::{VandermondeMatrix, constraints::VandermondeMatrixVar},
     merkletree::tree_config::{Empty, MerkleTreeParams, MerkleTreeParamsVar},
     signature::rsa::{
         PublicKey, Signature,

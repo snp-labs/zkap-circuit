@@ -8,7 +8,8 @@ gadget = { workspace = true, default-features = false, features = ["crypto", "ba
 circuit = { workspace = true }
 
 thiserror = { workspace = true }
-serde     = { workspace = true }
+serde      = { workspace = true }
+serde_json = { workspace = true }
 
 ark-groth16           = { workspace = true }
 ark-ec                = { workspace = true }

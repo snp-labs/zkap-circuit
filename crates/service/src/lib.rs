@@ -2,6 +2,7 @@ pub mod api;
 mod app;
 pub mod dto;
 pub mod error;
+pub mod manifest;
 
 pub use circuit::constants;
 pub use circuit::field_parser;

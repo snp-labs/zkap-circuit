@@ -1,113 +1,242 @@
-# zkpasskey-monorepo
+# zkap-circuit
 
-Rust와 arkworks 생태계를 활용한 패스키(Passkey) 인증용 영지식 증명(ZKP) 시스템 구현체입니다.
+A Rust library for generating Groth16 zero-knowledge proofs that verify JWT/OAuth tokens without revealing their contents. Built on [arkworks](https://github.com/arkworks-rs).
 
-## 개요 (Overview)
+## Features
 
-본 모노레포는 안전한 패스키 인증을 위한 영지식 증명 시스템의 전체 구현을 포함하고 있습니다. 이 시스템은 zk-SNARK를 포함한 암호화 프리미티브를 사용하여, 사용자의 민감한 인증 정보를 노출하지 않고도 프라이버시를 보호하며 인증할 수 있도록 지원합니다.
+- **JWT verification in ZK**: Proves a valid JWT was issued by a known provider without exposing the token
+- **RSA-2048 signature verification**: Enforces `e = 65537` inside the circuit ([ZKAPCIR-001])
+- **Payload boundary binding**: Cryptographically binds the claimed payload region to the actual `.` separators ([ZKAPCIR-002])
+- **Threshold membership (k-of-N)**: Vandermonde-based anchor scheme for multi-party settings
+- **Merkle tree issuer registry**: Proves the RSA public key belongs to a trusted issuer set
+- **Audience allowlist**: Zero-knowledge membership check against a hashed audience list
+- **Groth16 on BN254**: Proof-friendly field using `ark-bn254`
+- **Multi-platform bindings**: NAPI (Node.js), WASM (browser), UniFFI (iOS/Android)
+- **CSO-audited**: External security audit completed
 
-### 주요 기능
-
-* **SNARK 구현**: 패스키 검증을 위한 SNARK 회로
-* **다국어 지원**: Node.js(NAPI), React-Native를 위한 네이티브 바인딩 제공
-* **메모리 효율적 증명 생성**: 메모리 사용량 추적 기능이 포함된 최적화된 제약 조건 시스템(Constraint System)
-* **모듈형 아키텍처**: Circuit / Gadget / Service Binding 계층 분리
-
-## 아키텍처 (Architecture)
+## Architecture
 
 ```
-zkpasskey-monorepo/
-├── crates/       # Rust core crates (workspace)
-│ ├── gadget/     # arkworks circuit gadgets
-│ ├── circuit/    # Groth16 circuits (R1CS)
-│ ├── service/    # zkPasskey core service logic
-│ └── test/       # integration tests
-│
-├── bindings/     # Language bindings / FFI layers
-│ ├── uniffi/     # UniFFI bindings (iOS/Android)
-│ ├── napi/       # Node.js (N-API) bindings
-│ └── wasm/       # WebAssembly bindings
-│
-├── artifacts/    # Generated artifacts (gitignored)
-│
-├── Cargo.toml
-├── Cargo.lock
-└── README.md
++----------------------------------------------------------+
+|                     Bindings Layer                       |
+|                                                          |
+|   bindings/napi        bindings/wasm    bindings/uniffi  |
+|   (Node.js / npm)      (Browser)        (iOS / Android)  |
++------------------------+---------------------------------+
+                         |
++------------------------v---------------------------------+
+|                   crates/service                         |
+|   generate_baerae_proof()    RawProofRequest             |
+|   create_poseidon_anchor()   poseidon_hash()             |
++------------------------+---------------------------------+
+                         |
++------------------------v---------------------------------+
+|                   crates/circuit                         |
+|   BaeraeLightWeightCircuit    BaeraeCircuitInput         |
+|   CircuitPublicInputs         ZkPasskeyConfig            |
++------------------------+---------------------------------+
+                         |
++------------------------v---------------------------------+
+|                   crates/gadget                          |
+|                                                          |
+|   anchor/poseidon    base64         bigint (RSA)         |
+|   hashes/sha256      hashes/poseidon                     |
+|   matrix             merkletree     signature/rsa        |
++------------------------+---------------------------------+
+                         |
++------------------------v---------------------------------+
+|                  crates/ark-utils                        |
+|   R1CS constraint system helpers, field utilities        |
++----------------------------------------------------------+
 ```
 
-## 회로 메트릭 (Circuit Metrics)
+## Installation
 
-| 항목 | 값 |
-|------|-----|
-| 총 제약 수 | 959,673 |
-| 예상 메모리 사용량 | ~710 MB |
-| RSA 검증 | ~720k constraints |
-| Base64 디코딩 | ~87k constraints |
-| Claims 추출 | ~126k constraints |
+### Rust
 
-arkworks 0.5.0 표준 의존성을 사용합니다 (vendor 패치 제거됨).
+Add to your `Cargo.toml`:
 
-## 빠른 시작 (Quick Start)
+```toml
+[dependencies]
+zkpasskey-service = { git = "https://github.com/snp-labs/zkap-circuit" }
+```
 
-### 사전 요구 사항
+To use individual gadgets with fine-grained features:
 
-* Rust 1.70+ (2024 에디션)
-* Node.js 20.12.2+ (NAPI 바인딩용)
+```toml
+[dependencies]
+gadget = { git = "https://github.com/snp-labs/zkap-circuit", features = ["full"] }
+# Available features: anchor, base64, hashes-poseidon, hashes-sha256, merkletree, rsa, crypto, full
+```
 
-### 빌드 및 실행 방법
+### Node.js (npm)
 
-#### 1. 통합 설정 스크립트 (추천)
-
-가장 권장되는 방법은 `zkap-contract` 내의 `setup-zk-custom2.sh` 스크립트를 사용하는 것입니다. 이 스크립트는 CRS 생성, NAPI 빌드, 컨트랙트 배포 과정을 자동화합니다.
+Pre-built NAPI binaries are distributed per platform. Install from the release artifacts:
 
 ```bash
-# zkap-contract 디렉토리 내에서 실행
-./setup-zk-custom2.sh
+npm install @snp-labs/zkap-circuit
 ```
 
-#### 2. CRS 및 검증 키 생성 (수동)
+Or build from source (requires Rust toolchain and `zig` for cross-compilation):
 
 ```bash
-cargo run --release --features baerae --bin generate_baerae_crs -- <file_path>
+./build.sh --napi-only -e macos-arm64   # native build
+./build.sh --napi-only -e linux-x64     # cross-compile
 ```
 
-#### 3. Node.js (NAPI) 패키지 빌드
+### WASM (browser)
 
-API 바인딩 결과물은 프로젝트 루트의 `./dist/baerae` 경로에 생성됩니다.
-
-* **표준 빌드 (제약 조건 로깅 포함):**
-```bash
-cd api/napi
-npm run build:dist
-```
-
-
-* **상세 로깅 빌드 (제약 조건 + 메모리 로깅 포함):**
-```bash
-cd api/napi
-npm run build:dist:logging
-```
-
-
-## 서비스 제공자 준비 사항 (OIDC Setup)
-
-프로덕션 배포 전, 서비스 제공자는 제공할 OIDC 서비스에 대해 **(1) Audience 리스트**와 **(2) OpenID Provider(Issuer/PK) 해시**를 미리 생성해야 합니다. 이 과정은 `generate_hash.rs` 도구를 사용하며, 실행 전 `setup-zk-custom2.sh`가 선행되어야 합니다.
-
-### 1. OpenID Provider 해시 생성 (Leaf Hash)
-
-Issuer와 Public Key 쌍을 해싱하여 `leaf_output.json`을 생성합니다.
+Build from source using `wasm-pack`:
 
 ```bash
-cargo run --release --bin generate_hash -- leaf \
-  --iss "https://accounts.google.com, https://kauth.kakao.com" \
-  --pk "<GOOGLE_PK>, <KAKAO_PK>"
+./build.sh --napi-only -e wasm   # produces bindings/wasm/pkg/
 ```
 
-### 2. Audience 리스트 해시 생성 (Aud Hash)
+Then import the generated package via your bundler or load it directly in a browser.
 
-허용된 Audience 값들을 해싱하여 `aud_output.json`을 생성합니다.
+## Quick Start (Node.js, 3 minutes)
+
+This example generates a Groth16 proof from a JWT using the pre-built NAPI binding.
+
+**Step 1**: Generate a proving key (one-time setup, outputs to `./output/keys/`):
 
 ```bash
-cargo run --release --bin generate_hash -- aud \
-  --values "google_client_id, kakao_client_id"
+./build.sh --keys-only
 ```
+
+**Step 2**: Generate a proof:
+
+```js
+const { napiGenerateProof } = require('@snp-labs/zkap-circuit');
+
+// All field elements are hex-encoded BN254 scalar field elements.
+const result = napiGenerateProof({
+  // Path to the Groth16 proving key produced by generate_baerae_crs
+  pkPath: './output/keys/baerae.pk',
+
+  // One raw JWT string per prover (header.payload.signature, base64url-encoded)
+  jwts: ['eyJhbGci...'],
+
+  // RSA-2048 public keys in PEM format (one per JWT)
+  pkOps: ['-----BEGIN PUBLIC KEY-----\nMIIB...\n-----END PUBLIC KEY-----'],
+
+  // Merkle authentication paths for the issuer-public key leaves
+  // Each entry is an array of hex field elements, one per tree level
+  merklePaths: [['0xabc...', '0xdef...']],
+
+  // Leaf indices in the issuer Merkle tree (u32)
+  leafIndices: [0],
+
+  // Merkle root (hex field element)
+  root: '0x1234...',
+
+  // Threshold anchor values (k-of-N Vandermonde scheme, hex field elements)
+  anchor: ['0xaaaa...', '0xbbbb...'],
+
+  // Poseidon hash of the user-operation being authorized
+  hSignUserOp: '0xcccc...',
+
+  // Non-zero random blinding factor (BN254 scalar, keep secret)
+  random: '0xdddd...',
+
+  // Allowed audience list (hex Poseidon hashes of each audience string)
+  audList: ['0xeeee...'],
+});
+
+// result.proofs          -- serialized Groth16 proof per JWT
+// result.sharedInputs   -- public inputs shared across all provers
+// result.partialRhsList -- partial RHS values for threshold aggregation
+// result.jwtExpList     -- expiry timestamps extracted from each JWT
+console.log('Proof generated. Public inputs:', result.sharedInputs);
+```
+
+## Crate Overview
+
+| Crate | Purpose | Key Types |
+|---|---|---|
+| `ark-utils` | R1CS helpers, field arithmetic utilities | `select_array_element` |
+| `gadget` | ZK circuit gadgets (feature-gated) | `SHA256Gadget`, `Base64DecoderGadget`, `BigNatVar`, `VandermondeMatrixVar`, `PoseidonAnchorSchemeGadget` |
+| `gadget::signature::rsa` | RSA-2048 witness and constraint types | `PublicKey`, `Signature`, `PublicKeyVar`, `SignatureVar` |
+| `gadget::merkletree` | Poseidon Merkle tree | `MerkleTreeParams`, `MerkleTreeParamsVar` |
+| `circuit` | Main circuit implementation | `BaeraeLightWeightCircuit`, `BaeraeCircuitInput`, `CircuitPublicInputs`, `ZkPasskeyConfig` |
+| `service` | Proof generation service layer | `generate_baerae_proof`, `RawProofRequest`, `create_poseidon_anchor`, `poseidon_hash` |
+| `bindings/napi` | Node.js NAPI bindings | `napiGenerateProof`, `GenerateProofReq`, `GenerateProofRes` |
+| `bindings/wasm` | WebAssembly bindings | wasm-pack output |
+| `bindings/uniffi` | iOS / Android UniFFI bindings | Swift / Kotlin generated interfaces |
+
+## Building from Source
+
+**Requirements**: Rust (stable, 2024 edition), `cargo`, `npm`, `zig` (cross-compilation only)
+
+```bash
+# Full build: key generation + NAPI bindings for all platforms
+./build.sh
+
+# Native platform only
+./build.sh -e macos-arm64      # Apple Silicon
+./build.sh -e linux-x64        # Linux x86_64
+
+# Key generation only (no NAPI)
+./build.sh --keys-only
+
+# NAPI bindings only (skip key generation)
+./build.sh --napi-only -e macos-arm64
+
+# Configure circuit parameters (default: N=3, K=3)
+./build.sh -n 5 -k 3
+
+# Dry-run: validate configuration without building
+./build.sh --dry-run -e linux-x64
+
+# CI mode: auto-approve missing Rust target installation
+./build.sh --yes -e linux-x64
+```
+
+**Circuit parameters** (configure via environment variables or `build.sh` flags):
+
+| Variable | Default | Description |
+|---|---|---|
+| `ZK_N` | 3 | Total number of signers |
+| `ZK_K` | 3 | Threshold (minimum signers required) |
+| `ZK_MAX_JWT_B64_LEN` | 1024 | Maximum JWT length in base64 bytes |
+| `ZK_MAX_PAYLOAD_B64_LEN` | 896 | Maximum payload length in base64 bytes |
+| `ZK_TREE_HEIGHT` | 16 | Issuer Merkle tree height (supports up to 2^16 issuers) |
+| `ZK_NUM_AUDIENCE_LIMIT` | 5 | Maximum allowed audience list size |
+
+Output is written to `./output/`:
+
+```
+output/
+  keys/           # Groth16 proving and verification keys
+  napi/<env>/     # Platform-specific NAPI .node files
+  *.tar.gz        # Release archive
+```
+
+## Security
+
+An external security audit (CSO review) was completed. Key findings addressed in the circuit:
+
+- **[ZKAPCIR-001]** The RSA public exponent `e` is enforced equal to `65537` inside the R1CS circuit via `enforce_equal_when_carried`, preventing substitution of weak exponents.
+- **[ZKAPCIR-002]** JWT payload boundaries are cryptographically bound to the `.` separator positions and the SHA-256 padding start index (`pad_start_byte_idx`), preventing an attacker from designating arbitrary byte regions as the payload.
+
+Additional defense-in-depth constraints enforced by the circuit:
+- Payload offset is enforced to be at least 1 (prevents field underflow on subtraction).
+- Payload end index is range-checked against the buffer length (prevents buffer overrun).
+- The random blinding factor is enforced non-zero (`random.enforce_not_equal(&zero)`).
+- All selector indices are constrained to be boolean with exactly `k` set bits (cardinality check).
+- The current signer index is range-checked to be less than `N`.
+
+## Contributing
+
+Please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
+
+Bug reports, feature requests, and documentation improvements are welcome via GitHub Issues at [snp-labs/zkap-circuit](https://github.com/snp-labs/zkap-circuit/issues).
+
+## License
+
+Licensed under either of:
+
+- MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
+
+at your option.

@@ -15,6 +15,7 @@ pub enum TokenError {
     NotFoundKeyError(String),
 
     #[error("Invalid length: {0}")]
+    #[allow(dead_code)]
     InvalidLengthError(String),
 }
 

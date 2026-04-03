@@ -1,6 +1,6 @@
 use ark_serialize::CanonicalSerialize;
 use ark_std::rand::{self, RngCore, SeedableRng, rngs::OsRng};
-use circuit::constants::{ZkapConfig, ZkPasskeyConfig};
+use circuit::constants::{BNP, CG, ZkapConfig, ZkPasskeyConfig};
 use std::{
     collections::HashMap,
     env::args,
@@ -40,26 +40,12 @@ fn main() {
 #[allow(unused)]
 fn generate_crs_files(file_path: &str, mut rng: rand::rngs::StdRng) {
     use circuit::evm::groth16_verifier_solidity::SolidityContractGenerator;
-    use gadget::bigint::constraints::BigNatCircuitParams;
 
     use ark_bn254::Bn254;
     use ark_crypto_primitives::snark::CircuitSpecificSetupSNARK;
     use ark_groth16::{
         Groth16, PreparedVerifyingKey, ProvingKey, VerifyingKey, prepare_verifying_key,
     };
-
-    const LAMBDA: usize = 2048; // 512 bits
-    #[derive(Clone, PartialEq, Eq, Debug)]
-    struct BigNat2048Params;
-    impl BigNatCircuitParams for BigNat2048Params {
-        const LIMB_WIDTH: usize = 64;
-        const N_LIMBS: usize = LAMBDA / 64;
-    }
-
-    type C = ark_ed_on_bn254::EdwardsProjective;
-    type CV = ark_ed_on_bn254::constraints::EdwardsVar;
-    #[allow(clippy::upper_case_acronyms)]
-    type BNP = BigNat2048Params;
 
     println!("Generate Baerae CRS files at path: {}", file_path);
 
@@ -90,7 +76,7 @@ fn generate_crs_files(file_path: &str, mut rng: rand::rngs::StdRng) {
     println!("==================================================");
 
     let circuit =
-        circuit::baerae::BaeraeLightWeightCircuit::<C, BNP, ZkapConfig>::generate_mock_circuit();
+        circuit::baerae::BaeraeLightWeightCircuit::<CG, BNP, ZkapConfig>::generate_mock_circuit();
 
     let (pk, vk) = Groth16::<Bn254>::setup(circuit, &mut rng).unwrap();
     let pvk = prepare_verifying_key(&vk);

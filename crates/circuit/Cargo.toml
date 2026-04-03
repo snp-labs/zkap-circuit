@@ -28,7 +28,6 @@ regex = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-clap = { workspace = true, features = ["derive"] }
 hex = { workspace = true }
 
 [build-dependencies]
@@ -46,14 +45,6 @@ rsa = { workspace = true }
 sha2 = { workspace = true }
 rand = { workspace = true }
 base64 = { workspace = true }
-
-[[bin]]
-name = "generate_baerae_crs"
-path = "src/bin/generate_baerae_crs.rs"
-
-[[bin]]
-name = "generate_hash"
-path = "src/bin/generate_hash.rs"
 
 [[test]]
 name = "groth16_integration"

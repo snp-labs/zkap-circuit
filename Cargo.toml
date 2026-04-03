@@ -3,6 +3,7 @@ resolver = "3"
 members = [
     "crates/ark-utils",
     "crates/circuit",
+    "crates/cli",
     "crates/gadget",
     "crates/service",
 ]

@@ -39,7 +39,7 @@ fn main() {
 
 #[allow(unused)]
 fn generate_crs_files(file_path: &str, mut rng: rand::rngs::StdRng) {
-    use circuit::evm::groth16_verifier_solidity::SolidityContractGenerator;
+    use ark_utils::evm::groth16_verifier_solidity::SolidityContractGenerator;
 
     use ark_bn254::Bn254;
     use ark_crypto_primitives::snark::CircuitSpecificSetupSNARK;

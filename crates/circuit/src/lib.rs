@@ -4,7 +4,6 @@ pub mod baerae;
 pub mod token;
 
 pub mod constants;
-pub mod error;
 
 // Re-export circuit input types
 pub use baerae::input::{

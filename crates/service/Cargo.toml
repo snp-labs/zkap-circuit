@@ -2,6 +2,7 @@
 name = "zkpasskey-service"
 version = "0.1.0"
 edition = "2024"
+license = "MIT OR Apache-2.0"
 
 [dependencies]
 gadget = { workspace = true, default-features = false, features = ["crypto", "base64", "rsa"] }
@@ -40,7 +41,7 @@ rand   = { workspace = true }
 sha2   = { workspace = true }
 jsonwebtoken = { workspace = true }
 
-# mimalloc: musl(Alpine Linux)에서는 dlopen TLS 문제 해결을 위해 local_dynamic_tls 필요
+# mimalloc: on musl (Alpine Linux), local_dynamic_tls is required to fix dlopen TLS issues
 [target.'cfg(target_env = "musl")'.dependencies]
 mimalloc = { workspace = true, features = ["local_dynamic_tls"] }
 

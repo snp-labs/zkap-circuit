@@ -70,16 +70,16 @@ use gadget::{
     },
 };
 
-/// ZK-Passkey 회로 (Baerae Lightweight)
+/// ZK-Passkey circuit (Baerae Lightweight)
 ///
-/// 논리적 그룹으로 구조화된 필드:
-/// - `constants`: 회로 상수 (Vandermonde, Poseidon, Base64)
-/// - `public_inputs`: 검증자에게 공개되는 입력
-/// - `jwt`: JWT 관련 witness (SHA256, Base64, RSA)
+/// Fields organized by logical group:
+/// - `constants`: circuit constants (Vandermonde, Poseidon, Base64)
+/// - `public_inputs`: inputs exposed to the verifier
+/// - `jwt`: JWT-related witness (SHA256, Base64, RSA)
 /// - `anchor`: Threshold anchor witness
 /// - `merkle`: Merkle tree witness
 /// - `audience`: Audience list witness
-/// - `misc`: 기타 witness (random)
+/// - `misc`: miscellaneous witness (random)
 #[derive(Clone, CanonicalSerialize, CanonicalDeserialize)]
 pub struct BaeraeLightWeightCircuit<C, BNP, Config>
 where
@@ -88,19 +88,19 @@ where
     BNP: BigNatCircuitParams + Send + Sync,
     Config: ZkPasskeyConfig + Send + Sync,
 {
-    /// 회로 상수 (Setup 시점에 결정)
+    /// Circuit constants (determined at setup time)
     pub constants: input::CircuitConstants<C::BaseField>,
-    /// 공개 입력 (검증자에게 공개)
+    /// Public inputs (exposed to the verifier)
     pub public_inputs: input::CircuitPublicInputs<C::BaseField>,
-    /// JWT 관련 Witness
+    /// JWT-related witness
     pub jwt: input::JwtWitness,
-    /// Anchor/Threshold Witness
+    /// Anchor/Threshold witness
     pub anchor: input::AnchorWitness<C::BaseField>,
-    /// Merkle Tree Witness
+    /// Merkle tree witness
     pub merkle: input::MerkleWitness<C::BaseField>,
-    /// Audience Witness
+    /// Audience witness
     pub audience: input::AudienceWitness<C::BaseField>,
-    /// 기타 Witness
+    /// Miscellaneous witness
     pub misc: input::MiscWitness<C::BaseField>,
     /// Phantom data for type parameters
     _phantom: PhantomData<(BNP, Config)>,
@@ -210,7 +210,7 @@ where
 
         let pk_op = PublicKeyVar::<C::BaseField, BNP>::new_witness(cs.clone(), || Ok(self.jwt.pk))?;
 
-        // [ZKAPCIR-001] RSA e=65537 강제
+        // [ZKAPCIR-001] Enforce RSA e=65537
         let expected_e = BigNatVar::<C::BaseField, BNP>::constant(&BigNat::from(gadget::constants::RSA_DEFAULT_EXPONENT))?;
         pk_op.e.enforce_equal_when_carried(&expected_e)?;
 
@@ -241,7 +241,7 @@ where
         let phase1_start = cs.num_constraints();
         let mut phase1_total_last = phase1_start;
 
-        // [1.1] SHA256 Full Digest (from initial H constants) + RSA-2048 서명 검증
+        // [1.1] SHA256 Full Digest (from initial H constants) + RSA-2048 signature verification
         let mut digest = SHA256Gadget::<C::BaseField>::digest_full_with_pad_checked(
             &sha_pad_jwt_b64,
             nblocks,
@@ -254,20 +254,20 @@ where
         gadget::enforce_true_debug!("RSA Verification", result)?;
         gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - RSA Verification");
 
-        // [1.2] Base64 디코딩 및 Claim 추출
+        // [1.2] Base64 decoding and claim extraction
         let sha_pad_jwt_b64_to_fp = sha_pad_jwt_b64
             .iter()
             .map(|u8| u8.to_fp())
             .collect::<ark_relations::r1cs::Result<Vec<_>>>()?;
 
-        // [ZKAPCIR-002] JWT payload 경계를 '.' 구분자와 바인딩
-        // payload_offset_b64/payload_len_b64가 실제 JWT '.' 위치와 무관하면
-        // 공격자가 header 등 임의 구간을 payload로 지정하여 클레임을 위조할 수 있음.
+        // [ZKAPCIR-002] Bind JWT payload boundary to '.' separator
+        // If payload_offset_b64/payload_len_b64 are independent of the actual JWT '.' position,
+        // an attacker could designate arbitrary regions (e.g. header) as payload to forge claims.
         let dot_char = FpVar::<C::BaseField>::Constant(C::BaseField::from(b'.' as u64));
         let payload_offset_fp = Boolean::le_bits_to_fp(&payload_offset_b64.to_bits_le()?)?;
         let payload_len_fp = Boolean::le_bits_to_fp(&payload_len_b64.to_bits_le()?)?;
 
-        // 방어 심층: payload_offset >= 1 (offset=0이면 필드 underflow 발생)
+        // Defense in depth: payload_offset >= 1 (offset=0 causes field underflow)
         let offset_ge_1 = is_less_than(
             &zero.to_bits_le_with_top_bits_zero(16)?.0,
             &payload_offset_fp.to_bits_le_with_top_bits_zero(16)?.0,
@@ -277,7 +277,7 @@ where
 
         gadget::enforce_true_debug!("Payload Offset >= 1", offset_ge_1)?;
 
-        // 방어 심층: payload_offset + payload_len < buffer_len (버퍼 범위 초과 방지)
+        // Defense in depth: payload_offset + payload_len < buffer_len (prevent buffer overrun)
         let buf_len = FpVar::<C::BaseField>::Constant(C::BaseField::from(
             sha_pad_jwt_b64_to_fp.len() as u64,
         ));
@@ -291,7 +291,7 @@ where
 
         gadget::enforce_true_debug!("Payload Index Range Check", idx_in_range)?;
 
-        // 첫 번째 '.' : payload 시작 바로 전 (header.payload 사이)
+        // First '.': immediately before payload start (between header and payload)
         let first_dot_idx = &payload_offset_fp - &one;
         // Binary tree selector: O(log n) vs O(n) constraints
         // sha_pad_jwt_b64_to_fp.len() == MAX_JWT_B64_LEN == 1024 == 2^10, so 10 bits suffice
@@ -301,9 +301,9 @@ where
 
         gadget::enforce_eq_debug!("Payload Boundary Binding", first_dot_char, dot_char)?;
 
-        // ZKAPCIR-002: payload 끝 위치 == SHA-256 패딩 시작 위치 구조적 바인딩
-        // SHA-256 gadget이 이미 buffer[pad_start_byte_idx] == 0x80을 검증하므로
-        // 여기서는 위치만 바인딩하면 충분
+        // ZKAPCIR-002: structurally bind payload end position == SHA-256 padding start position
+        // The SHA-256 gadget already verifies buffer[pad_start_byte_idx] == 0x80,
+        // so binding the position alone is sufficient here
         let pad_start_fp = pad_start_byte_idx.to_fp()?;
         second_dot_idx.enforce_equal(&pad_start_fp)?;
 
@@ -329,7 +329,7 @@ where
         let nonce_bytes =
             claim_extractor_v2("nonce", &payload, &token_claim[3], Config::MAX_NONCE_LEN)?;
         let sub_bytes = claim_extractor_v2("sub", &payload, &token_claim[4], Config::MAX_SUB_LEN)?;
-        // Field Element로 변환 및 패킹 (Packing)
+        // Convert to field elements and pack
         let aud = pack_decompose_bytes_unchecked(&aud_bytes)?;
         let exp = jwt_exp_to_field(&exp_bytes)?;
         let iss = pack_decompose_bytes_unchecked(&iss_bytes)?;
@@ -353,8 +353,8 @@ where
         let phase2_start = cs.num_constraints();
         let mut phase2_total_last = phase2_start;
 
-        // [2.1] Issuer-Public Key 검증
-        let leaf_inputs = vec![iss.clone(), pk_op.n.limbs.clone()].concat();
+        // [2.1] Issuer-Public Key verification
+        let leaf_inputs = [iss.clone(), pk_op.n.limbs.clone()].concat();
         let leaf = PoseidonCRHGadget::<C::BaseField>::evaluate(&poseidon_param, &leaf_inputs)?;
 
         path.set_leaf_position(leaf_idx.to_bits_le()?);
@@ -381,9 +381,7 @@ where
         gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Anchor Binding");
 
         // Nonce binding: nonce == Poseidon(h_sign_userop, random)
-        let mut nonce_inputs = Vec::<FpVar<C::BaseField>>::new();
-        nonce_inputs.push(h_sign_user_op);
-        nonce_inputs.push(random.clone());
+        let nonce_inputs = vec![h_sign_user_op, random.clone()];
         let target_nonce =
             PoseidonCRHGadget::<C::BaseField>::evaluate(&poseidon_param, &nonce_inputs)?;
         gadget::enforce_eq_debug!("Nonce Binding", target_nonce, nonce)?;
@@ -480,9 +478,7 @@ where
         h_id_inputs.extend_from_slice(&iss);
         h_id_inputs.extend_from_slice(&sub);
         let h_id_ = PoseidonCRHGadget::<C::BaseField>::evaluate(&poseidon_param, &h_id_inputs)?;
-        let mut h_id_inputs_with_index = Vec::<FpVar<C::BaseField>>::new();
-        h_id_inputs_with_index.push(current_idx.clone());
-        h_id_inputs_with_index.push(h_id_.clone());
+        let h_id_inputs_with_index = vec![current_idx.clone(), h_id_.clone()];
 
         let h_id =
             PoseidonCRHGadget::<C::BaseField>::evaluate(&poseidon_param, &h_id_inputs_with_index)?;
@@ -564,7 +560,7 @@ where
         }
     }
 
-    /// 구조화된 입력으로부터 회로 생성 (권장)
+    /// Create circuit from structured input (recommended)
     pub fn from_input(input: input::BaeraeCircuitInput<C::BaseField>) -> Self {
         Self {
             constants: input.constants,

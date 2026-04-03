@@ -17,7 +17,7 @@ pub fn claim_extractor_v2<F: PrimeField>(
     pos: &ClaimIndicesVar<F>,
     max_len: usize,
 ) -> Result<Vec<FpVar<F>>, SynthesisError> {
-    // key를 큰 따옴표로 감싸서 "key" 형태로 만듦
+    // Wrap key in double quotes to form "key"
     let key_with_quotes = format!(r#""{}""#, key);
     let key_bytes = key_with_quotes
         .bytes()
@@ -72,22 +72,22 @@ fn claim_format_verifier_v2<F: PrimeField>(
     let value_len = Boolean::le_bits_to_fp(&value_len.to_bits_le()?)?;
     let claim_len = Boolean::le_bits_to_fp(&claim_len.to_bits_le()?)?;
 
-    // check1: 이름 길이는 콜론 인덱스보다 작거나 같아야한다.
+    // check1: name length must be less than or equal to colon index.
     // name_len.enforce_cmp(&colon_idx, Ordering::Less, true)?;
-    // r1cs-std "0.5.0" 버전에서 enforce_cmp의 버그로 인해 다음과 같이 변경합니다.
+    // Changed due to a bug in enforce_cmp in r1cs-std "0.5.0".
     let name_len_boolean = name_len.to_bits_le()?;
     let colon_idx_boolean = colon_idx.to_bits_le()?;
-    let result = is_less_than(&name_len_boolean, &colon_idx_boolean)? | name_len.is_eq(&colon_idx)?;
+    let result = is_less_than(&name_len_boolean, &colon_idx_boolean)? | name_len.is_eq(colon_idx)?;
     result.enforce_equal(&Boolean::TRUE)?;
 
-    // check2: 콜론 인덱스는 값 인덱스보다 작아야 한다.
+    // check2: colon index must be less than value index.
     // colon_idx.enforce_cmp(&value_idx, Ordering::Less, true)?;
-    // r1cs-std "0.5.0" 버전에서 enforce_cmp의 버그로 인해 다음과 같이 변경합니다.
+    // Changed due to a bug in enforce_cmp in r1cs-std "0.5.0".
     let value_idx_boolean = value_idx.to_bits_le()?;
     let result = is_less_than(&colon_idx_boolean, &value_idx_boolean)?;
     result.enforce_equal(&Boolean::TRUE)?;
 
-    // '공백이 아니면 1, 공백이면 0'인 플래그를 한 번만 계산합니다.
+    // Compute flags once: 1 if not whitespace, 0 if whitespace.
     let is_not_whitespace_flags = claim
         .iter()
         .map(|byte| Ok(FpVar::from(!is_whitespace(byte)?)))
@@ -97,7 +97,7 @@ fn claim_format_verifier_v2<F: PrimeField>(
     let colon_idx = colon_idx.to_fp()?;
     let value_idx = value_idx.to_fp()?;
 
-    // check3: key와 colon 사이에 ws를 제외한 문자는 없어야한다. (name_len-1 < i < colon_idx)
+    // check3: no non-whitespace characters between key and colon. (name_len-1 < i < colon_idx)
     enforce_range_is_whitespace_v2(
         &(name_len - F::ONE),
         &colon_idx,
@@ -105,7 +105,7 @@ fn claim_format_verifier_v2<F: PrimeField>(
         max_claim_len,
     )?;
 
-    // check4: colon_idx와 value_idx 사이에 ws를 제외한 문자는 없어야한다. (colon_idx < i < value_idx)
+    // check4: no non-whitespace characters between colon_idx and value_idx. (colon_idx < i < value_idx)
     enforce_range_is_whitespace_v2(
         &colon_idx,
         &value_idx,
@@ -113,28 +113,28 @@ fn claim_format_verifier_v2<F: PrimeField>(
         max_claim_len,
     )?;
 
-    // check5: value의 끝과 claim의 끝 사이에 ws를 제외한 문자는 없어야한다.
-    let value_end_idx = value_idx + value_len; // 값의 마지막 인덱스 + 1
-    let claim_end_idx = claim_len.clone() - F::ONE; // 클레임의 마지막 문자 인덱스
+    // check5: no non-whitespace characters between end of value and end of claim.
+    let value_end_idx = value_idx + value_len; // last index of value + 1
+    let claim_end_idx = claim_len.clone() - F::ONE; // last character index of claim
     enforce_range_is_whitespace_v2(
         &value_end_idx,
         &claim_end_idx,
         &is_not_whitespace_flags,
         max_claim_len,
     )?;
-    // 참고: check5의 기존 로직 `&(value_idx + value_len + F::ONE)`은 범위가 한 칸 더 뒤에서 시작하는 것으로 보입니다.
-    // 의도된 로직에 맞게 `value_end_idx`를 `value_idx + value_len` 또는 `value_idx + value_len + F::ONE`으로 조절하여 사용하시면 됩니다.
+    // Note: the original check5 logic `&(value_idx + value_len + F::ONE)` appears to start the range one position later.
+    // Adjust `value_end_idx` to `value_idx + value_len` or `value_idx + value_len + F::ONE` as intended.
 
-    // check6: colon이 colon_idx 위치에 있는지 확인한다.
+    // check6: verify that colon is at colon_idx position.
     let colon_var = single_multiplexer(claim, &colon_idx)?;
     colon_var.enforce_equal(&FpVar::<F>::Constant(F::from(b':')))?;
 
-    // check7: 마지막 문자가 콤마 혹은 닫는 중괄호인지 확인한다.
+    // check7: verify that the last character is a comma or closing brace.
     let last_char_var = single_multiplexer(claim, &(claim_len - F::ONE))?;
     let is_closing_brace = last_char_var.is_eq(&FpVar::constant(F::from(b'}')))?;
     let is_comma = last_char_var.is_eq(&FpVar::constant(F::from(b',')))?;
     (is_closing_brace | is_comma).enforce_equal(&Boolean::TRUE)?;
-    // 기존 mul_equals 로직보다 or를 사용하는 것이 더 명확할 수 있습니다.
+    // Using or may be clearer than the original mul_equals logic.
 
     Ok(())
 }
@@ -151,7 +151,7 @@ fn enforce_range_is_whitespace_v2<F: PrimeField>(
     prefix_sums.push(FpVar::<F>::zero());
     let mut running_sum = FpVar::<F>::zero();
     for flag in is_not_whitespace_flags.iter().take(max_len) {
-        running_sum = running_sum + flag;
+        running_sum += flag;
         prefix_sums.push(running_sum.clone());
     }
 

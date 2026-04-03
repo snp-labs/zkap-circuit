@@ -63,7 +63,7 @@ impl<ConstraintF: PrimeField, BNP: BigNatCircuitParams> AllocVar<PublicKey, Cons
                 .chunks(BNP::LIMB_WIDTH / 8)
                 .map(|chunk| ConstraintF::from_le_bytes_mod_order(chunk))
                 .collect::<Vec<_>>();
-            let word_size = BigNat::one() << BNP::LIMB_WIDTH as u32 - 1;
+            let word_size = BigNat::one() << (BNP::LIMB_WIDTH as u32 - 1);
             let n_var =
                 BigNatVar::alloc_from_limbs(cs.clone(), &chunked_n, word_size.clone(), mode)?;
 
@@ -111,7 +111,7 @@ impl<ConstriantF: PrimeField, BNP: BigNatCircuitParams> AllocVar<Signature, Cons
                 .chunks(BNP::LIMB_WIDTH / 8)
                 .map(|chunk| ConstriantF::from_le_bytes_mod_order(chunk))
                 .collect::<Vec<_>>();
-            let word_size = BigNat::one() << BNP::LIMB_WIDTH as u32 - 1;
+            let word_size = BigNat::one() << (BNP::LIMB_WIDTH as u32 - 1);
             let sig_var =
                 BigNatVar::alloc_from_limbs(cs.clone(), &chunked_sig, word_size.clone(), mode)?;
             Ok(SignatureVar { sig: sig_var })
@@ -127,7 +127,7 @@ impl<ConstraintF: PrimeField, BNP: BigNatCircuitParams> ToBytesGadget<Constraint
     }
 }
 
-pub fn output_with_prifix<F: PrimeField>(hashed: &Vec<UInt8<F>>) -> Vec<UInt8<F>> {
+pub fn output_with_prifix<F: PrimeField>(hashed: &[UInt8<F>]) -> Vec<UInt8<F>> {
     let mut output = Vec::new();
     let prifix1 = UInt8::<F>::constant_vec(&[32, 4, 0, 5, 1, 2, 4, 3]);
     let prifix2 = UInt8::<F>::constant_vec(&[101, 1, 72, 134, 96, 9, 6, 13]);

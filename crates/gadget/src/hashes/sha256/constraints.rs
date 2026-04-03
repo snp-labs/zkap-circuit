@@ -1,6 +1,5 @@
 use std::{
     borrow::Borrow,
-    iter,
     ops::{BitXor, Not},
 };
 
@@ -188,14 +187,14 @@ impl<F: PrimeField> SHA256Gadget<F> {
         sha256_var.finalize()
     }
 
-    // 입력 데이터는 SHA256 표준에 따라 패딩된 상태여야 한다.
+    // Input data must be padded according to the SHA256 standard.
     pub fn digest_with_pad(
         &mut self,
         data: &[UInt8<F>],
         nblocks: FpVar<F>,
     ) -> Result<DigestVar<F>, SynthesisError> {
         assert_eq!(data.len() % 64, 0);
-        // nblocks 횟수 만큼의 해시 결과가 저장된다.
+        // Hash results are stored for each block up to nblocks.
         let mut hash_results = Vec::new();
         let zero = UInt32::<F>::constant(0u32);
         let mut output = vec![zero.clone(); 8];
@@ -218,7 +217,7 @@ impl<F: PrimeField> SHA256Gadget<F> {
             flags.push(is_eq);
         }
 
-        // nblocks는 반드시 0..=len-1 중 하나여야 한다
+        // nblocks must be one of 0..=len-1
         let one = FpVar::<F>::one();
         let sum_flags = flags.iter().fold(FpVar::<F>::zero(), |acc, b| {
             acc + FpVar::<F>::from(b.clone())
@@ -246,12 +245,12 @@ impl<F: PrimeField> SHA256Gadget<F> {
         total_len_wo_pad_bytes: &UInt16<F>,
         pad_start_in_suffix: &UInt16<F>,
     ) -> Result<(), SynthesisError> {
-        // SHA-256은 64바이트 블록 단위
-        assert!(sha_pad_payload_b64.len() % 64 == 0);
+        // SHA-256 operates on 64-byte blocks
+        assert!(sha_pad_payload_b64.len().is_multiple_of(64));
         let max_blocks = sha_pad_payload_b64.len() / 64;
 
         // ------------------------------------------------------------
-        // 0) 마지막 블록 선택을 위한 one-hot 플래그 생성
+        // 0) Generate one-hot flags for selecting the final block
         //    flags[b] == 1  <=>  nblocks_idx == b
         // ------------------------------------------------------------
         let mut flags: Vec<FpVar<F>> = Vec::with_capacity(max_blocks);
@@ -260,22 +259,22 @@ impl<F: PrimeField> SHA256Gadget<F> {
             flags.push(i_fp.is_eq(nblocks_idx)?.into());
         }
 
-        // one-hot: sum(flags) == 1 을 직접 enforce
+        // one-hot: directly enforce sum(flags) == 1
         let sum_flags = flags
             .iter()
             .fold(FpVar::<F>::zero(), |acc, f| acc + f.clone());
         crate::enforce_eq_internal!("sha256_flags_one_hot", sum_flags, FpVar::<F>::one())?;
 
         // ------------------------------------------------------------
-        // 1) 전체 메시지 길이(bit 단위) 계산
+        // 1) Calculate total message length (in bits)
         //    total_len_bits = total_len_wo_pad_bytes * 8
         // ------------------------------------------------------------
         let total_len_bits_fp =
             total_len_wo_pad_bytes.to_fp()? * FpVar::<F>::constant(F::from(8u64));
 
         // ------------------------------------------------------------
-        // 2) SHA-256 length field 검증
-        //    선택된 마지막 블록의 [56..63] 바이트를 big-endian으로 해석한 값
+        // 2) Verify SHA-256 length field
+        //    The value of bytes [56..63] of the selected final block interpreted as big-endian
         //    == total_len_bits
         // ------------------------------------------------------------
         let mut enc_bytes: [FpVar<F>; 8] = core::array::from_fn(|_| FpVar::<F>::zero());
@@ -293,22 +292,22 @@ impl<F: PrimeField> SHA256Gadget<F> {
             base *= F::from(256u64);
         }
 
-        // enc_fp == total_len_bits_fp 를 직접 enforce
+        // Directly enforce enc_fp == total_len_bits_fp
         crate::enforce_eq_internal!("sha256_len_field", enc_fp, total_len_bits_fp)?;
 
         // ------------------------------------------------------------
-        // 3) pad_start 위치 검증 (FIXED, underflow-free)
+        // 3) Verify pad_start position (FIXED, underflow-free)
         //
-        // 허용되는 pad_start 위치:
-        //  (A) 마지막 블록 내부:      b*64 <= pad_start < b*64+56
-        //  (B) 마지막-1 블록 tail: (b-1)*64+56 <= pad_start < b*64   (단, b>0)
+        // Valid pad_start positions:
+        //  (A) Within final block:       b*64 <= pad_start < b*64+56
+        //  (B) Previous block tail:      (b-1)*64+56 <= pad_start < b*64  (only if b>0)
         //
-        // one-hot flags로 선택된 b에 대해 (A or B)가 참이어야 함을 enforce
+        // Enforce that (A or B) holds for the b selected by one-hot flags
         // ------------------------------------------------------------
         let pad_start_fp = pad_start_in_suffix.to_fp()?;
         let pad_bits = pad_start_fp.to_bits_le_with_top_bits_zero(16)?.0;
 
-        // in_last_block (Step5의 분기용): pad_start >= block_start ?
+        // in_last_block (branch condition for Step 5): pad_start >= block_start ?
         // block_start = sum_b flags[b] * (b*64)
         let mut block_start_fp = FpVar::<F>::zero();
         let mut lenfield_start_fp = FpVar::<F>::zero(); // = block_start + 56
@@ -322,8 +321,8 @@ impl<F: PrimeField> SHA256Gadget<F> {
 
         // pos_ok_acc = Σ flags[b] * 1{cond_b}
         let mut pos_ok_acc = FpVar::<F>::zero();
-        for b in 0..max_blocks {
-            let flag_b = flags[b].clone();
+        for (b, flag_b) in flags.iter().enumerate().take(max_blocks) {
+            let flag_b = flag_b.clone();
 
             // cond_last: b*64 <= pad_start < b*64+56
             let last_lo_bits = UInt16::constant((b * 64) as u16).to_bits_le()?;
@@ -348,11 +347,11 @@ impl<F: PrimeField> SHA256Gadget<F> {
             pos_ok_acc += flag_b * cond_b_fp;
         }
 
-        // 선택된 b에 대해 cond_b가 참이어야 함
+        // cond_b must be true for the selected b
         crate::enforce_eq_internal!("sha256_pad_pos_valid", pos_ok_acc, FpVar::<F>::one())?;
 
         // ------------------------------------------------------------
-        // 4) 길이 연결식 검증
+        // 4) Verify length linking equation
         //    total_len = prefix_blocks*64 + pad_start
         // ------------------------------------------------------------
         let prefix_len_bytes_fp = prefix_blocks.to_fp()? * FpVar::<F>::constant(F::from(64u64));
@@ -360,7 +359,7 @@ impl<F: PrimeField> SHA256Gadget<F> {
         crate::enforce_eq_internal!("sha256_total_len", prefix_len_bytes_fp + &pad_start_fp, total_len_fp)?;
 
         // ------------------------------------------------------------
-        // 5) 패딩 바이트 검증
+        // 5) Verify padding bytes
         //    padding_len = lenfield_start - pad_start
         //    - in_last_block:      padding_len ∈ [1..56]
         //    - in_prev_block_tail: padding_len ∈ [57..64]
@@ -377,20 +376,20 @@ impl<F: PrimeField> SHA256Gadget<F> {
         let sixty_five_bits = UInt16::constant(65u16).to_bits_le()?;
         crate::enforce_true_internal!("sha256_padding_len_le64", is_less_than(&padding_len_bits, &sixty_five_bits)?)?;
 
-        // in_last_block 이면 padding_len < 57, 아니면 padding_len >= 57
+        // If in_last_block, padding_len < 57; otherwise padding_len >= 57
         let fifty_seven_bits = UInt16::constant(57u16).to_bits_le()?;
         let padding_lt_57 = is_less_than(&padding_len_bits, &fifty_seven_bits)?;
         crate::enforce_eq_internal!("sha256_padding_block_split", padding_lt_57, in_last_block)?;
 
         let padding_len_u16 = UInt16::from_bits_le(&padding_len_bits);
 
-        // slice_efficient 입력을 FpVar 벡터로 변환
+        // Convert slice_efficient input to an FpVar vector
         let sha_pad_fp: Vec<FpVar<F>> = sha_pad_payload_b64
             .iter()
             .map(|b| b.to_fp())
             .collect::<Result<Vec<_>, _>>()?;
 
-        // 최대 64바이트까지 검사 (prev-block tail 케이스는 최대 64)
+        // Check up to 64 bytes max (prev-block tail case is at most 64)
         const PAD_REGION_MAX: usize = 64;
         let pad_region = slice_v2::slice_efficient(
             &sha_pad_fp,
@@ -399,21 +398,21 @@ impl<F: PrimeField> SHA256Gadget<F> {
             PAD_REGION_MAX,
         )?;
 
-        // 첫 바이트는 SHA256_PAD_MARKER (0x80)
+        // First byte must be SHA256_PAD_MARKER (0x80)
         crate::enforce_eq_internal!("sha256_pad_marker", pad_region[0].clone(), FpVar::<F>::constant(F::from(crate::constants::SHA256_PAD_MARKER as u64)))?;
 
-        // 나머지 바이트는 모두 0
-        for i in 1..PAD_REGION_MAX {
-            crate::enforce_eq_internal!("sha256_pad_zero", pad_region[i].clone(), FpVar::<F>::zero())?;
+        // All remaining bytes must be 0
+        for item in pad_region.iter().take(PAD_REGION_MAX).skip(1) {
+            crate::enforce_eq_internal!("sha256_pad_zero", item.clone(), FpVar::<F>::zero())?;
         }
 
         // ------------------------------------------------------------
-        // 6) 마지막 블록 이후의 모든 바이트는 0이어야 함
-        //    (suffix padding 이후의 trailing zero 검증)
+        // 6) All bytes after the final block must be zero
+        //    (trailing zero verification after suffix padding)
         // ------------------------------------------------------------
         let mut prefix_sum = FpVar::<F>::zero();
-        for b in 0..max_blocks {
-            // prefix_sum == 1 이면 b > last_block
+        for (b, flag) in flags.iter().enumerate().take(max_blocks) {
+            // prefix_sum == 1 means b > last_block
             let after_mask = prefix_sum.clone();
 
             for off in 0..64 {
@@ -423,7 +422,7 @@ impl<F: PrimeField> SHA256Gadget<F> {
                 crate::enforce_eq_internal!("sha256_trailing_zero", prod, FpVar::<F>::zero())?;
             }
 
-            prefix_sum += flags[b].clone();
+            prefix_sum += flag.clone();
         }
 
         Ok(())
@@ -506,7 +505,7 @@ impl<F: PrimeField> SHA256Gadget<F> {
         pad_start_byte_idx: &UInt16<F>,
     ) -> Result<(), SynthesisError> {
         // SHA-256 uses 64-byte blocks
-        assert!(data.len() % 64 == 0);
+        assert!(data.len().is_multiple_of(64));
         let max_blocks = data.len() / 64;
 
         // ------------------------------------------------------------
@@ -578,8 +577,8 @@ impl<F: PrimeField> SHA256Gadget<F> {
 
         // Verify position is valid for the selected block
         let mut pos_ok_acc = FpVar::<F>::zero();
-        for b in 0..max_blocks {
-            let flag_b = flags[b].clone();
+        for (b, flag_b) in flags.iter().enumerate().take(max_blocks) {
+            let flag_b = flag_b.clone();
 
             // cond_last: b*64 <= pad_start < b*64+56
             let last_lo_bits = UInt16::constant((b * 64) as u16).to_bits_le()?;
@@ -661,8 +660,8 @@ impl<F: PrimeField> SHA256Gadget<F> {
         )))?;
 
         // Remaining padding bytes must be 0
-        for i in 1..PAD_REGION_MAX {
-            crate::enforce_eq_internal!("sha256_full_pad_zero", pad_region[i].clone(), FpVar::<F>::zero())?;
+        for item in pad_region.iter().take(PAD_REGION_MAX).skip(1) {
+            crate::enforce_eq_internal!("sha256_full_pad_zero", item.clone(), FpVar::<F>::zero())?;
         }
 
         // ------------------------------------------------------------
@@ -670,7 +669,7 @@ impl<F: PrimeField> SHA256Gadget<F> {
         //    (trailing zero verification)
         // ------------------------------------------------------------
         let mut prefix_sum = FpVar::<F>::zero();
-        for b in 0..max_blocks {
+        for (b, flag) in flags.iter().enumerate().take(max_blocks) {
             // prefix_sum == 1 means b > last_block
             let after_mask = prefix_sum.clone();
 
@@ -681,7 +680,7 @@ impl<F: PrimeField> SHA256Gadget<F> {
                 crate::enforce_eq_internal!("sha256_full_trailing_zero", prod, FpVar::<F>::zero())?;
             }
 
-            prefix_sum += flags[b].clone();
+            prefix_sum += flag.clone();
         }
 
         Ok(())
@@ -711,7 +710,7 @@ impl<F: PrimeField> Default for SHA256Gadget<F> {
         Self {
             state: H.iter().cloned().map(UInt32::constant).collect(),
             completed_data_blocks: 0,
-            pending: iter::repeat(0u8).take(64).map(UInt8::constant).collect(),
+            pending: std::iter::repeat_n(0u8, 64).map(UInt8::constant).collect(),
             num_pending: 0,
         }
     }

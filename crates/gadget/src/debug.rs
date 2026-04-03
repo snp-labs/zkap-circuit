@@ -19,7 +19,7 @@ pub fn log_delta<F: Field>(
     Ok(())
 }
 
-// 총 제약수 출력
+// Print total constraint count
 #[inline]
 pub fn log_total<F: Field>(
     _cs: &ConstraintSystemRef<F>,

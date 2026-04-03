@@ -52,7 +52,7 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> AllocVar<BigNat, Constrain
     ) -> Result<Self, SynthesisError> {
         let f_out = f()?;
         let limbs = nat_to_limbs(f_out.borrow(), P::LIMB_WIDTH, P::N_LIMBS);
-        let limb_vars = Vec::<FpVar<ConstraintF>>::new_variable(cs, || Ok(&limbs[..]), mode)?;
+        let limb_vars = Vec::<FpVar<ConstraintF>>::new_variable(cs, || Ok(limbs.as_ref()), mode)?;
         Ok(BigNatVar {
             limbs: limb_vars,
             value: f_out.borrow().clone(),
@@ -103,7 +103,7 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
         let limbs = nat_to_limbs::<ConstraintF>(nat, P::LIMB_WIDTH, P::N_LIMBS);
         let limb_vars = limbs
             .iter()
-            .map(|l| <FpVar<ConstraintF>>::constant(l.clone()))
+            .map(|l| <FpVar<ConstraintF>>::constant(*l))
             .collect::<Vec<FpVar<ConstraintF>>>();
         Ok(BigNatVar {
             limbs: limb_vars,
@@ -318,7 +318,7 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
             let zero = FpVar::<ConstraintF>::zero();
             let mut all_zero = Boolean::<ConstraintF>::TRUE;
             for l in modulus.limbs.iter() {
-                all_zero = all_zero & l.is_eq(&zero)?;
+                all_zero &= l.is_eq(&zero)?;
             }
             crate::enforce_eq_internal!("bigint_modulus_nonzero", all_zero, Boolean::FALSE)?;
         }
@@ -382,8 +382,8 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
         for i in 0..mq_len {
             rhs_limbs[i] += &mq_prod_limbs[i];
         }
-        for i in 0..P::N_LIMBS {
-            rhs_limbs[i] += &rem.limbs[i];
+        for (i, limb) in rem.limbs.iter().enumerate().take(P::N_LIMBS) {
+            rhs_limbs[i] += limb;
         }
 
         // Enforce self*other == modulus*quotient + rem via carry-aware equality
@@ -540,8 +540,8 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
         for i in 0..mq_len {
             rhs_limbs[i] += &mq_prod_limbs[i];
         }
-        for i in 0..P::N_LIMBS {
-            rhs_limbs[i] += &rem.limbs[i];
+        for (i, limb) in rem.limbs.iter().enumerate().take(P::N_LIMBS) {
+            rhs_limbs[i] += limb;
         }
 
         // Conservative word_size bound for carry propagation
@@ -646,6 +646,7 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
     /// Splits exp bits into windows, selects the corresponding base^k via select_index,
     /// then recursively accumulates: square chunk_len times, then multiply by the selected power.
     /// Uses mult_mod_checked_impl throughout to maintain STRICT rem < modulus (soundness).
+    #[allow(clippy::only_used_in_recursion)]
     fn bauer_power_helper_mode(
         cs: impl Into<Namespace<ConstraintF>>,
         base_powers: &[Self],
@@ -756,7 +757,7 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
         }) * current_word_size.clone();
 
         let grouped_carry_bits =
-            (grouped_word_size.bits() as usize - P::LIMB_WIDTH * limbs_per_group + 1) as usize;
+            grouped_word_size.bits() as usize - P::LIMB_WIDTH * limbs_per_group + 1 ;
 
         // Propagate carries over grouped limbs.
         let mut carry_in = FpVar::<ConstraintF>::Constant(ConstraintF::ZERO);
@@ -1034,7 +1035,7 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
 
             // diff != 0  (strict)
             let limb_is_nonzero = diff_limbs[i].is_neq(&FpVar::<ConstraintF>::zero())?;
-            any_nonzero = any_nonzero | limb_is_nonzero;
+            any_nonzero |= limb_is_nonzero;
 
             borrow_prev = borrow_out_fp;
         }
@@ -1097,14 +1098,14 @@ pub fn select_index<ConstraintF: PrimeField, T: CondSelectGadget<ConstraintF>>(
     v: &[T],
     index_bits: &[Boolean<ConstraintF>],
 ) -> Result<T, SynthesisError> {
-    debug_assert!(index_bits.len() > 0);
+    debug_assert!(!index_bits.is_empty());
     if index_bits.len() == 1 {
         assert_eq!(v.len(), 2);
         T::conditionally_select(&index_bits[0], &v[1], &v[0])
     } else {
         let left = select_index(&v[..(v.len() / 2)], &index_bits[..(index_bits.len() - 1)])?;
         let right = select_index(&v[(v.len() / 2)..], &index_bits[..(index_bits.len() - 1)])?;
-        T::conditionally_select(&index_bits.last().unwrap(), &right, &left)
+        T::conditionally_select(index_bits.last().unwrap(), &right, &left)
     }
 }
 
@@ -1123,14 +1124,14 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> ToBytesGadget<ConstraintF>
 pub trait BigNatTrait<ConstraintF: PrimeField, P: BigNatCircuitParams> {
     fn alloc_from_u64_limbs(
         cs: impl Into<Namespace<ConstraintF>>,
-        u64_limbs: &Vec<u64>,
+        u64_limbs: &[u64],
         word_size: BigNat,
         mode: AllocationMode,
     ) -> Result<BigNatVar<ConstraintF, P>, SynthesisError>;
 
     fn alloc_from_limbs(
         cs: impl Into<Namespace<ConstraintF>>,
-        limbs: &Vec<ConstraintF>,
+        limbs: &[ConstraintF],
         word_size: BigNat,
         mode: AllocationMode,
     ) -> Result<BigNatVar<ConstraintF, P>, SynthesisError>;
@@ -1141,7 +1142,7 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatTrait<ConstraintF, P
 {
     fn alloc_from_u64_limbs(
         cs: impl Into<Namespace<ConstraintF>>,
-        u64_limbs: &Vec<u64>,
+        u64_limbs: &[u64],
         word_size: BigNat,
         mode: AllocationMode,
     ) -> Result<BigNatVar<ConstraintF, P>, SynthesisError> {
@@ -1155,16 +1156,16 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatTrait<ConstraintF, P
 
     fn alloc_from_limbs(
         cs: impl Into<Namespace<ConstraintF>>,
-        limbs: &Vec<ConstraintF>,
+        limbs: &[ConstraintF],
         word_size: BigNat,
         mode: AllocationMode,
     ) -> Result<BigNatVar<ConstraintF, P>, SynthesisError> {
         assert_eq!(limbs.len(), P::N_LIMBS);
-        let limb_vars = Vec::<FpVar<ConstraintF>>::new_variable(cs, || Ok(&limbs[..]), mode)?;
+        let limb_vars = Vec::<FpVar<ConstraintF>>::new_variable(cs, || Ok(limbs), mode)?;
         let result = BigNatVar {
             limbs: limb_vars,
             value: limbs_to_nat::<ConstraintF>(limbs, P::LIMB_WIDTH),
-            word_size: word_size,
+            word_size,
             _params: PhantomData,
         };
         Ok(result)

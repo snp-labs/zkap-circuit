@@ -1,29 +1,29 @@
 use circuit::constants::F;
 
-/// 앵커 검증을 위한 계산된 컨텍스트
+/// Computed context for anchor verification
 #[derive(Clone)]
 pub struct AnchorContext {
-    /// 선택자 벡터 (현재 선택된 JWT 토큰 위치 표시)
+    /// Selector vector (marks the currently selected JWT token positions)
     pub selector: Vec<u8>,
 
-    /// <a, anchor> * random = <b, h_known> * random 을 위한 a 벡터
+    /// Vector a for <a, anchor> * random = <b, h_known> * random
     pub a: Vec<F>,
 
-    /// H(a, random) 값
+    /// H(a, random) value
     pub h_a: F,
 
-    /// <a, anchor> * random - LHS 값
+    /// <a, anchor> * random - LHS value
     pub lhs: F,
 
-    /// 각 증명에 대한 partial RHS 값들
+    /// Partial RHS values for each proof
     pub partial_rhs_list: Vec<F>,
 
-    /// 선택된 인덱스들 (selector[i] == 1인 i들)
+    /// Selected indices (i where selector[i] == 1)
     pub current_idx_list: Vec<usize>,
 }
 
 impl AnchorContext {
-    /// 새로운 AnchorContext 생성
+    /// Creates a new AnchorContext
     pub fn new(
         selector: Vec<u8>,
         a: Vec<F>,
@@ -42,12 +42,12 @@ impl AnchorContext {
         }
     }
 
-    /// i번째 증명에 대한 partial RHS 값
+    /// Partial RHS value for the i-th proof
     pub fn partial_rhs_for(&self, proof_index: usize) -> F {
         self.partial_rhs_list[proof_index]
     }
 
-    /// i번째 증명에 대한 current index
+    /// Current index for the i-th proof
     pub fn current_idx_for(&self, proof_index: usize) -> usize {
         self.current_idx_list[proof_index]
     }

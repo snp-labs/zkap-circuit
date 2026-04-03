@@ -1,0 +1,18 @@
+title = "zkup-baerae gitleaks config"
+
+[allowlist]
+  description = "Test fixtures and well-known development keys"
+  paths = [
+    '''crates/.*/test.*\.rs''',
+    '''crates/gadget/tests/.*''',
+    '''crates/circuit/tests/.*''',
+    '''bindings/.*/src/constants\.ts''',
+    '''bindings/.*/src/deployment.*\.json''',
+    '''contract/.*''',
+    '''zkpasskey/.*''',
+    '''zklogin-circuit/.*''',
+    '''zklogin-crypto-modules/.*''',
+    '''test/.*''',
+    '''tests/.*''',
+    '''\.env\.example''',
+  ]

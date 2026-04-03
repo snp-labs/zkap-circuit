@@ -21,7 +21,7 @@ pub fn slice_in_binary_tree<F: PrimeField>(
 
     let zero = FpVar::<F>::Constant(F::from(b'A'));
 
-    // input 배열 패딩
+    // Pad input array
     let input_padded = pad_input(input);
 
     let select_bit_len = input_padded.len().next_power_of_two().trailing_zeros() as usize;
@@ -31,7 +31,7 @@ pub fn slice_in_binary_tree<F: PrimeField>(
         .map(|k| Boolean::<F>::constant(((input_len >> k) & 1) == 1))
         .collect::<Vec<_>>();
 
-    // length의 비트 표현
+    // Bit representation of length
     let mut length_bits = len.to_bits_le()?;
     length_bits = length_bits[..comp_bit_len].to_vec();
 
@@ -41,30 +41,30 @@ pub fn slice_in_binary_tree<F: PrimeField>(
 
         let idx = offset.wrapping_add(&i_fp);
 
-        // idx의 비트 표현
+        // Bit representation of idx
         let mut idx_bits = idx.to_bits_le()?;
         idx_bits = idx_bits[..comp_bit_len].to_vec();
 
-        // i를 비트로 표현
+        // Bit representation of i
         let mut i_bits = i_fp.to_bits_le()?;
         i_bits = i_bits[..comp_bit_len].to_vec();
 
-        // i < length인지 확인
+        // Check if i < length
         let i_lt_length = is_less_than(&i_bits, &length_bits)?;
 
-        // idx < input_len인지 확인
+        // Check if idx < input_len
         let idx_lt_input_len = is_less_than(&idx_bits, &input_len_bits)?;
 
         let mut idx_bits_sel = idx.to_bits_le()?;
         idx_bits_sel = idx_bits_sel[..select_bit_len].to_vec();
 
-        // 유효한 인덱스인지 확인
+        // Check if the index is valid
         let valid = &i_lt_length & &idx_lt_input_len;
 
-        // input[idx] 선택
+        // Select input[idx]
         let input_elem = select_array_element(&input_padded, &idx_bits_sel)?;
 
-        // valid에 따라 값 선택
+        // Select value based on valid
         let output_elem = FpVar::conditionally_select(&valid, &input_elem, &zero)?;
 
         output.push(output_elem);
@@ -72,8 +72,8 @@ pub fn slice_in_binary_tree<F: PrimeField>(
     Ok(output)
 }
 
-/// 나눗셈의 올림 연산을 수행합니다.
-/// ceil(n / q)를 계산합니다.
+/// Performs ceiling division.
+/// Computes ceil(n / q).
 pub fn ceil(n: u64, q: u64) -> u64 {
     assert!(q != 0, "Divisor q cannot be zero");
 
@@ -87,13 +87,13 @@ pub fn ceil(n: u64, q: u64) -> u64 {
     }
 }
 
-/// 입력 벡터의 앞에서부터 `length` 개 원소를 반환하고 나머지를 `pad_char`로 채웁니다.
+/// Returns the first `length` elements from the input vector and fills the rest with `pad_char`.
 ///
 /// ## Arguments
-/// * `in_vec` - 입력 벡터
-/// * `length` - 슬라이스 길이 (회로 내 변수)
-/// * `out_len` - 출력 벡터의 고정 길이
-/// * `pad_char` - 패딩 문자
+/// * `in_vec` - input vector
+/// * `length` - slice length (variable inside the circuit)
+/// * `out_len` - fixed length of the output vector
+/// * `pad_char` - padding character
 pub fn slice_from_start<F: PrimeField>(
     in_vec: &[FpVar<F>],
     length: &FpVar<F>,
@@ -102,10 +102,10 @@ pub fn slice_from_start<F: PrimeField>(
 ) -> Result<Vec<FpVar<F>>, SynthesisError> {
     let in_len = in_vec.len();
 
-    assert!(out_len > 0, "출력 길이(out_len)는 0보다 커야 합니다.");
+    assert!(out_len > 0, "Output length (out_len) must be greater than 0.");
     assert!(
         out_len <= in_len,
-        "출력 길이(out_len)는 입력 길이(in_len = {})보다 작거나 같아야 합니다.",
+        "Output length (out_len) must be less than or equal to input length (in_len = {}).",
         in_len
     );
 

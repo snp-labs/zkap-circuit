@@ -16,7 +16,7 @@ use ark_relations::r1cs::{ConstraintSystemRef, SynthesisError};
 pub fn enforce_curve_hanchor<C, CV>(
     cs: ConstraintSystemRef<C::BaseField>,
     poseidon_param: &CRHParametersVar<C::BaseField>,
-    anchor: &Vec<CV>,
+    anchor: &[CV],
     _hanchor: &FpVar<C::BaseField>,
 ) -> Result<(), SynthesisError>
 where
@@ -45,7 +45,7 @@ pub fn chain_hash_gadget<F: PrimeField + Absorb>(
 ) -> Result<FpVar<F>, SynthesisError> {
     let mut hash = CRHGadget::<F>::evaluate(parameters, &[values[0].clone()])?;
     for value in values.iter().skip(1) {
-        hash = CRHGadget::<F>::evaluate(&parameters, &[hash, value.clone()])?;
+        hash = CRHGadget::<F>::evaluate(parameters, &[hash, value.clone()])?;
     }
     Ok(hash)
 }

@@ -29,10 +29,10 @@ impl<F: PrimeField> VandermondeMatrixVar<F> {
         for j in 0..n {
             let mut sum = FpVar::zero();
 
-            // a의 i번째 원소와 M의 (i,j) 요소를 곱하여 더함
-            // Mul 한 번 당 Constraint 1개
-            for i in 0..m {
-                sum += &a[i] * &self.matrix[i][j];
+            // Multiply the i-th element of a by the (i,j) element of M and accumulate
+            // 1 constraint per multiplication
+            for (i, a_i) in a.iter().enumerate().take(m) {
+                sum += a_i * &self.matrix[i][j];
             }
             result.push(sum);
         }

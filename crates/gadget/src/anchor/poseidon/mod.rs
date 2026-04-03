@@ -14,9 +14,9 @@ use crate::{
     matrix::VandermondeMatrix,
 };
 
-// ==================== 핵심 데이터 구조 ====================
+// ==================== Core Data Structures ====================
 
-/// Poseidon Anchor 값 (길이: m = n - k + 1)
+/// Poseidon Anchor value (length: m = n - k + 1)
 #[derive(Debug, Clone, CanonicalSerialize, CanonicalDeserialize)]
 pub struct PoseidonAnchor<F: PrimeField>(pub Vec<F>);
 
@@ -30,13 +30,13 @@ impl<F: PrimeField> PoseidonAnchor<F> {
     }
 }
 
-/// Poseidon Anchor 공개 키
+/// Poseidon Anchor public key
 #[derive(Clone, Debug, CanonicalSerialize, CanonicalDeserialize)]
 pub struct PoseidonAnchorPublicKey<F: PrimeField> {
     pub params: PoseidonConfig<F>,
 }
 
-/// Poseidon Anchor 시크릿 (길이: n)
+/// Poseidon Anchor secret (length: n)
 #[derive(Clone, Debug, CanonicalSerialize, CanonicalDeserialize)]
 pub struct PoseidonAnchorSecret<F: PrimeField>(pub Vec<F>);
 
@@ -49,12 +49,12 @@ impl<F: PrimeField> From<Vec<F>> for PoseidonAnchorSecret<F> {
 /// Poseidon Anchor Witness
 #[derive(Clone, Debug, CanonicalSerialize, CanonicalDeserialize)]
 pub struct PoseidonAnchorWitness<F: PrimeField> {
-    /// 보조 벡터 a (크기: m = n - k + 1)
+    /// Auxiliary vector a (size: m = n - k + 1)
     pub a: Vec<F>,
-    /// 벡터 b = a * Matrix (크기: n)
+    /// Vector b = a * Matrix (size: n)
     pub b: Vec<F>,
-    /// 해시된 시크릿 값들 (크기: n)
-    /// selector가 1인 위치에만 해시 값, 나머지는 0
+    /// Hashed secret values (size: n)
+    /// Hash values only at positions where selector is 1, zero elsewhere
     pub h_known: Vec<F>,
 }
 
@@ -68,7 +68,7 @@ impl<F: PrimeField> PoseidonAnchorWitness<F> {
         }
     }
 
-    /// 분할 증명을 위한 부분 RHS 계산
+    /// Compute partial RHS for split proof
     /// partial_rhs[i] = b[i] * h_known[i]
     pub fn compute_partial_rhs(&self) -> Vec<F> {
         self.b
@@ -79,18 +79,18 @@ impl<F: PrimeField> PoseidonAnchorWitness<F> {
     }
 }
 
-// ==================== 유틸리티 함수 ====================
+// ==================== Utility Functions ====================
 
-/// Witness 생성 헬퍼 함수
-/// 
-/// 이 함수는 회로와 동일한 방식으로 h_known을 계산합니다:
+/// Helper function for building a Witness
+///
+/// This function computes h_known in the same way as the circuit:
 /// h_known[i] = H(i, secret[hash_idx]) where selector[i] == 1
-/// 
+///
 /// # Arguments
-/// * `params` - Poseidon 파라미터
-/// * `secrets` - 해싱할 시크릿 벡터 (이미 H(aud, iss, sub) 형태)
-/// * `selector` - 어느 위치에 시크릿이 있는지 표시하는 벡터
-/// * `matrix` - Vandermonde 행렬
+/// * `params` - Poseidon parameters
+/// * `secrets` - Secret vector to hash (already in H(aud, iss, sub) form)
+/// * `selector` - Vector indicating which positions contain secrets
+/// * `matrix` - Vandermonde matrix
 pub fn build_anchor_witness<F: PrimeField + Absorb>(
     params: &PoseidonConfig<F>,
     secrets: &[F],
@@ -107,15 +107,15 @@ pub fn build_anchor_witness<F: PrimeField + Absorb>(
         )));
     }
 
-    // 1. 벡터 a 계산
+    // 1. Compute vector a
     let vector_a = matrix.calculate_vector_a(selector)?;
 
-    // 2. 벡터 b 계산: b = a * Matrix
+    // 2. Compute vector b: b = a * Matrix
     let vector_b = matrix.vector_multiply(&vector_a)?;
 
-    // 3. h_known 벡터 구성 - 회로와 동일한 방식으로 계산
-    // 회로: h_id = H(current_idx, H(aud, iss, sub))
-    // 따라서 h_known[i] = H(i, secrets[hash_idx])
+    // 3. Build h_known vector - computed the same way as the circuit
+    // Circuit: h_id = H(current_idx, H(aud, iss, sub))
+    // Therefore h_known[i] = H(i, secrets[hash_idx])
     let mut h_known = vec![F::zero(); n];
     let mut hash_idx = 0;
     for (i, &sel) in selector.iter().enumerate() {
@@ -142,18 +142,18 @@ pub fn build_anchor_witness<F: PrimeField + Absorb>(
     })
 }
 
-// ==================== 해시 캐시 구조체 ====================
+// ==================== Hash Cache Structure ====================
 
-/// 시크릿 해싱 결과를 캐시하는 구조체
-/// 중복 해싱을 방지하기 위함
+/// Structure caching secret hashing results
+/// to avoid redundant hashing
 #[derive(Clone, Debug)]
 pub struct HashedSecretsCache<F: PrimeField> {
-    /// 각 인덱스에 대한 해시 값 (H(index || secret))
+    /// Hash values for each index (H(index || secret))
     pub hashes: Vec<F>,
 }
 
 impl<F: PrimeField + Absorb> HashedSecretsCache<F> {
-    /// 시크릿 벡터를 한 번에 해싱하여 캐시 생성
+    /// Create cache by hashing the secret vector all at once
     pub fn new(params: &PoseidonConfig<F>, secrets: &[F]) -> Result<Self, AnchorError> {
         let hashes = secrets
             .iter()
@@ -168,15 +168,15 @@ impl<F: PrimeField + Absorb> HashedSecretsCache<F> {
         Ok(Self { hashes })
     }
 
-    /// 특정 인덱스의 해시 값 가져오기
+    /// Get the hash value for a specific index
     pub fn get(&self, index: usize) -> Option<F> {
         self.hashes.get(index).copied()
     }
 
-    /// selector에 따라 h_known 벡터 구성
-    /// selector가 1인 위치에 known_secrets의 해시를 순서대로 채움
+    /// Build the h_known vector according to selector
+    /// Fills in hashes of known_secrets in order at positions where selector is 1
     pub fn build_h_known(&self, selector: &[u8]) -> Result<Vec<F>, AnchorError> {
-        // selector에서 1의 개수가 known_secrets의 개수(k)와 일치하는지 검증
+        // Verify that the number of 1s in selector matches the number of known secrets (k)
         let ones_count = selector.iter().filter(|&&s| s == 1).count();
         if ones_count != self.hashes.len() {
             return Err(AnchorError::DimensionMismatch(format!(
@@ -186,7 +186,7 @@ impl<F: PrimeField + Absorb> HashedSecretsCache<F> {
             )));
         }
 
-        // selector가 1인 위치에 known_secrets의 해시를 순서대로 채움
+        // Fill in hashes of known_secrets in order at positions where selector is 1
         let mut h_known = vec![F::zero(); selector.len()];
         let mut hash_idx = 0;
         for (i, &s) in selector.iter().enumerate() {
@@ -199,7 +199,7 @@ impl<F: PrimeField + Absorb> HashedSecretsCache<F> {
         Ok(h_known)
     }
 
-    /// 전체 해시 벡터 반환
+    /// Return the full hash vector
     pub fn as_vec(&self) -> &[F] {
         &self.hashes
     }
@@ -241,11 +241,11 @@ impl<F: PrimeField + Absorb> AnchorScheme for PoseidonAnchorScheme<F> {
         Ok(PoseidonAnchorPublicKey { params })
     }
 
-    /// Anchor 생성
-    /// Anchor = Matrix(m X n) * h(n X 1) (h: 해시된 시크릿 벡터)
-    /// 
-    /// 주의: secrets는 이미 H(aud, iss, sub) 형태로 해싱된 값이어야 합니다.
-    /// 이 함수는 추가로 H(index, secret)를 계산합니다.
+    /// Generate Anchor
+    /// Anchor = Matrix(m X n) * h(n X 1) (h: hashed secret vector)
+    ///
+    /// Note: secrets must already be hashed in H(aud, iss, sub) form.
+    /// This function additionally computes H(index, secret).
     fn generate_anchor(
         pk: &Self::PublicKey,
         secrets: &Self::Secret,
@@ -261,9 +261,9 @@ impl<F: PrimeField + Absorb> AnchorScheme for PoseidonAnchorScheme<F> {
             )));
         }
 
-        // 시크릿을 H(index, secret) 형태로 해싱
-        // secrets는 이미 H(aud, iss, sub) 형태이므로
-        // 최종적으로 H(index, H(aud, iss, sub)) 형태가 됩니다
+        // Hash secrets into H(index, secret) form
+        // Since secrets are already in H(aud, iss, sub) form,
+        // the final result is H(index, H(aud, iss, sub))
         let mut hashed_secrets = Vec::with_capacity(n);
         for (i, &secret) in secrets.0.iter().enumerate() {
             let input = vec![F::from(i as u64), secret];
@@ -272,7 +272,7 @@ impl<F: PrimeField + Absorb> AnchorScheme for PoseidonAnchorScheme<F> {
             hashed_secrets.push(hash);
         }
 
-        // 행렬-벡터 곱셈: Anchor = Matrix * h
+        // Matrix-vector multiplication: Anchor = Matrix * h
         let anchor_values = matrix.multiply_vector(&hashed_secrets)?;
 
         Ok(PoseidonAnchor::new(anchor_values))
@@ -284,12 +284,12 @@ impl<F: PrimeField + Absorb> AnchorScheme for PoseidonAnchorScheme<F> {
         selector: &[u8],
         matrix: &Self::Matrix,
     ) -> Result<Self::Witness, AnchorError> {
-        // 새로운 헬퍼 함수를 사용하여 witness 생성
+        // Generate witness using the new helper function
         build_anchor_witness(&pk.params, &secrets.0, selector, matrix)
     }
 
     fn verify(anchor: &Self::Anchor, witness: &Self::Witness) -> Result<(), AnchorError> {
-        // 검증: <a, Anchor> == <b, h_known>
+        // Verify: <a, Anchor> == <b, h_known>
         let lhs = Self::inner_product(&witness.a, &anchor.0)?;
         let rhs = Self::inner_product(&witness.b, &witness.h_known)?;
 
@@ -301,11 +301,11 @@ impl<F: PrimeField + Absorb> AnchorScheme for PoseidonAnchorScheme<F> {
     }
 }
 
-// ==================== 유틸리티 함수 ====================
+// ==================== Utility Functions ====================
 
-/// Anchor에서 올바른 인덱스를 찾는 최적화된 함수
+/// Optimized function for finding valid indices from an Anchor
 ///
-/// 기존 get_indices를 별도 함수로 분리하여 책임을 명확히 함
+/// Extracted from the original get_indices into a standalone function for clearer responsibility
 pub fn find_valid_indices<F>(
     pk: &PoseidonAnchorPublicKey<F>,
     anchor: &PoseidonAnchor<F>,
@@ -326,24 +326,24 @@ where
         )));
     }
 
-    // 최적화: 시크릿 해싱을 먼저 수행하여 재사용
+    // Optimization: hash secrets upfront for reuse
     let _hashed_cache = HashedSecretsCache::new(&pk.params, &known_secrets.0)?;
 
-    // n개 중 k개를 선택하는 모든 조합 생성
+    // Generate all combinations of k from n indices
     let index_combinations = generate_combinations(n, k);
 
-    // 각 조합에 대해 순열을 시도
+    // Try permutations for each combination
     for index_combo in index_combinations {
         let secret_permutations = generate_permutations(&known_secrets.0);
 
         for secret_perm in &secret_permutations {
-            // selector 생성
+            // Build selector
             let mut selector = vec![0; n];
             for &idx in &index_combo {
                 selector[idx] = 1;
             }
 
-            // Witness 생성 및 검증 (알려진 시크릿만 넘김)
+            // Generate and verify witness (passing only known secrets)
             let permuted_known_secrets = PoseidonAnchorSecret(secret_perm.clone());
             let witness = PoseidonAnchorScheme::<F>::generate_witness(
                 pk,
@@ -363,7 +363,7 @@ where
     ))
 }
 
-/// n개 중 k개를 선택하는 모든 조합 생성
+/// Generate all combinations of k elements chosen from n
 fn generate_combinations(n: usize, k: usize) -> Vec<Vec<usize>> {
     if k > n {
         return vec![];
@@ -400,7 +400,7 @@ fn generate_combinations_helper(
     }
 }
 
-/// 벡터의 모든 순열 생성
+/// Generate all permutations of a vector
 fn generate_permutations<F: Clone>(items: &[F]) -> Vec<Vec<F>> {
     if items.is_empty() {
         return vec![vec![]];
@@ -494,10 +494,10 @@ mod tests {
         let secrets = PoseidonAnchorSecret(all_secrets.clone());
         let anchor = PAS::generate_anchor(&pk, &secrets, &matrix).unwrap();
 
-        // selector: 인덱스 1, 3, 4가 known
+        // selector: indices 1, 3, 4 are known
         let selector = vec![0, 1, 0, 1, 1, 0];
 
-        // 알려진 시크릿 추출
+        // Extract known secrets
         let known_secrets: Vec<F> = selector
             .iter()
             .enumerate()
@@ -506,7 +506,7 @@ mod tests {
         let known_secrets = PoseidonAnchorSecret(known_secrets);
 
         let witness = PAS::generate_witness(&pk, &known_secrets, &selector, &matrix).unwrap();
-        // 검증
+        // Verify
         assert!(PAS::verify(&anchor, &witness).is_ok());
     }
 
@@ -516,7 +516,7 @@ mod tests {
         // C(4,2) = 6
         assert_eq!(combos.len(), 6);
 
-        // 예상 조합들
+        // Expected combinations
         assert!(combos.contains(&vec![0, 1]));
         assert!(combos.contains(&vec![2, 3]));
     }

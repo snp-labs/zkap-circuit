@@ -1,22 +1,22 @@
-//! 입력 데이터 레이어
+//! Input data layer
 //!
-//! Raw 문자열 입력을 타입 안전한 도메인 객체로 변환하는 모듈입니다.
+//! Module that converts raw string input into type-safe domain objects.
 //!
-//! ## 아키텍처
+//! ## Architecture
 //!
 //! ```text
 //! ┌─────────────────────┐
-//! │   RawProofRequest   │  ← 외부에서 들어오는 원시 문자열 데이터
+//! │   RawProofRequest   │  ← raw string data coming from outside
 //! └──────────┬──────────┘
 //!            │ validate & parse
 //!            ▼
 //! ┌─────────────────────┐
-//! │   ProofRequest      │  ← 검증된 도메인 객체 (F 필드 요소들)
+//! │   ProofRequest      │  ← validated domain object (F field elements)
 //! └──────────┬──────────┘
 //!            │ build context
 //!            ▼
 //! ┌─────────────────────┐
-//! │   ProofContext      │  ← 증명 생성에 필요한 모든 컨텍스트
+//! │   ProofContext      │  ← all context needed for proof generation
 //! └─────────────────────┘
 //! ```
 

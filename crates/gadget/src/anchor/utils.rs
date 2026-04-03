@@ -9,6 +9,7 @@ use num_integer::Integer;
 
 use crate::{anchor::error::AnchorError, utils::str_to_fields};
 
+#[allow(clippy::type_complexity)]
 pub fn process_secrets_vec<C, CRH>(
     secrets: &[String],
     hash_param: &<CRH as CRHScheme>::Parameters,
@@ -22,27 +23,27 @@ where
             Parameters = PoseidonConfig<C::BaseField>,
         >,
 {
-    // 1. `iter()`로 벡터의 각 요소에 접근합니다.
-    // 2. `map()`으로 각 secret에 대해 `process_secret` 함수를 호출합니다.
-    //    이 단계의 결과는 `Result<(Q, R), Error>` 값들을 생성하는 이터레이터입니다.
+    // 1. Access each element of the vector using `iter()`.
+    // 2. Call `process_secret` for each secret using `map()`.
+    //    This step produces an iterator of `Result<(Q, R), Error>` values.
     let results_iterator = secrets
         .iter()
         .map(|s| process_secret::<C, CRH>(s, hash_param));
 
-    // 3. `collect::<Result<Vec<_>, _>>()`를 사용하여 이터레이터의 모든 Result 값을 하나의 Result로 합칩니다.
-    //    - 모든 요소가 Ok이면 `Ok(Vec<(Q, R)>)`이 됩니다.
-    //    - 하나라도 Err가 있으면 전체가 그 `Err` 값을 즉시 반환합니다.
+    // 3. Use `collect::<Result<Vec<_>, _>>()` to combine all Result values into one Result.
+    //    - If all elements are Ok, returns `Ok(Vec<(Q, R)>)`.
+    //    - If any element is Err, returns that `Err` immediately.
     let collected_results: Vec<(C::BaseField, C::ScalarField)> =
         results_iterator.collect::<Result<_, _>>()?;
 
-    // 4. `unzip()`을 사용하여 `Vec<(Q, R)>` 형태의 벡터를 `(Vec<Q>, Vec<R>)` 형태의 튜플로 변환합니다.
+    // 4. Use `unzip()` to convert a `Vec<(Q, R)>` into a `(Vec<Q>, Vec<R>)` tuple.
     let (q_fields, r_fields): (Vec<_>, Vec<_>) = collected_results.into_iter().unzip();
 
     Ok((q_fields, r_fields))
 }
 
 pub fn process_secret<C, CRH>(
-    secret: &String,
+    secret: &str,
     hash_param: &<CRH as CRHScheme>::Parameters,
 ) -> Result<(C::BaseField, C::ScalarField), AnchorError>
 where
@@ -71,7 +72,7 @@ where
     C: CurveGroup,
     C::BaseField: PrimeField + Absorb,
 {
-    process_no_tk_secrets::<C, CRH<C::BaseField>>(&secrets, &poseidon_param)
+    process_no_tk_secrets::<C, CRH<C::BaseField>>(secrets, poseidon_param)
 }
 
 pub fn process_no_tk_secrets<C, CRH>(
@@ -90,7 +91,7 @@ where
 }
 
 pub fn process_no_tk_secret<C, CRH>(
-    secret: &String,
+    secret: &str,
     hash_param: &CRH::Parameters,
 ) -> Result<C::BaseField, AnchorError>
 where
@@ -128,14 +129,14 @@ where
     C::BaseField: PrimeField,
     CRH: CRHScheme<Input = [C::BaseField], Output = C::BaseField>,
 {
-    // 2. 변환된 원소들을 해시합니다.
+    // 2. Hash the converted elements.
     let hash_output = CRH::evaluate(crh_parameters, elements_to_hash)
         .map_err(|e| AnchorError::CryptoError(format!("Hash failed: {}", e)))?;
 
-    // 3. 해시 결과(BaseField)를 최종 목표인 ScalarField 타입으로 변환합니다.
+    // 3. Convert the hash result (BaseField) to the target ScalarField type.
     let (q, r) = divide_by_scalar_modulus::<C>(hash_output);
 
-    // 4. 결과를 반환합니다.
+    // 4. Return the result.
     Ok((q, r))
 }
 
@@ -159,8 +160,8 @@ where
 }
 
 pub fn mul_and_divide_by_scalar_modulus_bytes<C: CurveGroup>(
-    a: &Vec<u8>,
-    b: &Vec<u8>,
+    a: &[u8],
+    b: &[u8],
 ) -> (Vec<u8>, Vec<u8>, Vec<u8>)
 where
     C::BaseField: PrimeField,
@@ -170,7 +171,7 @@ where
     mul_and_divide_by_scalar_modulus::<C>(a_field, b_field)
 }
 
-// nCk 조합 생성기
+// nCk combination generator
 pub fn combinations(n: usize, k: usize) -> Vec<Vec<usize>> {
     let mut result = Vec::new();
     if k == 0 || k > n {
@@ -197,7 +198,7 @@ pub fn combinations(n: usize, k: usize) -> Vec<Vec<usize>> {
     result
 }
 
-/// k개의 원소에 대한 모든 순열을 생성하는 헬퍼 함수
+/// Helper function to generate all permutations of k elements
 pub fn permute<T: Clone>(items: &[T]) -> Vec<Vec<T>> {
     if items.is_empty() {
         return vec![vec![]];

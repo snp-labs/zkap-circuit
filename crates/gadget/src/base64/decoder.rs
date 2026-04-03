@@ -4,20 +4,20 @@ use base64::engine::general_purpose::{self};
 
 use super::error::Base64Error;
 
-/// [단위 구조체] Base64 문자 하나에 해당하는 6비트 (Big-Endian)
+/// 6 bits (Big-Endian) representing a single Base64 character
 #[derive(Debug, Clone, Copy, Default, PartialEq, CanonicalSerialize, CanonicalDeserialize)]
 pub struct Base64CharBits {
-    /// 순서: [MSB, ..., LSB]
+    /// Order: [MSB, ..., LSB]
     pub bits: [bool; 6],
 }
 
 impl Base64CharBits {
-    /// 인덱스 값(0~63)을 받아 Big-Endian 비트 배열로 변환하여 생성
+    /// Creates an instance from an index value (0~63) converted to a Big-Endian bit array
     pub fn from_index(val: u8) -> Self {
         let mut bits = [false; 6];
-        for i in 0..6 {
+        for (i, bit) in bits.iter_mut().enumerate() {
             let shift = 5 - i;
-            bits[i] = (val >> shift) & 1 == 1;
+            *bit = (val >> shift) & 1 == 1;
         }
         Self { bits }
     }
@@ -29,14 +29,14 @@ pub struct IndexBits {
 }
 
 impl IndexBits {
-    /// 빈 IndexBits 생성 (길이만 지정)
+    /// Create an empty IndexBits with the given length
     pub fn empty(len: usize) -> Self {
         Self {
             inner: vec![Base64CharBits::default(); len],
         }
     }
 
-    /// Base64URL 문자열을 회로 입력용 구조체 벡터로 변환 (패딩 포함)
+    /// Convert a Base64URL string into a vector of circuit input structs (with padding)
     pub fn from_base64_url(input: &str, padded_len: usize) -> Result<Self, Base64Error> {
         if input.len() > padded_len {
             return Err(Base64Error::InputTooLong(input.len(), padded_len));
@@ -46,24 +46,24 @@ impl IndexBits {
         let mut inner = Vec::with_capacity(padded_len);
 
         for i in 0..padded_len {
-            // 1. 바이트 가져오기 (범위 밖은 패딩)
+            // 1. Get the byte (positions out of range are padding)
             let idx = if i < input_bytes.len() {
-                // 입력된 문자는 디코딩 및 검증
+                // Decode and validate the input character
                 Self::decode_char(input_bytes[i], i)?
             } else {
-                // 패딩은 0
+                // Padding is 0
                 0
             };
 
-            // 3. 구조체 생성 (Index -> Base64CharBits)
-            // 비트 분해 로직은 Base64CharBits::from_index 안에 숨겨짐
+            // 3. Create struct (Index -> Base64CharBits)
+            // Bit decomposition logic is encapsulated in Base64CharBits::from_index
             inner.push(Base64CharBits::from_index(idx));
         }
 
         Ok(Self { inner })
     }
 
-    /// 내부 헬퍼: 문자 -> 인덱스(0~63)
+    /// Internal helper: character -> index (0~63)
     fn decode_char(byte: u8, index: usize) -> Result<u8, Base64Error> {
         match byte {
             b'A'..=b'Z' => Ok(byte - b'A'),
@@ -76,10 +76,10 @@ impl IndexBits {
     }
 }
 
-/// 여러 표준(URL-safe, Standard, padding 유무)을 순차적으로 시도하여
-/// Base64 문자열을 디코딩합니다.
+/// Decodes a Base64 string by sequentially trying multiple standards
+/// (URL-safe, Standard, with and without padding).
 pub fn decode_any_base64(input: &str) -> Result<Vec<u8>, Base64Error> {
-    // 2. 중첩된 match 대신 or_else를 사용하여 가독성을 높입니다.
+    // Use or_else instead of nested match for readability.
     general_purpose::URL_SAFE_NO_PAD
         .decode(input)
         .or_else(|_| general_purpose::STANDARD_NO_PAD.decode(input))
@@ -97,7 +97,7 @@ pub fn decode_any_base64_to_string(input: &str) -> Result<String, Base64Error> {
 mod tests {
     use super::*;
 
-    // --- 1. Base64CharBits 단위 테스트 ---
+    // --- 1. Base64CharBits unit tests ---
 
     #[test]
     fn test_char_bits_conversion() {
@@ -105,11 +105,11 @@ mod tests {
         let zero = Base64CharBits::from_index(0);
         assert_eq!(zero.bits, [false, false, false, false, false, false]);
 
-        // Case B: Index 1 ('B') -> 000001 (MSB First 확인)
+        // Case B: Index 1 ('B') -> 000001 (MSB First check)
         let one = Base64CharBits::from_index(1);
         assert_eq!(one.bits, [false, false, false, false, false, true]);
 
-        // Case C: Index 32 -> 100000 (MSB First 확인)
+        // Case C: Index 32 -> 100000 (MSB First check)
         let thirty_two = Base64CharBits::from_index(32);
         assert_eq!(thirty_two.bits, [true, false, false, false, false, false]);
 
@@ -118,7 +118,7 @@ mod tests {
         assert_eq!(max.bits, [true, true, true, true, true, true]);
     }
 
-    // --- 2. IndexBits 성공 케이스 (Success Scenarios) ---
+    // --- 2. IndexBits success cases (Success Scenarios) ---
 
     #[test]
     fn test_index_bits_standard_decoding() {
@@ -164,21 +164,21 @@ mod tests {
 
         assert_eq!(witness.inner.len(), 3);
 
-        // 실제 데이터 'A'
+        // Actual data 'A'
         assert_eq!(witness.inner[0].bits, [false; 6]);
 
-        // 자동 생성된 패딩
+        // Auto-generated padding
         assert_eq!(witness.inner[1].bits, [false; 6]); // All Zero
         assert_eq!(witness.inner[2].bits, [false; 6]); // All Zero
     }
 
-    // --- 3. IndexBits 실패/경계 케이스 (Edge/Failure Scenarios) ---
+    // --- 3. IndexBits edge/failure cases (Edge/Failure Scenarios) ---
 
     #[test]
     fn test_invalid_characters_handling() {
         // Input: "@!" (Target Len: 2)
-        // '@': Invalid -> 오류 발생
-        // '!': Invalid -> 오류 발생
+        // '@': Invalid -> error expected
+        // '!': Invalid -> error expected
         let result = IndexBits::from_base64_url("@!", 2);
         assert!(result.is_err());
     }
@@ -186,7 +186,7 @@ mod tests {
     #[test]
     fn test_empty_input() {
         // Input: "" (Target Len: 2)
-        // 모두 패딩(0)으로 채워져야 함
+        // All positions should be filled with padding (0)
         let witness = IndexBits::from_base64_url("", 2).unwrap();
 
         assert_eq!(witness.inner.len(), 2);
@@ -197,7 +197,7 @@ mod tests {
     #[test]
     fn test_truncation() {
         // Input: "ABC" (Target Len: 2)
-        // 입력이 목표 길이보다 길 경우, 오류 발생
+        // If input is longer than target length, an error should occur
         let result = IndexBits::from_base64_url("ABC", 2);
         assert!(result.is_err());
     }

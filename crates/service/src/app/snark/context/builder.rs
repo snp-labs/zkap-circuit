@@ -20,9 +20,9 @@ use crate::error::ApplicationError;
 use super::anchor::AnchorContext;
 use super::audience::AudienceContext;
 
-/// 증명 컨텍스트 빌더
+/// Proof context builder
 ///
-/// `ProofRequest`를 받아 증명 생성에 필요한 모든 컨텍스트를 구축합니다.
+/// Receives a `ProofRequest` and builds all context required for proof generation.
 pub struct ProofContextBuilder<Config: ZkPasskeyConfig> {
     request: ProofRequest,
     circuit_ctx: CircuitContext<Config>,
@@ -31,7 +31,7 @@ pub struct ProofContextBuilder<Config: ZkPasskeyConfig> {
 }
 
 impl<Config: ZkPasskeyConfig> ProofContextBuilder<Config> {
-    /// 새로운 빌더 생성
+    /// Creates a new builder
     pub fn new(request: ProofRequest) -> Self {
         Self {
             request,
@@ -41,14 +41,14 @@ impl<Config: ZkPasskeyConfig> ProofContextBuilder<Config> {
         }
     }
 
-    /// Anchor 컨텍스트 계산
+    /// Computes the Anchor context
     pub fn build_anchor_context(mut self) -> Result<Self, ApplicationError> {
         log::info!("[ProofContextBuilder] Building anchor context...");
 
-        // X 리스트 계산 (각 토큰에서 secret 추출하여 X 계산)
+        // Compute X list (extract secret from each token and compute X)
         let x_list = self.derive_x_list()?;
 
-        // Selector 계산
+        // Compute Selector
         let selector = derive_selector_from_x_list_and_anchor::<F>(
             &self.circuit_ctx.poseidon_anchor_key,
             &x_list,
@@ -56,7 +56,7 @@ impl<Config: ZkPasskeyConfig> ProofContextBuilder<Config> {
             &self.circuit_ctx.vandermonde_matrix,
         )?;
 
-        // Anchor witness 구축
+        // Build anchor witness
         let anchor_witness = build_anchor_witness(
             &self.circuit_ctx.poseidon_params,
             &x_list,
@@ -64,16 +64,16 @@ impl<Config: ZkPasskeyConfig> ProofContextBuilder<Config> {
             &self.circuit_ctx.vandermonde_matrix,
         )?;
 
-        // H(a, random) 계산
+        // Compute H(a, random)
         let h_a = self.compute_h_a(&anchor_witness.a)?;
 
-        // LHS 계산
+        // Compute LHS
         let lhs = self.compute_lhs(&anchor_witness.a)?;
 
-        // Partial RHS 리스트 계산
+        // Compute Partial RHS list
         let partial_rhs_list = self.compute_partial_rhs_list(&anchor_witness);
 
-        // 선택된 인덱스 추출
+        // Extract selected indices
         let current_idx_list: Vec<usize> = selector
             .iter()
             .enumerate()
@@ -93,13 +93,13 @@ impl<Config: ZkPasskeyConfig> ProofContextBuilder<Config> {
         Ok(self)
     }
 
-    /// Audience 컨텍스트 계산
+    /// Computes the Audience context
     pub fn build_audience_context(mut self) -> Result<Self, ApplicationError> {
         log::info!("[ProofContextBuilder] Building audience context...");
 
         let mut padded = self.request.audience.raw_list.clone();
 
-        // 패딩 필요시 금지 문자열로 채움
+        // If padding is needed, fill with the forbidden string
         if padded.len() < Config::NUM_AUDIENCE_LIMIT {
             let padding_count = Config::NUM_AUDIENCE_LIMIT - padded.len();
             let padded_str = pad(
@@ -115,7 +115,7 @@ impl<Config: ZkPasskeyConfig> ProofContextBuilder<Config> {
             padded.extend_from_slice(&vec![h; padding_count]);
         }
 
-        // H(aud_list) 계산
+        // Compute H(aud_list)
         let h_aud_list = PoseidonHash::evaluate(&self.circuit_ctx.poseidon_params, padded.clone())
             .map_err(|_| ApplicationError::PoseidonHashError)?;
 
@@ -125,7 +125,7 @@ impl<Config: ZkPasskeyConfig> ProofContextBuilder<Config> {
         Ok(self)
     }
 
-    /// i번째 증명을 위한 BaeraeCircuitInput 생성
+    /// Builds a BaeraeCircuitInput for the i-th proof
     pub fn build_circuit_input(
         &self,
         proof_index: usize,
@@ -140,12 +140,12 @@ impl<Config: ZkPasskeyConfig> ProofContextBuilder<Config> {
             .as_ref()
             .ok_or_else(|| ApplicationError::InvalidFormat("Audience context not built".into()))?;
 
-        // JWT witness 빌드
+        // Build JWT witness
         let jwt_witness = self.request.token_builders[proof_index]
             .build::<Config>(&self.request.pk_ops[proof_index])
             .map_err(|e| ApplicationError::InvalidFormat(format!("JWT build failed: {}", e)))?;
 
-        // 머클 경로 빌드
+        // Build merkle path
         let merkle_path = self.build_merkle_path(proof_index)?;
 
         let leaf_idx = self.request.merkle.leaf_indices[proof_index];
@@ -197,7 +197,7 @@ impl<Config: ZkPasskeyConfig> ProofContextBuilder<Config> {
         })
     }
 
-    /// 모든 증명을 위한 BaeraeCircuitInput 생성
+    /// Builds BaeraeCircuitInputs for all proofs
     pub fn build_all_circuit_inputs(&self) -> Result<Vec<BaeraeCircuitInput<F>>, ApplicationError> {
         (0..Config::K)
             .map(|i| self.build_circuit_input(i))
@@ -206,7 +206,7 @@ impl<Config: ZkPasskeyConfig> ProofContextBuilder<Config> {
 
     // ============ Private Helper Methods ============
 
-    /// Secret에서 X 값 계산
+    /// Computes X values from Secrets
     fn derive_x_list(&self) -> Result<Vec<F>, ApplicationError> {
         let secrets: Vec<Secret> = self
             .request
@@ -227,7 +227,7 @@ impl<Config: ZkPasskeyConfig> ProofContextBuilder<Config> {
             .collect::<Result<Vec<F>, ApplicationError>>()
     }
 
-    /// H(a, random) 계산
+    /// Computes H(a, random)
     fn compute_h_a(&self, a: &[F]) -> Result<F, ApplicationError> {
         let mut inputs = a.to_vec();
         inputs.push(self.request.execution.random);
@@ -235,14 +235,14 @@ impl<Config: ZkPasskeyConfig> ProofContextBuilder<Config> {
             .map_err(|_| ApplicationError::PoseidonHashError)
     }
 
-    /// <a, anchor> * random 계산
+    /// Computes <a, anchor> * random
     fn compute_lhs(&self, a: &[F]) -> Result<F, ApplicationError> {
         let ip = PoseidonAnchorScheme::<F>::inner_product(a, &self.request.anchor.anchor.0)
             .map_err(|_| ApplicationError::PoseidonHashError)?;
         Ok(ip * self.request.execution.random)
     }
 
-    /// Partial RHS 리스트 계산
+    /// Computes the Partial RHS list
     fn compute_partial_rhs_list(&self, anchor_witness: &PoseidonAnchorWitness<F>) -> Vec<F> {
         let partial_rhs_list = anchor_witness.compute_partial_rhs();
         partial_rhs_list
@@ -252,7 +252,7 @@ impl<Config: ZkPasskeyConfig> ProofContextBuilder<Config> {
             .collect()
     }
 
-    /// 머클 경로 구축
+    /// Builds the merkle path
     fn build_merkle_path(
         &self,
         proof_index: usize,

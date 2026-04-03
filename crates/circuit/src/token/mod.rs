@@ -43,30 +43,30 @@ pub fn parse_claim_from_str(s: &str, key: &str) -> Result<Claim, TokenError> {
 
     let (offset, claim_len, colon_idx, value_idx, value_len, value_str) =
         if let Some(caps) = re.captures(s) {
-            // 전체 매치된 claim
+            // Full matched claim
             let full_match = caps.get(0).ok_or_else(|| TokenError::InvalidFormat("Regex match missing full capture".to_string()))?;
             let full_match_str = full_match.as_str();
             let offset = full_match.start();
             let len = full_match_str.len();
 
-            // 그룹 2: 값 (따옴표 포함 가능)
+            // Group 2: value (may include quotes)
             let captured_value = caps.get(2).ok_or_else(|| TokenError::InvalidFormat("Regex match missing value capture".to_string()))?.as_str();
 
-            // ':' 위치
+            // ':' position
             let colon_idx = full_match_str.find(':').ok_or_else(|| TokenError::InvalidFormat("Colon not found in matched claim".to_string()))?;
 
-            // 따옴표까지 포함한 값 저장
+            // Store value including quotes
             let value_str = captured_value.to_string();
 
-            // full_match 내에서 값 시작 위치 계산
-            let rel_search_start = colon_idx + 1; // ':' 이후
+            // Calculate value start position within full_match
+            let rel_search_start = colon_idx + 1; // after ':'
             let found_at = full_match_str[rel_search_start..]
                 .find(captured_value)
                 .map(|i| i + rel_search_start)
                 .ok_or_else(|| TokenError::InvalidFormat("Value position not found in matched claim".to_string()))?;
 
             let value_idx = found_at;
-            // 길이: 따옴표 포함
+            // Length: including quotes
             let value_len = captured_value.len();
 
             (offset, len, colon_idx, value_idx, value_len, value_str)

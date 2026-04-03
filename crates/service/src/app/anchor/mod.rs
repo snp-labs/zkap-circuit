@@ -7,6 +7,7 @@ use gadget::matrix::VandermondeMatrix;
 /// Anchor configuration derived from ZkPasskeyConfig.
 /// Moved from common::constants to avoid common depending on gadget::matrix.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct AnchorConfig {
     pub matrix_rows: usize,
     pub matrix_cols: usize,

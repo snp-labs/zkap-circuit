@@ -29,7 +29,7 @@ pub fn nat_to_limbs<F: PrimeField>(nat: &BigNat, limb_width: usize, limbs_num: u
     limbs
 }
 
-pub fn limbs_to_nat<F: PrimeField>(limbs: &Vec<F>, limb_width: usize) -> BigNat {
+pub fn limbs_to_nat<F: PrimeField>(limbs: &[F], limb_width: usize) -> BigNat {
     limbs.iter().rev().fold(BigNat::ZERO, |mut acc, limb| {
         acc <<= limb_width as u32;
         acc += fe_to_nat(limb.borrow());

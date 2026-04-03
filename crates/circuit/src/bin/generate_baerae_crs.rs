@@ -58,6 +58,7 @@ fn generate_crs_files(file_path: &str, mut rng: rand::rngs::StdRng) {
 
     type C = ark_ed_on_bn254::EdwardsProjective;
     type CV = ark_ed_on_bn254::constraints::EdwardsVar;
+    #[allow(clippy::upper_case_acronyms)]
     type BNP = BigNat2048Params;
 
     println!("Generate Baerae CRS files at path: {}", file_path);
@@ -224,11 +225,10 @@ where
     let mut cursor = Cursor::new(Vec::new());
 
     let dir_path = std::path::Path::new(file_path).parent().unwrap();
-    if !dir_path.exists() {
-        if let Err(err) = std::fs::create_dir_all(dir_path) {
+    if !dir_path.exists()
+        && let Err(err) = std::fs::create_dir_all(dir_path) {
             return Err(format!("Failed to create folder: {}", err));
         }
-    }
 
     if let Err(e) = value.serialize_uncompressed(&mut cursor) {
         return Err(format!("Failed to serialize: {}", e));

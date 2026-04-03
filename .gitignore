@@ -22,8 +22,19 @@ crates/gadget/tests/
 # Packages (WIP, not yet tracked)
 packages/
 
-# Environment
+# Environment & secrets
 .env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Node
+node_modules/
+
+# Build artifacts
+output/
+*.node
 
 # macOS
 .DS_Store

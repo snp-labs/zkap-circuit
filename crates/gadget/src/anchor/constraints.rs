@@ -10,13 +10,13 @@ pub trait AnchorSchemeGadget<A: AnchorScheme, ConstraintF: Field> {
     type WitnessVar: AllocVar<A::Witness, ConstraintF>;
     type MatrixVar: AllocVar<A::Matrix, ConstraintF>;
 
-    /// 검증: b = a * A
+    /// Verify: b = a * A
     fn verify_b_consistency(
         witness: &Self::WitnessVar,
         matrix: &Self::MatrixVar,
     ) -> Result<Boolean<ConstraintF>, SynthesisError>;
 
-    /// 검증: <a, anchor> = <b, h_known>
+    /// Verify: <a, anchor> = <b, h_known>
     fn verify_binding(
         pk: &Self::PublicKeyVar,
         anchor: &Self::AnchorVar,

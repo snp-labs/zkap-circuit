@@ -39,7 +39,7 @@ baerae = []
 num-cs-logging = ["gadget/num-cs-logging"]
 
 [dev-dependencies]
-ark-utils = { workspace = true }
+ark-utils = { workspace = true, features = ["field-serde"] }
 rsa = { workspace = true }
 sha2 = { workspace = true }
 rand = { workspace = true }

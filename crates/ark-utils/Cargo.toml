@@ -10,19 +10,28 @@ categories = ["cryptography"]
 
 [dependencies]
 thiserror = { workspace = true }
-
 ark-ff = { workspace = true }
-ark-r1cs-std = { workspace = true }
-ark-relations = { workspace = true }
 ark-std = { workspace = true }
-ark-serialize = { workspace = true }
-ark-ec = { workspace = true }
-ark-groth16 = { workspace = true }
-hex = { workspace = true }
+
+# R1CS constraint gadgets (optional)
+ark-r1cs-std = { workspace = true, optional = true }
+ark-relations = { workspace = true, optional = true }
+
+# EVM codegen (optional)
+ark-groth16 = { workspace = true, optional = true }
+
+# Field serde / EVM (optional)
+ark-ec = { workspace = true, optional = true }
+ark-serialize = { workspace = true, optional = true }
+hex = { workspace = true, optional = true }
 
 [dev-dependencies]
 ark-bn254 = { workspace = true }
 
 [features]
-default = []
-constraints-logging = []
+default = ["r1cs"]
+r1cs = ["dep:ark-r1cs-std", "dep:ark-relations"]
+evm-codegen = ["dep:ark-groth16", "dep:ark-ec"]
+field-serde = ["dep:ark-ec", "dep:hex"]
+io = ["dep:ark-serialize"]
+constraints-logging = ["r1cs"]

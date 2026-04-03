@@ -9,7 +9,7 @@ repository = "https://github.com/snp-labs/zkap-circuit"
 [dependencies]
 circuit = { workspace = true }
 gadget = { workspace = true, features = ["crypto", "base64", "rsa"] }
-ark-utils = { workspace = true }
+ark-utils = { workspace = true, features = ["evm-codegen"] }
 
 clap = { workspace = true, features = ["derive"] }
 ark-serialize = { workspace = true }

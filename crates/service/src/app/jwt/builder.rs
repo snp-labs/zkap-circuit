@@ -1,4 +1,5 @@
-use circuit::token::{Claim, ClaimIndices, error::TokenError, parse_claim_from_str};
+use circuit::token::{Claim, ClaimIndices};
+use crate::app::jwt::parser::{TokenError, parse_claim_from_str};
 use circuit::constants::ZkPasskeyConfig;
 use gadget::{
     base64::{IndexBits, decode_any_base64, decode_any_base64_to_string},

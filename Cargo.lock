@@ -1706,6 +1706,7 @@ dependencies = [
  "num-traits",
  "once_cell",
  "rand",
+ "regex",
  "serde",
  "serde_json",
  "sha2",

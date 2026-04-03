@@ -932,8 +932,9 @@ mod tests {
     fn test_digest_full_with_pad_checked_jwt() -> Result<(), SynthesisError> {
         use crate::hashes::sha256::utils::sha256_pad_with_len;
 
-        // Real JWT header.payload (from the provided test JWT)
-        let jwt = "eyJhbGciOiJSUzI1NiIsImtpZCI6ImUyNmQ5MTdiMWZlOGRlMTMzODJhYTdjYzlhMWQ2ZTkzMjYyZjMzZTIiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmdvb2dsZS5jb20iLCJhenAiOiI0MDgwNjA2OTkwMzQtMGVjMGV1ajE3MnZzc2VtaDRpZW1ycWZnNXNkanVqbDQuYXBwcy5nb29nbGV1c2VyY29udGVudC5jb20iLCJhdWQiOiI0MDgwNjA2OTkwMzQtMGVjMGV1ajE3MnZzc2VtaDRpZW1ycWZnNXNkanVqbDQuYXBwcy5nb29nbGV1c2VyY29udGVudC5jb20iLCJzdWIiOiIxMTEyNjg2ODYxOTQyOTAyNDI1NDQiLCJoZCI6ImtsYXl0bi5mb3VuZGF0aW9uIiwiZW1haWwiOiJjb2xpbi5rbGF5dG5Aa2xheXRuLmZvdW5kYXRpb24iLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwiYXRfaGFzaCI6IkI0NmhtZklMVU9TS1RHSlRDQ3RteHciLCJub25jZSI6IjB4MDU0NjE2NWRmYTUwNGM4MmRhMWU0YWQ5ZmNiZWRkNGY4NTA4NGFkNjVmNjE1M2NjZWE1NTFlNGQxYmVmMTQ3MiIsImlhdCI6MTcyMjQ0MTkzMCwiZXhwIjoxNzIyNDQ1NTMwfQ";
+        // Synthetic JWT header.payload for testing (fake claims, no real user data)
+        // Claims: iss=https://test.example.com, sub=test_user_000000000000, email=test@example.com
+        let jwt = "eyJhbGciOiJSUzI1NiIsImtpZCI6InRlc3Qta2V5LWlkLTAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwczovL3Rlc3QuZXhhbXBsZS5jb20iLCJhenAiOiJ0ZXN0LWNsaWVudC1pZCIsImF1ZCI6InRlc3QtY2xpZW50LWlkIiwic3ViIjoidGVzdF91c2VyXzAwMDAwMDAwMDAwMCIsImhkIjoiZXhhbXBsZS5jb20iLCJlbWFpbCI6InRlc3RAZXhhbXBsZS5jb20iLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwiYXRfaGFzaCI6IkFBQUFBQUFBQUFBQUFBQUFBQUFBQUEiLCJub25jZSI6IjB4MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIsImlhdCI6MTcwMDAwMDAwMCwiZXhwIjoxNzAwMDAzNjAwfQ";
         let parts: Vec<&str> = jwt.split('.').collect();
         let header_payload = format!("{}.{}", parts[0], parts[1]);
         let message = header_payload.as_bytes();

@@ -193,7 +193,7 @@ impl TokenBuilder {
         Ok(claims_indices)
     }
 
-    pub fn parse_secret(&self) -> Secret {
+    pub fn parse_secret(&self) -> Result<Secret, TokenError> {
         let mut sub = None;
         let mut iss = None;
         let mut aud = None;
@@ -208,11 +208,11 @@ impl TokenBuilder {
         }
 
         // 필수 필드가 누락되었는지 확인
-        Secret {
-            sub: sub.expect("Missing 'sub' claim"),
-            iss: iss.expect("Missing 'iss' claim"),
-            aud: aud.expect("Missing 'aud' claim"),
-        }
+        Ok(Secret {
+            sub: sub.ok_or_else(|| TokenError::NotFoundKeyError("sub".to_string()))?,
+            iss: iss.ok_or_else(|| TokenError::NotFoundKeyError("iss".to_string()))?,
+            aud: aud.ok_or_else(|| TokenError::NotFoundKeyError("aud".to_string()))?,
+        })
     }
 
     // Claims에서 특정 키에 해당하는 값을 반환합니다.

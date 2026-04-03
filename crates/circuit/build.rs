@@ -36,17 +36,28 @@ fn main() {
 
     // === 2. 환경 변수 읽기 (기본값 설정) ===
     // 우선순위: 환경변수(또는 .env에서 로딩된 값) > 하드코딩 기본값
-    let max_jwt_len = env::var("ZK_MAX_JWT_B64_LEN").unwrap_or_else(|_| "1024".to_string());
-    let max_payload_len = env::var("ZK_MAX_PAYLOAD_B64_LEN").unwrap_or_else(|_| "640".to_string());
-    let max_aud_len = env::var("ZK_MAX_AUD_LEN").unwrap_or_else(|_| "155".to_string());
-    let max_exp_len = env::var("ZK_MAX_EXP_LEN").unwrap_or_else(|_| "20".to_string());
-    let max_iss_len = env::var("ZK_MAX_ISS_LEN").unwrap_or_else(|_| "93".to_string());
-    let max_nonce_len = env::var("ZK_MAX_NONCE_LEN").unwrap_or_else(|_| "93".to_string());
-    let max_sub_len = env::var("ZK_MAX_SUB_LEN").unwrap_or_else(|_| "93".to_string());
-    let n = env::var("ZK_N").unwrap_or_else(|_| "6".to_string());
-    let k = env::var("ZK_K").unwrap_or_else(|_| "3".to_string());
-    let tree_height = env::var("ZK_TREE_HEIGHT").unwrap_or_else(|_| "4".to_string());
-    let aud_limit = env::var("ZK_NUM_AUDIENCE_LIMIT").unwrap_or_else(|_| "5".to_string());
+    let max_jwt_len: usize = env::var("ZK_MAX_JWT_B64_LEN").unwrap_or_else(|_| "1024".to_string())
+        .parse().expect("ZK_MAX_JWT_B64_LEN must be a valid integer");
+    let max_payload_len: usize = env::var("ZK_MAX_PAYLOAD_B64_LEN").unwrap_or_else(|_| "640".to_string())
+        .parse().expect("ZK_MAX_PAYLOAD_B64_LEN must be a valid integer");
+    let max_aud_len: usize = env::var("ZK_MAX_AUD_LEN").unwrap_or_else(|_| "155".to_string())
+        .parse().expect("ZK_MAX_AUD_LEN must be a valid integer");
+    let max_exp_len: usize = env::var("ZK_MAX_EXP_LEN").unwrap_or_else(|_| "20".to_string())
+        .parse().expect("ZK_MAX_EXP_LEN must be a valid integer");
+    let max_iss_len: usize = env::var("ZK_MAX_ISS_LEN").unwrap_or_else(|_| "93".to_string())
+        .parse().expect("ZK_MAX_ISS_LEN must be a valid integer");
+    let max_nonce_len: usize = env::var("ZK_MAX_NONCE_LEN").unwrap_or_else(|_| "93".to_string())
+        .parse().expect("ZK_MAX_NONCE_LEN must be a valid integer");
+    let max_sub_len: usize = env::var("ZK_MAX_SUB_LEN").unwrap_or_else(|_| "93".to_string())
+        .parse().expect("ZK_MAX_SUB_LEN must be a valid integer");
+    let n: usize = env::var("ZK_N").unwrap_or_else(|_| "6".to_string())
+        .parse().expect("ZK_N must be a valid integer");
+    let k: usize = env::var("ZK_K").unwrap_or_else(|_| "3".to_string())
+        .parse().expect("ZK_K must be a valid integer");
+    let tree_height: usize = env::var("ZK_TREE_HEIGHT").unwrap_or_else(|_| "4".to_string())
+        .parse().expect("ZK_TREE_HEIGHT must be a valid integer");
+    let aud_limit: usize = env::var("ZK_NUM_AUDIENCE_LIMIT").unwrap_or_else(|_| "5".to_string())
+        .parse().expect("ZK_NUM_AUDIENCE_LIMIT must be a valid integer");
 
     // === 3. 소스 코드 생성 ===
     let content = format!(

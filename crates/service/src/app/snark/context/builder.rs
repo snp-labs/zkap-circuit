@@ -212,8 +212,8 @@ impl<Config: ZkPasskeyConfig> ProofContextBuilder<Config> {
             .request
             .token_builders
             .iter()
-            .map(|b| b.parse_secret())
-            .collect();
+            .map(|b| b.parse_secret().map_err(|e| ApplicationError::InvalidFormat(format!("{}", e))))
+            .collect::<Result<Vec<_>, _>>()?;
 
         secrets
             .iter()

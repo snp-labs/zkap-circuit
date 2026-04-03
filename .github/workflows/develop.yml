@@ -1,8 +1,7 @@
 name: Deploy zkup to proof worker server (Develop)
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
   id-token: write
 
 on:
@@ -21,7 +20,7 @@ jobs:
     steps:
       - name: Authenticate to Google Cloud
         id: auth
-        uses: google-github-actions/auth@v2
+        uses: google-github-actions/auth@v2  # TODO: pin to SHA — check https://github.com/google-github-actions/auth/releases/tag/v2
         with:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
           service_account: ${{ vars.GCP_WIF_SERVICE_ACCOUNT }}
@@ -30,7 +29,7 @@ jobs:
           create_credentials_file: true
 
       - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
+        uses: google-github-actions/setup-gcloud@v2  # TODO: pin to SHA — check https://github.com/google-github-actions/setup-gcloud/releases/tag/v2
 
       - name: Deploy from bucket to Worker VM
         run: |
@@ -192,7 +191,7 @@ jobs:
           echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Greet the reader
-        uses: slackapi/slack-github-action@v2.1.0
+        uses: slackapi/slack-github-action@v2.1.0  # TODO: pin to SHA — check https://github.com/slackapi/slack-github-action/releases/tag/v2.1.0
         with:
           webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
           webhook-type: incoming-webhook
@@ -252,7 +251,7 @@ jobs:
           echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Notify failure
-        uses: slackapi/slack-github-action@v2.1.0
+        uses: slackapi/slack-github-action@v2.1.0  # TODO: pin to SHA — check https://github.com/slackapi/slack-github-action/releases/tag/v2.1.0
         with:
           webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
           webhook-type: incoming-webhook

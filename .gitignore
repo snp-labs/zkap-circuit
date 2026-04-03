@@ -29,6 +29,9 @@ packages/
 *.pem
 *.key
 
+# Security audit reports
+.gstack/
+
 # Node
 node_modules/
 

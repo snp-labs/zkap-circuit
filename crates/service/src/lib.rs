@@ -1,5 +1,6 @@
 pub mod api;
 mod app;
+pub mod dto;
 pub mod error;
 
 pub use circuit::constants;

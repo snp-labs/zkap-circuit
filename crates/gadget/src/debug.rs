@@ -143,3 +143,109 @@ macro_rules! dbg_cs_total {
         }
     }};
 }
+
+// ============================================================================
+// Enforce with Debug Logging Macros
+// ============================================================================
+// These macros combine enforce_equal with debug logging.
+// - Production (no feature): just enforce_equal, zero overhead
+// - Debug (constraints-logging): log value mismatch before enforce
+
+/// Internal enforce for Boolean == TRUE with debug logging.
+/// Use inside gadget/ark-utils functions.
+/// Logs file and line number on mismatch.
+#[macro_export]
+macro_rules! enforce_true_internal {
+    ($label:expr, $result:expr) => {{
+        #[cfg(feature = "constraints-logging")]
+        {
+            use ark_r1cs_std::R1CSVar;
+            if let Ok(v) = $result.value() {
+                if !v {
+                    println!(
+                        "[r1cs:internal] {}: FAILED (expected true, got false) at {}:{}",
+                        $label,
+                        file!(),
+                        line!()
+                    );
+                }
+            }
+        }
+        $result.enforce_equal(&ark_r1cs_std::prelude::Boolean::TRUE)
+    }};
+}
+
+/// Internal enforce for value equality with debug logging.
+/// Use inside gadget/ark-utils functions.
+/// Logs file and line number on mismatch.
+#[macro_export]
+macro_rules! enforce_eq_internal {
+    ($label:expr, $lhs:expr, $rhs:expr) => {{
+        #[cfg(feature = "constraints-logging")]
+        {
+            use ark_r1cs_std::R1CSVar;
+            match ($lhs.value(), $rhs.value()) {
+                (Ok(l), Ok(r)) if l != r => {
+                    println!(
+                        "[r1cs:internal] {}: MISMATCH at {}:{}",
+                        $label,
+                        file!(),
+                        line!()
+                    );
+                    println!("  lhs={:?}", l);
+                    println!("  rhs={:?}", r);
+                }
+                _ => {}
+            }
+        }
+        $lhs.enforce_equal(&$rhs)
+    }};
+}
+
+/// External enforce for Boolean == TRUE with debug logging.
+/// Use in circuit code (e.g., baerae/mod.rs) for top-level checks.
+#[macro_export]
+macro_rules! enforce_true_debug {
+    ($label:expr, $result:expr) => {{
+        #[cfg(feature = "constraints-logging")]
+        {
+            use ark_r1cs_std::R1CSVar;
+            if let Ok(v) = $result.value() {
+                if !v {
+                    println!("[r1cs] {}: FAILED (expected true, got false)", $label);
+                } else {
+                    println!("[r1cs] {}: OK", $label);
+                }
+            } else {
+                println!("[r1cs] {}: value unavailable", $label);
+            }
+        }
+        $result.enforce_equal(&ark_r1cs_std::prelude::Boolean::TRUE)
+    }};
+}
+
+/// External enforce for value equality with debug logging.
+/// Use in circuit code (e.g., baerae/mod.rs) for top-level checks.
+#[macro_export]
+macro_rules! enforce_eq_debug {
+    ($label:expr, $lhs:expr, $rhs:expr) => {{
+        #[cfg(feature = "constraints-logging")]
+        {
+            use ark_r1cs_std::R1CSVar;
+            match ($lhs.value(), $rhs.value()) {
+                (Ok(l), Ok(r)) if l != r => {
+                    println!("[r1cs] {}: MISMATCH", $label);
+                    println!("  lhs={:?}", l);
+                    println!("  rhs={:?}", r);
+                }
+                (Ok(_), Ok(_)) => {
+                    println!("[r1cs] {}: OK", $label);
+                }
+                (Err(e), _) | (_, Err(e)) => {
+                    println!("[r1cs] {}: value unavailable ({:?})", $label, e);
+                }
+            }
+        }
+        $lhs.enforce_equal(&$rhs)
+    }};
+}

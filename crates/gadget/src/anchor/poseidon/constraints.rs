@@ -184,7 +184,7 @@ pub fn enforce_boolean_selectors<F: PrimeField>(
     for s in indices {
         // s * (s - 1) == 0  <=> s ∈ {0,1}
         let s_minus_one = s.clone() - one.clone();
-        (s.clone() * s_minus_one).enforce_equal(&zero)?;
+        crate::enforce_eq_internal!("anchor_selector_boolean", s.clone() * s_minus_one, zero)?;
     }
     Ok(())
 }
@@ -214,7 +214,7 @@ pub fn enforce_selector_cardinality<F: PrimeField>(
     for s in indices {
         sum += s.clone();
     }
-    sum.enforce_equal(k)?;
+    crate::enforce_eq_internal!("anchor_selector_cardinality", sum, k.clone())?;
     Ok(())
 }
 

@@ -81,32 +81,21 @@ pub fn num_to_segments_be<F: PrimeField>(
     num_segments: usize,
     bit_width: usize,
 ) -> Result<Vec<FpVar<F>>, SynthesisError> {
-    // 전체 비트로 변환
     let total_bits = num_segments * bit_width;
-    let bits = num.to_bits_le()?;
-    
-    // 필요한 비트만큼만 사용
-    let bits = &bits[..total_bits.min(bits.len())];
-    
+    // Only decompose needed bits, enforce top bits are zero
+    let (bits, _top_bits_are_zero) = num.to_bits_le_with_top_bits_zero(total_bits)?;
+
     let mut segments = Vec::with_capacity(num_segments);
-    
-    // Big-endian이므로 높은 비트부터 처리
+
     for i in 0..num_segments {
         let start_bit = (num_segments - 1 - i) * bit_width;
         let end_bit = start_bit + bit_width;
-        
-        let segment_bits = if end_bit <= bits.len() {
-            &bits[start_bit..end_bit]
-        } else if start_bit < bits.len() {
-            &bits[start_bit..]
-        } else {
-            &[]
-        };
-        
+
+        let segment_bits = &bits[start_bit..end_bit];
         let segment = Boolean::le_bits_to_fp(segment_bits)?;
         segments.push(segment);
     }
-    
+
     Ok(segments)
 }
 

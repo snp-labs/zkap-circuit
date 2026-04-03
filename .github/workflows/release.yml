@@ -55,48 +55,6 @@ jobs:
       - run: cargo clippy --workspace -- -D warnings
       - run: cargo test --release --workspace
 
-  build-napi:
-    name: Build NAPI (${{ matrix.target }})
-    needs: test
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-            artifact: napi-linux-x64-gnu
-          - target: x86_64-unknown-linux-musl
-            os: ubuntu-latest
-            artifact: napi-linux-x64-musl
-          - target: aarch64-apple-darwin
-            os: macos-latest
-            artifact: napi-darwin-arm64
-          - target: x86_64-pc-windows-msvc
-            os: windows-latest
-            artifact: napi-win32-x64-msvc
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-        with:
-          targets: ${{ matrix.target }}
-      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
-
-      - name: Install musl tools
-        if: contains(matrix.target, 'musl')
-        run: sudo apt-get install -y musl-tools
-
-      - name: Build NAPI binding
-        working-directory: bindings/napi
-        run: cargo build --release --target ${{ matrix.target }}
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: ${{ matrix.artifact }}
-          path: target/${{ matrix.target }}/release/*.node
-          if-no-files-found: warn
-
   generate-keys:
     name: Generate Proving Keys
     needs: test
@@ -107,17 +65,21 @@ jobs:
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
 
       - name: Generate CRS keys
-        run: ./build.sh --keys-only -n 3 -k 3 --yes
+        # ZK_N and ZK_K are inherited from workflow-level env: block.
+        # Removing those env vars causes build_common.rs to use dev defaults (N=6),
+        # which may OOM on CI runners.
+        run: cargo run --release --features baerae,num-cs-logging --bin generate_baerae_crs -- output/keys
 
       - name: Upload keys
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: proving-keys
           path: output/keys/
+          if-no-files-found: error
 
   release:
     name: Create Release
-    needs: [validate, build-napi, generate-keys]
+    needs: [validate, generate-keys]
     runs-on: ubuntu-latest
     permissions:
       contents: write

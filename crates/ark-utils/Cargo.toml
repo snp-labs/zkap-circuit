@@ -17,3 +17,4 @@ ark-bn254 = { workspace = true }
 
 [features]
 default = []
+constraints-logging = []

@@ -7,8 +7,7 @@ use ark_r1cs_std::{
     uint16::UInt16,
 };
 use ark_relations::r1cs::SynthesisError;
-use gadget::utils::{single_multiplexer, slice_from_start, slice_v2};
-use gadget::utils::comparison_v2::is_less_than;
+use gadget::utils::{is_less_than, single_multiplexer, slice_from_start, slice_v2};
 
 use crate::token::constraints::ClaimIndicesVar;
 
@@ -78,14 +77,14 @@ fn claim_format_verifier_v2<F: PrimeField>(
     // r1cs-std "0.5.0" 버전에서 enforce_cmp의 버그로 인해 다음과 같이 변경합니다.
     let name_len_boolean = name_len.to_bits_le()?;
     let colon_idx_boolean = colon_idx.to_bits_le()?;
-    let result = a_lt_b(&name_len_boolean, &colon_idx_boolean)? | name_len.is_eq(&colon_idx)?;
+    let result = is_less_than(&name_len_boolean, &colon_idx_boolean)? | name_len.is_eq(&colon_idx)?;
     result.enforce_equal(&Boolean::TRUE)?;
 
     // check2: 콜론 인덱스는 값 인덱스보다 작아야 한다.
     // colon_idx.enforce_cmp(&value_idx, Ordering::Less, true)?;
     // r1cs-std "0.5.0" 버전에서 enforce_cmp의 버그로 인해 다음과 같이 변경합니다.
     let value_idx_boolean = value_idx.to_bits_le()?;
-    let result = a_lt_b(&colon_idx_boolean, &value_idx_boolean)?;
+    let result = is_less_than(&colon_idx_boolean, &value_idx_boolean)?;
     result.enforce_equal(&Boolean::TRUE)?;
 
     // '공백이 아니면 1, 공백이면 0'인 플래그를 한 번만 계산합니다.

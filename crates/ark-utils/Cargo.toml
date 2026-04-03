@@ -1,0 +1,19 @@
+[package]
+name = "ark-utils"
+version = "0.1.0"
+edition = "2024"
+description = "R1CS constraint system utilities for arkworks"
+
+[dependencies]
+thiserror = { workspace = true }
+
+ark-ff = { workspace = true }
+ark-r1cs-std = { workspace = true }
+ark-relations = { workspace = true }
+ark-std = { workspace = true }
+
+[dev-dependencies]
+ark-bn254 = { workspace = true }
+
+[features]
+default = []

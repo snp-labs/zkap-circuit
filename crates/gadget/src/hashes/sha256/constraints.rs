@@ -22,7 +22,7 @@ use crate::{
     hashes::sha256::{H, K, utils::conditionally_select_vec},
     utils::{
         UInt32Ext,
-        comparison_v2::{is_greater_or_equal, is_less_than},
+        comparison::{is_greater_or_equal, is_less_than},
         slice_v2,
     },
 };

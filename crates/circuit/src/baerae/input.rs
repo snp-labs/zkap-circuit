@@ -4,7 +4,7 @@ use ark_serialize::*;
 
 use gadget::{
     anchor::poseidon::PoseidonAnchor,
-    base64::{Base64Table, mod_v2::IndexBits},
+    base64::{Base64Table, IndexBits},
     matrix::VandermondeMatrix,
     merkletree::tree_config::MerkleTreeParams,
     signature::rsa::{PublicKey, Signature},

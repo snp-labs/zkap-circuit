@@ -7,7 +7,7 @@ use ark_r1cs_std::{
     prelude::{Boolean, ToBitsGadget},
     uint16::UInt16,
 };
-use ark_relations::r1cs::{ConstraintSystemRef, SynthesisError};
+use ark_relations::r1cs::SynthesisError;
 
 /// JWT nonce 필드의 16진수 문자열을 필드 원소로 변환합니다.
 ///
@@ -120,7 +120,7 @@ pub fn jwt_nonce_hex_to_field<F: PrimeField>(
     let max_hex_digits = FpVar::<F>::Constant(F::from(64u64));
     let digit_count_bits = hex_digit_count.to_bits_le()?;
     let max_bits = max_hex_digits.to_bits_le()?;
-    let digit_le_max = crate::utils::comparison_v2::is_less_or_equal(&digit_count_bits, &max_bits)?;
+    let digit_le_max = crate::comparison::is_less_or_equal(&digit_count_bits, &max_bits)?;
     crate::enforce_true_internal!("nonce_digit_le_max", digit_le_max)?;
 
     Ok(accumulated_value)
@@ -268,112 +268,6 @@ fn hex_char_to_value<F: PrimeField>(
 
     // 미사용 변수 제거
     let _ = ten;
-
-    Ok((result, is_valid))
-}
-
-/// JWT 필드의 10진수 문자열을 필드 원소로 변환합니다.
-///
-/// # 형식
-/// - 입력: `"[0-9]+"` (예: "1234567890")
-/// - 최대 값은 필드 크기에 의해 제한
-///
-/// # 제약 조건
-/// 1. 첫 바이트는 반드시 `"`
-/// 2. `last_quote_index`까지의 모든 바이트는 유효한 10진수 문자
-/// 3. `last_quote_index` 위치는 반드시 `"`
-/// 4. 최소 1자리 이상
-///
-/// # Arguments
-/// * `cs` - 제약 조건 시스템 참조
-/// * `decimal_bytes` - 10진수 문자열 바이트 배열
-/// * `last_quote_index` - 닫는 따옴표 위치
-///
-/// # Returns
-/// * 변환된 필드 원소 값
-pub fn jwt_decimal_to_field<F: PrimeField>(
-    cs: ConstraintSystemRef<F>,
-    decimal_bytes: &[FpVar<F>],
-    last_quote_index: &UInt16<F>,
-) -> Result<FpVar<F>, SynthesisError> {
-    let bytes_len = decimal_bytes.len();
-
-    if bytes_len < 2 {
-        return Err(SynthesisError::Unsatisfiable);
-    }
-
-    // --- 상수 정의 ---
-    let quote_char = FpVar::<F>::Constant(F::from(b'"'));
-    let ten = FpVar::Constant(F::from(10u8));
-
-    // --- 1. 첫 바이트는 따옴표 ---
-    quote_char.enforce_equal(&decimal_bytes[0])?;
-
-    // --- 2. 누적 변수 초기화 ---
-    let mut accumulated_value = FpVar::<F>::zero();
-    let mut found_closing_quote = Boolean::FALSE;
-    let mut digit_count = FpVar::<F>::zero();
-
-    // --- 3. 10진수 파싱 루프 ---
-    for i in 1..bytes_len {
-        let current_index = UInt16::constant(i as u16);
-        let current_byte = &decimal_bytes[i];
-
-        let is_closing_quote_pos = current_index.is_eq(last_quote_index)?;
-        let is_quote_char = current_byte.is_eq(&quote_char)?;
-        let is_before_closing_quote = !&found_closing_quote;
-
-        // --- 3.1. 닫는 따옴표 검증 ---
-        let quote_pos_requirement = !&is_closing_quote_pos | &is_quote_char;
-        quote_pos_requirement.enforce_equal(&Boolean::TRUE)?;
-
-        // --- 3.2. 10진수 파싱 ---
-        let should_parse = &is_before_closing_quote & !&is_closing_quote_pos;
-
-        let (decimal_value, is_valid_decimal) = decimal_char_to_value(cs.clone(), current_byte)?;
-
-        let validity_requirement = !&should_parse | &is_valid_decimal;
-        validity_requirement.enforce_equal(&Boolean::TRUE)?;
-
-        let potential_next_value = &accumulated_value * &ten + &decimal_value;
-        accumulated_value = should_parse.select(&potential_next_value, &accumulated_value)?;
-
-        let should_parse_fp = FpVar::from(should_parse.clone());
-        digit_count += &should_parse_fp;
-
-        found_closing_quote = found_closing_quote | is_closing_quote_pos;
-    }
-
-    // --- 4. 최종 검증 ---
-    found_closing_quote.enforce_equal(&Boolean::TRUE)?;
-
-    // 최소 1자리
-    let zero = FpVar::<F>::zero();
-    let digit_count_ge_1 = digit_count.is_neq(&zero)?;
-    digit_count_ge_1.enforce_equal(&Boolean::TRUE)?;
-
-    Ok(accumulated_value)
-}
-
-/// 10진수 문자 하나를 0-9 값으로 변환하고 유효성 검증
-fn decimal_char_to_value<F: PrimeField>(
-    _cs: ConstraintSystemRef<F>,
-    byte: &FpVar<F>,
-) -> Result<(FpVar<F>, Boolean<F>), SynthesisError> {
-    let mut result = FpVar::<F>::zero();
-    let mut is_valid = Boolean::<F>::FALSE;
-
-    let decimal_chars = b"0123456789";
-
-    for (i, &dec_char) in decimal_chars.iter().enumerate() {
-        let char_const = FpVar::<F>::Constant(F::from(dec_char));
-        let is_equal = byte.is_eq(&char_const)?;
-
-        let value_to_add = FpVar::from(is_equal.clone()) * FpVar::<F>::Constant(F::from(i as u64));
-        result += &value_to_add;
-
-        is_valid = is_valid | is_equal;
-    }
 
     Ok((result, is_valid))
 }
@@ -611,33 +505,6 @@ mod tests {
         assert_eq!(result.value().unwrap(), expected);
 
         println!("256-bit test - constraints: {}", cs.num_constraints());
-    }
-
-    #[test]
-    fn test_jwt_decimal_to_field() {
-        let cs = ConstraintSystem::<F>::new_ref();
-
-        let input = b"\"12345\"";
-        let mut input_bytes = input.to_vec();
-        input_bytes.resize(100, b'0');
-
-        let input_var = input_bytes
-            .iter()
-            .map(|byte| FpVar::<F>::new_witness(cs.clone(), || Ok(F::from(*byte))).unwrap())
-            .collect::<Vec<_>>();
-
-        let last_quote_idx = 6; // "12345" 의 닫는 따옴표 위치
-        let last_quote_var =
-            UInt16::<F>::new_witness(cs.clone(), || Ok(last_quote_idx as u16)).unwrap();
-
-        let result = jwt_decimal_to_field(cs.clone(), &input_var, &last_quote_var).unwrap();
-
-        assert!(cs.is_satisfied().unwrap());
-
-        let expected = F::from(12345u64);
-        assert_eq!(result.value().unwrap(), expected);
-
-        println!("Decimal test - constraints: {}", cs.num_constraints());
     }
 
     #[test]

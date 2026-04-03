@@ -44,9 +44,9 @@ use gadget::{
     },
     base64::{
         Base64TableVar,
-        constraints_v2::{Base64DecoderGadget, IndexBitsVar},
+        constraints::{Base64DecoderGadget, IndexBitsVar},
         get_base64_table,
-        mod_v2::IndexBits,
+        IndexBits,
     },
     bigint::{
         constraints::{BigNatCircuitParams, BigNatVar},
@@ -56,15 +56,15 @@ use gadget::{
         poseidon::{constraints::chain_hash_gadget, get_poseidon_params},
         sha256::constraints::SHA256Gadget,
     },
-    matrix::{VandermondeMatrix, constraints_v2::VandermondeMatrixVar},
+    matrix::{VandermondeMatrix, constraints::VandermondeMatrixVar},
     merkletree::tree_config::{Empty, MerkleTreeParams, MerkleTreeParamsVar},
     signature::rsa::{
         PublicKey, Signature,
         constraints::{PublicKeyVar, SignatureVar},
     },
     utils::{
-        bit_bytes_v2::pack_decompose_bytes_unchecked,
-        comparison_v2::is_less_than,
+        bit_bytes::pack_decompose_bytes_unchecked,
+        comparison::is_less_than,
         single_multiplexer, slice_v2,
         string_v2::{jwt_exp_to_field, jwt_nonce_hex_to_field},
     },
@@ -316,12 +316,11 @@ where
             Config::MAX_PAYLOAD_B64_LEN,
         )?;
 
-        let (payload, valid) = Base64DecoderGadget::<C::BaseField>::decode_v2(
+        let payload = Base64DecoderGadget::<C::BaseField>::decode(
             &base64_table,
             &payload_b64,
             &index_bits,
         )?;
-        gadget::enforce_true_debug!("Base64 Decoding Valid", valid)?;
         gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Base64 Decoding");
 
         let aud_bytes = claim_extractor_v2("aud", &payload, &token_claim[0], Config::MAX_AUD_LEN)?;

@@ -5,12 +5,8 @@ use error::HashError;
 use core::borrow::Borrow;
 use core::fmt::Debug;
 
-#[cfg(feature = "rsa")]
-pub mod blake2s256;
 pub mod constraints;
 pub mod error;
-#[cfg(feature = "rsa")]
-pub mod mimc7;
 pub mod poseidon;
 #[cfg(feature = "hashes-sha256")]
 pub mod sha256;

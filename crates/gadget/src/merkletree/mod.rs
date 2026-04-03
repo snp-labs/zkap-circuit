@@ -2,7 +2,7 @@ use ark_crypto_primitives::{merkle_tree::Path, sponge::Absorb};
 use ark_ff::PrimeField;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 
-use crate::mekletree::tree_config::{Empty, MerkleTreeParams};
+use crate::merkletree::tree_config::{Empty, MerkleTreeParams};
 
 pub mod constraints;
 pub mod tree_config;

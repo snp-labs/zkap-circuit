@@ -78,14 +78,9 @@ pub fn generate_baerae_proof<Config: ZkPasskeyConfig>(
 
     // 4. 증명 생성
     log::info!("[ZKAP-v2] Step 4: Generating proofs...");
-    let generator =
-        ProofGenerator::<Config>::new(request.pk_path.clone(), builder.circuit_context().clone());
+    let generator = ProofGenerator::new(request.pk_path.clone());
 
-    #[cfg(feature = "use-optimized")]
-    let output = generator.generate_streaming(&circuit_inputs)?;
-
-    #[cfg(not(feature = "use-optimized"))]
-    let output = generator.generate(&circuit_inputs)?;
+    let output = generator.generate::<Config>(&circuit_inputs)?;
 
     log::info!(
         "[ZKAP-v2] Step 4 completed: {} proofs generated",

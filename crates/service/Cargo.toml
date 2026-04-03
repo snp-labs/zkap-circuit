@@ -48,5 +48,4 @@ mimalloc = { workspace = true }
 
 [features]
 default = []
-use-optimized = [] # 이 플래그가 켜지면 최적화 함수 호출
 constraints-logging = ["gadget/constraints-logging", "circuit/constraints-logging"]

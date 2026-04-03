@@ -22,8 +22,6 @@ pub trait SigVerifyGadget<S: SignatureScheme, ConstraintF: Field> {
 
 #[cfg(test)]
 mod test {
-    use crate::hashes::blake2s256::Blake2s256;
-    use crate::hashes::blake2s256::constraints::Blake2s256Gadget;
     use crate::signature::SigVerifyGadget;
     use crate::signature::SignatureScheme;
     use crate::signature::schnorr::Schnorr;
@@ -86,17 +84,6 @@ mod test {
             SchnorrSignatureVerifyGadget<JubJub, JubJubVar, Sha256, Sha256Gadget<F>>,
         >(message.as_bytes());
         failed_verification::<Schnorr<JubJub, Sha256>>(
-            message.as_bytes(),
-            "Bad message".as_bytes(),
-        );
-
-        let message = "32bytes32bytes32bytes32bytes32by";
-        sign_and_verify::<
-            F,
-            Schnorr<JubJub, Blake2s256>,
-            SchnorrSignatureVerifyGadget<JubJub, JubJubVar, Blake2s256, Blake2s256Gadget>,
-        >(message.as_bytes());
-        failed_verification::<Schnorr<JubJub, Blake2s256>>(
             message.as_bytes(),
             "Bad message".as_bytes(),
         );

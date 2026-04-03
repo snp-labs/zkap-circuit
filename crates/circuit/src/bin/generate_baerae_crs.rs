@@ -40,7 +40,6 @@ fn main() {
 fn generate_crs_files(file_path: &str, mut rng: rand::rngs::StdRng) {
     use circuit::evm::groth16_verifier_solidity::SolidityContractGenerator;
     use gadget::bigint::constraints::BigNatCircuitParams;
-    use gadget::hashes::mimc7;
 
     use ark_bn254::Bn254;
     use ark_crypto_primitives::snark::CircuitSpecificSetupSNARK;

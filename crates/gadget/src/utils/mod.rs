@@ -7,11 +7,8 @@ pub mod error;
 pub mod select;
 pub mod slice;
 pub mod slice_v2;
-pub mod string;
 pub mod string_v2;
 pub mod uint32;
-pub mod indexing;
-pub mod shifting;
 pub mod comparison_v2;
 
 pub use arithmetic::*;
@@ -21,5 +18,4 @@ pub use convert::*;
 pub use error::*;
 pub use select::*;
 pub use slice::*;
-pub use string::*;
 pub use uint32::*;

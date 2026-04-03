@@ -1,6 +1,5 @@
 pub mod constraints_v2;
 pub mod error;
-pub mod mod_v0;
 
 use crate::matrix::error::VandermondeMatrixError;
 use ark_ff::PrimeField;

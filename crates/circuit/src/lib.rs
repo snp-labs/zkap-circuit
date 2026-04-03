@@ -12,8 +12,8 @@ pub mod text;
 
 // Re-export circuit input types
 pub use baerae::input::{
-    AnchorWitnessData, AudienceWitnessData, BaeraeCircuitInput, CircuitConstants,
-    CircuitPublicInputs, JwtWitnessData, MerkleWitnessData, MiscWitnessData,
+    AnchorWitness, AudienceWitness, BaeraeCircuitInput, CircuitConstants,
+    CircuitPublicInputs, JwtWitness, MerkleWitness, MiscWitness,
 };
 
 pub trait ExposesPublicInputs<F: Field> {

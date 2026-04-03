@@ -6,7 +6,7 @@ use gadget::{
     anchor::poseidon::PoseidonAnchor,
     base64::{Base64Table, mod_v2::IndexBits},
     matrix::VandermondeMatrix,
-    mekletree::tree_config::MerkleTreeParams,
+    merkletree::tree_config::MerkleTreeParams,
     signature::rsa::{PublicKey, Signature},
 };
 
@@ -33,7 +33,7 @@ pub struct CircuitPublicInputs<F: PrimeField> {
     pub h_sign_user_op: F,
     /// JWT 만료 시간
     pub jwt_exp: F,
-    /// partial_rhs[current_idx]
+    /// partial_rhs at current_idx
     pub partial_rhs: F,
     /// <a, anchor> * random
     pub lhs: F,
@@ -59,25 +59,25 @@ impl<F: PrimeField> CircuitPublicInputs<F> {
 
 /// JWT 관련 Witness (SHA256 + Base64 + RSA)
 #[derive(Clone, CanonicalSerialize, CanonicalDeserialize)]
-pub struct JwtWitnessData {
+pub struct JwtWitness {
     /// SHA256 중간 상태
-    pub midstate: Vec<u32>,
+    pub state: Vec<u32>,
     /// SHA256 블록 수
     pub nblocks: usize,
     /// Claim 인덱스들
-    pub token_claim: Vec<ClaimIndices>,
+    pub claim_indices: Vec<ClaimIndices>,
     /// Payload Base64 오프셋
-    pub payload_offset_b64: usize,
+    pub pay_offset_b64: usize,
     /// Payload Base64 길이
-    pub payload_len_b64: usize,
+    pub pay_len_b64: usize,
     /// SHA 패딩된 Payload
     pub sha_pad_payload_b64: Vec<u8>,
     /// Base64 인덱스 비트
     pub index_bits: IndexBits,
     /// RSA 공개키
-    pub pk_op: PublicKey,
+    pub pk: PublicKey,
     /// RSA 서명
-    pub signature_op: Signature,
+    pub sig: Signature,
     /// 전체 JWT 길이
     pub total_len: usize,
     /// Pre-hash 블록 길이
@@ -88,20 +88,20 @@ pub struct JwtWitnessData {
 
 /// 앵커/Threshold 관련 Witness
 #[derive(Clone, CanonicalSerialize, CanonicalDeserialize)]
-pub struct AnchorWitnessData<F: PrimeField> {
+pub struct AnchorWitness<F: PrimeField> {
     /// 앵커 값
     pub anchor: PoseidonAnchor<F>,
     /// A 벡터
     pub a: Vec<F>,
     /// 선택자 벡터
-    pub indices: Vec<u8>,
+    pub selector: Vec<u8>,
     /// 현재 인덱스
     pub current_idx: usize,
 }
 
 /// 머클 트리 Witness
 #[derive(Clone, CanonicalSerialize, CanonicalDeserialize)]
-pub struct MerkleWitnessData<F: PrimeField + Absorb> {
+pub struct MerkleWitness<F: PrimeField + Absorb> {
     /// 머클 경로
     pub path: Path<MerkleTreeParams<F>>,
     /// 리프 인덱스
@@ -110,13 +110,14 @@ pub struct MerkleWitnessData<F: PrimeField + Absorb> {
 
 /// Audience Witness
 #[derive(Clone, CanonicalSerialize, CanonicalDeserialize)]
-pub struct AudienceWitnessData<F: PrimeField> {
+pub struct AudienceWitness<F: PrimeField> {
     /// 패딩된 Audience 목록
     pub aud_list: Vec<F>,
 }
 
+/// 기타 Witness
 #[derive(Clone, CanonicalSerialize, CanonicalDeserialize)]
-pub struct MiscWitnessData<F: PrimeField> {
+pub struct MiscWitness<F: PrimeField> {
     /// 랜덤 값
     pub random: F,
 }
@@ -129,15 +130,15 @@ pub struct BaeraeCircuitInput<F: PrimeField + Absorb> {
     /// 공개 입력
     pub public_inputs: CircuitPublicInputs<F>,
     /// JWT Witness
-    pub jwt: JwtWitnessData,
+    pub jwt: JwtWitness,
     /// 앵커 Witness
-    pub anchor: AnchorWitnessData<F>,
+    pub anchor: AnchorWitness<F>,
     /// 머클 Witness
-    pub merkle: MerkleWitnessData<F>,
+    pub merkle: MerkleWitness<F>,
     /// Audience Witness
-    pub audience: AudienceWitnessData<F>,
+    pub audience: AudienceWitness<F>,
     /// 기타 Witness
-    pub misc: MiscWitnessData<F>,
+    pub misc: MiscWitness<F>,
 }
 
 impl<F: PrimeField + Absorb> BaeraeCircuitInput<F> {

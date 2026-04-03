@@ -46,17 +46,9 @@ rand = { version = "0.8" }
 sha2 = { version = "0.10" }
 jsonwebtoken = { version = "10", features = ["aws_lc_rs"] }
 
-napi = { version = "3.3.0" }
-napi-derive = { version = "3.0.0" }
-napi-build = { version = "2" }
 serde_json = { version = "1.0.145" }
-anyhow = { version = "1.0.100" } 
 clap = { version = "4.5.53" }
-ctor = { version = "0.2" }
-
 log = "0.4"
-android_logger = { version = "0.13" }
-mimalloc = "0.1.48"
 
 
 [profile.release]

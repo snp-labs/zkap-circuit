@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "R1CS constraint system utilities for arkworks"
+repository = "https://github.com/snp-labs/zkap-circuit"
+keywords = ["zk", "arkworks", "r1cs", "constraints"]
+categories = ["cryptography"]
 
 [dependencies]
 thiserror = { workspace = true }

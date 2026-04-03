@@ -3,6 +3,10 @@ name = "gadget"
 version = "0.1.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
+description = "ZK circuit gadgets for JWT verification, RSA signatures, Poseidon hashing, and Base64 decoding"
+repository = "https://github.com/snp-labs/zkap-circuit"
+keywords = ["zk", "arkworks", "gadget", "groth16", "jwt"]
+categories = ["cryptography"]
 
 [dependencies]
 ark-utils = { workspace = true }

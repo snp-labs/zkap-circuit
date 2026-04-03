@@ -1,41 +1,73 @@
 # Security Policy
 
-## Supported Versions
+This document describes the security policy for [zkup-baerae](https://github.com/snp-labs/zkap-circuit), an open-source Rust library for zero-knowledge proof circuits.
 
-| Version | Supported          |
-|---------|--------------------|
-| 0.1.x   | Yes                |
+---
 
-Older versions do not receive security fixes. Please upgrade to the latest 0.1.x release.
+## 1. Reporting a Vulnerability
 
-## Reporting a Vulnerability
+**Please do not open public GitHub issues for security vulnerabilities.**
 
-**Do not open a public GitHub issue for security vulnerabilities.**
+Report security issues by email to: **security@snp-labs.io**
 
-Report vulnerabilities by email to: snp-labs@placeholder.com
+Include as much detail as possible: affected component, reproduction steps, potential impact, and any suggested mitigations.
 
-Include in your report:
+**Response timeline:**
 
-- A description of the vulnerability and its potential impact
-- Steps to reproduce or a minimal proof-of-concept
-- Affected versions, if known
-- Any suggested mitigations, if available
+- Acknowledgement within 48 hours of receipt
+- Triage and initial assessment within 7 days
 
-Encrypt sensitive reports using PGP if possible. Please request our public key in your initial email.
+A PGP key for encrypted submission may be added in a future update. Check back here or contact us to confirm availability before sending sensitive material.
 
-## Security Audit
+---
 
-A security audit was completed by CSO (Chief Security Officer review) prior to the open-source release. The audit identified 10 findings, all of which have been resolved. Relevant fixes are tracked in the commit history under the `security:` conventional commit prefix.
+## 2. Known Advisories
 
-## Response Timeline
+### RUSTSEC-2023-0071 — RSA Marvin Attack (CVSS 5.9)
 
-| Stage                        | Target                        |
-|------------------------------|-------------------------------|
-| Acknowledgment               | 2 business days               |
-| Initial assessment           | 5 business days               |
-| Fix or mitigation delivered  | 14 business days (best effort)|
-| Public disclosure            | Coordinated with reporter     |
+| Field    | Detail                                                                                    |
+|----------|-------------------------------------------------------------------------------------------|
+| Advisory | [RUSTSEC-2023-0071](https://rustsec.org/advisories/RUSTSEC-2023-0071.html)                |
+| Crate    | `rsa` 0.9.10                                                                              |
+| Feature  | `rsa` (opt-in, in the `gadget` crate)                                                     |
+| Status   | No upstream fix available; monitoring for updates                                         |
 
-If a fix requires more than 14 business days due to complexity, we will communicate the revised timeline to the reporter before that deadline.
+**Description:** A timing side-channel in the `rsa` crate's PKCS#1 v1.5 decryption path allows a remote attacker to recover private key material via the Marvin Attack.
 
-We follow coordinated disclosure: we ask that reporters refrain from public disclosure until a fix is released or we agree on a disclosure date together.
+**Impact for this project: LIMITED.**
+
+This library uses RSA for signature verification within ZK circuits. All operations are performed on finite field elements inside the circuit arithmetization; timing of those operations is not directly observable by an external adversary. The native RSA functions exposed by the `gadget` crate are used for testing and witness generation only, not for production cryptographic operations.
+
+**Mitigation:** The `rsa` feature is opt-in and is not enabled by default. Users who do not explicitly enable this feature are not affected. If you enable the `rsa` feature, ensure it is used solely for testing and not in contexts where timing side-channels can be exploited.
+
+---
+
+## 3. Security Design
+
+### Debug Feature Flags
+
+The following Cargo features are available for development and debugging:
+
+- `constraints-logging`
+- `print-trace`
+- `num-cs-logging`
+
+These flags are **compile-time opt-in** and carry zero overhead in default builds. They are not enabled in CI workflows.
+
+**Warning:** When enabled, these flags can log ZK witness values, which may include secret circuit inputs. They must **never** be enabled in production builds or in published packages. Treat any output produced with these flags as potentially sensitive.
+
+### Environment Files
+
+`.env` files are listed in `.gitignore` and are never committed to the repository. The committed `.env.example` contains only circuit parameters (such as field sizes and curve identifiers) and holds no secret material.
+
+---
+
+## 4. Dependency Policy
+
+- **Audit:** Run `cargo audit` regularly against the advisory database. In CI, this should be part of the standard check pipeline.
+- **Lockfile:** `Cargo.lock` is committed and tracked. Do not ignore or regenerate it without review, as this ensures reproducible builds and makes dependency changes explicit in pull requests.
+- **GitHub Actions pinning:** All GitHub Actions steps are pinned to full commit SHAs rather than mutable tags. This prevents supply-chain attacks where a tag is silently moved to a malicious commit.
+
+---
+
+*Last updated: 2026-04-03*

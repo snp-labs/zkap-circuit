@@ -666,6 +666,95 @@ mod tests {
     }
 
     #[test]
+    fn test_jwt_nonce_mixed_case() {
+        let cs = ConstraintSystem::<F>::new_ref();
+        let input = b"\"0xaBcD\"";
+        let mut input_bytes = input.to_vec();
+        input_bytes.resize(100, b'0');
+
+        let input_var = input_bytes
+            .iter()
+            .map(|byte| FpVar::<F>::new_witness(cs.clone(), || Ok(F::from(*byte))).unwrap())
+            .collect::<Vec<_>>();
+
+        let last_quote_idx = 7;
+        let last_quote_var =
+            UInt16::<F>::new_witness(cs.clone(), || Ok(last_quote_idx as u16)).unwrap();
+
+        let result = jwt_nonce_hex_to_field(&input_var, &last_quote_var).unwrap();
+        assert!(cs.is_satisfied().unwrap());
+        assert_eq!(result.value().unwrap(), F::from(0xABCDu64));
+    }
+
+    #[test]
+    fn test_jwt_nonce_wrong_last_quote_index_unsatisfied() {
+        let cs = ConstraintSystem::<F>::new_ref();
+        let input = b"\"0x1234\"";
+        let mut input_bytes = input.to_vec();
+        input_bytes.resize(100, b'0');
+
+        let input_var = input_bytes
+            .iter()
+            .map(|byte| FpVar::<F>::new_witness(cs.clone(), || Ok(F::from(*byte))).unwrap())
+            .collect::<Vec<_>>();
+
+        // Wrong index: 5 instead of 7 (closing quote is at 7)
+        let wrong_idx = 5u16;
+        let last_quote_var = UInt16::<F>::new_witness(cs.clone(), || Ok(wrong_idx)).unwrap();
+
+        let _result = jwt_nonce_hex_to_field(&input_var, &last_quote_var).unwrap();
+        // Position 5 is '3', not '"', so quote_pos_requirement fails
+        assert!(!cs.is_satisfied().unwrap());
+    }
+
+    #[test]
+    fn test_jwt_nonce_tampered_output_unsatisfied() {
+        use ark_r1cs_std::eq::EqGadget;
+
+        let cs = ConstraintSystem::<F>::new_ref();
+        let input = b"\"0x1234\"";
+        let mut input_bytes = input.to_vec();
+        input_bytes.resize(100, b'0');
+
+        let input_var = input_bytes
+            .iter()
+            .map(|byte| FpVar::<F>::new_witness(cs.clone(), || Ok(F::from(*byte))).unwrap())
+            .collect::<Vec<_>>();
+
+        let last_quote_var = UInt16::<F>::new_witness(cs.clone(), || Ok(7u16)).unwrap();
+
+        let result = jwt_nonce_hex_to_field(&input_var, &last_quote_var).unwrap();
+        assert!(cs.is_satisfied().unwrap());
+
+        // Tamper: enforce result == wrong value
+        let wrong = FpVar::new_witness(cs.clone(), || Ok(F::from(9999u64))).unwrap();
+        result.enforce_equal(&wrong).unwrap();
+        assert!(!cs.is_satisfied().unwrap());
+    }
+
+    #[test]
+    fn test_jwt_exp_tampered_result_unsatisfied() {
+        use ark_r1cs_std::eq::EqGadget;
+
+        let cs = ConstraintSystem::<F>::new_ref();
+        let mut input_bytes = vec![b'1', b'2', b'3', b'4', b'5', b'6', b'7', b'8', b'9', b'0'];
+        input_bytes.resize(70, 0);
+
+        let input_var = input_bytes
+            .iter()
+            .map(|byte| FpVar::<F>::new_witness(cs.clone(), || Ok(F::from(*byte))).unwrap())
+            .collect::<Vec<_>>();
+
+        let result = jwt_exp_to_field(&input_var).unwrap();
+        assert!(cs.is_satisfied().unwrap());
+
+        // Tamper: enforce result == wrong value
+        let wrong = FpVar::new_witness(cs.clone(), || Ok(F::from(42u64))).unwrap();
+        result.enforce_equal(&wrong).unwrap();
+        assert!(!cs.is_satisfied().unwrap());
+    }
+
+    #[test]
     #[should_panic(expected = "not satisfied")]
     fn test_jwt_exp_to_field_non_zero_padding() {
         let cs = ConstraintSystem::<F>::new_ref();

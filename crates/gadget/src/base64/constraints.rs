@@ -401,4 +401,120 @@ mod tests {
             println!("Input length: {} chars → {} constraints ({:.1}/char)", input_len, constraints, per_char);
         }
     }
+
+    #[test]
+    fn test_decode_standard_chars() {
+        // Test all base64url alphabet in 4-char chunks
+        let cs = ConstraintSystem::<F>::new_ref();
+        let table = get_base64_table();
+
+        // "ABCD" — first 4 chars of base64 alphabet
+        for input in &["ABCD", "EFGH", "IJKL", "MNOP", "QRST", "UVWX", "YZab", "cdef",
+                       "ghij", "klmn", "opqr", "stuv", "wxyz", "0123", "4567", "89-_"] {
+            let cs = ConstraintSystem::<F>::new_ref();
+            let table_var =
+                Base64TableVar::new_variable(cs.clone(), || Ok(&table), AllocationMode::Constant)
+                    .unwrap();
+            let index_bits = IndexBits::from_base64_url(input, 4).unwrap();
+            let index_bits_var =
+                IndexBitsVar::new_variable(cs.clone(), || Ok(&index_bits), AllocationMode::Witness)
+                    .unwrap();
+            let enc_asciis: Vec<FpVar<F>> = input
+                .as_bytes()
+                .iter()
+                .map(|&b| FpVar::new_witness(cs.clone(), || Ok(F::from(b as u64))).unwrap())
+                .collect();
+            let _result =
+                Base64DecoderGadget::decode(&table_var, &enc_asciis, &index_bits_var).unwrap();
+            assert!(cs.is_satisfied().unwrap(), "Failed for input: {}", input);
+        }
+    }
+
+    #[test]
+    fn test_decode_tampered_output_rejected() {
+        use ark_r1cs_std::eq::EqGadget;
+
+        let cs = ConstraintSystem::<F>::new_ref();
+        let input = "TWFu";
+        let padded_len = 4;
+
+        let table = get_base64_table();
+        let table_var =
+            Base64TableVar::new_variable(cs.clone(), || Ok(&table), AllocationMode::Constant)
+                .unwrap();
+        let index_bits = IndexBits::from_base64_url(input, padded_len).unwrap();
+        let index_bits_var =
+            IndexBitsVar::new_variable(cs.clone(), || Ok(&index_bits), AllocationMode::Witness)
+                .unwrap();
+        let enc_asciis: Vec<FpVar<F>> = input
+            .as_bytes()
+            .iter()
+            .map(|&b| FpVar::new_witness(cs.clone(), || Ok(F::from(b as u64))).unwrap())
+            .collect();
+
+        let result =
+            Base64DecoderGadget::decode(&table_var, &enc_asciis, &index_bits_var).unwrap();
+        assert!(cs.is_satisfied().unwrap());
+
+        // Tamper: enforce result[0] == 0 (should be 77='M')
+        let wrong = FpVar::new_witness(cs.clone(), || Ok(F::from(0u64))).unwrap();
+        result[0].enforce_equal(&wrong).unwrap();
+        assert!(!cs.is_satisfied().unwrap());
+    }
+
+    #[test]
+    fn test_decode_max_length() {
+        let cs = ConstraintSystem::<F>::new_ref();
+        // 32 chars of valid base64url
+        let input = "AAAABBBBCCCCDDDDEEEEFFFFGGGGHHHH";
+        let padded_len = 32;
+
+        let table = get_base64_table();
+        let table_var =
+            Base64TableVar::new_variable(cs.clone(), || Ok(&table), AllocationMode::Constant)
+                .unwrap();
+        let index_bits = IndexBits::from_base64_url(input, padded_len).unwrap();
+        let index_bits_var =
+            IndexBitsVar::new_variable(cs.clone(), || Ok(&index_bits), AllocationMode::Witness)
+                .unwrap();
+        let enc_asciis: Vec<FpVar<F>> = input
+            .as_bytes()
+            .iter()
+            .map(|&b| FpVar::new_witness(cs.clone(), || Ok(F::from(b as u64))).unwrap())
+            .collect();
+
+        let result =
+            Base64DecoderGadget::decode(&table_var, &enc_asciis, &index_bits_var).unwrap();
+        assert!(cs.is_satisfied().unwrap());
+        assert_eq!(result.len(), 24); // 32 * 6 / 8 = 24 bytes
+    }
+
+    #[test]
+    fn test_decode_url_safe_chars() {
+        // '-' and '_' are base64url specific (index 62 and 63)
+        let cs = ConstraintSystem::<F>::new_ref();
+        let table = get_base64_table();
+
+        // Construct input that uses '-' and '_'
+        // '-' is ASCII 45, '_' is ASCII 95
+        let input = "AB-_"; // contains url-safe chars
+        let padded_len = 4;
+
+        let table_var =
+            Base64TableVar::new_variable(cs.clone(), || Ok(&table), AllocationMode::Constant)
+                .unwrap();
+        let index_bits = IndexBits::from_base64_url(input, padded_len).unwrap();
+        let index_bits_var =
+            IndexBitsVar::new_variable(cs.clone(), || Ok(&index_bits), AllocationMode::Witness)
+                .unwrap();
+        let enc_asciis: Vec<FpVar<F>> = input
+            .as_bytes()
+            .iter()
+            .map(|&b| FpVar::new_witness(cs.clone(), || Ok(F::from(b as u64))).unwrap())
+            .collect();
+
+        let _result =
+            Base64DecoderGadget::decode(&table_var, &enc_asciis, &index_bits_var).unwrap();
+        assert!(cs.is_satisfied().unwrap());
+    }
 }

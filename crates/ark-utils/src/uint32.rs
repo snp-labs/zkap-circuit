@@ -53,3 +53,97 @@ impl<F: PrimeField> UInt32Ext<F> for UInt32<F> {
         Ok(UInt32::from_bits_le(&bits))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ark_r1cs_std::{R1CSVar, uint8::UInt8, uint32::UInt32};
+    use ark_relations::r1cs::ConstraintSystem;
+
+    type F = ark_bn254::Fr;
+
+    #[test]
+    fn test_uint32_shr_basic() {
+        let _cs = ConstraintSystem::<F>::new_ref();
+        let val = UInt32::<F>::constant(0xFF00u32);
+        let shifted = val.shr(8);
+        assert_eq!(shifted.value().unwrap(), 0xFFu32);
+    }
+
+    #[test]
+    fn test_uint32_shr_by_zero() {
+        let _cs = ConstraintSystem::<F>::new_ref();
+        let val = UInt32::<F>::constant(12345u32);
+        let shifted = val.shr(0);
+        assert_eq!(shifted.value().unwrap(), 12345u32);
+    }
+
+    #[test]
+    fn test_uint32_shr_by_31() {
+        let _cs = ConstraintSystem::<F>::new_ref();
+        let val = UInt32::<F>::constant(0x80000000u32);
+        let shifted = val.shr(31);
+        assert_eq!(shifted.value().unwrap(), 1u32);
+    }
+
+    #[test]
+    fn test_uint32_not_basic() {
+        let _cs = ConstraintSystem::<F>::new_ref();
+        let val = UInt32::<F>::constant(0u32);
+        let notted = val.not();
+        assert_eq!(notted.value().unwrap(), 0xFFFFFFFFu32);
+
+        let val2 = UInt32::<F>::constant(0xFFFFFFFFu32);
+        let notted2 = val2.not();
+        assert_eq!(notted2.value().unwrap(), 0u32);
+    }
+
+    #[test]
+    fn test_uint32_bitand_basic() {
+        let cs = ConstraintSystem::<F>::new_ref();
+        let a = UInt32::<F>::constant(0xFF00u32);
+        let b = UInt32::<F>::constant(0x0FF0u32);
+        let result = a.bitand(&b).unwrap();
+        assert!(cs.is_satisfied().unwrap());
+        assert_eq!(result.value().unwrap(), 0x0F00u32);
+    }
+
+    #[test]
+    fn test_uint32_from_bytes_be_basic() {
+        let cs = ConstraintSystem::<F>::new_ref();
+        let bytes = vec![
+            UInt8::<F>::constant(0x01),
+            UInt8::<F>::constant(0x02),
+            UInt8::<F>::constant(0x03),
+            UInt8::<F>::constant(0x04),
+        ];
+        let result = UInt32::<F>::from_bytes_be(&bytes).unwrap();
+        assert!(cs.is_satisfied().unwrap());
+        assert_eq!(result.value().unwrap(), 0x01020304u32);
+    }
+
+    #[test]
+    fn test_uint32_from_bytes_be_endianness() {
+        let cs = ConstraintSystem::<F>::new_ref();
+        let bytes = vec![
+            UInt8::<F>::constant(0x00),
+            UInt8::<F>::constant(0x00),
+            UInt8::<F>::constant(0x00),
+            UInt8::<F>::constant(0x01),
+        ];
+        let result = UInt32::<F>::from_bytes_be(&bytes).unwrap();
+        assert!(cs.is_satisfied().unwrap());
+        assert_eq!(result.value().unwrap(), 1u32);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_uint32_from_bytes_be_wrong_len_panics() {
+        let bytes = vec![
+            UInt8::<F>::constant(0x01),
+            UInt8::<F>::constant(0x02),
+            UInt8::<F>::constant(0x03),
+        ];
+        let _ = UInt32::<F>::from_bytes_be(&bytes);
+    }
+}

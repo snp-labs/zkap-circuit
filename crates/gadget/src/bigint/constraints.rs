@@ -1813,4 +1813,78 @@ mod test {
             "RSA-style 17-bit pow_mod constraints are not satisfied."
         );
     }
+
+    #[test]
+    fn mult_mod_wrong_result_test() {
+        // Negative: correct mult_mod, then enforce result == wrong value → unsatisfied
+        let cs = ConstraintSystem::<Fq>::new_ref();
+        let a = BigNatVar::<Fq, BigNat512TestParams>::new_witness(cs.clone(), || {
+            Ok(BigNat::from(7u64))
+        })
+        .unwrap();
+        let b = BigNatVar::<Fq, BigNat512TestParams>::new_witness(cs.clone(), || {
+            Ok(BigNat::from(11u64))
+        })
+        .unwrap();
+        let modulus = BigNatVar::<Fq, BigNat512TestParams>::new_witness(cs.clone(), || {
+            Ok(BigNat::from(13u64))
+        })
+        .unwrap();
+
+        let result = a.mult_mod(&b, &modulus).unwrap();
+        // Correct result is 77 % 13 = 12
+        assert_eq!(result.value().unwrap(), BigNat::from(12u64));
+        assert!(cs.is_satisfied().unwrap());
+
+        // Now enforce result == 5 (wrong)
+        let wrong = BigNatVar::<Fq, BigNat512TestParams>::new_witness(cs.clone(), || {
+            Ok(BigNat::from(5u64))
+        })
+        .unwrap();
+        result.enforce_equal_when_carried(&wrong).unwrap();
+        assert!(!cs.is_satisfied().unwrap());
+    }
+
+    #[test]
+    fn bignat_zero_add_test() {
+        // Boundary: 0 + x = x
+        let cs = ConstraintSystem::<Fq>::new_ref();
+        let zero = BigNatVar::<Fq, BigNat512TestParams>::new_witness(cs.clone(), || {
+            Ok(BigNat::from(0u64))
+        })
+        .unwrap();
+        let x = BigNatVar::<Fq, BigNat512TestParams>::new_witness(cs.clone(), || {
+            Ok(BigNat::from(42u64))
+        })
+        .unwrap();
+
+        let result = zero.add(&x).unwrap();
+        assert!(cs.is_satisfied().unwrap());
+        assert_eq!(result.value().unwrap(), BigNat::from(42u64));
+    }
+
+    #[test]
+    fn bignat_limb_decomposition_roundtrip_test() {
+        // Encoding: nat → limbs → BigNatVar → value() roundtrip
+        use crate::bigint::utils::{limbs_to_nat, nat_to_limbs};
+
+        let original = BigNat::from(123456789u64);
+        let limbs = nat_to_limbs::<Fq>(
+            &original,
+            BigNat512TestParams::LIMB_WIDTH,
+            BigNat512TestParams::N_LIMBS,
+        );
+
+        let reconstructed =
+            limbs_to_nat::<Fq>(&limbs, BigNat512TestParams::LIMB_WIDTH);
+        assert_eq!(original, reconstructed);
+
+        // Also test through BigNatVar
+        let cs = ConstraintSystem::<Fq>::new_ref();
+        let var = BigNatVar::<Fq, BigNat512TestParams>::new_witness(cs.clone(), || {
+            Ok(original.clone())
+        })
+        .unwrap();
+        assert_eq!(var.value().unwrap(), original);
+    }
 }

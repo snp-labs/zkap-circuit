@@ -130,3 +130,76 @@ fn pad_input<F: PrimeField>(input: &[FpVar<F>]) -> Vec<FpVar<F>> {
     input_padded.resize(next_power_of_two, zero);
     input_padded
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ark_r1cs_std::{R1CSVar, alloc::AllocVar, fields::fp::FpVar};
+    use ark_relations::r1cs::ConstraintSystem;
+
+    type F = ark_bn254::Fr;
+
+    #[test]
+    fn test_ceil_basic() {
+        assert_eq!(ceil(7, 3), 3);
+        assert_eq!(ceil(10, 3), 4);
+        assert_eq!(ceil(1, 1), 1);
+    }
+
+    #[test]
+    fn test_ceil_exact_division() {
+        assert_eq!(ceil(6, 3), 2);
+        assert_eq!(ceil(9, 3), 3);
+        assert_eq!(ceil(0, 5), 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "Divisor q cannot be zero")]
+    fn test_ceil_zero_divisor_panics() {
+        let _ = ceil(5, 0);
+    }
+
+    #[test]
+    fn test_slice_from_start_basic() {
+        let cs = ConstraintSystem::<F>::new_ref();
+        // input: [65, 66, 67, 68, 69] ('A'..'E')
+        let input: Vec<FpVar<F>> = [65u64, 66, 67, 68, 69]
+            .iter()
+            .map(|&v| FpVar::new_witness(cs.clone(), || Ok(F::from(v))).unwrap())
+            .collect();
+
+        let length = FpVar::<F>::new_witness(cs.clone(), || Ok(F::from(3u64))).unwrap();
+        let pad = FpVar::<F>::zero();
+        let result = slice_from_start(&input, &length, 5, &pad).unwrap();
+
+        assert!(cs.is_satisfied().unwrap());
+        assert_eq!(result.len(), 5);
+
+        // First 3 should be input values, last 2 should be pad (0)
+        let vals: Vec<u64> = result
+            .iter()
+            .map(|v| v.value().unwrap().into_bigint().as_ref()[0])
+            .collect();
+        assert_eq!(vals[0], 65); // 'A'
+        assert_eq!(vals[1], 66); // 'B'
+        assert_eq!(vals[2], 67); // 'C'
+    }
+
+    #[test]
+    fn test_slice_from_start_full_length() {
+        let cs = ConstraintSystem::<F>::new_ref();
+        let input: Vec<FpVar<F>> = (1..=5u64)
+            .map(|v| FpVar::new_witness(cs.clone(), || Ok(F::from(v))).unwrap())
+            .collect();
+
+        let length = FpVar::<F>::new_witness(cs.clone(), || Ok(F::from(5u64))).unwrap();
+        let pad = FpVar::<F>::zero();
+        let result = slice_from_start(&input, &length, 5, &pad).unwrap();
+
+        assert!(cs.is_satisfied().unwrap());
+        for (i, r) in result.iter().enumerate() {
+            let v = r.value().unwrap().into_bigint().as_ref()[0];
+            assert_eq!(v, (i + 1) as u64);
+        }
+    }
+}

@@ -333,6 +333,102 @@ mod tests {
         println!("num constraints: {}", cs.num_constraints());
     }
 
+    #[test]
+    fn test_merkle_wrong_root() {
+        let tree_height = 5;
+        let n_leaves = 5;
+        let idx = 0;
+
+        let (_root, path, _) = generate_merkle_tree_input::<F>(tree_height, n_leaves, idx);
+        let wrong_root = F::from(999999u64); // tampered root
+
+        let cs = ark_relations::r1cs::ConstraintSystem::<F>::new_ref();
+        let poseidon_params = get_poseidon_params::<F>();
+        let hash_params_var =
+            CRHParametersVar::<F>::new_constant(cs.clone(), poseidon_params.clone()).unwrap();
+
+        let mut path_var = PathVar::<MerkleTreeParams<F>, F, MerkleTreeParamsVar<F>>::new_witness(
+            cs.clone(),
+            || Ok(path.clone()),
+        )
+        .unwrap();
+
+        let leaf_pos_var = FpVar::new_witness(cs.clone(), || Ok(F::from(idx as u64))).unwrap();
+        let rt_var = FpVar::<F>::new_witness(cs.clone(), || Ok(wrong_root)).unwrap();
+
+        path_var.set_leaf_position(leaf_pos_var.to_bits_le().unwrap());
+        let verify_membership = path_var
+            .verify_membership(
+                &hash_params_var,
+                &hash_params_var,
+                &rt_var,
+                &[leaf_pos_var],
+            )
+            .unwrap();
+        verify_membership.enforce_equal(&Boolean::TRUE).unwrap();
+
+        assert!(!cs.is_satisfied().unwrap(), "Wrong root should not satisfy");
+    }
+
+    #[test]
+    fn test_merkle_wrong_leaf() {
+        let tree_height = 5;
+        let n_leaves = 5;
+        let idx = 0;
+
+        let (root, path, _) = generate_merkle_tree_input::<F>(tree_height, n_leaves, idx);
+
+        let cs = ark_relations::r1cs::ConstraintSystem::<F>::new_ref();
+        let poseidon_params = get_poseidon_params::<F>();
+        let hash_params_var =
+            CRHParametersVar::<F>::new_constant(cs.clone(), poseidon_params.clone()).unwrap();
+
+        let mut path_var = PathVar::<MerkleTreeParams<F>, F, MerkleTreeParamsVar<F>>::new_witness(
+            cs.clone(),
+            || Ok(path.clone()),
+        )
+        .unwrap();
+
+        // Wrong leaf: use 999 instead of idx=0
+        let wrong_leaf = FpVar::new_witness(cs.clone(), || Ok(F::from(999u64))).unwrap();
+        let rt_var = FpVar::<F>::new_witness(cs.clone(), || Ok(root)).unwrap();
+
+        path_var.set_leaf_position(wrong_leaf.to_bits_le().unwrap());
+        let verify_membership = path_var
+            .verify_membership(
+                &hash_params_var,
+                &hash_params_var,
+                &rt_var,
+                &[wrong_leaf],
+            )
+            .unwrap();
+        verify_membership.enforce_equal(&Boolean::TRUE).unwrap();
+
+        assert!(!cs.is_satisfied().unwrap(), "Wrong leaf should not satisfy");
+    }
+
+    #[test]
+    fn test_merkle_height_2() {
+        // Boundary: minimal tree (height=2, 2 leaves)
+        let tree_height = 2;
+        let n_leaves = 2;
+        let idx = 0;
+
+        let (root, path, _) = generate_merkle_tree_input::<F>(tree_height, n_leaves, idx);
+
+        let cs = ark_relations::r1cs::ConstraintSystem::<F>::new_ref();
+        generate_merkle_tree_verify_gadget(
+            &cs,
+            get_poseidon_params::<F>(),
+            &path,
+            &root,
+            idx,
+        );
+
+        assert!(cs.is_satisfied().unwrap());
+        println!("height-2 tree: {} constraints", cs.num_constraints());
+    }
+
     // H(H(0 || 1) || 2)
     fn chain_hash_gadget<F: PrimeField + Absorb>(
         cs: ConstraintSystemRef<F>,

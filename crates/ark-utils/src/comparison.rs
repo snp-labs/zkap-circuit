@@ -117,6 +117,7 @@ pub fn compare_bits_raw<F: PrimeField>(
 #[cfg(test)]
 mod tests {
     use ark_r1cs_std::{
+        R1CSVar,
         alloc::AllocVar,
         eq::EqGadget,
         fields::{FieldVar, fp::FpVar},
@@ -144,5 +145,125 @@ mod tests {
         println!("number of constraints: {}", cs.num_constraints());
         expected.enforce_equal(&result).unwrap();
         println!("number of constraints: {}", cs.num_constraints());
+    }
+
+    #[test]
+    fn test_lt_bit_vector_index_one() {
+        // index=1, n=5 → only i=0 satisfies i < 1 → [1,0,0,0,0]
+        let cs: ConstraintSystemRef<F> = ConstraintSystem::<F>::new_ref();
+        let index = FpVar::<F>::new_witness(cs.clone(), || Ok(F::from(1u64))).unwrap();
+        let result = lt_bit_vector(&index, 5).unwrap();
+        assert!(cs.is_satisfied().unwrap());
+
+        let expected = vec![
+            FpVar::<F>::new_witness(cs.clone(), || Ok(F::from(1u8))).unwrap(),
+            FpVar::<F>::new_witness(cs.clone(), || Ok(F::from(0u8))).unwrap(),
+            FpVar::<F>::new_witness(cs.clone(), || Ok(F::from(0u8))).unwrap(),
+            FpVar::<F>::new_witness(cs.clone(), || Ok(F::from(0u8))).unwrap(),
+            FpVar::<F>::new_witness(cs.clone(), || Ok(F::from(0u8))).unwrap(),
+        ];
+        expected.enforce_equal(&result).unwrap();
+        assert!(cs.is_satisfied().unwrap());
+    }
+
+    #[test]
+    fn test_lt_bit_vector_index_last() {
+        // index=5, n=5 → all i in 0..4 satisfy i < 5 → [1,1,1,1,1]
+        let cs: ConstraintSystemRef<F> = ConstraintSystem::<F>::new_ref();
+        let index = FpVar::<F>::new_witness(cs.clone(), || Ok(F::from(5u64))).unwrap();
+        let result = lt_bit_vector(&index, 5).unwrap();
+        assert!(cs.is_satisfied().unwrap());
+
+        let expected = vec![
+            FpVar::<F>::new_witness(cs.clone(), || Ok(F::from(1u8))).unwrap(),
+            FpVar::<F>::new_witness(cs.clone(), || Ok(F::from(1u8))).unwrap(),
+            FpVar::<F>::new_witness(cs.clone(), || Ok(F::from(1u8))).unwrap(),
+            FpVar::<F>::new_witness(cs.clone(), || Ok(F::from(1u8))).unwrap(),
+            FpVar::<F>::new_witness(cs.clone(), || Ok(F::from(1u8))).unwrap(),
+        ];
+        expected.enforce_equal(&result).unwrap();
+        assert!(cs.is_satisfied().unwrap());
+    }
+
+    #[test]
+    fn test_is_less_than_equal_case() {
+        use super::{compare_bits_raw, is_less_than};
+        use ark_r1cs_std::prelude::ToBitsGadget;
+
+        let cs: ConstraintSystemRef<F> = ConstraintSystem::<F>::new_ref();
+        let a = FpVar::<F>::new_witness(cs.clone(), || Ok(F::from(5u64))).unwrap();
+        let b = FpVar::<F>::new_witness(cs.clone(), || Ok(F::from(5u64))).unwrap();
+        let a_bits = a.to_bits_le().unwrap();
+        let b_bits = b.to_bits_le().unwrap();
+
+        let result = is_less_than(&a_bits[..8], &b_bits[..8]).unwrap();
+        assert!(cs.is_satisfied().unwrap());
+        assert!(!result.value().unwrap()); // 5 is NOT less than 5
+    }
+
+    #[test]
+    fn test_is_less_or_equal_equal_case() {
+        use super::is_less_or_equal;
+        use ark_r1cs_std::prelude::ToBitsGadget;
+
+        let cs: ConstraintSystemRef<F> = ConstraintSystem::<F>::new_ref();
+        let a = FpVar::<F>::new_witness(cs.clone(), || Ok(F::from(5u64))).unwrap();
+        let b = FpVar::<F>::new_witness(cs.clone(), || Ok(F::from(5u64))).unwrap();
+        let a_bits = a.to_bits_le().unwrap();
+        let b_bits = b.to_bits_le().unwrap();
+
+        let result = is_less_or_equal(&a_bits[..8], &b_bits[..8]).unwrap();
+        assert!(cs.is_satisfied().unwrap());
+        assert!(result.value().unwrap()); // 5 <= 5
+    }
+
+    #[test]
+    fn test_is_greater_or_equal_equal_case() {
+        use super::is_greater_or_equal;
+        use ark_r1cs_std::prelude::ToBitsGadget;
+
+        let cs: ConstraintSystemRef<F> = ConstraintSystem::<F>::new_ref();
+        let a = FpVar::<F>::new_witness(cs.clone(), || Ok(F::from(5u64))).unwrap();
+        let b = FpVar::<F>::new_witness(cs.clone(), || Ok(F::from(5u64))).unwrap();
+        let a_bits = a.to_bits_le().unwrap();
+        let b_bits = b.to_bits_le().unwrap();
+
+        let result = is_greater_or_equal(&a_bits[..8], &b_bits[..8]).unwrap();
+        assert!(cs.is_satisfied().unwrap());
+        assert!(result.value().unwrap()); // 5 >= 5
+    }
+
+    #[test]
+    fn test_compare_bits_raw_basic() {
+        use super::compare_bits_raw;
+        use ark_r1cs_std::prelude::ToBitsGadget;
+
+        let cs: ConstraintSystemRef<F> = ConstraintSystem::<F>::new_ref();
+        let a = FpVar::<F>::new_witness(cs.clone(), || Ok(F::from(3u64))).unwrap();
+        let b = FpVar::<F>::new_witness(cs.clone(), || Ok(F::from(5u64))).unwrap();
+        let a_bits = a.to_bits_le().unwrap();
+        let b_bits = b.to_bits_le().unwrap();
+
+        let (less, equal) = compare_bits_raw(&a_bits[..8], &b_bits[..8]).unwrap();
+        assert!(cs.is_satisfied().unwrap());
+        assert!(less.value().unwrap());   // 3 < 5
+        assert!(!equal.value().unwrap()); // 3 != 5
+    }
+
+    #[test]
+    fn test_compare_bits_raw_equal() {
+        use super::compare_bits_raw;
+        use ark_r1cs_std::prelude::ToBitsGadget;
+
+        let cs: ConstraintSystemRef<F> = ConstraintSystem::<F>::new_ref();
+        let a = FpVar::<F>::new_witness(cs.clone(), || Ok(F::from(7u64))).unwrap();
+        let b = FpVar::<F>::new_witness(cs.clone(), || Ok(F::from(7u64))).unwrap();
+        let a_bits = a.to_bits_le().unwrap();
+        let b_bits = b.to_bits_le().unwrap();
+
+        let (less, equal) = compare_bits_raw(&a_bits[..8], &b_bits[..8]).unwrap();
+        assert!(cs.is_satisfied().unwrap());
+        assert!(!less.value().unwrap());  // 7 is NOT less than 7
+        assert!(equal.value().unwrap());  // 7 == 7
     }
 }

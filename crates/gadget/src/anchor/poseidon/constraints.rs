@@ -331,3 +331,147 @@ impl<F: PrimeField + Absorb> AnchorSchemeGadget<PoseidonAnchorScheme<F>, F>
         lhs.is_eq(&rhs)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ark_ff::{One, Zero};
+    use ark_r1cs_std::{R1CSVar, alloc::AllocVar, eq::EqGadget, fields::fp::FpVar};
+    use ark_relations::r1cs::ConstraintSystem;
+
+    type F = ark_bn254::Fr;
+
+    fn fp(cs: &ark_relations::r1cs::ConstraintSystemRef<F>, v: u64) -> FpVar<F> {
+        FpVar::new_witness(cs.clone(), || Ok(F::from(v))).unwrap()
+    }
+
+    #[test]
+    fn test_inner_product_basic() {
+        let cs = ConstraintSystem::<F>::new_ref();
+        let v1: Vec<FpVar<F>> = vec![fp(&cs, 1), fp(&cs, 2), fp(&cs, 3)];
+        let v2: Vec<FpVar<F>> = vec![fp(&cs, 4), fp(&cs, 5), fp(&cs, 6)];
+
+        let result = PoseidonAnchorSchemeGadget::<F>::inner_product(&v1, &v2).unwrap();
+        assert!(cs.is_satisfied().unwrap());
+        assert_eq!(result.value().unwrap(), F::from(32u64)); // 1*4+2*5+3*6=32
+    }
+
+    #[test]
+    fn test_inner_product_different_lengths() {
+        let cs = ConstraintSystem::<F>::new_ref();
+        let v1: Vec<FpVar<F>> = vec![fp(&cs, 1), fp(&cs, 2)];
+        let v2: Vec<FpVar<F>> = vec![fp(&cs, 1), fp(&cs, 2), fp(&cs, 3)];
+
+        let result = PoseidonAnchorSchemeGadget::<F>::inner_product(&v1, &v2);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_is_a_nonzero_all_nonzero() {
+        let cs = ConstraintSystem::<F>::new_ref();
+        let a: Vec<FpVar<F>> = vec![fp(&cs, 1), fp(&cs, 2), fp(&cs, 3)];
+
+        let result = PoseidonAnchorSchemeGadget::<F>::is_a_nonzero(&a).unwrap();
+        assert!(cs.is_satisfied().unwrap());
+        assert!(result.value().unwrap());
+    }
+
+    #[test]
+    fn test_is_a_nonzero_all_zero() {
+        let cs = ConstraintSystem::<F>::new_ref();
+        let a: Vec<FpVar<F>> = vec![fp(&cs, 0), fp(&cs, 0), fp(&cs, 0)];
+
+        let result = PoseidonAnchorSchemeGadget::<F>::is_a_nonzero(&a).unwrap();
+        assert!(cs.is_satisfied().unwrap());
+        assert!(!result.value().unwrap());
+    }
+
+    #[test]
+    fn test_is_b_sparsity_valid() {
+        let cs = ConstraintSystem::<F>::new_ref();
+        // selector[1]=0, so b[1] must be 0 — and it is
+        let b: Vec<FpVar<F>> = vec![fp(&cs, 5), fp(&cs, 0), fp(&cs, 3)];
+        let selector: Vec<FpVar<F>> = vec![fp(&cs, 1), fp(&cs, 0), fp(&cs, 1)];
+
+        let result = PoseidonAnchorSchemeGadget::<F>::is_b_sparsity(&b, &selector).unwrap();
+        assert!(cs.is_satisfied().unwrap());
+        assert!(result.value().unwrap());
+    }
+
+    #[test]
+    fn test_is_b_sparsity_invalid() {
+        let cs = ConstraintSystem::<F>::new_ref();
+        // selector[1]=0, but b[1]=7 (nonzero) → invalid
+        let b: Vec<FpVar<F>> = vec![fp(&cs, 5), fp(&cs, 7), fp(&cs, 3)];
+        let selector: Vec<FpVar<F>> = vec![fp(&cs, 1), fp(&cs, 0), fp(&cs, 1)];
+
+        let result = PoseidonAnchorSchemeGadget::<F>::is_b_sparsity(&b, &selector).unwrap();
+        assert!(cs.is_satisfied().unwrap());
+        assert!(!result.value().unwrap());
+    }
+
+    #[test]
+    fn test_enforce_boolean_selectors_valid() {
+        let cs = ConstraintSystem::<F>::new_ref();
+        let indices: Vec<FpVar<F>> = vec![fp(&cs, 0), fp(&cs, 1), fp(&cs, 1), fp(&cs, 0)];
+
+        enforce_boolean_selectors(&indices).unwrap();
+        assert!(cs.is_satisfied().unwrap());
+    }
+
+    #[test]
+    fn test_enforce_boolean_selectors_non_boolean() {
+        let cs = ConstraintSystem::<F>::new_ref();
+        let indices: Vec<FpVar<F>> = vec![fp(&cs, 0), fp(&cs, 2), fp(&cs, 1), fp(&cs, 0)];
+
+        enforce_boolean_selectors(&indices).unwrap();
+        assert!(!cs.is_satisfied().unwrap());
+    }
+
+    #[test]
+    fn test_enforce_selector_cardinality_valid() {
+        let cs = ConstraintSystem::<F>::new_ref();
+        let indices: Vec<FpVar<F>> = vec![fp(&cs, 1), fp(&cs, 1), fp(&cs, 0), fp(&cs, 0)];
+        let k = fp(&cs, 2);
+
+        enforce_selector_cardinality(&indices, &k).unwrap();
+        assert!(cs.is_satisfied().unwrap());
+    }
+
+    #[test]
+    fn test_enforce_selector_cardinality_wrong_k() {
+        let cs = ConstraintSystem::<F>::new_ref();
+        let indices: Vec<FpVar<F>> = vec![fp(&cs, 1), fp(&cs, 1), fp(&cs, 0), fp(&cs, 0)];
+        let k = fp(&cs, 3); // wrong: sum is 2, not 3
+
+        enforce_selector_cardinality(&indices, &k).unwrap();
+        assert!(!cs.is_satisfied().unwrap());
+    }
+
+    #[test]
+    fn test_verify_sparsity_consistency_valid() {
+        let cs = ConstraintSystem::<F>::new_ref();
+        // b[0]=0 → h_known[0] must be 0. b[1]=5 → h_known[1] can be anything
+        let witness = PoseidonAnchorWitnessVar {
+            a: vec![fp(&cs, 1)],
+            b: vec![fp(&cs, 0), fp(&cs, 5)],
+            h_known: vec![fp(&cs, 0), fp(&cs, 3)],
+        };
+
+        let result = witness.verify_sparsity_consistency().unwrap();
+        assert!(cs.is_satisfied().unwrap());
+        assert!(result.value().unwrap());
+    }
+
+    #[test]
+    fn test_single_element_boundary() {
+        let cs = ConstraintSystem::<F>::new_ref();
+        // n=1, k=1 case
+        let indices: Vec<FpVar<F>> = vec![fp(&cs, 1)];
+        let k = fp(&cs, 1);
+
+        enforce_boolean_selectors(&indices).unwrap();
+        enforce_selector_cardinality(&indices, &k).unwrap();
+        assert!(cs.is_satisfied().unwrap());
+    }
+}

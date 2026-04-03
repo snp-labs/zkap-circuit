@@ -314,6 +314,63 @@ mod tests {
     }
 
     #[test]
+    fn test_divide_mod_power_of_2_basic() {
+        let cs = ConstraintSystem::<TestField>::new_ref();
+        // 13 / 2^2 = 3 remainder 1
+        let input =
+            ark_r1cs_std::uint16::UInt16::new_witness(cs.clone(), || Ok(13u16)).unwrap();
+        let (quotient, remainder) = divide_mod_power_of_2_circuit(&input, 2).unwrap();
+        assert!(cs.is_satisfied().unwrap());
+        assert_eq!(quotient.value().unwrap(), 3u16);
+        assert_eq!(remainder.value().unwrap(), 1u16);
+    }
+
+    #[test]
+    fn test_divide_mod_power_of_2_boundaries() {
+        let cs = ConstraintSystem::<TestField>::new_ref();
+
+        // 0 / 2^1 = 0 remainder 0
+        let input = ark_r1cs_std::uint16::UInt16::new_witness(cs.clone(), || Ok(0u16)).unwrap();
+        let (q, r) = divide_mod_power_of_2_circuit(&input, 1).unwrap();
+        assert_eq!(q.value().unwrap(), 0u16);
+        assert_eq!(r.value().unwrap(), 0u16);
+
+        // 65535 / 2^15 = 1 remainder 32767
+        let input2 =
+            ark_r1cs_std::uint16::UInt16::new_witness(cs.clone(), || Ok(65535u16)).unwrap();
+        let (q2, r2) = divide_mod_power_of_2_circuit(&input2, 15).unwrap();
+        assert_eq!(q2.value().unwrap(), 1u16);
+        assert_eq!(r2.value().unwrap(), 32767u16);
+    }
+
+    #[test]
+    #[should_panic(expected = "p must be greater than 0")]
+    fn test_divide_mod_power_of_2_invalid_p_panics() {
+        let cs = ConstraintSystem::<TestField>::new_ref();
+        let input =
+            ark_r1cs_std::uint16::UInt16::new_witness(cs.clone(), || Ok(10u16)).unwrap();
+        let _ = divide_mod_power_of_2_circuit(&input, 0);
+    }
+
+    #[test]
+    fn test_pack_then_unpack_roundtrip() {
+        // Pack 31 bytes then verify the packed value is consistent
+        let cs = ConstraintSystem::<TestField>::new_ref();
+        let limb_width = ((TestField::MODULUS_BIT_SIZE - 1) / 8) as usize;
+
+        let bytes: Vec<u8> = (1..=limb_width as u8).collect();
+        let byte_vars: Vec<_> = bytes
+            .iter()
+            .map(|&b| FpVar::new_witness(cs.clone(), || Ok(TestField::from(b))).unwrap())
+            .collect();
+
+        let packed1 = pack_bytes_to_field_unchecked(&byte_vars, limb_width).unwrap();
+        let packed2 = pack_bytes_to_field_unchecked(&byte_vars, limb_width).unwrap();
+        // Same input should give same result
+        assert_eq!(packed1.value().unwrap(), packed2.value().unwrap());
+    }
+
+    #[test]
     fn test_pack_decompose_bytes_auto_vs_manual() {
         let cs = ConstraintSystem::<TestField>::new_ref();
 

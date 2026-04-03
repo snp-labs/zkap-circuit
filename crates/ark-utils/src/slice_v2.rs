@@ -444,4 +444,53 @@ mod tests {
         
         println!("✓ slice_from_start test passed\n");
     }
+
+    #[test]
+    fn test_num_to_segments_be_basic() {
+        let cs = ConstraintSystem::<F>::new_ref();
+        // 0x01020304 = 16909060
+        let num = FpVar::<F>::new_witness(cs.clone(), || Ok(F::from(0x01020304u32))).unwrap();
+        let segments = num_to_segments_be(&num, 4, 8).unwrap();
+
+        assert!(cs.is_satisfied().unwrap());
+        assert_eq!(segments.len(), 4);
+
+        let vals: Vec<u64> = segments
+            .iter()
+            .map(|s| s.value().unwrap().into_bigint().as_ref()[0])
+            .collect();
+        assert_eq!(vals, vec![1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn test_segments_roundtrip() {
+        let cs = ConstraintSystem::<F>::new_ref();
+        let original_segments = vec![
+            FpVar::<F>::new_witness(cs.clone(), || Ok(F::from(5u8))).unwrap(),
+            FpVar::<F>::new_witness(cs.clone(), || Ok(F::from(10u8))).unwrap(),
+            FpVar::<F>::new_witness(cs.clone(), || Ok(F::from(15u8))).unwrap(),
+        ];
+
+        // segments → num
+        let num = segments_to_num_be(&original_segments, 8).unwrap();
+        // num → segments
+        let recovered = num_to_segments_be(&num, 3, 8).unwrap();
+
+        assert!(cs.is_satisfied().unwrap());
+
+        for (orig, recov) in original_segments.iter().zip(recovered.iter()) {
+            assert_eq!(
+                orig.value().unwrap(),
+                recov.value().unwrap(),
+            );
+        }
+    }
+
+    #[test]
+    fn test_log_base_2_zero_and_non_power() {
+        assert_eq!(log_base_2(0), None);
+        assert_eq!(log_base_2(100), None);
+        assert_eq!(log_base_2(255), None);
+        assert_eq!(log_base_2(1024), Some(10));
+    }
 }

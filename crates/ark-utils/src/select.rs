@@ -249,4 +249,119 @@ mod tests {
         println!("Multi-mux selected column 1: [2, 5, 8]");
         println!("Number of constraints: {}", cs.num_constraints());
     }
+
+    #[test]
+    fn test_one_bit_vector_first() {
+        let cs = ConstraintSystem::<F>::new_ref();
+        let index = FpVar::<F>::new_witness(cs.clone(), || Ok(F::from(0u64))).unwrap();
+        let result: Vec<FpVar<F>> = one_bit_vector(&index, 4).unwrap();
+        assert!(cs.is_satisfied().unwrap());
+
+        let expected = vec![
+            FpVar::<F>::Constant(F::one()),
+            FpVar::<F>::Constant(F::zero()),
+            FpVar::<F>::Constant(F::zero()),
+            FpVar::<F>::Constant(F::zero()),
+        ];
+        expected.enforce_equal(&result).unwrap();
+        assert!(cs.is_satisfied().unwrap());
+    }
+
+    #[test]
+    fn test_one_bit_vector_last() {
+        let cs = ConstraintSystem::<F>::new_ref();
+        let index = FpVar::<F>::new_witness(cs.clone(), || Ok(F::from(3u64))).unwrap();
+        let result: Vec<FpVar<F>> = one_bit_vector(&index, 4).unwrap();
+        assert!(cs.is_satisfied().unwrap());
+
+        let expected = vec![
+            FpVar::<F>::Constant(F::zero()),
+            FpVar::<F>::Constant(F::zero()),
+            FpVar::<F>::Constant(F::zero()),
+            FpVar::<F>::Constant(F::one()),
+        ];
+        expected.enforce_equal(&result).unwrap();
+        assert!(cs.is_satisfied().unwrap());
+    }
+
+    #[test]
+    fn test_single_multiplexer_index_zero() {
+        use super::single_multiplexer;
+
+        let cs = ConstraintSystem::<F>::new_ref();
+        let inputs: Vec<FpVar<F>> = vec![
+            FpVar::new_witness(cs.clone(), || Ok(F::from(10u64))).unwrap(),
+            FpVar::new_witness(cs.clone(), || Ok(F::from(20u64))).unwrap(),
+            FpVar::new_witness(cs.clone(), || Ok(F::from(30u64))).unwrap(),
+        ];
+        let index = FpVar::new_witness(cs.clone(), || Ok(F::from(0u64))).unwrap();
+        let result = single_multiplexer(&inputs, &index).unwrap();
+
+        assert!(cs.is_satisfied().unwrap());
+        result.enforce_equal(&FpVar::Constant(F::from(10u64))).unwrap();
+        assert!(cs.is_satisfied().unwrap());
+    }
+
+    #[test]
+    fn test_single_multiplexer_index_last() {
+        use super::single_multiplexer;
+
+        let cs = ConstraintSystem::<F>::new_ref();
+        let inputs: Vec<FpVar<F>> = vec![
+            FpVar::new_witness(cs.clone(), || Ok(F::from(10u64))).unwrap(),
+            FpVar::new_witness(cs.clone(), || Ok(F::from(20u64))).unwrap(),
+            FpVar::new_witness(cs.clone(), || Ok(F::from(30u64))).unwrap(),
+        ];
+        let index = FpVar::new_witness(cs.clone(), || Ok(F::from(2u64))).unwrap();
+        let result = single_multiplexer(&inputs, &index).unwrap();
+
+        assert!(cs.is_satisfied().unwrap());
+        result.enforce_equal(&FpVar::Constant(F::from(30u64))).unwrap();
+        assert!(cs.is_satisfied().unwrap());
+    }
+
+    #[test]
+    fn test_select_array_element_le_basic() {
+        use super::select_array_element;
+        use ark_r1cs_std::prelude::Boolean;
+
+        let cs = ConstraintSystem::<F>::new_ref();
+        // 4 elements → 2 bits
+        let input: Vec<FpVar<F>> = (1..=4u64)
+            .map(|v| FpVar::new_witness(cs.clone(), || Ok(F::from(v * 10))).unwrap())
+            .collect();
+
+        // Index 2 in LE: 2 = 0b10 → LE bits = [0, 1]
+        let idx_bits = vec![
+            Boolean::new_witness(cs.clone(), || Ok(false)).unwrap(),
+            Boolean::new_witness(cs.clone(), || Ok(true)).unwrap(),
+        ];
+
+        let result = select_array_element(&input, &idx_bits).unwrap();
+        assert!(cs.is_satisfied().unwrap());
+        result.enforce_equal(&FpVar::Constant(F::from(30u64))).unwrap();
+        assert!(cs.is_satisfied().unwrap());
+    }
+
+    #[test]
+    fn test_select_array_element_be_basic() {
+        use super::select_array_element_be;
+        use ark_r1cs_std::prelude::Boolean;
+
+        let cs = ConstraintSystem::<F>::new_ref();
+        let input: Vec<FpVar<F>> = (1..=4u64)
+            .map(|v| FpVar::new_witness(cs.clone(), || Ok(F::from(v * 10))).unwrap())
+            .collect();
+
+        // Index 2 in BE: 2 = 0b10 → BE bits = [1, 0]
+        let idx_bits = vec![
+            Boolean::new_witness(cs.clone(), || Ok(true)).unwrap(),
+            Boolean::new_witness(cs.clone(), || Ok(false)).unwrap(),
+        ];
+
+        let result = select_array_element_be(&input, &idx_bits).unwrap();
+        assert!(cs.is_satisfied().unwrap());
+        result.enforce_equal(&FpVar::Constant(F::from(30u64))).unwrap();
+        assert!(cs.is_satisfied().unwrap());
+    }
 }

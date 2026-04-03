@@ -20,7 +20,7 @@ use crate::{
 /// # Returns
 /// * x가 2의 거듭제곱이면 Some(log2(x)), 아니면 None
 pub fn log_base_2(x: usize) -> Option<u32> {
-    if x <= 0 {
+    if x == 0 {
         return None;
     }
     

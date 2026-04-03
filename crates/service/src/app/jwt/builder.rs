@@ -105,6 +105,7 @@ impl TokenBuilder {
 
     /// Full JWT를 SHA256 패딩하여 반환합니다.
     /// Circuit 내부에서 initial H constants부터 전체 SHA256 계산을 수행합니다.
+    #[allow(clippy::type_complexity)]
     fn compute_sha_and_base64_witness<Config: ZkPasskeyConfig>(
         &self,
     ) -> Result<

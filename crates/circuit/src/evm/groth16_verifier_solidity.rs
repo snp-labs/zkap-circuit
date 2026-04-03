@@ -10,10 +10,8 @@ pub trait SolidityContractGenerator {
 fn g1_constant<E: Pairing>(g1: &E::G1Affine, tag: &str) -> String {
     let x = g1.x().unwrap_or_default();
     let y = g1.y().unwrap_or_default();
-    vec![
-        format!("\tuint256 private constant {}X = {};", tag, x),
-        format!("\tuint256 private constant {}Y = {};", tag, y),
-    ]
+    [format!("\tuint256 private constant {}X = {};", tag, x),
+        format!("\tuint256 private constant {}Y = {};", tag, y)]
     .join("\n")
 }
 
@@ -28,26 +26,24 @@ fn g2_constant<E: Pairing>(g2: E::G2Affine, tag: &str) -> String {
         .unwrap_or_default()
         .to_base_prime_field_elements()
         .collect::<Vec<_>>();
-    vec![
-        format!("\tuint256 private constant {}X0 = {};", tag, x[1]),
+    [format!("\tuint256 private constant {}X0 = {};", tag, x[1]),
         format!("\tuint256 private constant {}X1 = {};", tag, x[0]),
         format!("\tuint256 private constant {}Y0 = {};", tag, y[1]),
-        format!("\tuint256 private constant {}Y1 = {};", tag, y[0]),
-    ]
+        format!("\tuint256 private constant {}Y1 = {};", tag, y[0])]
     .join("\n")
 }
 
 impl<E: Pairing> SolidityContractGenerator for VerifyingKey<E> {
     fn generate_solidity<P: AsRef<Path>>(&self, path: P) {
         let header = [
-            format!("// SPDX-License-Identifier: GPL-3.0"),
-            format!("pragma solidity ^0.8.0;"),
+            "// SPDX-License-Identifier: GPL-3.0".to_string(),
+            "pragma solidity ^0.8.0;".to_string(),
             String::new(),
-            format!("library Groth16Verifier {{"),
-            format!("\terror InvalidProofLength();"),
-            format!("\terror InvalidInstanceLength();"),
-            format!("\terror PrepareInstanceFailed();"),
-            format!("\terror PairingFailed();"),
+            "library Groth16Verifier {".to_string(),
+            "\terror InvalidProofLength();".to_string(),
+            "\terror InvalidInstanceLength();".to_string(),
+            "\terror PrepareInstanceFailed();".to_string(),
+            "\terror PairingFailed();".to_string(),
             String::new(),
         ];
 

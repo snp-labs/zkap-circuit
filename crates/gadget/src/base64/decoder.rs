@@ -15,9 +15,9 @@ impl Base64CharBits {
     /// 인덱스 값(0~63)을 받아 Big-Endian 비트 배열로 변환하여 생성
     pub fn from_index(val: u8) -> Self {
         let mut bits = [false; 6];
-        for i in 0..6 {
+        for (i, bit) in bits.iter_mut().enumerate() {
             let shift = 5 - i;
-            bits[i] = (val >> shift) & 1 == 1;
+            *bit = (val >> shift) & 1 == 1;
         }
         Self { bits }
     }

@@ -53,6 +53,7 @@ use super::proof::ProofGenerator;
 ///
 /// # Returns
 /// * 증명들과 공개 입력들의 튜플
+#[allow(clippy::type_complexity)]
 pub fn generate_baerae_proof<Config: ZkPasskeyConfig>(
     raw: RawProofRequest,
 ) -> Result<(Vec<Proof<BN254>>, Vec<Vec<F>>), ApplicationError> {

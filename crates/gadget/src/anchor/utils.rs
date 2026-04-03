@@ -9,6 +9,7 @@ use num_integer::Integer;
 
 use crate::{anchor::error::AnchorError, utils::str_to_fields};
 
+#[allow(clippy::type_complexity)]
 pub fn process_secrets_vec<C, CRH>(
     secrets: &[String],
     hash_param: &<CRH as CRHScheme>::Parameters,
@@ -42,7 +43,7 @@ where
 }
 
 pub fn process_secret<C, CRH>(
-    secret: &String,
+    secret: &str,
     hash_param: &<CRH as CRHScheme>::Parameters,
 ) -> Result<(C::BaseField, C::ScalarField), AnchorError>
 where
@@ -71,7 +72,7 @@ where
     C: CurveGroup,
     C::BaseField: PrimeField + Absorb,
 {
-    process_no_tk_secrets::<C, CRH<C::BaseField>>(&secrets, &poseidon_param)
+    process_no_tk_secrets::<C, CRH<C::BaseField>>(secrets, poseidon_param)
 }
 
 pub fn process_no_tk_secrets<C, CRH>(
@@ -90,7 +91,7 @@ where
 }
 
 pub fn process_no_tk_secret<C, CRH>(
-    secret: &String,
+    secret: &str,
     hash_param: &CRH::Parameters,
 ) -> Result<C::BaseField, AnchorError>
 where
@@ -159,8 +160,8 @@ where
 }
 
 pub fn mul_and_divide_by_scalar_modulus_bytes<C: CurveGroup>(
-    a: &Vec<u8>,
-    b: &Vec<u8>,
+    a: &[u8],
+    b: &[u8],
 ) -> (Vec<u8>, Vec<u8>, Vec<u8>)
 where
     C::BaseField: PrimeField,

@@ -15,7 +15,7 @@ impl<F: PrimeField> UInt32Ext<F> for UInt32<F> {
     fn shr(&self, by: usize) -> Self {
         assert!(by < 32);
 
-        let zeros = iter::repeat(Boolean::constant(false)).take(by);
+        let zeros = iter::repeat_n(Boolean::constant(false), by);
         let new_bits: Vec<_> = self
             .to_bits_le()
             .unwrap()

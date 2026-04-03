@@ -4,7 +4,7 @@ pub fn str_to_fields<F: PrimeField>(s: &str) -> Vec<F> {
     let bytes = s.as_bytes();
 
     let limb_width = (F::MODULUS_BIT_SIZE - 1) as usize / 8;
-    let n_limbs = (bytes.len() + (limb_width - 1)) / limb_width;
+    let n_limbs = bytes.len().div_ceil(limb_width);
     let expected_length = n_limbs * limb_width;
 
     assert_eq!(bytes.len(), expected_length);
@@ -15,16 +15,16 @@ pub fn str_to_fields<F: PrimeField>(s: &str) -> Vec<F> {
         .collect()
 }
 
-/// 문자열을 패딩 후 필드 원소 벡터로 변환합니다.
+/// Converts a string to field elements after padding.
 ///
-/// 문자열을 `target_len` 길이까지 `pad` 문자로 패딩한 후,
-/// limb 단위로 분할하여 필드 원소 벡터로 변환합니다.
+/// Pads the string to `target_len` with `pad` byte, then splits into
+/// limb-sized chunks and converts each to a field element.
 pub fn str_to_limbs<F: PrimeField>(s: &str, target_len: usize, pad: u8) -> Vec<F> {
     let mut bytes = s.as_bytes().to_vec();
     bytes.resize(target_len, pad);
 
     let limb_width = (F::MODULUS_BIT_SIZE - 1) as usize / 8;
-    let n_limbs = (bytes.len() + (limb_width - 1)) / limb_width;
+    let n_limbs = bytes.len().div_ceil(limb_width);
     let expected_length = n_limbs * limb_width;
 
     assert_eq!(bytes.len(), expected_length);

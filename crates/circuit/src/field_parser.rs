@@ -49,7 +49,7 @@ fn hex_to_bytes_even(s: &str) -> Result<Vec<u8>, FieldParseError> {
     if hex_body.len() % 2 == 1 {
         hex_body.insert(0, '0');
     }
-    Ok(hex::decode(&hex_body).map_err(|_| FieldParseError::InvalidHex)?)
+    hex::decode(&hex_body).map_err(|_| FieldParseError::InvalidHex)
 }
 
 /// 입력 문자열을 field 원소로 파싱합니다.
@@ -72,7 +72,7 @@ pub fn ascii_to_field_be<F: PrimeField>(s: &str) -> Result<Vec<F>, FieldParseErr
     let bytes = s.as_bytes();
     let limb_width = (F::MODULUS_BIT_SIZE - 1) as usize / 8;
 
-    if bytes.len() % limb_width != 0 {
+    if !bytes.len().is_multiple_of(limb_width) {
         return Err(FieldParseError::InvalidLength(limb_width, bytes.len()));
     }
 

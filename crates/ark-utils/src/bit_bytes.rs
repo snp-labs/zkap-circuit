@@ -116,7 +116,7 @@ pub fn pack_decompose_bytes_unchecked<F: PrimeField>(
     }
 
     // 입력 길이가 limb_width로 나누어떨어지는지 검증
-    if decompose_bytes.len() % limb_width != 0 {
+    if !decompose_bytes.len().is_multiple_of(limb_width) {
         return Err(SynthesisError::AssignmentMissing);
     }
 

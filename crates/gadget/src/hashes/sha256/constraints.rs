@@ -1,6 +1,5 @@
 use std::{
     borrow::Borrow,
-    iter,
     ops::{BitXor, Not},
 };
 
@@ -247,7 +246,7 @@ impl<F: PrimeField> SHA256Gadget<F> {
         pad_start_in_suffix: &UInt16<F>,
     ) -> Result<(), SynthesisError> {
         // SHA-256은 64바이트 블록 단위
-        assert!(sha_pad_payload_b64.len() % 64 == 0);
+        assert!(sha_pad_payload_b64.len().is_multiple_of(64));
         let max_blocks = sha_pad_payload_b64.len() / 64;
 
         // ------------------------------------------------------------
@@ -322,8 +321,8 @@ impl<F: PrimeField> SHA256Gadget<F> {
 
         // pos_ok_acc = Σ flags[b] * 1{cond_b}
         let mut pos_ok_acc = FpVar::<F>::zero();
-        for b in 0..max_blocks {
-            let flag_b = flags[b].clone();
+        for (b, flag_b) in flags.iter().enumerate().take(max_blocks) {
+            let flag_b = flag_b.clone();
 
             // cond_last: b*64 <= pad_start < b*64+56
             let last_lo_bits = UInt16::constant((b * 64) as u16).to_bits_le()?;
@@ -403,8 +402,8 @@ impl<F: PrimeField> SHA256Gadget<F> {
         crate::enforce_eq_internal!("sha256_pad_marker", pad_region[0].clone(), FpVar::<F>::constant(F::from(crate::constants::SHA256_PAD_MARKER as u64)))?;
 
         // 나머지 바이트는 모두 0
-        for i in 1..PAD_REGION_MAX {
-            crate::enforce_eq_internal!("sha256_pad_zero", pad_region[i].clone(), FpVar::<F>::zero())?;
+        for item in pad_region.iter().take(PAD_REGION_MAX).skip(1) {
+            crate::enforce_eq_internal!("sha256_pad_zero", item.clone(), FpVar::<F>::zero())?;
         }
 
         // ------------------------------------------------------------
@@ -412,7 +411,7 @@ impl<F: PrimeField> SHA256Gadget<F> {
         //    (suffix padding 이후의 trailing zero 검증)
         // ------------------------------------------------------------
         let mut prefix_sum = FpVar::<F>::zero();
-        for b in 0..max_blocks {
+        for (b, flag) in flags.iter().enumerate().take(max_blocks) {
             // prefix_sum == 1 이면 b > last_block
             let after_mask = prefix_sum.clone();
 
@@ -423,7 +422,7 @@ impl<F: PrimeField> SHA256Gadget<F> {
                 crate::enforce_eq_internal!("sha256_trailing_zero", prod, FpVar::<F>::zero())?;
             }
 
-            prefix_sum += flags[b].clone();
+            prefix_sum += flag.clone();
         }
 
         Ok(())
@@ -506,7 +505,7 @@ impl<F: PrimeField> SHA256Gadget<F> {
         pad_start_byte_idx: &UInt16<F>,
     ) -> Result<(), SynthesisError> {
         // SHA-256 uses 64-byte blocks
-        assert!(data.len() % 64 == 0);
+        assert!(data.len().is_multiple_of(64));
         let max_blocks = data.len() / 64;
 
         // ------------------------------------------------------------
@@ -578,8 +577,8 @@ impl<F: PrimeField> SHA256Gadget<F> {
 
         // Verify position is valid for the selected block
         let mut pos_ok_acc = FpVar::<F>::zero();
-        for b in 0..max_blocks {
-            let flag_b = flags[b].clone();
+        for (b, flag_b) in flags.iter().enumerate().take(max_blocks) {
+            let flag_b = flag_b.clone();
 
             // cond_last: b*64 <= pad_start < b*64+56
             let last_lo_bits = UInt16::constant((b * 64) as u16).to_bits_le()?;
@@ -661,8 +660,8 @@ impl<F: PrimeField> SHA256Gadget<F> {
         )))?;
 
         // Remaining padding bytes must be 0
-        for i in 1..PAD_REGION_MAX {
-            crate::enforce_eq_internal!("sha256_full_pad_zero", pad_region[i].clone(), FpVar::<F>::zero())?;
+        for item in pad_region.iter().take(PAD_REGION_MAX).skip(1) {
+            crate::enforce_eq_internal!("sha256_full_pad_zero", item.clone(), FpVar::<F>::zero())?;
         }
 
         // ------------------------------------------------------------
@@ -670,7 +669,7 @@ impl<F: PrimeField> SHA256Gadget<F> {
         //    (trailing zero verification)
         // ------------------------------------------------------------
         let mut prefix_sum = FpVar::<F>::zero();
-        for b in 0..max_blocks {
+        for (b, flag) in flags.iter().enumerate().take(max_blocks) {
             // prefix_sum == 1 means b > last_block
             let after_mask = prefix_sum.clone();
 
@@ -681,7 +680,7 @@ impl<F: PrimeField> SHA256Gadget<F> {
                 crate::enforce_eq_internal!("sha256_full_trailing_zero", prod, FpVar::<F>::zero())?;
             }
 
-            prefix_sum += flags[b].clone();
+            prefix_sum += flag.clone();
         }
 
         Ok(())
@@ -711,7 +710,7 @@ impl<F: PrimeField> Default for SHA256Gadget<F> {
         Self {
             state: H.iter().cloned().map(UInt32::constant).collect(),
             completed_data_blocks: 0,
-            pending: iter::repeat(0u8).take(64).map(UInt8::constant).collect(),
+            pending: std::iter::repeat_n(0u8, 64).map(UInt8::constant).collect(),
             num_pending: 0,
         }
     }

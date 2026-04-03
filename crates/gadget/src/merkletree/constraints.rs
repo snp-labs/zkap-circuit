@@ -55,7 +55,7 @@ where
 
         let membership =
             self.path
-                .verify_membership(hash_param, hash_param, root, &[self.leaf.clone()])?;
+                .verify_membership(hash_param, hash_param, root, std::slice::from_ref(&self.leaf))?;
 
         #[cfg(feature = "constraints-logging")]
         log_r1cs_eq(

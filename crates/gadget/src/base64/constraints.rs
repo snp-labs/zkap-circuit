@@ -66,7 +66,7 @@ impl<F: PrimeField> Base64DecoderGadget<F> {
         index_bits: &IndexBitsVar<F>,
     ) -> Result<Vec<FpVar<F>>, SynthesisError> {
         assert_eq!(enc_asciis.len(), index_bits.inner.len());
-        assert!(enc_asciis.len() % 4 == 0);
+        assert!(enc_asciis.len().is_multiple_of(4));
 
         let padding_char = FpVar::Constant(F::from(65u8)); // ASCII 'A'
         let zero = FpVar::Constant(F::zero());

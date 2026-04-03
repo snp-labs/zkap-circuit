@@ -2,7 +2,7 @@ use std::fs::File;
 
 use ark_crypto_primitives::crh::CRHScheme;
 use ark_ff::PrimeField;
-use clap::{Args, Parser, Subcommand, command};
+use clap::{Args, Parser, Subcommand};
 use circuit::constants::{BNP, CG, F, PoseidonHash, ZkPasskeyConfig, ZkapConfig};
 use gadget::{
     base64::decode_any_base64, hashes::poseidon::get_poseidon_params, signature::rsa::PublicKey, utils::str_to_limbs
@@ -82,8 +82,8 @@ fn main() {
 
     // 어떤 커맨드인지 패턴 매칭만 하면 됩니다.
     match &cli.command {
-        Commands::Aud(args) => generate_aud_hash(&args),
-        Commands::Leaf(args) => generate_pk_leaf(&args),
+        Commands::Aud(args) => generate_aud_hash(args),
+        Commands::Leaf(args) => generate_pk_leaf(args),
     }
 }
 
@@ -113,11 +113,11 @@ fn generate_aud_hash(args: &AudArgs) {
         .iter()
         .map(|a| {
             let limbs = str_to_limbs(a, ZkapConfig::MAX_AUD_LEN, ZkapConfig::PAD_CHAR as u8);
-            let h = PoseidonHash::evaluate(&params, limbs).unwrap_or_else(|e| {
+            
+            PoseidonHash::evaluate(&params, limbs).unwrap_or_else(|e| {
                 eprintln!("Error processing aud '{}': {}", a, e);
                 std::process::exit(1);
-            });
-            h
+            })
         })
         .collect();
     let h_aud_lists = PoseidonHash::evaluate(&params, &*aud_fields).unwrap_or_else(|e| {

@@ -4,6 +4,7 @@ use circuit::constants::{F, ZkPasskeyConfig};
 
 use crate::{RawProofRequest, app, error::ApplicationError};
 
+#[allow(clippy::type_complexity)]
 pub fn generate_baerae_proof<Config: ZkPasskeyConfig>(
     req: RawProofRequest,
 ) -> Result<(Vec<Proof<Bn254>>, Vec<Vec<F>>), ApplicationError> {

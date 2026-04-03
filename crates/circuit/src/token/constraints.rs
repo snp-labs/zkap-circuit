@@ -39,7 +39,7 @@ impl RSA2048VerifyGadget {
 
         message.reverse();
 
-        let output = output_with_prifix(&message.to_vec());
+        let output = output_with_prifix(message);
         let output_fp = output.to_constraint_field()?;
 
         let result = sig.sig.pow_mod(&pk.e, &pk.n, num_exp_bits)?.to_bytes_le()?;
@@ -65,7 +65,7 @@ impl RSA2048VerifyGadget {
 
         message.reverse();
 
-        let output = output_with_prifix(&message.to_vec());
+        let output = output_with_prifix(message);
         let output_fp = output.to_constraint_field()?;
 
         let mut acc = sig.sig.clone();

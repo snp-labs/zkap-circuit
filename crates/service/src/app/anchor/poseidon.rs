@@ -39,7 +39,7 @@ pub fn create_poseidon_anchor<Config: ZkPasskeyConfig>(
         .map(|s| derive_x_from_secret(s, &anchor_key.params, &ctx))
         .collect::<Result<Vec<F>, ApplicationError>>()?;
 
-    let anchor_secret = PoseidonAnchorSecret(x_list.into());
+    let anchor_secret = PoseidonAnchorSecret(x_list);
 
     let anchor = PoseidonAnchorScheme::generate_anchor(&anchor_key, &anchor_secret, &ctx.matrix)?;
 

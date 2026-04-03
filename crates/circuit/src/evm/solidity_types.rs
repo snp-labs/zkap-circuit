@@ -32,7 +32,7 @@ impl<P: Fp2Config> Solidity for Fp2<P> {
 
 impl<T: Solidity> Solidity for Vec<T> {
     fn to_solidity(&self) -> Vec<String> {
-        self.iter().map(|x| x.to_solidity()).flatten().collect()
+        self.iter().flat_map(|x| x.to_solidity()).collect()
     }
 }
 

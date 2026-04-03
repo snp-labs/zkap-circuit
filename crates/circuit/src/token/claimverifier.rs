@@ -77,7 +77,7 @@ fn claim_format_verifier_v2<F: PrimeField>(
     // r1cs-std "0.5.0" 버전에서 enforce_cmp의 버그로 인해 다음과 같이 변경합니다.
     let name_len_boolean = name_len.to_bits_le()?;
     let colon_idx_boolean = colon_idx.to_bits_le()?;
-    let result = is_less_than(&name_len_boolean, &colon_idx_boolean)? | name_len.is_eq(&colon_idx)?;
+    let result = is_less_than(&name_len_boolean, &colon_idx_boolean)? | name_len.is_eq(colon_idx)?;
     result.enforce_equal(&Boolean::TRUE)?;
 
     // check2: 콜론 인덱스는 값 인덱스보다 작아야 한다.
@@ -151,7 +151,7 @@ fn enforce_range_is_whitespace_v2<F: PrimeField>(
     prefix_sums.push(FpVar::<F>::zero());
     let mut running_sum = FpVar::<F>::zero();
     for flag in is_not_whitespace_flags.iter().take(max_len) {
-        running_sum = running_sum + flag;
+        running_sum += flag;
         prefix_sums.push(running_sum.clone());
     }
 

@@ -11,7 +11,7 @@ pub fn conditionally_select_vec<F: PrimeField>(
 ) -> Result<Vec<UInt32<F>>, SynthesisError> {
     a.iter()
         .zip(b.iter())
-        .map(|(a, b)| UInt32::conditionally_select(&condition, a, b))
+        .map(|(a, b)| UInt32::conditionally_select(condition, a, b))
         .collect()
 }
 
@@ -58,14 +58,14 @@ pub fn to_units<F: PrimeField>(buffer: &[u8], max_len: usize, num_bytes: usize) 
 }
 
 pub fn update(data: &[u8]) -> [u32; 8] {
-    assert!(data.len() % 64 == 0);
+    assert!(data.len().is_multiple_of(64));
     let state = H;
 
-    let result = data
-        .chunks_exact(64)
-        .fold(state, |state, chunk| update_with_state(state, chunk));
+    
 
-    result
+    data
+        .chunks_exact(64)
+        .fold(state, update_with_state)
     // for chunk in data.chunks_exact(64) {
     //     let new_state = update_with_state(state, chunk);
     // }
@@ -140,7 +140,7 @@ pub fn update_with_state(state: [u32; 8], data: &[u8]) -> [u32; 8] {
 
 pub fn finalize_with_state(state: [u32; 8], data: &[u8], len: usize) -> [u32; 8] {
     let padded_input = sha256_pad_with_len(data, len);
-    let reuslt = update_with_state(state, &padded_input);
+    
 
-    reuslt
+    update_with_state(state, &padded_input)
 }

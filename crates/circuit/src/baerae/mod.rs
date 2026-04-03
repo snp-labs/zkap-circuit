@@ -354,7 +354,7 @@ where
         let mut phase2_total_last = phase2_start;
 
         // [2.1] Issuer-Public Key 검증
-        let leaf_inputs = vec![iss.clone(), pk_op.n.limbs.clone()].concat();
+        let leaf_inputs = [iss.clone(), pk_op.n.limbs.clone()].concat();
         let leaf = PoseidonCRHGadget::<C::BaseField>::evaluate(&poseidon_param, &leaf_inputs)?;
 
         path.set_leaf_position(leaf_idx.to_bits_le()?);
@@ -381,9 +381,7 @@ where
         gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Anchor Binding");
 
         // Nonce binding: nonce == Poseidon(h_sign_userop, random)
-        let mut nonce_inputs = Vec::<FpVar<C::BaseField>>::new();
-        nonce_inputs.push(h_sign_user_op);
-        nonce_inputs.push(random.clone());
+        let nonce_inputs = vec![h_sign_user_op, random.clone()];
         let target_nonce =
             PoseidonCRHGadget::<C::BaseField>::evaluate(&poseidon_param, &nonce_inputs)?;
         gadget::enforce_eq_debug!("Nonce Binding", target_nonce, nonce)?;
@@ -480,9 +478,7 @@ where
         h_id_inputs.extend_from_slice(&iss);
         h_id_inputs.extend_from_slice(&sub);
         let h_id_ = PoseidonCRHGadget::<C::BaseField>::evaluate(&poseidon_param, &h_id_inputs)?;
-        let mut h_id_inputs_with_index = Vec::<FpVar<C::BaseField>>::new();
-        h_id_inputs_with_index.push(current_idx.clone());
-        h_id_inputs_with_index.push(h_id_.clone());
+        let h_id_inputs_with_index = vec![current_idx.clone(), h_id_.clone()];
 
         let h_id =
             PoseidonCRHGadget::<C::BaseField>::evaluate(&poseidon_param, &h_id_inputs_with_index)?;

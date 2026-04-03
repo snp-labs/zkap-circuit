@@ -63,7 +63,7 @@ where
 
             // 4. 전체 결과에 AND 연산으로 누적
             // 하나라도 False면 전체 결과는 False가 됨
-            is_all_valid = is_all_valid & &current_pair_valid;
+            is_all_valid &= &current_pair_valid;
         }
 
         Ok(is_all_valid)
@@ -84,7 +84,7 @@ where
             // 3. 누적 OR 연산
             // 지금까지 하나라도 0이 아닌 것을 찾았거나(found_nonzero),
             // 현재 원소가 0이 아니면(is_nonzero) -> 결과는 True
-            found_nonzero = found_nonzero | &is_nonzero;
+            found_nonzero |= &is_nonzero;
         }
 
         Ok(found_nonzero)
@@ -124,7 +124,7 @@ impl<F: PrimeField + Absorb> PoseidonAnchorSchemeGadget<F> {
 
             // 지금까지 하나라도 0이 아닌 것을 찾았거나(found_nonzero),
             // 현재 원소가 0이 아니면(is_nonzero) -> 결과는 True
-            found_nonzero = found_nonzero | &is_nonzero;
+            found_nonzero |= &is_nonzero;
         }
 
         Ok(found_nonzero)
@@ -167,7 +167,7 @@ impl<F: PrimeField + Absorb> PoseidonAnchorSchemeGadget<F> {
             let is_valid_j = is_selected | &is_zero;
 
             // 4. 전체 결과에 AND 연산 누적
-            is_all_valid = is_all_valid & &is_valid_j;
+            is_all_valid &= &is_valid_j;
         }
 
         Ok(is_all_valid)
@@ -200,7 +200,7 @@ pub fn enforce_boolean_selector_debug<F: PrimeField>(
         // s * (s - 1) == 0  <=> s ∈ {0,1}
         let s_minus_one = s.clone() - one.clone();
         let is_zero = (s.clone() * s_minus_one).is_eq(&zero)?;
-        ok = ok & is_zero;
+        ok &= is_zero;
     }
     Ok(ok)
 }

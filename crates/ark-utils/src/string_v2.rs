@@ -65,9 +65,8 @@ pub fn jwt_nonce_hex_to_field<F: PrimeField>(
     let mut hex_digit_count = FpVar::<F>::zero(); // 16진수 자릿수 카운트
 
     // --- 3. 16진수 파싱 루프 (인덱스 3부터) ---
-    for i in 3..hex_bytes_len {
+    for (i, current_byte) in hex_bytes.iter().enumerate().skip(3).take(hex_bytes_len - 3) {
         let current_index = UInt16::constant(i as u16);
-        let current_byte = &hex_bytes[i];
 
         // 현재 위치가 닫는 따옴표 위치인가?
         let is_closing_quote_pos = current_index.is_eq(last_quote_index)?;
@@ -102,7 +101,7 @@ pub fn jwt_nonce_hex_to_field<F: PrimeField>(
         hex_digit_count += &should_parse_fp;
 
         // --- 3.3. 상태 업데이트 ---
-        found_closing_quote = found_closing_quote | is_closing_quote_pos;
+        found_closing_quote |= is_closing_quote_pos;
     }
 
     // --- 4. 최종 검증 ---
@@ -311,8 +310,7 @@ pub fn jwt_exp_to_field<F: PrimeField>(
     let mut accumulated_value = FpVar::<F>::zero();
 
     // --- 1. 첫 10자리 파싱 및 검증 ---
-    for i in 0..10 {
-        let current_byte = &decimal_bytes[i];
+    for current_byte in decimal_bytes.iter().take(10) {
 
         // 10진수 변환
         let (digit_value, is_valid_digit) = decimal_byte_to_digit(current_byte)?;
@@ -325,8 +323,8 @@ pub fn jwt_exp_to_field<F: PrimeField>(
     }
 
     // --- 2. 나머지는 모두 0 패딩 검증 ---
-    for i in 10..decimal_bytes.len() {
-        crate::enforce_eq_internal!("exp_padding_zero", decimal_bytes[i], zero)?;
+    for byte in decimal_bytes.iter().skip(10) {
+        crate::enforce_eq_internal!("exp_padding_zero", *byte, zero)?;
     }
 
     Ok(accumulated_value)
@@ -361,7 +359,7 @@ fn decimal_byte_to_digit<F: PrimeField>(
         result += &value_to_add;
 
         // 유효성 플래그 업데이트
-        is_valid = is_valid | is_equal;
+        is_valid |= is_equal;
     }
 
     Ok((result, is_valid))

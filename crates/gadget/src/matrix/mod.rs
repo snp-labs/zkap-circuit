@@ -39,10 +39,10 @@ impl<F: PrimeField> VandermondeMatrix<F> {
         let mut matrix = vec![vec![F::zero(); n]; m];
 
         // matrix[i][j] = (i+1)^j
-        for i in 0..m {
+        for (i, row) in matrix.iter_mut().enumerate().take(m) {
             let base = F::from((i + 1) as u64);
-            for j in 0..n {
-                matrix[i][j] = base.pow(&[j as u64]);
+            for (j, elem) in row.iter_mut().enumerate().take(n) {
+                *elem = base.pow([j as u64]);
             }
         }
 
@@ -90,9 +90,9 @@ impl<F: PrimeField> VandermondeMatrix<F> {
 
         // 부분 행렬 생성
         let mut submatrix = vec![vec![F::zero(); m]; m];
-        for r in 0..m {
+        for (r, sub_row) in submatrix.iter_mut().enumerate().take(m) {
             for (new_col, &orig_col) in column_indices.iter().enumerate() {
-                submatrix[r][new_col] = self.matrix[r][orig_col];
+                sub_row[new_col] = self.matrix[r][orig_col];
             }
         }
 
@@ -110,7 +110,7 @@ impl<F: PrimeField> VandermondeMatrix<F> {
     ///
     /// # Arguments
     /// * `selector` - 0/1 벡터 (길이 n), 1은 알려진 인덱스, 0은 알려지지 않은 인덱스
-    ///                1의 개수는 정확히 k개여야 함
+    ///   1의 개수는 정확히 k개여야 함
     pub fn calculate_vector_a(&self, selector: &[u8]) -> Result<Vec<F>, VandermondeMatrixError> {
         let (m, n) = self.dimensions();
         let k = self.k;
@@ -202,9 +202,9 @@ impl<F: PrimeField> VandermondeMatrix<F> {
         let mut result = vec![F::zero(); n];
 
         // result[j] = sum_i(vector[i] * matrix[i][j])
-        for col in 0..n {
-            for row in 0..m {
-                result[col] += vector[row] * self.matrix[row][col];
+        for (col, res_col) in result.iter_mut().enumerate().take(n) {
+            for (row, v) in vector.iter().enumerate().take(m) {
+                *res_col += *v * self.matrix[row][col];
             }
         }
 
@@ -247,9 +247,9 @@ fn solve_linear_system<F: PrimeField>(
 
     // 전치 행렬 생성
     let mut m_t = vec![vec![F::zero(); size]; size];
-    for r in 0..size {
-        for c in 0..size {
-            m_t[r][c] = matrix.matrix[c][r];
+    for (r, row) in m_t.iter_mut().enumerate().take(size) {
+        for (c, elem) in row.iter_mut().enumerate().take(size) {
+            *elem = matrix.matrix[c][r];
         }
     }
 

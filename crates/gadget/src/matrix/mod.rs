@@ -5,31 +5,31 @@ use crate::matrix::error::VandermondeMatrixError;
 use ark_ff::PrimeField;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 
-/// 최적화된 Vandermonde 행렬 V2
+/// Optimized Vandermonde Matrix V2
 ///
-/// 주요 개선사항:
-/// - 불필요한 메모리 할당 감소
-/// - 더 명확한 메서드 이름
-/// - 에러 메시지 개선
+/// Key improvements:
+/// - Reduced unnecessary memory allocations
+/// - Clearer method names
+/// - Improved error messages
 #[derive(Clone, Debug, CanonicalSerialize, CanonicalDeserialize)]
 pub struct VandermondeMatrix<F: PrimeField> {
-    /// m × n 행렬
-    /// m = n - k + 1 (행의 개수)
-    /// n = 전체 시크릿 개수 (열의 개수)
+    /// m × n matrix
+    /// m = n - k + 1 (number of rows)
+    /// n = total number of secrets (number of columns)
     pub matrix: Vec<Vec<F>>,
     pub n: usize,
     pub k: usize,
 }
 
 impl<F: PrimeField> VandermondeMatrix<F> {
-    /// 새로운 Vandermonde 행렬 생성
+    /// Create a new Vandermonde matrix
     ///
     /// # Arguments
-    /// * `n` - 전체 시크릿 개수 (열의 개수)
-    /// * `k` - 알고 있는 시크릿 개수
+    /// * `n` - Total number of secrets (number of columns)
+    /// * `k` - Number of known secrets
     ///
     /// # Returns
-    /// m × n 행렬, 여기서 m = n - k + 1
+    /// m × n matrix where m = n - k + 1
     pub fn new(n: usize, k: usize) -> Self {
         if k > n {
             panic!("k must be less than or equal to n");
@@ -49,20 +49,20 @@ impl<F: PrimeField> VandermondeMatrix<F> {
         VandermondeMatrix { matrix, n, k }
     }
 
-    /// 행렬의 차원 반환 (m, n)
+    /// Return the dimensions of the matrix (m, n)
     pub fn dimensions(&self) -> (usize, usize) {
         let m = self.matrix.len();
         let n = if m > 0 { self.matrix[0].len() } else { 0 };
         (m, n)
     }
 
-    /// 지정된 열 인덱스로 부분 행렬 생성
+    /// Create a submatrix from the specified column indices
     ///
     /// # Arguments
-    /// * `column_indices` - 선택할 열 인덱스들 (길이 = m)
+    /// * `column_indices` - Column indices to select (length = m)
     ///
     /// # Returns
-    /// m × m 크기의 부분 행렬
+    /// Submatrix of size m × m
     pub fn create_submatrix(
         &self,
         column_indices: &[usize],
@@ -77,7 +77,7 @@ impl<F: PrimeField> VandermondeMatrix<F> {
             )));
         }
 
-        // 인덱스 범위 검증
+        // Validate index range
         for &idx in column_indices {
             if idx >= self.n {
                 return Err(VandermondeMatrixError::LengthError(format!(
@@ -88,7 +88,7 @@ impl<F: PrimeField> VandermondeMatrix<F> {
             }
         }
 
-        // 부분 행렬 생성
+        // Create submatrix
         let mut submatrix = vec![vec![F::zero(); m]; m];
         for (r, sub_row) in submatrix.iter_mut().enumerate().take(m) {
             for (new_col, &orig_col) in column_indices.iter().enumerate() {
@@ -99,18 +99,18 @@ impl<F: PrimeField> VandermondeMatrix<F> {
         Ok(VandermondeMatrix {
             matrix: submatrix,
             n: m,
-            k: 1, // 부분 행렬은 정사각 행렬
+            k: 1, // submatrix is a square matrix
         })
     }
 
-    /// Selector로부터 벡터 a 계산
+    /// Compute vector a from a selector
     ///
-    /// 이 함수는 선형 시스템을 풀어 벡터 a를 찾습니다:
-    /// a * SubMatrix = target (여기서 target의 마지막 요소만 1)
+    /// This function solves a linear system to find vector a:
+    /// a * SubMatrix = target (where only the last element of target is 1)
     ///
     /// # Arguments
-    /// * `selector` - 0/1 벡터 (길이 n), 1은 알려진 인덱스, 0은 알려지지 않은 인덱스
-    ///   1의 개수는 정확히 k개여야 함
+    /// * `selector` - 0/1 vector (length n), 1 = known index, 0 = unknown index
+    ///   The number of 1s must be exactly k
     pub fn calculate_vector_a(&self, selector: &[u8]) -> Result<Vec<F>, VandermondeMatrixError> {
         let (m, n) = self.dimensions();
         let k = self.k;
@@ -123,7 +123,7 @@ impl<F: PrimeField> VandermondeMatrix<F> {
             )));
         }
 
-        // Unknown과 Known 인덱스 분리
+        // Separate Unknown and Known indices
         let (unknown_indices, known_indices) = partition_indices(selector);
 
         if known_indices.len() != k {
@@ -134,28 +134,28 @@ impl<F: PrimeField> VandermondeMatrix<F> {
             )));
         }
 
-        // 부분 행렬 구성: [unknown_indices..., first_known_index]
+        // Build submatrix columns: [unknown_indices..., first_known_index]
         let mut submatrix_cols = unknown_indices;
         submatrix_cols.push(known_indices[0]);
 
-        // m × m 부분 행렬 생성
+        // Create m × m submatrix
         let submatrix = self.create_submatrix(&submatrix_cols)?;
 
-        // Target 벡터: 마지막 요소만 1, 나머지는 0
+        // Target vector: only the last element is 1, rest are 0
         let mut target = vec![F::zero(); m];
         target[m - 1] = F::one();
 
-        // 선형 시스템 해결
+        // Solve linear system
         solve_linear_system(&submatrix, &target)
     }
 
-    /// 행렬-벡터 곱셈: y = Matrix * x
+    /// Matrix-vector multiplication: y = Matrix * x
     ///
     /// # Arguments
-    /// * `vector` - 길이 n인 벡터
+    /// * `vector` - Vector of length n
     ///
     /// # Returns
-    /// 길이 m인 결과 벡터
+    /// Result vector of length m
     pub fn multiply_vector(&self, vector: &[F]) -> Result<Vec<F>, VandermondeMatrixError> {
         let (_, n) = self.dimensions();
 
@@ -180,13 +180,13 @@ impl<F: PrimeField> VandermondeMatrix<F> {
         Ok(result)
     }
 
-    /// 벡터-행렬 곱셈: y = x * Matrix
+    /// Vector-matrix multiplication: y = x * Matrix
     ///
     /// # Arguments
-    /// * `vector` - 길이 m인 벡터
+    /// * `vector` - Vector of length m
     ///
     /// # Returns
-    /// 길이 n인 결과 벡터
+    /// Result vector of length n
     pub fn vector_multiply(&self, vector: &[F]) -> Result<Vec<F>, VandermondeMatrixError> {
         let m = self.matrix.len();
         let n = self.n;
@@ -212,9 +212,9 @@ impl<F: PrimeField> VandermondeMatrix<F> {
     }
 }
 
-// ==================== 헬퍼 함수들 ====================
+// ==================== Helper Functions ====================
 
-/// Selector를 기반으로 인덱스를 unknown과 known으로 분리
+/// Partition indices into unknown and known based on selector
 fn partition_indices(selector: &[u8]) -> (Vec<usize>, Vec<usize>) {
     let mut unknown = Vec::new();
     let mut known = Vec::new();
@@ -230,9 +230,9 @@ fn partition_indices(selector: &[u8]) -> (Vec<usize>, Vec<usize>) {
     (unknown, known)
 }
 
-/// 선형 시스템 해결: Matrix^T * x = target
+/// Solve linear system: Matrix^T * x = target
 ///
-/// Gaussian elimination with partial pivoting 사용
+/// Uses Gaussian elimination with partial pivoting
 fn solve_linear_system<F: PrimeField>(
     matrix: &VandermondeMatrix<F>,
     target: &[F],
@@ -245,7 +245,7 @@ fn solve_linear_system<F: PrimeField>(
         ));
     }
 
-    // 전치 행렬 생성
+    // Create transpose matrix
     let mut m_t = vec![vec![F::zero(); size]; size];
     for (r, row) in m_t.iter_mut().enumerate().take(size) {
         for (c, elem) in row.iter_mut().enumerate().take(size) {
@@ -280,7 +280,7 @@ fn solve_linear_system<F: PrimeField>(
         for j in (i + 1)..size {
             let factor = m_t[j][i] * inv;
 
-            // 행을 복사하여 동시 수정 문제 해결
+            // Copy the row to avoid simultaneous mutation issues
             let row_i_copy: Vec<F> = m_t[i].clone();
             let rhs_i_copy = rhs[i];
 
@@ -359,7 +359,7 @@ mod tests {
     #[test]
     fn test_calculate_vector_a() {
         let matrix = VandermondeMatrix::<F>::new(6, 3);
-        let selector = vec![0, 1, 0, 1, 1, 0]; // 3개의 known
+        let selector = vec![0, 1, 0, 1, 1, 0]; // 3 known
 
         let result = matrix.calculate_vector_a(&selector);
         assert!(result.is_ok());
@@ -387,7 +387,7 @@ mod tests {
 
         assert_eq!(solution.len(), 2);
 
-        // 검증: Matrix * solution = target
+        // Verify: Matrix * solution = target
         let verification = submatrix.multiply_vector(&solution).unwrap();
         assert_eq!(verification[0], target[0]);
         assert_eq!(verification[1], target[1]);

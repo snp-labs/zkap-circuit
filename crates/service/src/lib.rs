@@ -33,5 +33,5 @@ pub fn init_android_logging() {
 
 #[cfg(not(target_os = "android"))]
 pub fn init_android_logging() {
-    // Android가 아니면 no-op (또는 env_logger 초기화 등)
+    // No-op when not on Android (or initialize env_logger, etc.)
 }

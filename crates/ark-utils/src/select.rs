@@ -8,11 +8,11 @@ use ark_r1cs_std::{
 };
 use ark_relations::r1cs::SynthesisError;
 
-/// 2차원 배열에서 `selector` 인덱스에 해당하는 열을 선택합니다.
+/// Selects the column at the `selector` index from a 2D array.
 ///
-/// 각 행에서 동일한 인덱스의 요소를 선택하여 새로운 벡터를 구성합니다.
+/// Picks the element at the same index from each row to build a new vector.
 ///
-/// 예시: `[[a,b,c], [d,e,f], [g,h,i]]`, `selector=1` → `[b, e, h]`
+/// Example: `[[a,b,c], [d,e,f], [g,h,i]]`, `selector=1` → `[b, e, h]`
 pub fn multi_mux<F, T>(inputs: &[Vec<T>], selector: &FpVar<F>) -> Result<Vec<T>, SynthesisError>
 where
     F: PrimeField,
@@ -22,16 +22,16 @@ where
     let mut output = Vec::with_capacity(out_len);
 
     for input_row in inputs {
-        // 각 행에 대해 single_multiplexer를 호출합니다.
+        // Call single_multiplexer for each row.
         let selected = single_multiplexer(input_row, selector)?;
         output.push(selected);
     }
 
     Ok(output)
 }
-/// 배열에서 `idx` 인덱스에 해당하는 요소를 선택합니다 (멀티플렉서).
+/// Selects the element at index `idx` from an array (multiplexer).
 ///
-/// 원-핫 인코딩과 스칼라 곱을 사용하여 `output = inp[idx]`를 구현합니다.
+/// Implements `output = inp[idx]` using one-hot encoding and scalar multiplication.
 pub fn single_multiplexer<F, T>(inp: &[T], idx: &FpVar<F>) -> Result<T, SynthesisError>
 where
     F: PrimeField,
@@ -50,18 +50,18 @@ where
     Ok(res)
 }
 
-/// 인덱스를 원-핫 벡터로 변환하고 범위를 강제합니다.
+/// Converts an index into a one-hot vector and enforces range constraints.
 ///
-/// `index` 위치만 1이고 나머지는 0인 벡터를 생성합니다.
-/// 합이 1이 되도록 강제하여 `0 <= index < n` 범위를 보장합니다.
+/// Produces a vector with 1 at position `index` and 0 everywhere else.
+/// Enforces that the sum equals 1, guaranteeing `0 <= index < n`.
 ///
-/// 예시: `n=5, index=2` → `[0, 0, 1, 0, 0]`
+/// Example: `n=5, index=2` → `[0, 0, 1, 0, 0]`
 pub fn one_bit_vector<F, Out>(index: &FpVar<F>, n: usize) -> Result<Vec<Out>, SynthesisError>
 where
     F: PrimeField,
     Out: R1CSVar<F> + From<Boolean<F>>,
 {
-    // [수정] cs 인자 제거
+    // [updated] removed cs argument
     if n == 0 {
         return Ok(vec![]);
     }
@@ -76,14 +76,14 @@ where
         eq_bits.push(Out::from(is_equal));
     }
 
-    // 합이 1임을 강제 (인덱스가 범위 내에 하나만 존재함)
+    // Enforce that the sum equals 1 (exactly one index is in range)
     crate::enforce_eq_internal!("one_bit_vector_sum", sum_of_bits, FpVar::one())?;
 
     Ok(eq_bits)
 }
-/// 비트 인덱스를 사용하여 배열에서 요소를 선택합니다 (재귀적 분할).
+/// Selects an element from an array using bit index (recursive halving).
 ///
-/// 배열을 반으로 나누고 MSB에 따라 왼쪽/오른쪽을 선택하는 방식으로 동작합니다.
+/// Splits the array in half and selects left or right based on the MSB.
 pub fn select_array_element<F: PrimeField>(
     input: &[FpVar<F>],
     idx_bits: &[Boolean<F>],
@@ -200,12 +200,12 @@ mod tests {
         let cs = ConstraintSystem::<F>::new_ref();
         let n = 5;
 
-        // 입력 배열: [10, 20, 30, 40, 50]
+        // Input array: [10, 20, 30, 40, 50]
         let inputs: Vec<FpVar<F>> = (0..n)
             .map(|i| FpVar::<F>::new_witness(cs.clone(), || Ok(F::from((i + 1) as u64 * 10))).unwrap())
             .collect();
 
-        // 인덱스 2 선택 -> 30이 나와야 함
+        // Select index 2 -> should return 30
         let index = FpVar::<F>::new_witness(cs.clone(), || Ok(F::from(2))).unwrap();
         let result = single_multiplexer(&inputs, &index).unwrap();
 
@@ -221,7 +221,7 @@ mod tests {
 
         let cs = ConstraintSystem::<F>::new_ref();
 
-        // 2D 배열 생성: [[1,2,3], [4,5,6], [7,8,9]]
+        // Create 2D array: [[1,2,3], [4,5,6], [7,8,9]]
         let inputs: Vec<Vec<FpVar<F>>> = (0..3)
             .map(|row| {
                 (0..3)
@@ -235,7 +235,7 @@ mod tests {
             })
             .collect();
 
-        // 인덱스 1 선택 -> [2, 5, 8]이 나와야 함
+        // Select index 1 -> should return [2, 5, 8]
         let selector = FpVar::<F>::new_witness(cs.clone(), || Ok(F::from(1))).unwrap();
         let result = multi_mux(&inputs, &selector).unwrap();
 

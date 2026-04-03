@@ -1,36 +1,36 @@
-//! ZKAP 증명 생성 서비스 (리팩토링 버전)
+//! ZKAP proof generation service (refactored version)
 //!
-//! ## 아키텍처
+//! ## Architecture
 //!
 //! ```text
 //! ┌─────────────────────────────────────────────────────────────────┐
 //! │                     generate_baerae_proof_v2                    │
-//! │                        (엔트리 포인트)                             │
+//! │                          (entry point)                          │
 //! └───────────────────────────────┬─────────────────────────────────┘
 //!                                 │
 //!                 ┌───────────────┼───────────────┐
 //!                 ▼               ▼               ▼
 //! ┌───────────────────┐ ┌─────────────────┐ ┌─────────────────────┐
 //! │  RawProofRequest  │ │  ProofRequest   │ │ ProofContextBuilder │
-//! │   (입력 수집)        │→│  (검증/파싱)     │→│    (컨텍스트 구축)      │
+//! │  (input collect)  │→│ (validate/parse)│→│  (context build)    │
 //! └───────────────────┘ └─────────────────┘ └──────────┬──────────┘
 //!                                                      │
 //!                                                      ▼
 //!                                          ┌──────────────────────┐
 //!                                          │    CircuitInput[]    │
-//!                                          │ (회로 입력 구조체들)     │
+//!                                          │  (circuit input structs) │
 //!                                          └──────────┬───────────┘
 //!                                                     │
 //!                                                     ▼
 //!                                          ┌──────────────────────┐
 //!                                          │   ProofGenerator     │
-//!                                          │   (증명 생성)          │
+//!                                          │  (proof generation)  │
 //!                                          └──────────┬───────────┘
 //!                                                     │
 //!                                                     ▼
 //!                                          ┌──────────────────────┐
 //!                                          │    ProofOutput       │
-//!                                          │ (증명 + 공개입력)       │
+//!                                          │ (proof + pub inputs) │
 //!                                          └──────────────────────┘
 //! ```
 
@@ -44,32 +44,32 @@ use super::context::ProofContextBuilder;
 use super::input::{ProofRequest, RawProofRequest};
 use super::proof::ProofGenerator;
 
-/// 1. RawProofRequest → ProofRequest (검증 및 파싱)
-/// 2. ProofRequest → CircuitInput[] (컨텍스트 구축)
-/// 3. CircuitInput[] → Proof[] (증명 생성)
+/// 1. RawProofRequest → ProofRequest (validation and parsing)
+/// 2. ProofRequest → CircuitInput[] (context building)
+/// 3. CircuitInput[] → Proof[] (proof generation)
 ///
 /// # Arguments
-/// * `raw` - 원시 증명 요청 데이터
+/// * `raw` - raw proof request data
 ///
 /// # Returns
-/// * 증명들과 공개 입력들의 튜플
+/// * tuple of proofs and public inputs
 #[allow(clippy::type_complexity)]
 pub fn generate_baerae_proof<Config: ZkPasskeyConfig>(
     raw: RawProofRequest,
 ) -> Result<(Vec<Proof<BN254>>, Vec<Vec<F>>), ApplicationError> {
-    // 1. 입력 검증 및 파싱
+    // 1. Validate and parse inputs
     log::info!("[ZKAP-v2] Step 1: Validating and parsing inputs...");
     let request = ProofRequest::from_raw::<Config>(raw)?;
     log::info!("[ZKAP-v2] Step 1 completed: Input validation passed");
 
-    // 2. 컨텍스트 구축
+    // 2. Build context
     log::info!("[ZKAP-v2] Step 2: Building proof context...");
     let builder = ProofContextBuilder::<Config>::new(request.clone())
         .build_anchor_context()?
         .build_audience_context()?;
     log::info!("[ZKAP-v2] Step 2 completed: Context built");
 
-    // 3. 회로 입력 생성
+    // 3. Build circuit inputs
     log::info!("[ZKAP-v2] Step 3: Building circuit inputs...");
     let circuit_inputs = builder.build_all_circuit_inputs()?;
     log::info!(
@@ -77,7 +77,7 @@ pub fn generate_baerae_proof<Config: ZkPasskeyConfig>(
         circuit_inputs.len()
     );
 
-    // 4. 증명 생성
+    // 4. Generate proofs
     log::info!("[ZKAP-v2] Step 4: Generating proofs...");
     let generator = ProofGenerator::new(request.pk_path.clone());
 

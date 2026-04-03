@@ -12,29 +12,29 @@ use rand::rngs::OsRng;
 
 use crate::error::ApplicationError;
 
-/// 증명 생성 결과
+/// Proof generation result
 pub struct ProofOutput {
-    /// 생성된 증명들
+    /// Generated proofs
     pub proofs: Vec<Proof<BN254>>,
 
-    /// 각 증명의 공개 입력
+    /// Public inputs for each proof
     pub public_inputs: Vec<Vec<F>>,
 }
 
-/// 증명 생성기
+/// Proof generator
 ///
-/// BaeraeCircuitInput들을 받아 Groth16 증명을 생성합니다.
+/// Receives BaeraeCircuitInputs and generates Groth16 proofs.
 pub struct ProofGenerator {
     pk_path: PathBuf,
 }
 
 impl ProofGenerator {
-    /// 새로운 ProofGenerator 생성
+    /// Creates a new ProofGenerator
     pub fn new(pk_path: PathBuf) -> Self {
         Self { pk_path }
     }
 
-    /// 모든 BaeraeCircuitInput에 대해 증명 생성
+    /// Generates proofs for all BaeraeCircuitInputs
     pub fn generate<Config: ZkPasskeyConfig>(
         &self,
         inputs: &[BaeraeCircuitInput<F>],
@@ -66,7 +66,7 @@ impl ProofGenerator {
         Ok(ProofOutput { proofs, public_inputs })
     }
 
-    /// ProvingKey 로드
+    /// Loads the ProvingKey
     fn load_proving_key(&self) -> Result<ProvingKey<BN254>, ApplicationError> {
         load_key_uncompressed::<ProvingKey<BN254>>(&self.pk_path)
             .map_err(|e| ApplicationError::InvalidFormat(format!("Failed to load proving key: {}", e)))

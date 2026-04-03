@@ -9,32 +9,32 @@ use ark_r1cs_std::{
 };
 use ark_relations::r1cs::SynthesisError;
 
-/// JWT nonce 필드의 16진수 문자열을 필드 원소로 변환합니다.
+/// Converts a hex string in the JWT nonce field to a field element.
 ///
-/// # 형식
-/// - 입력: `"0x[0-9a-f]+"` (예: "0xabcd1234...")
-/// - 최대 256비트 값 지원
-/// - BN254 필드 사용 시 자동으로 modular 연산 적용 (254비트 넘으면)
+/// # Format
+/// - Input: `"0x[0-9a-f]+"` (e.g. "0xabcd1234...")
+/// - Supports values up to 256 bits
+/// - When using the BN254 field, modular reduction is applied automatically if over 254 bits
 ///
-/// # 제약 조건
-/// 1. 첫 3바이트는 반드시 `"0x` (고정)
-/// 2. `last_quote_index`까지의 모든 바이트는 유효한 16진수 문자
-/// 3. `last_quote_index` 위치는 반드시 `"`
-/// 4. 16진수 문자열 길이는 1-64자 (4비트~256비트)
+/// # Constraints
+/// 1. First 3 bytes must be `"0x` (fixed)
+/// 2. All bytes up to `last_quote_index` must be valid hex characters
+/// 3. Position `last_quote_index` must be `"`
+/// 4. Hex string length must be 1-64 characters (4 bits ~ 256 bits)
 ///
 /// # Arguments
-/// * `hex_bytes` - JWT nonce 값의 바이트 배열 (패딩 포함 가능)
-/// * `last_quote_index` - 닫는 따옴표 `"` 위치 (witness)
+/// * `hex_bytes` - byte array of the JWT nonce value (may include padding)
+/// * `last_quote_index` - position of the closing quote `"` (witness)
 ///
 /// # Returns
-/// * 변환된 필드 원소 값
+/// * converted field element value
 ///
 /// # Example
 /// ```text
-/// Input:  ["0x1234...abcd"000000...]  (패딩된 배열)
+/// Input:  ["0x1234...abcd"000000...]  (padded array)
 ///          ^             ^
 ///          |             last_quote_index
-///          시작
+///          start
 /// Output: Field element representing 0x1234...abcd
 /// ```
 pub fn jwt_nonce_hex_to_field<F: PrimeField>(
@@ -43,79 +43,79 @@ pub fn jwt_nonce_hex_to_field<F: PrimeField>(
 ) -> Result<FpVar<F>, SynthesisError> {
     let hex_bytes_len = hex_bytes.len();
 
-    // 최소 길이 검증: "0x0" (5바이트)
+    // Validate minimum length: "0x0" (5 bytes)
     if hex_bytes_len < 5 {
         return Err(SynthesisError::Unsatisfiable);
     }
 
-    // --- 상수 정의 ---
+    // --- Constant definitions ---
     let quote_char = FpVar::<F>::Constant(F::from(b'"'));
     let zero_char = FpVar::<F>::Constant(F::from(b'0'));
     let x_char = FpVar::<F>::Constant(F::from(b'x'));
     let sixteen = FpVar::Constant(F::from(16u8));
 
-    // --- 1. 고정 접두사 검증: "0x ---
+    // --- 1. Validate fixed prefix: "0x ---
     crate::enforce_eq_internal!("nonce_prefix_quote", quote_char, hex_bytes[0])?;
     crate::enforce_eq_internal!("nonce_prefix_zero", zero_char, hex_bytes[1])?;
     crate::enforce_eq_internal!("nonce_prefix_x", x_char, hex_bytes[2])?;
 
-    // --- 2. 누적 변수 초기화 ---
+    // --- 2. Initialize accumulator variables ---
     let mut accumulated_value = FpVar::<F>::zero();
     let mut found_closing_quote = Boolean::FALSE;
-    let mut hex_digit_count = FpVar::<F>::zero(); // 16진수 자릿수 카운트
+    let mut hex_digit_count = FpVar::<F>::zero(); // hex digit count
 
-    // --- 3. 16진수 파싱 루프 (인덱스 3부터) ---
+    // --- 3. Hex parsing loop (starting from index 3) ---
     for (i, current_byte) in hex_bytes.iter().enumerate().skip(3).take(hex_bytes_len - 3) {
         let current_index = UInt16::constant(i as u16);
 
-        // 현재 위치가 닫는 따옴표 위치인가?
+        // Is the current position the closing quote position?
         let is_closing_quote_pos = current_index.is_eq(last_quote_index)?;
 
-        // 현재 바이트가 따옴표인가?
+        // Is the current byte a quote character?
         let is_quote_char = current_byte.is_eq(&quote_char)?;
 
-        // 닫는 따옴표를 아직 못 봤는가?
+        // Have we not yet seen the closing quote?
         let is_before_closing_quote = !&found_closing_quote;
 
-        // --- 3.1. 닫는 따옴표 위치 검증 ---
-        // "닫는 따옴표 위치라면 반드시 " 문자여야 함"
+        // --- 3.1. Validate closing quote position ---
+        // "If this is the closing quote position, the character must be '"'"
         let quote_pos_requirement = !&is_closing_quote_pos | &is_quote_char;
         crate::enforce_true_internal!("nonce_quote_pos", quote_pos_requirement)?;
 
-        // --- 3.2. 16진수 파싱 (닫는 따옴표 이전에만) ---
+        // --- 3.2. Hex parsing (only before the closing quote) ---
         let should_parse = &is_before_closing_quote & !&is_closing_quote_pos;
 
-        // 16진수 변환
+        // Convert hex character
         let (hex_value, is_valid_hex) = hex_char_to_value(current_byte)?;
 
-        // 유효성 검증: "파싱해야 한다면 반드시 유효한 16진수여야 함"
+        // Validity check: "if we must parse, the character must be a valid hex digit"
         let validity_requirement = !&should_parse | &is_valid_hex;
         crate::enforce_true_internal!("nonce_hex_valid", validity_requirement)?;
 
-        // 값 누적 (should_parse가 true일 때만)
+        // Accumulate value (only when should_parse is true)
         let potential_next_value = &accumulated_value * &sixteen + &hex_value;
         accumulated_value = should_parse.select(&potential_next_value, &accumulated_value)?;
 
-        // 16진수 자릿수 카운트
+        // Count hex digits
         let should_parse_fp = FpVar::from(should_parse.clone());
         hex_digit_count += &should_parse_fp;
 
-        // --- 3.3. 상태 업데이트 ---
+        // --- 3.3. Update state ---
         found_closing_quote |= is_closing_quote_pos;
     }
 
-    // --- 4. 최종 검증 ---
-    // 4.1. 닫는 따옴표를 반드시 찾았어야 함
+    // --- 4. Final validation ---
+    // 4.1. Must have found the closing quote
     crate::enforce_true_internal!("nonce_closing_quote_found", found_closing_quote)?;
 
-    // 4.2. 16진수 자릿수는 1~64자여야 함 (4비트~256비트)
-    // 최소 1자
+    // 4.2. Hex digit count must be 1~64 (4 bits ~ 256 bits)
+    // Minimum 1 digit
     let zero = FpVar::<F>::zero();
     let digit_count_ge_1 = hex_digit_count.is_neq(&zero)?;
     crate::enforce_true_internal!("nonce_digit_count_ge_1", digit_count_ge_1)?;
 
-    // [ZKAPCIR-004] 최대 64자 (256비트) - 회로 내에서 실제로 enforce
-    // 기존 코드는 비교 결과를 제약하지 않아 65자 이상도 허용되었음.
+    // [ZKAPCIR-004] Maximum 64 digits (256 bits) - enforced inside the circuit
+    // The previous code did not constrain the comparison result, allowing 65+ digits.
     let max_hex_digits = FpVar::<F>::Constant(F::from(64u64));
     let digit_count_bits = hex_digit_count.to_bits_le()?;
     let max_bits = max_hex_digits.to_bits_le()?;
@@ -125,28 +125,28 @@ pub fn jwt_nonce_hex_to_field<F: PrimeField>(
     Ok(accumulated_value)
 }
 
-/// 16진수 문자 하나를 0-15 값으로 변환하고 유효성 검증
+/// Converts a single hex character to its 0-15 value and validates it.
 ///
 /// # Arguments
-/// * `byte` - ASCII 바이트 ('0'-'9', 'a'-'f', 'A'-'F')
+/// * `byte` - ASCII byte ('0'-'9', 'a'-'f', 'A'-'F')
 ///
 /// # Returns
-/// * `(value, is_valid)` - 변환된 값(0-15)과 유효성 플래그
+/// * `(value, is_valid)` - converted value (0-15) and validity flag
 ///
-/// # 제약 조건
-/// - byte를 8비트로 한 번 분해 후 비트 패턴으로 3개 범위를 효율적으로 검사
-/// - '0'-'9': 0x30..=0x39 → 상위 4비트 == 0011, 하위 4비트 <= 9
-/// - 'A'-'F': 0x41..=0x46 → 상위 4비트 == 0100, 하위 4비트 <= 5  (단, bit6=0, bit7=0)
-/// - 'a'-'f': 0x61..=0x66 → 상위 4비트 == 0110, 하위 4비트 <= 5  (단, bit7=0)
+/// # Constraints
+/// - Decompose byte into 8 bits once, then check 3 ranges via bit patterns
+/// - '0'-'9': 0x30..=0x39 → upper 4 bits == 0011, lower 4 bits <= 9
+/// - 'A'-'F': 0x41..=0x46 → upper 4 bits == 0100, lower 4 bits <= 5  (bit6=0, bit7=0)
+/// - 'a'-'f': 0x61..=0x66 → upper 4 bits == 0110, lower 4 bits <= 5  (bit7=0)
 ///
-/// # 건전성
-/// - byte를 8비트 분해 + 재구성 enforce_equal로 byte in [0,255] 보장
-/// - 상위 비트 패턴 검사는 Boolean 상수와의 XOR(무비용)로 구현
-/// - 하위 비트 범위 검사는 4비트 is_less_or_equal로 구현
+/// # Soundness
+/// - 8-bit decomposition + enforce_equal on reconstruction guarantees byte in [0, 255]
+/// - Upper bit pattern checks implemented as XOR with Boolean constants (near zero cost)
+/// - Lower nibble range check implemented as 4-bit is_less_or_equal
 fn hex_char_to_value<F: PrimeField>(
     byte: &FpVar<F>,
 ) -> Result<(FpVar<F>, Boolean<F>), SynthesisError> {
-    // byte를 8비트 witness로 분해하고 재구성을 강제 (byte in [0, 255] 보장)
+    // Decompose byte into 8-bit witnesses and enforce reconstruction (guarantees byte in [0, 255])
     let cs = byte.cs();
     let byte_val = byte.value().unwrap_or_default();
     let mut b: Vec<Boolean<F>> = Vec::with_capacity(8);
@@ -161,7 +161,7 @@ fn hex_char_to_value<F: PrimeField>(
     }
     // b[0]..b[7]: b[0]=LSB, b[7]=MSB
 
-    // 재구성 강제: reconstructed == byte
+    // Enforce reconstruction: reconstructed == byte
     let mut reconstructed = FpVar::<F>::zero();
     let mut power = F::one();
     for bit in &b {
@@ -171,12 +171,12 @@ fn hex_char_to_value<F: PrimeField>(
     }
     reconstructed.enforce_equal(byte)?;
 
-    // 하위 4비트 (nibble): b[0..4]
-    // 상위 4비트: b[4..8]
+    // Lower 4 bits (nibble): b[0..4]
+    // Upper 4 bits: b[4..8]
     let lo_nibble = &b[0..4]; // bits 0-3
     let hi_nibble = &b[4..8]; // bits 4-7
 
-    // 상위 4비트 패턴 검사 (모두 상수 비트와 XOR → 비용 거의 0)
+    // Upper 4-bit pattern checks (all XOR with constant bits → near zero cost)
     // '0'-'9': 0x3? → hi = 0011 (b4=1,b5=1,b6=0,b7=0)
     // 'A'-'F': 0x4? → hi = 0100 (b4=0,b5=0,b6=1,b7=0)  + lower nibble check
     // 'a'-'f': 0x6? → hi = 0110 (b4=0,b5=1,b6=1,b7=0)  + lower nibble check
@@ -210,12 +210,12 @@ fn hex_char_to_value<F: PrimeField>(
         &(&b4_eq_0 & &b5_eq_1) & &(&b6_eq_1 & &b7_eq_0)
     };
 
-    // 하위 nibble 범위 검사
+    // Lower nibble range checks
     // '0'-'9': lo_nibble <= 9 (0x9 = 1001)
     // 'A'-'F': lo_nibble <= 5 (0x5 = 0101) AND lo_nibble >= 1 (0x41='A', lo=1)
     // 'a'-'f': lo_nibble <= 5 AND lo_nibble >= 1 (0x61='a', lo=1)
     //
-    // Note: 0x40='@' (lo=0), 0x60='`' (lo=0) 은 유효하지 않으므로 lo >= 1 검사 필요
+    // Note: 0x40='@' (lo=0), 0x60='`' (lo=0) are invalid, so lo >= 1 check is required
     let nine_bits: Vec<Boolean<F>> = vec![
         Boolean::constant(true),  // bit0: 1
         Boolean::constant(false), // bit1: 0
@@ -239,56 +239,56 @@ fn hex_char_to_value<F: PrimeField>(
     let lo_le_6 = crate::comparison::is_less_or_equal(lo_nibble, &six_bits)?;
     let lo_ge_1 = crate::comparison::is_less_or_equal(&one_bits, lo_nibble)?;
 
-    // 범위 매칭
+    // Range matching
     let is_digit = &hi_is_3 & &lo_le_9;            // '0'-'9'
     let is_upper = &hi_is_4 & &(&lo_ge_1 & &lo_le_6); // 'A'-'F'
     let is_lower = &hi_is_6 & &(&lo_ge_1 & &lo_le_6); // 'a'-'f'
 
-    // 유효성 플래그
+    // Validity flag
     let is_valid = &is_digit | &(&is_upper | &is_lower);
 
-    // hex 값 계산
-    // digit_value = lo_nibble 값 (0-9) = byte - 0x30
-    // upper_value = lo_nibble 값 - 1 + 10 = lo_nibble + 9 = byte - 0x41 + 10
-    // lower_value = lo_nibble 값 - 1 + 10 = byte - 0x61 + 10
+    // Hex value calculation
+    // digit_value = lo_nibble value (0-9) = byte - 0x30
+    // upper_value = lo_nibble value - 1 + 10 = lo_nibble + 9 = byte - 0x41 + 10
+    // lower_value = lo_nibble value - 1 + 10 = byte - 0x61 + 10
     let ten = FpVar::Constant(F::from(10u64));
     let digit_value = byte - FpVar::Constant(F::from(48u64)); // 0-9
     let upper_value = byte - FpVar::Constant(F::from(55u64)); // 'A'=65 → 65-55=10, 'F'=70 → 70-55=15
     let lower_value = byte - FpVar::Constant(F::from(87u64)); // 'a'=97 → 97-87=10, 'f'=102 → 102-87=15
 
-    // lo_nibble >= 1이고 hi 패턴이 맞으면 upper/lower 값이 10-15 범위임
+    // If lo_nibble >= 1 and hi pattern matches, upper/lower value is in range 10-15
     // upper_value = byte - 55 = (0x40 + lo) - 55 = lo + 9, lo in [1,5] → [10,14] ✓
     // lower_value = byte - 87 = (0x60 + lo) - 87 = lo + 9, lo in [1,5] → [10,14] ✓
     // Wait: 'F'=70 → 70-55=15, 'f'=102 → 102-87=15 ✓
 
-    // 조건부 선택: is_digit → digit값, is_upper → upper값, else → lower값
+    // Conditional select: is_digit → digit value, is_upper → upper value, else → lower value
     let value_if_upper_or_lower = is_upper.select(&upper_value, &lower_value)?;
     let result = is_digit.select(&digit_value, &value_if_upper_or_lower)?;
 
-    // 미사용 변수 제거
+    // Drop unused variable
     let _ = ten;
 
     Ok((result, is_valid))
 }
 
-/// JWT exp 필드 등의 10진수 바이트 배열을 필드 원소로 변환합니다.
+/// Converts a decimal byte array (e.g. JWT exp field) to a field element.
 ///
-/// # 형식
-/// - 입력: `[b'0'..=b'9', 0, 0, ...]` (패딩된 배열)
-/// - 예: `[49, 50, 51, ...]` = `['1', '2', '3', ...]`
-/// - 항상 정확히 10자리 숫자여야 함
-/// - 10자리 이후는 0으로 패딩
+/// # Format
+/// - Input: `[b'0'..=b'9', 0, 0, ...]` (padded array)
+/// - Example: `[49, 50, 51, ...]` = `['1', '2', '3', ...]`
+/// - Must always be exactly 10 digits
+/// - Digits beyond position 10 must be zero-padded
 ///
-/// # 제약 조건
-/// 1. 처음 10개 바이트는 반드시 유효한 10진수 문자 (b'0'~b'9')
-/// 2. 10자리 이후는 모두 0이어야 함
-/// 3. 결과값은 0 ~ 9,999,999,999 범위
+/// # Constraints
+/// 1. First 10 bytes must be valid decimal characters (b'0'~b'9')
+/// 2. All bytes after position 10 must be 0
+/// 3. Result value is in the range 0 ~ 9,999,999,999
 ///
 /// # Arguments
-/// * `decimal_bytes` - 10진수 바이트 배열 (정확히 10자리 + 패딩)
+/// * `decimal_bytes` - decimal byte array (exactly 10 digits + padding)
 ///
 /// # Returns
-/// * 변환된 필드 원소 값
+/// * converted field element value
 ///
 /// # Example
 /// ```text
@@ -299,7 +299,7 @@ fn hex_char_to_value<F: PrimeField>(
 pub fn jwt_exp_to_field<F: PrimeField>(
     decimal_bytes: &[FpVar<F>],
 ) -> Result<FpVar<F>, SynthesisError> {
-    // 최소 길이 검증: 10자리 필요
+    // Minimum length check: 10 digits required
     if decimal_bytes.len() < 10 {
         return Err(SynthesisError::Unsatisfiable);
     }
@@ -309,20 +309,20 @@ pub fn jwt_exp_to_field<F: PrimeField>(
 
     let mut accumulated_value = FpVar::<F>::zero();
 
-    // --- 1. 첫 10자리 파싱 및 검증 ---
+    // --- 1. Parse and validate first 10 digits ---
     for current_byte in decimal_bytes.iter().take(10) {
 
-        // 10진수 변환
+        // Convert decimal character
         let (digit_value, is_valid_digit) = decimal_byte_to_digit(current_byte)?;
 
-        // 유효성 검증: 반드시 유효한 10진수여야 함
+        // Validity check: must be a valid decimal digit
         crate::enforce_true_internal!("exp_digit_valid", is_valid_digit)?;
 
-        // 값 누적: accumulated_value = accumulated_value * 10 + digit_value
+        // Accumulate value: accumulated_value = accumulated_value * 10 + digit_value
         accumulated_value = &accumulated_value * &ten + &digit_value;
     }
 
-    // --- 2. 나머지는 모두 0 패딩 검증 ---
+    // --- 2. Validate remaining bytes are all zero-padded ---
     for byte in decimal_bytes.iter().skip(10) {
         crate::enforce_eq_internal!("exp_padding_zero", *byte, zero)?;
     }
@@ -330,17 +330,17 @@ pub fn jwt_exp_to_field<F: PrimeField>(
     Ok(accumulated_value)
 }
 
-/// 10진수 바이트 하나를 0-9 값으로 변환하고 유효성 검증
+/// Converts a single decimal byte to its 0-9 value and validates it.
 ///
 /// # Arguments
-/// * `byte` - ASCII 바이트 (b'0'~b'9', 즉 48~57)
+/// * `byte` - ASCII byte (b'0'~b'9', i.e. 48~57)
 ///
 /// # Returns
-/// * `(value, is_valid)` - 변환된 값(0-9)과 유효성 플래그
+/// * `(value, is_valid)` - converted value (0-9) and validity flag
 ///
-/// # 제약 조건
-/// - 정확히 하나의 10진수 문자와 매칭되어야 함
-/// - b'0'(48) ~ b'9'(57) 범위
+/// # Constraints
+/// - Must match exactly one decimal character
+/// - Range: b'0'(48) ~ b'9'(57)
 fn decimal_byte_to_digit<F: PrimeField>(
     byte: &FpVar<F>,
 ) -> Result<(FpVar<F>, Boolean<F>), SynthesisError> {
@@ -353,12 +353,12 @@ fn decimal_byte_to_digit<F: PrimeField>(
         let byte_const = FpVar::<F>::Constant(F::from(byte_value));
         let is_equal = byte.is_eq(&byte_const)?;
 
-        // 값 누적 (digit 그 자체가 값)
+        // Accumulate value (digit itself is the value)
         let value_to_add =
             FpVar::from(is_equal.clone()) * FpVar::<F>::Constant(F::from(digit as u64));
         result += &value_to_add;
 
-        // 유효성 플래그 업데이트
+        // Update validity flag
         is_valid |= is_equal;
     }
 
@@ -378,7 +378,7 @@ mod tests {
     fn test_jwt_nonce_hex_to_field_basic() {
         let cs = ConstraintSystem::<F>::new_ref();
 
-        // 테스트 입력: "0x1234"
+        // Test input: "0x1234"
         let input = b"\"0x1234\"";
         let mut input_bytes = input.to_vec();
         println!("Input bytes: {:?}", &input_bytes[..8]);
@@ -386,14 +386,14 @@ mod tests {
             "Input string: {}",
             String::from_utf8_lossy(&input_bytes[..8])
         );
-        input_bytes.resize(100, b'0'); // 패딩
+        input_bytes.resize(100, b'0'); // padding
 
         let input_var = input_bytes
             .iter()
             .map(|byte| FpVar::<F>::new_witness(cs.clone(), || Ok(F::from(*byte))).unwrap())
             .collect::<Vec<_>>();
 
-        let last_quote_idx = 7; // "0x1234" 의 닫는 따옴표 위치 (0-indexed)
+        let last_quote_idx = 7; // closing quote position of "0x1234" (0-indexed)
         println!("Last quote index: {}", last_quote_idx);
         let last_quote_var =
             UInt16::<F>::new_witness(cs.clone(), || Ok(last_quote_idx as u16)).unwrap();
@@ -416,7 +416,7 @@ mod tests {
     fn test_jwt_nonce_hex_to_field_256bit() {
         let cs = ConstraintSystem::<F>::new_ref();
 
-        // 64자리 16진수 (256비트)
+        // 64 hex digits (256 bits)
         let hex_str = "0e758262e33fe28c37e8612505582e3c341481cbc106e47a617e9471cf5732cc";
         let input = format!("\"0x{}\"", hex_str);
         let mut input_bytes = input.as_bytes().to_vec();
@@ -449,7 +449,7 @@ mod tests {
     fn test_jwt_nonce_hex_uppercase() {
         let cs = ConstraintSystem::<F>::new_ref();
 
-        // 대문자 포함 테스트
+        // Test with uppercase letters
         let input = b"\"0xABCD\"";
         let mut input_bytes = input.to_vec();
         input_bytes.resize(100, b'0');
@@ -459,7 +459,7 @@ mod tests {
             .map(|byte| FpVar::<F>::new_witness(cs.clone(), || Ok(F::from(*byte))).unwrap())
             .collect::<Vec<_>>();
 
-        let last_quote_idx = 7; // "0xABCD" 의 닫는 따옴표 위치
+        let last_quote_idx = 7; // closing quote position of "0xABCD"
         let last_quote_var =
             UInt16::<F>::new_witness(cs.clone(), || Ok(last_quote_idx as u16)).unwrap();
 
@@ -476,7 +476,7 @@ mod tests {
     #[test]
     fn test_jwt_nonce_hex_with_padding() {
         let cs = ConstraintSystem::<F>::new_ref();
-        // 64자리 16진수 (256비트)
+        // 64 hex digits (256 bits)
         let hex_str = "0e758262e33fe28c37e8612505582e3c341481cbc106e47a617e9471cf5732cc";
         let input = format!("\"0x{}\"", hex_str);
         let mut input_bytes = input.as_bytes().to_vec();
@@ -486,7 +486,7 @@ mod tests {
         )
         .unwrap();
 
-        let last_quote_idx = input_bytes.len() - 1; // 닫는 따옴표 위치
+        let last_quote_idx = input_bytes.len() - 1; // closing quote position
         input_bytes.resize(200, b'0');
 
         let input_var = input_bytes
@@ -510,8 +510,8 @@ mod tests {
     fn test_jwt_nonce_invalid_hex() {
         let cs = ConstraintSystem::<F>::new_ref();
 
-        // 잘못된 16진수 문자 포함
-        let input = b"\"0x12G4\""; // 'G'는 유효하지 않음
+        // Contains invalid hex character
+        let input = b"\"0x12G4\""; // 'G' is not a valid hex digit
         let mut input_bytes = input.to_vec();
         input_bytes.resize(100, b'0');
 
@@ -526,7 +526,7 @@ mod tests {
 
         let _ = jwt_nonce_hex_to_field(&input_var, &last_quote_var).unwrap();
 
-        // 유효하지 않은 입력이므로 제약 조건 불만족
+        // Invalid input, so constraints should not be satisfied
         assert!(cs.is_satisfied().unwrap());
     }
 
@@ -534,10 +534,10 @@ mod tests {
     fn test_jwt_exp_to_field_basic() {
         let cs = ConstraintSystem::<F>::new_ref();
 
-        // 테스트 입력: 1234567890 (10자리)
+        // Test input: 1234567890 (10 digits)
         let input = vec![b'1', b'2', b'3', b'4', b'5', b'6', b'7', b'8', b'9', b'0'];
         let mut input_bytes = input.clone();
-        input_bytes.resize(70, 0); // 0으로 패딩
+        input_bytes.resize(70, 0); // zero-padded
 
         println!("Input bytes: {:?}", &input_bytes[..15]);
         println!("Expected: 1234567890");
@@ -567,7 +567,7 @@ mod tests {
     fn test_jwt_exp_to_field_all_zeros() {
         let cs = ConstraintSystem::<F>::new_ref();
 
-        // 테스트 입력: 0000000000 (10자리 모두 0)
+        // Test input: 0000000000 (all 10 digits are 0)
         let input = vec![b'0'; 10];
         let mut input_bytes = input.clone();
         input_bytes.resize(70, 0);
@@ -591,7 +591,7 @@ mod tests {
     fn test_jwt_exp_to_field_max_value() {
         let cs = ConstraintSystem::<F>::new_ref();
 
-        // 테스트 입력: 9999999999 (10자리 최대값)
+        // Test input: 9999999999 (maximum 10-digit value)
         let input = vec![b'9'; 10];
         let mut input_bytes = input.clone();
         input_bytes.resize(70, 0);
@@ -618,7 +618,7 @@ mod tests {
     fn test_jwt_exp_to_field_realistic_timestamp() {
         let cs = ConstraintSystem::<F>::new_ref();
 
-        // 실제 타임스탬프 예시: 1734000000 (2024년 12월경)
+        // Real-world timestamp example: 1734000000 (around December 2024)
         let input = b"1734000000";
         let mut input_bytes = input.to_vec();
         input_bytes.resize(70, 0);
@@ -648,7 +648,7 @@ mod tests {
     fn test_jwt_exp_to_field_invalid_digit() {
         let cs = ConstraintSystem::<F>::new_ref();
 
-        // 잘못된 문자 포함: 123456789a (마지막 문자가 'a')
+        // Contains invalid character: 123456789a (last character is 'a')
         let mut input_bytes = vec![b'1', b'2', b'3', b'4', b'5', b'6', b'7', b'8', b'9', b'a'];
         input_bytes.resize(70, 0);
 
@@ -659,7 +659,7 @@ mod tests {
 
         let _result = jwt_exp_to_field(&input_var).unwrap();
 
-        // 유효하지 않은 입력이므로 제약 조건 불만족
+        // Invalid input, so constraints should not be satisfied
         if !cs.is_satisfied().unwrap() {
             panic!("Constraints not satisfied - invalid digit detected");
         }
@@ -670,10 +670,10 @@ mod tests {
     fn test_jwt_exp_to_field_non_zero_padding() {
         let cs = ConstraintSystem::<F>::new_ref();
 
-        // 10자리 이후에 0이 아닌 값
+        // Non-zero value after position 10
         let mut input_bytes = vec![b'1', b'2', b'3', b'4', b'5', b'6', b'7', b'8', b'9', b'0'];
         input_bytes.resize(70, 0);
-        input_bytes[15] = 1; // 패딩 영역에 0이 아닌 값
+        input_bytes[15] = 1; // non-zero value in padding area
 
         let input_var = input_bytes
             .iter()
@@ -682,7 +682,7 @@ mod tests {
 
         let _result = jwt_exp_to_field(&input_var).unwrap();
 
-        // 패딩이 0이 아니므로 제약 조건 불만족
+        // Padding is non-zero, so constraints should not be satisfied
         if !cs.is_satisfied().unwrap() {
             panic!("Constraints not satisfied - non-zero padding detected");
         }

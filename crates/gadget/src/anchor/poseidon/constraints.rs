@@ -39,8 +39,8 @@ impl<F> PoseidonAnchorWitnessVar<F>
 where
     F: PrimeField + Absorb,
 {
-    /// b 벡터와 h_known 벡터의 Sparsity Consistency를 검증힌다.
-    /// 모든 인덱스 i에 대해 만약 b\[i\] == 0 이면, 반드시 h_known\[i\] == 0 이어야 한다.
+    /// Verifies Sparsity Consistency between vector b and vector h_known.
+    /// For every index i, if b[i] == 0 then h_known[i] must also be 0.
     pub fn verify_sparsity_consistency(&self) -> Result<Boolean<F>, SynthesisError> {
         if self.b.len() != self.h_known.len() {
             return Err(SynthesisError::Unsatisfiable);
@@ -49,41 +49,41 @@ where
         let mut is_all_valid = Boolean::constant(true);
 
         for (b_elem, h_elem) in self.b.iter().zip(self.h_known.iter()) {
-            // 1. b[i]가 0인지 확인 (Boolean)
+            // 1. Check if b[i] is zero (Boolean)
             let b_is_zero = b_elem.is_zero()?;
 
-            // 2. h[i]가 0인지 확인 (Boolean)
+            // 2. Check if h[i] is zero (Boolean)
             let h_is_zero = h_elem.is_zero()?;
 
-            // 3. 논리 조건 구성: (b가 0이 아님) OR (h가 0임)
-            // - b != 0 이면: (True OR ...) => True (조건 만족, h는 상관없음)
-            // - b == 0 이면: (False OR h_is_zero) => h_is_zero (즉, h도 0이어야 True)
+            // 3. Construct logical condition: (b is non-zero) OR (h is zero)
+            // - b != 0: (True OR ...) => True (condition satisfied, h doesn't matter)
+            // - b == 0: (False OR h_is_zero) => h_is_zero (i.e., h must also be 0 for True)
             let b_is_nonzero = !b_is_zero;
             let current_pair_valid = b_is_nonzero | &h_is_zero;
 
-            // 4. 전체 결과에 AND 연산으로 누적
-            // 하나라도 False면 전체 결과는 False가 됨
+            // 4. Accumulate with AND across all pairs
+            // If any pair is False, the overall result becomes False
             is_all_valid &= &current_pair_valid;
         }
 
         Ok(is_all_valid)
     }
 
-    /// 벡터 a가 영벡터(All Zeros)가 아님을 검증한다.
+    /// Verifies that vector a is not the zero vector (All Zeros).
     pub fn is_a_nonzero(&self) -> Result<Boolean<F>, SynthesisError> {
         let mut found_nonzero = Boolean::constant(false);
 
         for elem in &self.a {
-            // 1. 현재 원소가 0인지 확인
+            // 1. Check if the current element is zero
             let is_zero = elem.is_zero()?;
 
-            // 2. 현재 원소가 0이 아닌지 확인
-            // is_zero가 True면 is_nonzero는 False
+            // 2. Check if the current element is non-zero
+            // If is_zero is True, then is_nonzero is False
             let is_nonzero = !is_zero;
 
-            // 3. 누적 OR 연산
-            // 지금까지 하나라도 0이 아닌 것을 찾았거나(found_nonzero),
-            // 현재 원소가 0이 아니면(is_nonzero) -> 결과는 True
+            // 3. Accumulate OR
+            // If any element so far is non-zero (found_nonzero),
+            // or the current element is non-zero (is_nonzero) -> result is True
             found_nonzero |= &is_nonzero;
         }
 
@@ -113,8 +113,8 @@ impl<F: PrimeField + Absorb> PoseidonAnchorSchemeGadget<F> {
         Ok(sum)
     }
 
-    /// 분할 증명을 위한 함수.
-    /// 벡터 a가 영벡터(All Zeros)가 아님을 검증한다.
+    /// Function for split-proof.
+    /// Verifies that vector a is not the zero vector (All Zeros).
     pub fn is_a_nonzero(a: &[FpVar<F>]) -> Result<Boolean<F>, SynthesisError> {
         let mut found_nonzero = Boolean::constant(false);
         for elem in a {
@@ -122,17 +122,17 @@ impl<F: PrimeField + Absorb> PoseidonAnchorSchemeGadget<F> {
 
             let is_nonzero = !is_zero;
 
-            // 지금까지 하나라도 0이 아닌 것을 찾았거나(found_nonzero),
-            // 현재 원소가 0이 아니면(is_nonzero) -> 결과는 True
+            // If any element so far is non-zero (found_nonzero),
+            // or the current element is non-zero (is_nonzero) -> result is True
             found_nonzero |= &is_nonzero;
         }
 
         Ok(found_nonzero)
     }
 
-    /// 분할 증명을 위한 함수.
-    /// 벡터 b(b = a * A)가 selector에 명시된 인덱스 외에는 모두 0인지 검증한다.
-    /// selector는 비트마스크 형태 (예: [1, 1, 1, 0, 0, 0])로, 1인 위치에서만 non-zero 허용
+    /// Function for split-proof.
+    /// Verifies that vector b (b = a * A) is zero at all indices not specified by selector.
+    /// selector is a bitmask (e.g. [1, 1, 1, 0, 0, 0]): non-zero values only allowed at positions where selector == 1
     pub fn is_b_sparsity(
         b: &[FpVar<F>],
         selector: &[FpVar<F>],
@@ -153,20 +153,20 @@ impl<F: PrimeField + Absorb> PoseidonAnchorSchemeGadget<F> {
         let one_var = FpVar::Constant(F::one());
 
         for j in 0..n {
-            // 1. selector[j]가 1인지 확인 (is_selected)
+            // 1. Check if selector[j] is 1 (is_selected)
             let is_selected = selector[j].is_eq(&one_var)?;
 
-            // 2. b[j]가 0인지 확인 (is_zero)
+            // 2. Check if b[j] is zero (is_zero)
             let is_zero = b[j].is_eq(&zero_var)?;
 
-            // 3. 해당 인덱스 j에 대한 유효성 판단
-            // 조건: "선택되었거나(OR) 값이 0이어야 한다."
-            // 논리식: Valid_j = is_selected OR is_zero
-            // - selector[j] == 1 (선택됨) -> 값 상관없음 (True OR X = True) -> 통과
-            // - selector[j] == 0 (선택안됨) -> 값이 0이어야 함 (False OR is_zero) -> is_zero가 True여야 통과
+            // 3. Determine validity for index j
+            // Condition: "must be selected (OR) value must be zero"
+            // Logic: Valid_j = is_selected OR is_zero
+            // - selector[j] == 1 (selected) -> value doesn't matter (True OR X = True) -> pass
+            // - selector[j] == 0 (not selected) -> value must be zero (False OR is_zero) -> is_zero must be True to pass
             let is_valid_j = is_selected | &is_zero;
 
-            // 4. 전체 결과에 AND 연산 누적
+            // 4. Accumulate AND across all results
             is_all_valid &= &is_valid_j;
         }
 

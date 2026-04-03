@@ -12,7 +12,7 @@ use gadget::{
 
 use crate::token::ClaimIndices;
 
-/// 회로 상수 (Setup 시점에 결정)
+/// Circuit constants (determined at setup time)
 #[derive(Clone, CanonicalSerialize, CanonicalDeserialize)]
 pub struct CircuitConstants<F: PrimeField> {
     pub vandermonde_matrix: VandermondeMatrix<F>,
@@ -20,18 +20,18 @@ pub struct CircuitConstants<F: PrimeField> {
     pub base64_table: Base64Table,
 }
 
-/// 공개 입력 (검증자에게 공개)
+/// Public inputs (exposed to the verifier)
 #[derive(Clone, CanonicalSerialize, CanonicalDeserialize)]
 pub struct CircuitPublicInputs<F: PrimeField> {
     /// H(anchor)
     pub hanchor: F,
     /// H(a, random)
     pub h_a: F,
-    /// 머클 루트
+    /// Merkle root
     pub root: F,
     /// H(sign_user_op)
     pub h_sign_user_op: F,
-    /// JWT 만료 시간
+    /// JWT expiration time
     pub jwt_exp: F,
     /// partial_rhs at current_idx
     pub partial_rhs: F,
@@ -42,7 +42,7 @@ pub struct CircuitPublicInputs<F: PrimeField> {
 }
 
 impl<F: PrimeField> CircuitPublicInputs<F> {
-    /// 공개 입력을 벡터로 변환
+    /// Convert public inputs to a vector
     pub fn to_vec(&self) -> Vec<F> {
         vec![
             self.hanchor,
@@ -57,88 +57,88 @@ impl<F: PrimeField> CircuitPublicInputs<F> {
     }
 }
 
-/// JWT 관련 Witness (SHA256 + Base64 + RSA)
+/// JWT-related witness (SHA256 + Base64 + RSA)
 #[derive(Clone, CanonicalSerialize, CanonicalDeserialize)]
 pub struct JwtWitness {
-    /// SHA256 블록 수 (final block index, 0-indexed)
+    /// Number of SHA256 blocks (final block index, 0-indexed)
     pub nblocks: usize,
-    /// Claim 인덱스들
+    /// Claim indices
     pub claim_indices: Vec<ClaimIndices>,
-    /// Payload Base64 오프셋
+    /// Payload Base64 offset
     pub pay_offset_b64: usize,
-    /// Payload Base64 길이
+    /// Payload Base64 length
     pub pay_len_b64: usize,
-    /// SHA 패딩된 Full JWT (header.payload with SHA256 padding)
+    /// SHA-padded full JWT (header.payload with SHA256 padding)
     pub sha_pad_jwt_b64: Vec<u8>,
-    /// Base64 인덱스 비트
+    /// Base64 index bits
     pub index_bits: IndexBits,
-    /// RSA 공개키
+    /// RSA public key
     pub pk: PublicKey,
-    /// RSA 서명
+    /// RSA signature
     pub sig: Signature,
-    /// 전체 JWT 길이 (padding 전)
+    /// Total JWT length (before padding)
     pub total_len: usize,
-    /// 패딩 시작 바이트 인덱스 (절대 위치)
+    /// Padding start byte index (absolute position)
     pub pad_start_byte_idx: usize,
 }
 
-/// 앵커/Threshold 관련 Witness
+/// Anchor/Threshold witness
 #[derive(Clone, CanonicalSerialize, CanonicalDeserialize)]
 pub struct AnchorWitness<F: PrimeField> {
-    /// 앵커 값
+    /// Anchor value
     pub anchor: PoseidonAnchor<F>,
-    /// A 벡터
+    /// A vector
     pub a: Vec<F>,
-    /// 선택자 벡터
+    /// Selector vector
     pub selector: Vec<u8>,
-    /// 현재 인덱스
+    /// Current index
     pub current_idx: usize,
 }
 
-/// 머클 트리 Witness
+/// Merkle tree witness
 #[derive(Clone, CanonicalSerialize, CanonicalDeserialize)]
 pub struct MerkleWitness<F: PrimeField + Absorb> {
-    /// 머클 경로
+    /// Merkle path
     pub path: Path<MerkleTreeParams<F>>,
-    /// 리프 인덱스
+    /// Leaf index
     pub leaf_idx: usize,
 }
 
-/// Audience Witness
+/// Audience witness
 #[derive(Clone, CanonicalSerialize, CanonicalDeserialize)]
 pub struct AudienceWitness<F: PrimeField> {
-    /// 패딩된 Audience 목록
+    /// Padded audience list
     pub aud_list: Vec<F>,
 }
 
-/// 기타 Witness
+/// Miscellaneous witness
 #[derive(Clone, CanonicalSerialize, CanonicalDeserialize)]
 pub struct MiscWitness<F: PrimeField> {
-    /// 랜덤 값
+    /// Random value
     pub random: F,
 }
 
-/// 전체 회로 입력을 묶는 구조체
+/// Struct bundling all circuit inputs
 #[derive(Clone)]
 pub struct BaeraeCircuitInput<F: PrimeField + Absorb> {
-    /// 회로 상수
+    /// Circuit constants
     pub constants: CircuitConstants<F>,
-    /// 공개 입력
+    /// Public inputs
     pub public_inputs: CircuitPublicInputs<F>,
-    /// JWT Witness
+    /// JWT witness
     pub jwt: JwtWitness,
-    /// 앵커 Witness
+    /// Anchor witness
     pub anchor: AnchorWitness<F>,
-    /// 머클 Witness
+    /// Merkle witness
     pub merkle: MerkleWitness<F>,
-    /// Audience Witness
+    /// Audience witness
     pub audience: AudienceWitness<F>,
-    /// 기타 Witness
+    /// Miscellaneous witness
     pub misc: MiscWitness<F>,
 }
 
 impl<F: PrimeField + Absorb> BaeraeCircuitInput<F> {
-    /// 공개 입력만 추출
+    /// Extract only the public inputs
     pub fn extract_public_inputs(&self) -> Vec<F> {
         self.public_inputs.to_vec()
     }

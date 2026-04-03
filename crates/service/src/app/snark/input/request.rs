@@ -32,46 +32,46 @@ pub struct ExecutionBindingData {
     pub random: F,
 }
 
-/// Raw 입력이 검증되고 파싱된 후의 도메인 객체입니다.
+/// Domain object after raw input has been validated and parsed.
 #[derive(Clone)]
 pub struct ProofRequest {
-    /// Proving key 경로
+    /// Proving key path
     pub pk_path: PathBuf,
 
-    /// 파싱된 JWT 토큰 빌더들
+    /// Parsed JWT token builders
     pub token_builders: Vec<TokenBuilder>,
 
-    /// RSA 공개키 modulus들 (원본 문자열 유지 - 회로에서 사용)
+    /// RSA public key moduli (kept as original strings - used by the circuit)
     pub pk_ops: Vec<String>,
 
-    /// 머클 트리 데이터
+    /// Merkle tree data
     pub merkle: MerkleData,
 
-    /// 앵커 데이터
+    /// Anchor data
     pub anchor: AnchorData,
 
-    /// 실행 바인딩 데이터
+    /// Execution binding data
     pub execution: ExecutionBindingData,
 
-    /// Audience 데이터
+    /// Audience data
     pub audience: AudienceData,
 }
 
 impl ProofRequest {
-    /// RawProofRequest를 검증하고 파싱하여 ProofRequest 생성
+    /// Validates and parses a RawProofRequest into a ProofRequest
     pub fn from_raw<Config: ZkPasskeyConfig>(
         raw: RawProofRequest,
     ) -> Result<Self, ApplicationError> {
-        // 1. 입력 검증
+        // 1. Input validation
         Self::validate::<Config>(&raw)?;
 
-        // 2. 파싱
+        // 2. Parsing
         Self::parse::<Config>(raw)
     }
 
-    /// 입력 데이터 검증
+    /// Validates input data
     fn validate<Config: ZkPasskeyConfig>(raw: &RawProofRequest) -> Result<(), ApplicationError> {
-        // K개의 JWT/PK/경로/인덱스가 있어야 함
+        // Must have K JWT/PK/path/index entries
         if raw.jwts.len() != Config::K
             || raw.pk_ops.len() != Config::K
             || raw.merkle_paths.len() != Config::K
@@ -87,7 +87,7 @@ impl ProofRequest {
             )));
         }
 
-        // Anchor 길이 검증: (N - K + 1) + 1 (마지막은 hanchor)
+        // Validate anchor length: (N - K + 1) + 1 (last element is hanchor)
         let expected_anchor_len = (Config::N - Config::K + 1) + 1;
         if raw.anchor.len() != expected_anchor_len {
             return Err(ApplicationError::InvalidFormat(format!(
@@ -100,11 +100,11 @@ impl ProofRequest {
         Ok(())
     }
 
-    /// Raw 입력을 도메인 객체로 파싱
+    /// Parses raw input into domain objects
     fn parse<Config: ZkPasskeyConfig>(raw: RawProofRequest) -> Result<Self, ApplicationError> {
         use circuit::field_parser::hex_decimal_to_field;
 
-        // TokenBuilder 생성
+        // Create TokenBuilders
         let token_builders: Vec<TokenBuilder> = raw
             .jwts
             .iter()
@@ -115,7 +115,7 @@ impl ProofRequest {
             })
             .collect::<Result<Vec<_>, _>>()?;
 
-        // 각 JWT 토큰에서 exp 클레임 추출
+        // Extract exp claim from each JWT token
         let jwt_exp: Vec<F> = token_builders
             .iter()
             .enumerate()
@@ -127,15 +127,15 @@ impl ProofRequest {
             })
             .collect::<Result<Vec<F>, ApplicationError>>()?;
 
-        // 필드 요소 파싱
+        // Parse field elements
         let root = hex_decimal_to_field::<F>(&raw.root)?;
         let h_sign_user_op = hex_decimal_to_field::<F>(&raw.h_sign_user_op)?;
         let random = hex_decimal_to_field::<F>(&raw.random)?;
 
-        // Anchor 파싱
+        // Parse Anchor
         let anchor_data = Self::parse_anchor(&raw.anchor)?;
 
-        // Audience 파싱
+        // Parse Audience
         let aud_list = raw
             .aud_list
             .iter()
@@ -161,7 +161,7 @@ impl ProofRequest {
         })
     }
 
-    /// Anchor 문자열 배열 파싱
+    /// Parses the anchor string array
     fn parse_anchor(raw_anchor: &[String]) -> Result<AnchorData, ApplicationError> {
         use circuit::field_parser::hex_decimal_to_field;
 
@@ -171,7 +171,7 @@ impl ProofRequest {
             ));
         }
 
-        // 마지막 요소가 hanchor
+        // Last element is hanchor
         let (raw_hanchor, raw_anchor_values) = raw_anchor.split_last().ok_or_else(|| {
             ApplicationError::InvalidFormat("Failed to split anchor parts".to_string())
         })?;

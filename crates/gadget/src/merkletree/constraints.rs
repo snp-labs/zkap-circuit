@@ -170,9 +170,9 @@ mod tests {
         .unwrap();
 
         // path {
-        //     leaf_sibling_hash: 형제 값 => hash 1번
-        //     auth_path: 인증 경로 => [depth1, depth2, ..., ] 꼴, 앞에서부터 루트에 가깝다. 루트를 depth 0라 할 때, hash (tree_height - 1) - 1번. 는 (tree_height - 1) 다른 노드의 해시, 1번은 형제 해시
-        //     leaf_index: 0 => 자신의 인덱스
+        //     leaf_sibling_hash: sibling value => hashed 1 time
+        //     auth_path: authentication path => [depth1, depth2, ..., ], closer to root first. With root at depth 0, hash (tree_height - 1) - 1 times. (tree_height - 1) other node hashes, 1 sibling hash
+        //     leaf_index: 0 => own index
         // }
         let rt = mt.root();
         let path = mt.generate_proof(idx).unwrap();
@@ -274,11 +274,11 @@ mod tests {
 
     #[test]
     fn test_init_tree() {
-        // rust와 solidity의 Merkle Tree의 싱크르 맞춰야 한다.
-        // tree_height는 rust, solidity 모두 동일하게 하면된다.
-        // tree_height = 4면 root가 되기 위해 총 3번 해시를 수행한다.
-        // rust와 solidity의 싱크를 맞추기 위해 rust에서 머클트리를 생성할 때, Hash(0)를 leaf로 초기화해야한다.
-        // 그 뒤, merkle tree의 leaf를 업데이트할 때, mt.update 함수를 호출하며 value를 그대로 넣어주면 된다. 내부적으로 hash가 수행된다. 즉 H(value)가 leaf가 된다.
+        // The Merkle Tree must be synced between rust and solidity.
+        // tree_height should be the same for both rust and solidity.
+        // With tree_height = 4, hashing is performed 3 times total to reach root.
+        // To sync rust and solidity, initialize the Merkle Tree in rust with Hash(0) as the leaf.
+        // Then, when updating a leaf, call mt.update with the value directly. Hashing is done internally, so H(value) becomes the leaf.
         let tree_height = 5;
 
         let leaf_hash_param = get_poseidon_params::<F>().clone();
@@ -287,7 +287,7 @@ mod tests {
         let h0 = CRH::evaluate(&leaf_hash_param, [F::from(0u64)]).unwrap();
         let digests = vec![h0; 1 << (tree_height - 1)];
 
-        // mt를 만들기 전 leaf를 만들 수 있다. 이 때 leaf는 hash가 아닌 값이 된다. 즉, 1, 2, 3 등이 그대로 leaf가 된다.
+        // Leaves can be created before building the Merkle Tree. In this case, leaves are raw values (not hashes), i.e. 1, 2, 3 become leaves directly.
         // digests[0] = F::from(1u64);
 
         let mut mt = MerkleTree::<MerkleTreeParams<F>>::new_with_leaf_digest(
@@ -303,7 +303,7 @@ mod tests {
         let h3 = CRH::evaluate(&leaf_hash_param, [h2, F::from(3u64)]).unwrap();
         println!("h3: {:?}", h3);
 
-        // 이미 만들어진 Merkle Tree에 대해 update를 수행한다면, update(idx, value)를 호출한다. 이 때 value는 내부적으로 hash가 수행된다. 즉 leaf 노드는 H(value)로 업데이트된다.
+        // To update an existing Merkle Tree, call update(idx, value). The value is hashed internally, so the leaf node is updated to H(value).
         mt.update(0, &[F::from(1u64)]).unwrap();
         let root = mt.root();
         let path = mt.generate_proof(0).unwrap();

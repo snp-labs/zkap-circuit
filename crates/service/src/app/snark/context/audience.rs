@@ -1,9 +1,9 @@
 use circuit::constants::F;
 
-/// Audience 검증을 위한 계산된 컨텍스트
+/// Computed context for audience verification
 #[derive(Clone)]
 pub struct AudienceContext {
-    /// 패딩된 Audience 목록 (Config::NUM_AUDIENCE_LIMIT 길이)
+    /// Padded audience list (length Config::NUM_AUDIENCE_LIMIT)
     pub padded_list: Vec<F>,
 
     /// H(padded_aud_list)
@@ -11,7 +11,7 @@ pub struct AudienceContext {
 }
 
 impl AudienceContext {
-    /// 새로운 AudienceContext 생성
+    /// Creates a new AudienceContext
     pub fn new(padded_list: Vec<F>, h_aud_list: F) -> Self {
         Self {
             padded_list,

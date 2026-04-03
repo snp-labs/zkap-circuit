@@ -37,7 +37,7 @@ where
     }
 }
 
-/// Base64CharBits의 회로 변수 표현. 6bits 여야함.
+/// Circuit variable representation of Base64CharBits. Must have exactly 6 bits.
 #[derive(Clone)]
 pub struct Base64CharBitsVar<F: PrimeField> {
     pub bits: Vec<Boolean<F>>,
@@ -95,10 +95,10 @@ impl<F: PrimeField> Base64DecoderGadget<F> {
         Ok(result)
     }
 
-    /// 비트 인덱스(Big-Endian)를 사용하여 배열에서 요소를 선택합니다.
+    /// Selects an element from an array using a Big-Endian bit index.
     ///
-    /// 입력 `idx_bits`는 [MSB, ..., LSB] 순서여야 합니다.
-    /// `idx_bits[0]`(MSB)를 기준으로 상위 절반(Right)과 하위 절반(Left)을 재귀적으로 분할합니다.
+    /// The input `idx_bits` must be in [MSB, ..., LSB] order.
+    /// Recursively splits into upper half (Right) and lower half (Left) based on `idx_bits[0]` (MSB).
     fn select_array_element_table(
         table: &Base64TableVar<F>,
         idx_bits: &Base64CharBitsVar<F>,
@@ -367,7 +367,7 @@ mod tests {
 
     #[test]
     fn test_decode_constraint_count() {
-        println!("\n=== decode 제약조건 측정 ===");
+        println!("\n=== decode constraint count measurement ===");
 
         for input_len in [4, 8, 16, 32] {
             let input_str = "A".repeat(input_len);
@@ -398,7 +398,7 @@ mod tests {
             let per_char = constraints as f64 / input_len as f64;
 
             assert!(cs.is_satisfied().unwrap());
-            println!("입력 길이: {} chars → {} constraints ({:.1}/char)", input_len, constraints, per_char);
+            println!("Input length: {} chars → {} constraints ({:.1}/char)", input_len, constraints, per_char);
         }
     }
 }

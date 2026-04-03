@@ -75,7 +75,7 @@ pub(crate) fn derive_selector_from_x_list_and_anchor<F: PrimeField + Absorb>(
     let (_m, n) = matrix.dimensions();
     let k = matrix.k;
 
-    // 사용자가 알고 있는 시크릿의 수가 k와 일치하는지 확인
+    // Check that the number of known secrets matches k
     if x_list.len() != k {
         Err(AnchorError::DimensionMismatch(
             "Number of known secrets must match k".to_string(),
@@ -83,24 +83,24 @@ pub(crate) fn derive_selector_from_x_list_and_anchor<F: PrimeField + Absorb>(
         .map_err(|e| ApplicationError::InvalidFormat(format!("{}", e)))?
     }
 
-    // 1. n개의 위치 중 k개를 선택하는 모든 인덱스 조합을 생성합니다.
-    // 예: n=6, k=3 -> [[0,1,2], [0,1,3], ...]
+    // 1. Generate all index combinations that select k positions out of n.
+    // e.g.: n=6, k=3 -> [[0,1,2], [0,1,3], ...]
     let index_combinations = combinations(n, k);
 
-    // 2. 각 인덱스 조합에 대해 검증을 시도합니다.
+    // 2. Attempt verification for each index combination.
     for index_combo in index_combinations {
-        // 호출자가 제공한 시크릿 순서(known_secrets[i])가
-        // 선택된 인덱스 순서(index_combo[i])와 1:1로 매핑된다고 가정합니다.
+        // Assume the secret order provided by the caller (known_secrets[i])
+        // maps 1:1 to the selected index order (index_combo[i]).
 
-        // 3. selector 생성
+        // 3. Build selector
         let mut selector = vec![0u8; n];
         for &position in &index_combo {
             selector[position] = 1;
         }
 
-        // 4. witness를 구성하여 검증
-        // known_secrets를 그대로 전달하여,
-        // Anchor[index_combo[i]] == known_secrets[i] 인지 확인하게 됩니다.
+        // 4. Build witness and verify
+        // Pass known_secrets as-is to check
+        // whether Anchor[index_combo[i]] == known_secrets[i].
         let witness = build_anchor_witness(&pk.params, x_list, &selector, matrix).map_err(|e| {
             ApplicationError::InvalidFormat(format!("Failed to build witness: {}", e))
         })?;
@@ -109,14 +109,14 @@ pub(crate) fn derive_selector_from_x_list_and_anchor<F: PrimeField + Absorb>(
             return Ok(selector);
         }
     }
-    // 모든 조합을 시도했지만 실패한 경우
+    // All combinations tried but none succeeded
     Err(AnchorError::InvalidParameters(
         "No valid selector found".to_string(),
     ))
     .map_err(|e| ApplicationError::InvalidFormat(format!("{}", e)))
 }
 
-// nCk 조합 생성기
+// nCk combination generator
 fn combinations(n: usize, k: usize) -> Vec<Vec<usize>> {
     let mut result = Vec::new();
     if k == 0 || k > n {

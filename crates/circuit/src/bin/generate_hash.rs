@@ -62,14 +62,14 @@ struct AudOutput {
     output: AudItem,
 }
 
-// 결과의 각 항목을 담을 구조체
+// Struct holding each item of the result
 #[derive(Serialize)]
 struct LeafInput {
     iss: String,
     pk: String,
 }
 
-// 전체 결과를 담을 구조체 (선택 사항, 바로 Vec<LeafItem>을 저장해도 됨)
+// Struct holding the full result (optional; could store Vec<LeafItem> directly)
 #[derive(Serialize)]
 struct LeafOutput {
     input: Vec<LeafInput>,
@@ -77,10 +77,10 @@ struct LeafOutput {
 }
 
 fn main() {
-    // 파싱이 여기서 한 방에 끝납니다.
+    // Parsing is done here in one shot.
     let cli = Cli::parse();
 
-    // 어떤 커맨드인지 패턴 매칭만 하면 됩니다.
+    // Pattern match on the command.
     match &cli.command {
         Commands::Aud(args) => generate_aud_hash(args),
         Commands::Leaf(args) => generate_pk_leaf(args),
@@ -143,11 +143,11 @@ fn generate_aud_hash(args: &AudArgs) {
 fn generate_pk_leaf(args: &LeafArgs) {
     let params = get_poseidon_params::<F>();
 
-    // 1. 콤마로 구분하여 리스트로 파싱
+    // 1. Parse into list by splitting on comma
     let iss_list: Vec<&str> = args.iss.split(',').map(|s| s.trim()).collect();
     let pk_list: Vec<&str> = args.pk.split(',').map(|s| s.trim()).collect();
 
-    // 2. 개수 일치 확인
+    // 2. Verify counts match
     if iss_list.len() != pk_list.len() {
         eprintln!(
             "Error: Mismatch in input counts. iss count: {}, pk count: {}",
@@ -159,28 +159,28 @@ fn generate_pk_leaf(args: &LeafArgs) {
 
     println!("Processing {} items...", iss_list.len());
 
-    // RSA Exponent 'AQAB' (65537) 미리 디코딩
+    // Pre-decode RSA exponent 'AQAB' (65537)
     let e_decoded = decode_any_base64("AQAB").unwrap_or_else(|e| {
         eprintln!("Error decoding exponent 'AQAB': {}", e);
         std::process::exit(1);
     });
 
-    // 3. 각 쌍(Pair) 처리 및 분리 (unzip 사용)
+    // 3. Process each pair and separate results (using unzip)
     let (inputs, outputs): (Vec<LeafInput>, Vec<String>) = iss_list
         .iter()
         .zip(pk_list.iter())
         .map(|(&iss, &pk)| {
-            // --- (1) Input 구조체 생성 ---
+            // --- (1) Create input struct ---
             let input_data = LeafInput {
                 iss: iss.to_string(),
                 pk: pk.to_string(),
             };
 
-            // --- (2) 로직 처리 ---
-            // Issuer Limbs 변환
+            // --- (2) Process logic ---
+            // Convert issuer to limbs
             let iss_limbs = str_to_limbs(iss, ZkapConfig::MAX_ISS_LEN, ZkapConfig::PAD_CHAR as u8);
 
-            // Public Key 디코딩 및 Limbs 변환
+            // Decode public key and convert to limbs
             let n_decoded = decode_any_base64(pk).unwrap_or_else(|e| {
                 eprintln!("Error decoding pk '{}': {}", pk, e);
                 std::process::exit(1);
@@ -191,11 +191,11 @@ fn generate_pk_leaf(args: &LeafArgs) {
                 e: e_decoded.clone(),
             };
 
-            // pk.to_limbs가 튜플(.0)을 반환한다고 가정
+            // Assume pk.to_limbs returns a tuple (.0)
             let n_limbs = pk_obj.to_limbs::<BNP, CG>().0;
 
             // Leaf Hash = Hash(iss_limbs || n_limbs)
-            // 두 벡터를 합쳐서 하나의 해시 입력으로 사용
+            // Concatenate both vectors into a single hash input
             let mut leaf_inputs = Vec::new();
             leaf_inputs.extend_from_slice(&iss_limbs);
             leaf_inputs.extend_from_slice(&n_limbs);
@@ -205,14 +205,14 @@ fn generate_pk_leaf(args: &LeafArgs) {
                 std::process::exit(1);
             });
 
-            // 결과값 (Hex String)
+            // Result value (hex string)
             let leaf_hex = format!("0x{:X}", leaf.into_bigint());
 
             (input_data, leaf_hex)
         })
-        .unzip(); // 튜플 벡터를 두 개의 벡터로 분리
+        .unzip(); // Split tuple vector into two separate vectors
 
-    // 4. 결과 저장
+    // 4. Save results
     let output_struct = LeafOutput {
         input: inputs,
         output: outputs,

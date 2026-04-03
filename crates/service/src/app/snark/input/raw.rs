@@ -1,41 +1,41 @@
 use std::path::PathBuf;
 
-/// 증명 생성을 위한 원시 입력 데이터
+/// Raw input data for proof generation
 #[derive(Debug, Clone)]
 pub struct RawProofRequest {
-    /// Proving key 파일 경로
+    /// Proving key file path
     pub pk_path: PathBuf,
 
-    /// JWT 토큰들
+    /// JWT tokens
     pub jwts: Vec<String>,
 
-    /// RSA 공개키 modulus (Base64 인코딩)
+    /// RSA public key modulus (Base64 encoded)
     pub pk_ops: Vec<String>,
 
-    /// 머클 경로들 (각 JWT에 대해)
+    /// Merkle paths (one per JWT)
     pub merkle_paths: Vec<Vec<String>>,
 
-    /// 머클 트리 리프 인덱스들
+    /// Merkle tree leaf indices
     pub leaf_indices: Vec<usize>,
 
-    /// 머클 루트 (hex/decimal 문자열)
+    /// Merkle root (hex/decimal string)
     pub root: String,
 
-    /// 앵커 값들 (마지막 요소는 hanchor)
+    /// Anchor values (last element is hanchor)
     pub anchor: Vec<String>,
 
-    /// 서명된 UserOperation 해시
+    /// Signed UserOperation hash
     pub h_sign_user_op: String,
 
-    /// 블라인딩을 위한 랜덤 값
+    /// Random value for blinding
     pub random: String,
 
-    /// 허용된 Audience 목록
+    /// Allowed audience list
     pub aud_list: Vec<String>,
 }
 
 impl RawProofRequest {
-    /// 새로운 RawProofRequest 생성
+    /// Create a new RawProofRequest
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         pk_path: PathBuf,
@@ -63,7 +63,7 @@ impl RawProofRequest {
         }
     }
 
-    /// JWT 토큰 개수 반환
+    /// Returns the number of JWT tokens
     pub fn token_count(&self) -> usize {
         self.jwts.len()
     }

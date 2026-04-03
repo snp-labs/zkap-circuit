@@ -6,14 +6,15 @@ use ark_r1cs_std::{
 };
 use ark_relations::r1cs::SynthesisError;
 
-/// Arkworks 회로 내에서 입력 정수(UInt16)를 2의 p 제곱으로 나눈 몫과 나머지를 계산합니다.
+/// Computes the quotient and remainder of dividing an input integer (UInt16) by 2^p
+/// within an Arkworks circuit.
 ///
 /// # Arguments
-/// * `input`: 나눗셈을 수행할 입력 정수 (`UInt16<ConstraintF>` 타입).
-/// * `p`: 나눌 값 (2의 p 제곱)을 결정하는 지수 (0 < p < 16).
+/// * `input`: the input integer to divide (`UInt16<ConstraintF>` type).
+/// * `p`: exponent that determines the divisor (2^p), must satisfy 0 < p < 16.
 ///
 /// # Returns
-/// (몫, 나머지)의 튜플 (`UInt16<ConstraintF>`, `UInt16<ConstraintF>`)
+/// Tuple of (quotient, remainder) (`UInt16<ConstraintF>`, `UInt16<ConstraintF>`)
 pub fn divide_mod_power_of_2_circuit<F: PrimeField>(
     input: &UInt16<F>,
     p: u32,
@@ -38,34 +39,34 @@ pub fn divide_mod_power_of_2_circuit<F: PrimeField>(
     Ok((quotient, remainder))
 }
 
-/// 바이트 FpVar들을 단일 FpVar로 패킹합니다 (성능 최적화 버전).
+/// Packs byte FpVars into a single FpVar (performance-optimized version).
 ///
-/// 이 함수는 제약조건 없이 직접 계산을 수행하므로 더 빠르지만,
-/// 입력 값의 유효성을 검증하지 않습니다.
-/// 신뢰할 수 있는 입력에만 사용하세요.
+/// This function performs direct computation without constraints, making it faster,
+/// but it does not validate the input values.
+/// Use only with trusted inputs.
 ///
 /// # Arguments
-/// * `byte_fps`: 바이트를 나타내는 FpVar 슬라이스 (Big-endian)
-/// * `num_bytes_expected`: 예상되는 바이트 개수
+/// * `byte_fps`: FpVar slice representing bytes (Big-endian)
+/// * `num_bytes_expected`: expected number of bytes
 ///
 /// # Returns
-/// * `Ok(FpVar<F>)`: 패킹된 값
-/// * `Err(SynthesisError)`: 길이 불일치 또는 합성 오류 발생 시
+/// * `Ok(FpVar<F>)`: packed value
+/// * `Err(SynthesisError)`: on length mismatch or synthesis error
 ///
 /// # Warning
-/// 이 함수는 입력 바이트가 0-255 범위인지 검증하지 않습니다.
+/// This function does not verify that input bytes are in the 0-255 range.
 pub fn pack_bytes_to_field_unchecked<F: PrimeField>(
     byte_fps: &[FpVar<F>],
     num_bytes_expected: usize,
 ) -> Result<FpVar<F>, SynthesisError> {
     const BITS_PER_BYTE: usize = 8;
 
-    // 1. 입력 길이 검증
+    // 1. Validate input length
     if byte_fps.len() != num_bytes_expected {
         return Err(SynthesisError::AssignmentMissing);
     }
 
-    // 2. 256의 거듭제곱을 미리 계산 (상수이므로 제약조건 없음)
+    // 2. Pre-compute powers of 256 (no constraints needed since they are constants)
     let base = F::from(1u128 << BITS_PER_BYTE); // 256
     let mut powers_of_256 = Vec::with_capacity(num_bytes_expected);
 
@@ -74,9 +75,9 @@ pub fn pack_bytes_to_field_unchecked<F: PrimeField>(
         powers_of_256.push(current_power);
         current_power *= base;
     }
-    powers_of_256.reverse(); // Big-endian을 위해 역순
+    powers_of_256.reverse(); // Reverse for Big-endian order
 
-    // 3. 패킹 수행: result = Σ(byte[i] × 256^(n-1-i))
+    // 3. Perform packing: result = Σ(byte[i] × 256^(n-1-i))
     let mut packed_fp = FpVar::<F>::zero();
 
     for (byte_fp, power) in byte_fps.iter().zip(powers_of_256.iter()) {
@@ -87,35 +88,35 @@ pub fn pack_bytes_to_field_unchecked<F: PrimeField>(
     Ok(packed_fp)
 }
 
-/// decompose_bytes를 최대 용량으로 압축합니다 (성능 최적화 버전).
+/// Packs decompose_bytes at maximum capacity (performance-optimized version).
 ///
-/// 필드의 최대 용량을 활용하여 자동으로 최적의 limb_width를 계산하고,
-/// 입력 바이트들을 최소 개수의 FpVar로 패킹합니다.
+/// Automatically computes the optimal limb_width using the field's maximum capacity,
+/// and packs input bytes into the minimum number of FpVars.
 ///
-/// # 엄격한 요구사항:
-/// **입력 길이는 자동 계산된 limb_width로 정확히 나누어떨어져야 합니다.**
+/// # Strict requirement:
+/// **The input length must be exactly divisible by the automatically computed limb_width.**
 ///
 /// # Arguments
-/// * `decompose_bytes`: 8비트 바이트를 나타내는 FpVar 슬라이스
+/// * `decompose_bytes`: FpVar slice representing 8-bit bytes
 ///
 /// # Returns
-/// * `Ok(Vec<FpVar<F>>)`: 패킹된 FpVar 벡터 (최소 개수)
-/// * `Err(SynthesisError)`: 길이가 limb_width로 나누어떨어지지 않거나 합성 오류 발생 시
+/// * `Ok(Vec<FpVar<F>>)`: packed FpVar vector (minimum count)
+/// * `Err(SynthesisError)`: if the length is not divisible by limb_width, or on synthesis error
 ///
 /// # Warning
-/// 입력 검증을 수행하지 않습니다. 신뢰할 수 있는 입력에만 사용하세요.
+/// Does not perform input validation. Use only with trusted inputs.
 pub fn pack_decompose_bytes_unchecked<F: PrimeField>(
     decompose_bytes: &[FpVar<F>],
 ) -> Result<Vec<FpVar<F>>, SynthesisError> {
-    // 필드 크기에서 안전하게 패킹 가능한 최대 바이트 수 계산
+    // Compute the maximum number of bytes that can be safely packed from the field size
     let limb_width = ((F::MODULUS_BIT_SIZE - 1) / 8) as usize;
 
-    // 빈 입력은 빈 결과 반환
+    // Return empty result for empty input
     if decompose_bytes.is_empty() {
         return Ok(Vec::new());
     }
 
-    // 입력 길이가 limb_width로 나누어떨어지는지 검증
+    // Verify that the input length is divisible by limb_width
     if !decompose_bytes.len().is_multiple_of(limb_width) {
         return Err(SynthesisError::AssignmentMissing);
     }
@@ -123,7 +124,7 @@ pub fn pack_decompose_bytes_unchecked<F: PrimeField>(
     let num_chunks = decompose_bytes.len() / limb_width;
     let mut packed_fields = Vec::with_capacity(num_chunks);
 
-    // 정확히 limb_width 크기의 청크로 나누어 처리
+    // Process in chunks of exactly limb_width size
     for chunk in decompose_bytes.chunks_exact(limb_width) {
         let packed_field = pack_bytes_to_field_unchecked(chunk, limb_width)?;
         packed_fields.push(packed_field);
@@ -163,11 +164,11 @@ mod tests {
         assert_eq!(packed.value().unwrap(), expected);
     }
 
-    // ==================== pack_decompose_bytes_unchecked 테스트 ====================
+    // ==================== pack_decompose_bytes_unchecked tests ====================
 
     #[test]
     fn test_pack_decompose_bytes_unchecked_empty() {
-        // 빈 입력은 항상 성공 (0 % limb_width == 0)
+        // Empty input always succeeds (0 % limb_width == 0)
         let byte_vars: Vec<FpVar<TestField>> = vec![];
         let packed = pack_decompose_bytes_unchecked(&byte_vars).unwrap();
         assert_eq!(packed.len(), 0);
@@ -185,7 +186,7 @@ mod tests {
             .collect();
 
         let packed = pack_decompose_bytes_unchecked(&byte_vars).unwrap();
-        assert_eq!(packed.len(), 1, "정확히 1개 청크로 패킹되어야 함");
+        assert_eq!(packed.len(), 1, "Should be packed into exactly 1 chunk");
     }
 
     #[test]
@@ -201,7 +202,7 @@ mod tests {
             .collect();
 
         let packed = pack_decompose_bytes_unchecked(&byte_vars).unwrap();
-        assert_eq!(packed.len(), 2, "정확히 2개 청크로 패킹되어야 함");
+        assert_eq!(packed.len(), 2, "Should be packed into exactly 2 chunks");
     }
 
     #[test]
@@ -217,7 +218,7 @@ mod tests {
             .collect();
 
         let packed = pack_decompose_bytes_unchecked(&byte_vars).unwrap();
-        assert_eq!(packed.len(), 3, "정확히 3개 청크로 패킹되어야 함");
+        assert_eq!(packed.len(), 3, "Should be packed into exactly 3 chunks");
     }
 
     #[test]
@@ -233,7 +234,7 @@ mod tests {
             .collect();
 
         let result = pack_decompose_bytes_unchecked(&byte_vars);
-        assert!(result.is_err(), "limb_width - 1 바이트는 실패해야 함");
+        assert!(result.is_err(), "limb_width - 1 bytes should fail");
     }
 
     #[test]
@@ -249,7 +250,7 @@ mod tests {
             .collect();
 
         let result = pack_decompose_bytes_unchecked(&byte_vars);
-        assert!(result.is_err(), "limb_width + 1 바이트는 실패해야 함");
+        assert!(result.is_err(), "limb_width + 1 bytes should fail");
     }
 
     #[test]
@@ -279,7 +280,7 @@ mod tests {
             let result = pack_decompose_bytes_unchecked(&byte_vars);
             assert!(
                 result.is_err(),
-                "크기 {}는 실패해야 함 (limb_width={})",
+                "size {} should fail (limb_width={})",
                 size,
                 limb_width
             );
@@ -305,7 +306,7 @@ mod tests {
             assert_eq!(
                 packed.len(),
                 multiple,
-                "{}x limb_width는 {}개 청크로 패킹되어야 함",
+                "{}x limb_width should be packed into {} chunks",
                 multiple,
                 multiple
             );

@@ -7,12 +7,12 @@ use ark_relations::r1cs::SynthesisError;
 
 use crate::one_bit_vector;
 
-/// `i < index`일 때 `out[i] = 1`인 비트 벡터를 생성합니다.
+/// Generates a bit vector where `out[i] = 1` when `i < index`.
 ///
-/// `index - 1`의 원-핫 벡터를 생성한 후, 접미사 OR 스캔을 수행하여
-/// 온도계 인코딩을 구현합니다. 범위 제약: `1 <= index <= n`.
+/// Builds the one-hot vector for `index - 1`, then performs a suffix OR scan
+/// to implement thermometer encoding. Range constraint: `1 <= index <= n`.
 ///
-/// 예시: `n=5, index=3` → `[1, 1, 1, 0, 0]`
+/// Example: `n=5, index=3` → `[1, 1, 1, 0, 0]`
 pub fn lt_bit_vector<F: PrimeField>(
     index: &FpVar<F>,
     n: usize,
@@ -47,15 +47,15 @@ pub fn lt_bit_vector<F: PrimeField>(
 }
 
 // =============================================================================
-// Boolean 비트 벡터 비교 함수 (comparison_v2에서 통합)
+// Boolean bit vector comparison functions (merged from comparison_v2)
 // =============================================================================
 //
-// arkworks 0.5.0의 FpVar::enforce_cmp 버그로 인해 커스텀 구현 사용
-// 참조: https://github.com/arkworks-rs/r1cs-std/issues/161
+// Custom implementation used due to a bug in FpVar::enforce_cmp in arkworks 0.5.0
+// Reference: https://github.com/arkworks-rs/r1cs-std/issues/161
 
-/// A < B (Strictly Less) - Boolean 비트 벡터용
+/// A < B (Strictly Less) - for Boolean bit vectors
 ///
-/// Little-Endian 비트 벡터를 입력받아 비교합니다.
+/// Accepts Little-Endian bit vectors as input and compares them.
 pub fn is_less_than<F: PrimeField>(
     a_bits: &[Boolean<F>],
     b_bits: &[Boolean<F>],
@@ -64,7 +64,7 @@ pub fn is_less_than<F: PrimeField>(
     Ok(less)
 }
 
-/// A <= B (Less or Equal) - Boolean 비트 벡터용
+/// A <= B (Less or Equal) - for Boolean bit vectors
 pub fn is_less_or_equal<F: PrimeField>(
     a_bits: &[Boolean<F>],
     b_bits: &[Boolean<F>],
@@ -73,7 +73,7 @@ pub fn is_less_or_equal<F: PrimeField>(
     Ok(&less | &equal)
 }
 
-/// A >= B (Greater or Equal) - Boolean 비트 벡터용
+/// A >= B (Greater or Equal) - for Boolean bit vectors
 pub fn is_greater_or_equal<F: PrimeField>(
     a_bits: &[Boolean<F>],
     b_bits: &[Boolean<F>],
@@ -82,10 +82,10 @@ pub fn is_greater_or_equal<F: PrimeField>(
     Ok(!less)
 }
 
-/// 비트 단위 비교를 수행하여 (is_less, is_equal) 튜플을 반환합니다.
+/// Performs a bit-by-bit comparison and returns a (is_less, is_equal) tuple.
 ///
-/// * 입력: Little-Endian으로 구성된 Boolean 벡터 (예: to_bits_le()의 결과)
-/// * 출력: (a < b, a == b)
+/// * Input: Boolean vector in Little-Endian order (e.g., result of to_bits_le())
+/// * Output: (a < b, a == b)
 pub fn compare_bits_raw<F: PrimeField>(
     a_bits: &[Boolean<F>],
     b_bits: &[Boolean<F>],
@@ -99,7 +99,7 @@ pub fn compare_bits_raw<F: PrimeField>(
     let mut less = Boolean::constant(false);
     let mut equal = Boolean::constant(true);
 
-    // MSB부터 LSB 순으로 순회 (to_bits_le는 [LSB, ..., MSB] 순서)
+    // Iterate from MSB to LSB (to_bits_le returns [LSB, ..., MSB] order)
     for (a_bit, b_bit) in a_bits.iter().rev().zip(b_bits.iter().rev()) {
         let a_is_zero = !a_bit;
         let a_is_zero_b_is_one = &a_is_zero & b_bit;

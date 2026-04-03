@@ -1,5 +1,6 @@
 use ark_crypto_primitives::crh::CRHScheme;
-use circuit::{constants::{F, PoseidonHash}, field_parser::hex_decimal_to_field};
+use ark_utils::field_serde::hex_decimal_to_field;
+use circuit::constants::{F, PoseidonHash};
 use gadget::hashes::poseidon::get_poseidon_params;
 
 use crate::{

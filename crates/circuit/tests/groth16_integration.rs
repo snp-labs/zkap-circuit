@@ -19,11 +19,11 @@ use rsa::signature::{SignatureEncoding, Signer};
 use rsa::traits::PublicKeyParts;
 use sha2::Sha256;
 
+use ark_utils::field_serde::ascii_to_field_be;
+use ark_utils::text::pad;
 use circuit::{
     baerae::{BaeraeLightWeightCircuit, input::*},
     constants::{BNP, CG, ZkapConfig, ZkPasskeyConfig},
-    field_parser::ascii_to_field_be,
-    text::pad,
     token::{ClaimIndices, parse_claim_from_str},
 };
 use gadget::{

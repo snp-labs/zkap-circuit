@@ -11,20 +11,12 @@ A Rust library for generating Groth16 zero-knowledge proofs that verify JWT/OAut
 - **Merkle tree issuer registry**: Proves the RSA public key belongs to a trusted issuer set
 - **Audience allowlist**: Zero-knowledge membership check against a hashed audience list
 - **Groth16 on BN254**: Proof-friendly field using `ark-bn254`
-- **Multi-platform bindings**: NAPI (Node.js), WASM (browser), UniFFI (iOS/Android)
 - **CSO-audited**: External security audit completed
 
 ## Architecture
 
 ```
 +----------------------------------------------------------+
-|                     Bindings Layer                       |
-|                                                          |
-|   bindings/napi        bindings/wasm    bindings/uniffi  |
-|   (Node.js / npm)      (Browser)        (iOS / Android)  |
-+------------------------+---------------------------------+
-                         |
-+------------------------v---------------------------------+
 |                   crates/service                         |
 |   generate_baerae_proof()    RawProofRequest             |
 |   create_poseidon_anchor()   poseidon_hash()             |
@@ -50,9 +42,9 @@ A Rust library for generating Groth16 zero-knowledge proofs that verify JWT/OAut
 +----------------------------------------------------------+
 ```
 
-## Installation
+For platform-specific bindings (Node.js, WASM, iOS/Android), see [zkap-circuit-bindings](https://github.com/baerae-zkap/zkap-circuit-bindings).
 
-### Rust
+## Installation
 
 Add to your `Cargo.toml`:
 
@@ -69,87 +61,6 @@ gadget = { git = "https://github.com/snp-labs/zkap-circuit", features = ["full"]
 # Available features: anchor, base64, hashes-poseidon, hashes-sha256, merkletree, rsa, crypto, full
 ```
 
-### Node.js (npm)
-
-Pre-built NAPI binaries are distributed per platform. Install from the release artifacts:
-
-```bash
-npm install @snp-labs/zkap-circuit
-```
-
-Or build from source (requires Rust toolchain and `zig` for cross-compilation):
-
-```bash
-./build.sh --napi-only -e macos-arm64   # native build
-./build.sh --napi-only -e linux-x64     # cross-compile
-```
-
-### WASM (browser)
-
-Build from source using `wasm-pack`:
-
-```bash
-./build.sh --napi-only -e wasm   # produces bindings/wasm/pkg/
-```
-
-Then import the generated package via your bundler or load it directly in a browser.
-
-## Quick Start (Node.js, 3 minutes)
-
-This example generates a Groth16 proof from a JWT using the pre-built NAPI binding.
-
-**Step 1**: Generate a proving key (one-time setup, outputs to `./output/keys/`):
-
-```bash
-./build.sh --keys-only
-```
-
-**Step 2**: Generate a proof:
-
-```js
-const { napiGenerateProof } = require('@snp-labs/zkap-circuit');
-
-// All field elements are hex-encoded BN254 scalar field elements.
-const result = napiGenerateProof({
-  // Path to the Groth16 proving key produced by generate_baerae_crs
-  pkPath: './output/keys/baerae.pk',
-
-  // One raw JWT string per prover (header.payload.signature, base64url-encoded)
-  jwts: ['eyJhbGci...'],
-
-  // RSA-2048 public keys in PEM format (one per JWT)
-  pkOps: ['-----BEGIN PUBLIC KEY-----\nMIIB...\n-----END PUBLIC KEY-----'],
-
-  // Merkle authentication paths for the issuer-public key leaves
-  // Each entry is an array of hex field elements, one per tree level
-  merklePaths: [['0xabc...', '0xdef...']],
-
-  // Leaf indices in the issuer Merkle tree (u32)
-  leafIndices: [0],
-
-  // Merkle root (hex field element)
-  root: '0x1234...',
-
-  // Threshold anchor values (k-of-N Vandermonde scheme, hex field elements)
-  anchor: ['0xaaaa...', '0xbbbb...'],
-
-  // Poseidon hash of the user-operation being authorized
-  hSignUserOp: '0xcccc...',
-
-  // Non-zero random blinding factor (BN254 scalar, keep secret)
-  random: '0xdddd...',
-
-  // Allowed audience list (hex Poseidon hashes of each audience string)
-  audList: ['0xeeee...'],
-});
-
-// result.proofs          -- serialized Groth16 proof per JWT
-// result.sharedInputs   -- public inputs shared across all provers
-// result.partialRhsList -- partial RHS values for threshold aggregation
-// result.jwtExpList     -- expiry timestamps extracted from each JWT
-console.log('Proof generated. Public inputs:', result.sharedInputs);
-```
-
 ## Crate Overview
 
 | Crate | Purpose | Key Types |
@@ -160,39 +71,23 @@ console.log('Proof generated. Public inputs:', result.sharedInputs);
 | `gadget::merkletree` | Poseidon Merkle tree | `MerkleTreeParams`, `MerkleTreeParamsVar` |
 | `circuit` | Main circuit implementation | `BaeraeLightWeightCircuit`, `BaeraeCircuitInput`, `CircuitPublicInputs`, `ZkPasskeyConfig` |
 | `service` | Proof generation service layer | `generate_baerae_proof`, `RawProofRequest`, `create_poseidon_anchor`, `poseidon_hash` |
-| `bindings/napi` | Node.js NAPI bindings | `napiGenerateProof`, `GenerateProofReq`, `GenerateProofRes` |
-| `bindings/wasm` | WebAssembly bindings | wasm-pack output |
-| `bindings/uniffi` | iOS / Android UniFFI bindings | Swift / Kotlin generated interfaces |
 
 ## Building from Source
 
-**Requirements**: Rust (stable, 2024 edition), `cargo`, `npm`, `zig` (cross-compilation only)
+**Requirements**: Rust (stable, 2024 edition), `cargo`
 
 ```bash
-# Full build: key generation + NAPI bindings for all platforms
-./build.sh
+# Build all crates
+cargo build --release
 
-# Native platform only
-./build.sh -e macos-arm64      # Apple Silicon
-./build.sh -e linux-x64        # Linux x86_64
+# Run tests
+cargo test --release
 
-# Key generation only (no NAPI)
-./build.sh --keys-only
-
-# NAPI bindings only (skip key generation)
-./build.sh --napi-only -e macos-arm64
-
-# Configure circuit parameters (default: N=3, K=3)
-./build.sh -n 5 -k 3
-
-# Dry-run: validate configuration without building
-./build.sh --dry-run -e linux-x64
-
-# CI mode: auto-approve missing Rust target installation
-./build.sh --yes -e linux-x64
+# Lint
+cargo clippy -- -D warnings
 ```
 
-**Circuit parameters** (configure via environment variables or `build.sh` flags):
+**Circuit parameters** (configure via environment variables):
 
 | Variable | Default | Description |
 |---|---|---|
@@ -202,15 +97,6 @@ console.log('Proof generated. Public inputs:', result.sharedInputs);
 | `ZK_MAX_PAYLOAD_B64_LEN` | 896 | Maximum payload length in base64 bytes |
 | `ZK_TREE_HEIGHT` | 16 | Issuer Merkle tree height (supports up to 2^16 issuers) |
 | `ZK_NUM_AUDIENCE_LIMIT` | 5 | Maximum allowed audience list size |
-
-Output is written to `./output/`:
-
-```
-output/
-  keys/           # Groth16 proving and verification keys
-  napi/<env>/     # Platform-specific NAPI .node files
-  *.tar.gz        # Release archive
-```
 
 ## Security
 

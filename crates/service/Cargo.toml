@@ -34,23 +34,14 @@ num         = { workspace = true }
 num-integer = { workspace = true }
 num-bigint  = { workspace = true }
 
-# Logging
-log = { workspace = true }
-android_logger = { workspace = true }
 num-traits  = { workspace = true }
+log = { workspace = true }
 
 blake2 = { workspace = true }
 hex    = { workspace = true }
 rand   = { workspace = true }
 sha2   = { workspace = true }
 jsonwebtoken = { workspace = true }
-
-# mimalloc: on musl (Alpine Linux), local_dynamic_tls is required to fix dlopen TLS issues
-[target.'cfg(target_env = "musl")'.dependencies]
-mimalloc = { workspace = true, features = ["local_dynamic_tls"] }
-
-[target.'cfg(not(target_env = "musl"))'.dependencies]
-mimalloc = { workspace = true }
 
 [features]
 default = []

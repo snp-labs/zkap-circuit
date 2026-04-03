@@ -2,7 +2,7 @@
 
 use ark_groth16::Proof;
 use circuit::constants::{BN254, F};
-use circuit::evm::solidity_types::Solidity;
+use ark_utils::evm::solidity_types::Solidity;
 
 /// Proof generation request (platform-agnostic core type)
 #[derive(Debug, Clone)]

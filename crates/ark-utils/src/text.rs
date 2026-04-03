@@ -8,11 +8,9 @@ pub fn pad(s: &str, target_len: usize, pad_char: char) -> Result<String, TextErr
             target_len
         )));
     }
-
     let mut result = String::with_capacity(target_len);
     result.push_str(s);
     let pad_needed = target_len - s.len();
     result.extend(std::iter::repeat_n(pad_char, pad_needed));
-
     Ok(result)
 }

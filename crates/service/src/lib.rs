@@ -5,11 +5,10 @@ pub mod error;
 pub mod manifest;
 
 pub use circuit::constants;
-pub use circuit::field_parser;
-pub use circuit::error as common_error;
-pub use circuit::evm;
-pub use circuit::io;
-pub use circuit::text;
+pub use ark_utils::field_serde as field_parser;
+pub use ark_utils::evm;
+pub use ark_utils::io;
+pub use ark_utils::text;
 
 pub use api::anchor::create_poseidon_anchor;
 pub use api::hash::poseidon_hash;

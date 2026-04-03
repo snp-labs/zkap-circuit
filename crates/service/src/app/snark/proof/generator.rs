@@ -7,7 +7,7 @@ use ark_groth16::{Groth16, Proof, ProvingKey};
 use circuit::baerae::BaeraeLightWeightCircuit;
 use circuit::BaeraeCircuitInput;
 use circuit::constants::{BN254, BNP, CG, F, ZkPasskeyConfig};
-use circuit::io::load_key_uncompressed;
+use ark_utils::io::load_key_uncompressed;
 use rand::rngs::OsRng;
 
 use crate::error::ApplicationError;

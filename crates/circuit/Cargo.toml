@@ -24,11 +24,8 @@ ark-bn254 = { workspace = true }
 ark-ed-on-bn254 = { workspace = true, features = ["r1cs"] }
 ark-serialize = { workspace = true }
 
-regex = { workspace = true }
-thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-clap = { workspace = true, features = ["derive"] }
 hex = { workspace = true }
 
 [build-dependencies]
@@ -42,18 +39,12 @@ baerae = []
 num-cs-logging = ["gadget/num-cs-logging"]
 
 [dev-dependencies]
+ark-utils = { workspace = true }
 rsa = { workspace = true }
 sha2 = { workspace = true }
 rand = { workspace = true }
 base64 = { workspace = true }
-
-[[bin]]
-name = "generate_baerae_crs"
-path = "src/bin/generate_baerae_crs.rs"
-
-[[bin]]
-name = "generate_hash"
-path = "src/bin/generate_hash.rs"
+regex = { workspace = true }
 
 [[test]]
 name = "groth16_integration"

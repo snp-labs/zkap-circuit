@@ -11,7 +11,9 @@ categories = ["cryptography"]
 [dependencies]
 gadget = { workspace = true, default-features = false, features = ["crypto", "base64", "rsa"] }
 circuit = { workspace = true }
+ark-utils = { workspace = true }
 
+regex = { workspace = true }
 thiserror = { workspace = true }
 serde      = { workspace = true }
 serde_json = { workspace = true }

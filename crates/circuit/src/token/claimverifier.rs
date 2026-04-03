@@ -202,9 +202,36 @@ fn is_whitespace<F: PrimeField>(byte: &FpVar<F>) -> Result<Boolean<F>, Synthesis
 
 #[cfg(test)]
 mod tests {
-    use crate::token::{ClaimIndices, parse_claim_from_str};
+    use crate::token::{Claim, ClaimIndices};
+    use regex::Regex;
 
     use super::*;
+
+    /// Test-local copy of parse_claim_from_str (moved to service crate)
+    fn parse_claim_from_str(s: &str, key: &str) -> Result<Claim, String> {
+        let escaped_key = regex::escape(key);
+        let pattern = format!(r#"\s*("{}")\s*:\s*("?[^",]*"?)\s*([,\}}])"#, escaped_key);
+        let re = Regex::new(&pattern).unwrap();
+        let caps = re.captures(s).ok_or_else(|| format!("Key '{}' not found", key))?;
+        let full_match = caps.get(0).unwrap();
+        let full_match_str = full_match.as_str();
+        let offset = full_match.start();
+        let claim_len = full_match_str.len();
+        let captured_value = caps.get(2).unwrap().as_str();
+        let colon_idx = full_match_str.find(':').unwrap();
+        let value_str = captured_value.to_string();
+        let rel_search_start = colon_idx + 1;
+        let value_idx = full_match_str[rel_search_start..]
+            .find(captured_value)
+            .map(|i| i + rel_search_start)
+            .unwrap();
+        let value_len = captured_value.len();
+        Ok(Claim {
+            key: key.to_string(),
+            value: value_str,
+            indices: ClaimIndices { offset, claim_len, colon_idx, value_idx, value_len },
+        })
+    }
     use ark_r1cs_std::{R1CSVar, alloc::AllocVar};
     use ark_relations::r1cs::ConstraintSystem;
 

@@ -32,7 +32,7 @@ use gadget::{
         build_anchor_witness,
     },
     anchor::AnchorScheme,
-    base64::{get_base64_table, mod_v2::IndexBits},
+    base64::{get_base64_table, IndexBits},
     hashes::poseidon::get_poseidon_params,
     matrix::VandermondeMatrix,
     merkletree::tree_config::MerkleTreeParams,

@@ -4,7 +4,7 @@ use ark_crypto_primitives::{
 };
 use ark_ff::PrimeField;
 use ark_utils::field_serde::ascii_to_field_be;
-use ark_utils::text::pad;
+use ark_utils::pad;
 use circuit::constants::{F, PoseidonHash, ZkPasskeyConfig};
 
 use super::AnchorConfig;

@@ -21,7 +21,7 @@ use sha2::Sha256;
 
 use regex::Regex;
 use ark_utils::field_serde::ascii_to_field_be;
-use ark_utils::text::pad;
+use ark_utils::pad;
 use circuit::{
     baerae::{BaeraeLightWeightCircuit, input::*},
     constants::{BNP, CG, ZkapConfig, ZkPasskeyConfig},

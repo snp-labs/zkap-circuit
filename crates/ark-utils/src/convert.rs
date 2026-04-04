@@ -38,6 +38,12 @@ pub fn try_str_to_fields<F: PrimeField>(s: &str) -> Result<Vec<F>, ConvertError>
 }
 
 #[derive(Debug, thiserror::Error)]
+pub enum TextError {
+    #[error("Invalid format: {0}")]
+    InvalidFormat(String),
+}
+
+#[derive(Debug, thiserror::Error)]
 pub enum ConvertError {
     #[error("Invalid length: expected multiple of {expected_multiple}, got {actual}")]
     InvalidLength {
@@ -57,9 +63,9 @@ pub enum ConvertError {
 /// Pads a string to the target length using the given pad character.
 ///
 /// Returns an error if the string is already longer than the target length.
-pub fn pad(s: &str, target_len: usize, pad_char: char) -> Result<String, crate::text::TextError> {
+pub fn pad(s: &str, target_len: usize, pad_char: char) -> Result<String, TextError> {
     if s.len() > target_len {
-        return Err(crate::text::TextError::InvalidFormat(format!(
+        return Err(TextError::InvalidFormat(format!(
             "String length {} exceeds target length {}",
             s.len(),
             target_len

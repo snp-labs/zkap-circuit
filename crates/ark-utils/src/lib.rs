@@ -33,11 +33,9 @@ pub mod io;
 // Always available
 pub mod convert;
 pub mod error;
-pub mod text;
 
 // Always-available re-exports
 pub use convert::*;
-pub use text::*;
 
 // R1CS re-exports
 #[cfg(feature = "r1cs")]

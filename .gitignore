@@ -39,6 +39,9 @@ node_modules/
 output/
 *.node
 
+# Internal review artifacts
+health-result.md
+
 # macOS
 .DS_Store
 **/.DS_Store

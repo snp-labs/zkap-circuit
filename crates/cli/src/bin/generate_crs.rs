@@ -1,5 +1,5 @@
 use ark_serialize::CanonicalSerialize;
-use ark_std::rand::{self, RngCore, SeedableRng, rngs::OsRng};
+use ark_std::rand::rngs::OsRng;
 use circuit::constants::{BNP, CG, CircuitConfig};
 use std::{
     collections::HashMap,
@@ -17,13 +17,9 @@ fn main() {
         std::process::exit(1);
     };
 
-    if !cfg!(feature = "num-cs-logging") {
-        eprintln!(
-            "This binary must be run with `--features num-cs-logging` to enable constraint analysis output."
-        );
-
-        std::process::exit(1);
-    };
+    if cfg!(feature = "num-cs-logging") {
+        eprintln!("Note: num-cs-logging is enabled. Constraint counts will be printed.");
+    }
 
     let args: Vec<_> = args().collect();
     if args.len() < 3 {
@@ -31,8 +27,7 @@ fn main() {
         std::process::exit(1);
     }
 
-    let seed_u64 = OsRng.next_u64();
-    let rng: rand::rngs::StdRng = ark_std::rand::rngs::StdRng::seed_from_u64(seed_u64);
+    let rng = OsRng;
 
     let config_path = std::path::Path::new(&args[2]);
     let params = CircuitConfig::from_json_file(config_path).unwrap_or_else(|e| {
@@ -44,7 +39,7 @@ fn main() {
 }
 
 #[allow(unused)]
-fn generate_crs_files(file_path: &str, params: &CircuitConfig, mut rng: rand::rngs::StdRng) {
+fn generate_crs_files(file_path: &str, params: &CircuitConfig, mut rng: OsRng) {
     use ark_utils::evm::groth16_verifier_solidity::SolidityContractGenerator;
 
     use ark_bn254::Bn254;
@@ -143,13 +138,11 @@ fn write_manifest(dir: &str, params: &CircuitConfig, files: &[&str]) {
 }
 
 fn sha256_file(path: &str) -> String {
-    let output = std::process::Command::new("shasum")
-        .args(["-a", "256", path])
-        .output()
-        .unwrap_or_else(|e| panic!("Failed to run shasum on {}: {}", path, e));
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    // shasum output: "<hash>  <filename>\n"
-    stdout.split_whitespace().next().unwrap_or("unknown").to_string()
+    use sha2::{Sha256, Digest};
+    let bytes = std::fs::read(path)
+        .unwrap_or_else(|e| panic!("Failed to read {}: {}", path, e));
+    let hash = Sha256::digest(&bytes);
+    hex::encode(hash)
 }
 
 fn chrono_rfc3339_now() -> String {

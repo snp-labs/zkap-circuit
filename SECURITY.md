@@ -8,7 +8,10 @@ This document describes the security policy for [zkup-baerae](https://github.com
 
 **Please do not open public GitHub issues for security vulnerabilities.**
 
-Report security issues by email to: **security@snp-labs.io**
+You can report security issues through either channel:
+
+- **GitHub Security Advisories** (preferred): [Report a vulnerability](https://github.com/snp-labs/zkap-circuit/security/advisories/new)
+- **Email**: **security@snp-labs.io**
 
 Include as much detail as possible: affected component, reproduction steps, potential impact, and any suggested mitigations.
 
@@ -16,8 +19,6 @@ Include as much detail as possible: affected component, reproduction steps, pote
 
 - Acknowledgement within 48 hours of receipt
 - Triage and initial assessment within 7 days
-
-A PGP key for encrypted submission may be added in a future update. Check back here or contact us to confirm availability before sending sensitive material.
 
 ---
 

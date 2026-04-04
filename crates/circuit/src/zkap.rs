@@ -64,7 +64,7 @@ use gadget::{
         constraints::{PublicKeyVar, SignatureVar},
     },
     utils::{
-        packing::pack_decompose_bytes_unchecked,
+        packing::pack_decompose_bytes_checked,
         comparison::enforce_less_than,
         single_multiplexer, slice_efficient,
         jwt_field::{jwt_exp_to_field, jwt_nonce_hex_to_field},
@@ -318,15 +318,15 @@ where
             claim_extractor_v2("nonce", &payload, &token_claim[3], self.params.max_nonce_len as usize)?;
         let sub_bytes = claim_extractor_v2("sub", &payload, &token_claim[4], self.params.max_sub_len as usize)?;
         // Convert to field elements and pack
-        let aud = pack_decompose_bytes_unchecked(&aud_bytes)?;
+        let aud = pack_decompose_bytes_checked(&aud_bytes)?;
         let exp = jwt_exp_to_field(&exp_bytes)?;
-        let iss = pack_decompose_bytes_unchecked(&iss_bytes)?;
+        let iss = pack_decompose_bytes_checked(&iss_bytes)?;
 
         let last_quote_index = token_claim[3]
             .value_len
             .wrapping_add(&UInt16::constant(u16::MAX));
         let nonce = jwt_nonce_hex_to_field(&nonce_bytes, &last_quote_index)?;
-        let sub = pack_decompose_bytes_unchecked(&sub_bytes)?;
+        let sub = pack_decompose_bytes_checked(&sub_bytes)?;
 
         // ============================================================
         // [Phase 2] Issuer Validation and Execution Binding

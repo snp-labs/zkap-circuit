@@ -3,9 +3,9 @@ name = "ark-utils"
 version = "0.1.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
-description = "R1CS constraint system utilities for arkworks"
+description = "Arkworks utilities: R1CS gadgets, field serialization, EVM codegen, and common helpers"
 repository = "https://github.com/snp-labs/zkap-circuit"
-keywords = ["zk", "arkworks", "r1cs", "constraints"]
+keywords = ["zk", "arkworks", "r1cs", "constraints", "evm"]
 categories = ["cryptography"]
 
 [dependencies]

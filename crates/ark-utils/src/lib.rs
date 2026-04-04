@@ -37,7 +37,7 @@ pub mod text;
 
 // Always-available re-exports
 pub use convert::*;
-pub use error::*;
+pub use text::*;
 
 // R1CS re-exports
 #[cfg(feature = "r1cs")]
@@ -50,7 +50,13 @@ pub use select::*;
 pub use slice::*;
 #[cfg(feature = "r1cs")]
 pub use uint32::*;
-
-// Explicit re-exports from submodules for flat-path access
 #[cfg(feature = "r1cs")]
 pub use slice_grouped::{slice_efficient, log_base_2, segments_to_num_be};
+
+// Field serde re-exports
+#[cfg(feature = "field-serde")]
+pub use field_serde::*;
+
+// IO re-exports
+#[cfg(feature = "io")]
+pub use io::*;

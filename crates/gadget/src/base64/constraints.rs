@@ -405,7 +405,7 @@ mod tests {
     #[test]
     fn test_decode_standard_chars() {
         // Test all base64url alphabet in 4-char chunks
-        let cs = ConstraintSystem::<F>::new_ref();
+        let _cs = ConstraintSystem::<F>::new_ref();
         let table = get_base64_table();
 
         // "ABCD" — first 4 chars of base64 alphabet

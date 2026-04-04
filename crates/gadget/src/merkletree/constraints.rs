@@ -18,8 +18,6 @@ use crate::merkletree::{
     tree_config::{MerkleTreeParams, MerkleTreeParamsVar},
 };
 
-#[cfg(feature = "constraints-logging")]
-use crate::debug::log_r1cs_eq;
 
 #[derive(Clone)]
 pub struct MerkleCircuitInputVar<F>
@@ -36,13 +34,6 @@ where
     F: PrimeField + Absorb,
 {
     pub fn enforce_equal_leaf(&self, other: &FpVar<F>) -> Result<(), SynthesisError> {
-        #[cfg(feature = "constraints-logging")]
-        log_r1cs_eq(
-            "Merkle Leaf Equality",
-            &[self.leaf.clone()],
-            &[other.clone()],
-        );
-
         self.leaf.enforce_equal(other)
     }
 
@@ -56,13 +47,6 @@ where
         let membership =
             self.path
                 .verify_membership(hash_param, hash_param, root, std::slice::from_ref(&self.leaf))?;
-
-        #[cfg(feature = "constraints-logging")]
-        log_r1cs_eq(
-            "Merkle Membership Validity",
-            &[membership.clone()],
-            &[Boolean::TRUE],
-        );
 
         membership.enforce_equal(&Boolean::TRUE)?;
         Ok(())
@@ -100,7 +84,6 @@ where
 
 #[cfg(test)]
 mod tests {
-    use ark_bn254::Fr;
     use ark_crypto_primitives::{
         crh::{
             CRHScheme, CRHSchemeGadget,

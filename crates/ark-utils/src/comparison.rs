@@ -190,7 +190,7 @@ mod tests {
         R1CSVar,
         alloc::AllocVar,
         eq::EqGadget,
-        fields::{FieldVar, fp::FpVar},
+        fields::fp::FpVar,
     };
     use ark_relations::r1cs::{ConstraintSystem, ConstraintSystemRef};
 
@@ -257,7 +257,7 @@ mod tests {
 
     #[test]
     fn test_is_less_than_equal_case() {
-        use super::{compare_bits_raw, is_less_than};
+        use super::is_less_than;
         use ark_r1cs_std::prelude::ToBitsGadget;
 
         let cs: ConstraintSystemRef<F> = ConstraintSystem::<F>::new_ref();

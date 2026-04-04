@@ -1687,6 +1687,7 @@ dependencies = [
  "ark-serialize",
  "ark-std",
  "ark-utils",
+ "base64",
  "blake2",
  "circuit",
  "gadget",
@@ -1701,9 +1702,11 @@ dependencies = [
  "once_cell",
  "rand",
  "regex",
+ "rsa",
  "serde",
  "serde_json",
  "sha2",
+ "signature",
  "thiserror",
 ]
 

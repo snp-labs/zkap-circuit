@@ -1,13 +1,14 @@
 use ark_ff::Field;
 
-pub mod baerae;
+pub mod input;
 pub mod token;
+pub mod zkap;
 
 pub mod constants;
 
 // Re-export circuit input types
-pub use baerae::input::{
-    AnchorWitness, AudienceWitness, BaeraeCircuitInput, CircuitConstants,
+pub use input::{
+    AnchorWitness, AudienceWitness, ZkapCircuitInput, CircuitConstants,
     CircuitPublicInputs, JwtWitness, MerkleWitness, MiscWitness,
 };
 

@@ -68,7 +68,7 @@ jobs:
         # ZK_N and ZK_K are inherited from workflow-level env: block.
         # Removing those env vars causes build_common.rs to use dev defaults (N=6),
         # which may OOM on CI runners.
-        run: cargo run --release --features baerae,num-cs-logging --bin generate_baerae_crs -- output/keys
+        run: cargo run --release --features zkap-circuit,num-cs-logging --bin generate_crs -- output/keys
 
       - name: Upload keys
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

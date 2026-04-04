@@ -35,7 +35,7 @@ dotenvy = { workspace = true }
 default = []
 print-trace = ["gadget/print-trace"]
 constraints-logging = ["gadget/constraints-logging"]
-baerae = []
+zkap-circuit = []
 num-cs-logging = ["gadget/num-cs-logging"]
 
 [dev-dependencies]
@@ -48,4 +48,4 @@ regex = { workspace = true }
 
 [[test]]
 name = "groth16_integration"
-required-features = ["baerae"]
+required-features = ["zkap-circuit"]

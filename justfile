@@ -34,7 +34,7 @@ build-android:
 
 # CRS generation
 setup:
-    cargo run --release --features baerae,num-cs-logging --bin generate_baerae_crs -- ./dist
+    cargo run --release --features zkap-circuit,num-cs-logging --bin generate_crs -- ./dist
 
 # Debug with constraint logging
 test-debug:
@@ -42,7 +42,7 @@ test-debug:
 
 # Prove
 prove:
-    cargo test --release --package test --test snark_v4_test test_generate_baerae_proof_single -- --nocapture
+    cargo test --release --package test --test snark_v4_test test_generate_proof_single -- --nocapture
 
 # Build all targets
 build-all: build-wasm build-napi build-ios build-android

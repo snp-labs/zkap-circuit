@@ -4,7 +4,7 @@
 //!
 //! ```text
 //! ┌─────────────────────────────────────────────────────────────────┐
-//! │                     generate_baerae_proof_v2                    │
+//! │                        generate_proof                           │
 //! │                          (entry point)                          │
 //! └───────────────────────────────┬─────────────────────────────────┘
 //!                                 │
@@ -54,7 +54,7 @@ use super::proof::ProofGenerator;
 /// # Returns
 /// * tuple of proofs and public inputs
 #[allow(clippy::type_complexity)]
-pub fn generate_baerae_proof<Config: ZkPasskeyConfig>(
+pub fn generate_proof<Config: ZkPasskeyConfig>(
     raw: RawProofRequest,
 ) -> Result<(Vec<Proof<BN254>>, Vec<Vec<F>>), ApplicationError> {
     // 1. Validate and parse inputs

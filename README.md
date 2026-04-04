@@ -18,13 +18,13 @@ A Rust library for generating Groth16 zero-knowledge proofs that verify JWT/OAut
 ```
 +----------------------------------------------------------+
 |                   crates/service                         |
-|   generate_baerae_proof()    RawProofRequest             |
+|   generate_proof()           RawProofRequest             |
 |   create_poseidon_anchor()   poseidon_hash()             |
 +------------------------+---------------------------------+
                          |
 +------------------------v---------------------------------+
 |                   crates/circuit                         |
-|   BaeraeLightWeightCircuit    BaeraeCircuitInput         |
+|   ZkapCircuit                 ZkapCircuitInput            |
 |   CircuitPublicInputs         ZkPasskeyConfig            |
 +------------------------+---------------------------------+
                          |
@@ -69,8 +69,8 @@ gadget = { git = "https://github.com/snp-labs/zkap-circuit", features = ["full"]
 | `gadget` | ZK circuit gadgets (feature-gated) | `SHA256Gadget`, `Base64DecoderGadget`, `BigNatVar`, `VandermondeMatrixVar`, `PoseidonAnchorSchemeGadget` |
 | `gadget::signature::rsa` | RSA-2048 witness and constraint types | `PublicKey`, `Signature`, `PublicKeyVar`, `SignatureVar` |
 | `gadget::merkletree` | Poseidon Merkle tree | `MerkleTreeParams`, `MerkleTreeParamsVar` |
-| `circuit` | Main circuit implementation | `BaeraeLightWeightCircuit`, `BaeraeCircuitInput`, `CircuitPublicInputs`, `ZkPasskeyConfig` |
-| `service` | Proof generation service layer | `generate_baerae_proof`, `RawProofRequest`, `create_poseidon_anchor`, `poseidon_hash` |
+| `circuit` | Main circuit implementation | `ZkapCircuit`, `ZkapCircuitInput`, `CircuitPublicInputs`, `ZkPasskeyConfig` |
+| `service` | Proof generation service layer | `generate_proof`, `RawProofRequest`, `create_poseidon_anchor`, `poseidon_hash` |
 
 ## Building from Source
 

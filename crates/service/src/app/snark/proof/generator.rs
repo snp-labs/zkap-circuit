@@ -4,8 +4,8 @@ use std::path::PathBuf;
 
 use ark_crypto_primitives::snark::SNARK;
 use ark_groth16::{Groth16, Proof, ProvingKey};
-use circuit::baerae::BaeraeLightWeightCircuit;
-use circuit::BaeraeCircuitInput;
+use circuit::zkap::ZkapCircuit;
+use circuit::ZkapCircuitInput;
 use circuit::constants::{BN254, BNP, CG, F, ZkPasskeyConfig};
 use ark_utils::io::load_key_uncompressed;
 use rand::rngs::OsRng;
@@ -23,7 +23,7 @@ pub struct ProofOutput {
 
 /// Proof generator
 ///
-/// Receives BaeraeCircuitInputs and generates Groth16 proofs.
+/// Receives ZkapCircuitInputs and generates Groth16 proofs.
 pub struct ProofGenerator {
     pk_path: PathBuf,
 }
@@ -34,10 +34,10 @@ impl ProofGenerator {
         Self { pk_path }
     }
 
-    /// Generates proofs for all BaeraeCircuitInputs
+    /// Generates proofs for all ZkapCircuitInputs
     pub fn generate<Config: ZkPasskeyConfig>(
         &self,
-        inputs: &[BaeraeCircuitInput<F>],
+        inputs: &[ZkapCircuitInput<F>],
     ) -> Result<ProofOutput, ApplicationError> {
         log::info!("[ProofGenerator] Starting proof generation for {} inputs...", inputs.len());
 
@@ -53,7 +53,7 @@ impl ProofGenerator {
         for (i, input) in inputs.iter().enumerate() {
             log::info!("[ProofGenerator] Generating proof {}/{}...", i + 1, inputs.len());
 
-            let circuit = BaeraeLightWeightCircuit::<CG, BNP, Config>::from_input(input.clone());
+            let circuit = ZkapCircuit::<CG, BNP, Config>::from_input(input.clone());
             public_inputs.push(input.extract_public_inputs());
 
             let proof = Groth16::<BN254>::prove(&pk, circuit, &mut rng)

@@ -1,7 +1,7 @@
 use ark_crypto_primitives::crh::CRHScheme;
 use ark_crypto_primitives::merkle_tree::Path;
 use circuit::{
-    AnchorWitness, AudienceWitness, BaeraeCircuitInput, CircuitConstants, CircuitPublicInputs,
+    AnchorWitness, AudienceWitness, ZkapCircuitInput, CircuitConstants, CircuitPublicInputs,
     JwtWitness, MerkleWitness, MiscWitness,
 };
 use circuit::constants::{F, PoseidonHash, ZkPasskeyConfig};
@@ -125,11 +125,11 @@ impl<Config: ZkPasskeyConfig> ProofContextBuilder<Config> {
         Ok(self)
     }
 
-    /// Builds a BaeraeCircuitInput for the i-th proof
+    /// Builds a ZkapCircuitInput for the i-th proof
     pub fn build_circuit_input(
         &self,
         proof_index: usize,
-    ) -> Result<BaeraeCircuitInput<F>, ApplicationError> {
+    ) -> Result<ZkapCircuitInput<F>, ApplicationError> {
         let anchor_ctx = self
             .anchor_ctx
             .as_ref()
@@ -150,7 +150,7 @@ impl<Config: ZkPasskeyConfig> ProofContextBuilder<Config> {
 
         let leaf_idx = self.request.merkle.leaf_indices[proof_index];
 
-        Ok(BaeraeCircuitInput {
+        Ok(ZkapCircuitInput {
             constants: CircuitConstants {
                 vandermonde_matrix: self.circuit_ctx.vandermonde_matrix.clone(),
                 poseidon_param: self.circuit_ctx.poseidon_params.clone(),
@@ -197,8 +197,8 @@ impl<Config: ZkPasskeyConfig> ProofContextBuilder<Config> {
         })
     }
 
-    /// Builds BaeraeCircuitInputs for all proofs
-    pub fn build_all_circuit_inputs(&self) -> Result<Vec<BaeraeCircuitInput<F>>, ApplicationError> {
+    /// Builds ZkapCircuitInputs for all proofs
+    pub fn build_all_circuit_inputs(&self) -> Result<Vec<ZkapCircuitInput<F>>, ApplicationError> {
         (0..Config::K)
             .map(|i| self.build_circuit_input(i))
             .collect()

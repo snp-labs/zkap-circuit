@@ -1,3 +1,10 @@
+//! zkap-circuit — the Groth16 R1CS circuit definition for the ZK-Passkey protocol.
+//!
+//! Provides [`ZkapCircuit`], the main constraint synthesizer, along with all input types
+//! ([`ZkapCircuitInput`], [`CircuitPublicInputs`], witness structs) and the shared
+//! [`CircuitConfig`] / [`RawCircuitConfig`] parameter types.  This crate is a dependency of
+//! `zkap-service` and is not usually consumed directly by application code.
+
 use ark_ff::Field;
 
 pub mod input;

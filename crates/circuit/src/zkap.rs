@@ -71,16 +71,23 @@ use gadget::{
     },
 };
 
-/// ZK-Passkey circuit
+/// The main Groth16 R1CS circuit for the ZK-Passkey (ZKAP) protocol.
 ///
-/// Fields organized by logical group:
-/// - `constants`: circuit constants (Vandermonde, Poseidon, Base64)
-/// - `public_inputs`: inputs exposed to the verifier
-/// - `jwt`: JWT-related witness (SHA256, Base64, RSA)
-/// - `anchor`: Threshold anchor witness
-/// - `merkle`: Merkle tree witness
-/// - `audience`: Audience list witness
-/// - `misc`: miscellaneous witness (random)
+/// Implements [`ConstraintSynthesizer`] and encodes the full five-phase proof statement:
+/// JWT authenticity and claim extraction (SHA-256 + RSA-2048), issuer/key Merkle membership,
+/// threshold anchor binding, audience membership, and output commitment.
+///
+/// Fields are grouped by logical role:
+/// - `constants`: circuit constants fixed at setup time (Vandermonde matrix, Poseidon params, Base64 table)
+/// - `public_inputs`: values exposed to the verifier (hanchor, h_a, root, h_sign_user_op, …)
+/// - `jwt`: JWT witness (SHA-256 padding, Base64 index bits, RSA key and signature)
+/// - `anchor`: threshold anchor witness (anchor polynomial, selector, a-vector)
+/// - `merkle`: Merkle path and leaf index
+/// - `audience`: padded audience list
+/// - `misc`: blinding randomness
+///
+/// Construct via [`ZkapCircuit::from_input`] for proving, or [`ZkapCircuit::generate_mock_circuit`]
+/// for trusted setup.
 #[derive(Clone, CanonicalSerialize, CanonicalDeserialize)]
 pub struct ZkapCircuit<C, BNP>
 where

@@ -27,9 +27,11 @@ pub struct CrsParams {
     pub NUM_AUDIENCE_LIMIT: u64,
 }
 
-/// Load and validate manifest.json from the same directory as the proving key.
-/// Returns Ok(()) if manifest matches or doesn't exist (backwards compatible).
-/// Returns Err if manifest exists but parameters don't match.
+/// Validate that a `manifest.json` beside the proving key matches the active [`CircuitConfig`].
+///
+/// Looks for `manifest.json` in the same directory as `pk_path`.  If the file is absent the
+/// function succeeds (backwards-compatible).  If present, every circuit parameter in the manifest
+/// is compared against `params`; any mismatch causes an error listing all differing fields.
 pub fn validate_crs_manifest(
     params: &CircuitConfig,
     pk_path: &Path,
@@ -102,7 +104,12 @@ pub fn validate_crs_manifest(
     }
 }
 
-/// Load CircuitConfig from a manifest.json file
+/// Load a [`CircuitConfig`] from a `manifest.json` file.
+///
+/// Reads and deserialises the JSON at `manifest_path`, maps the CRS parameter fields to a
+/// [`CircuitConfig`], then calls [`CircuitConfig::validate`] before returning.  Use this when
+/// you want to derive circuit parameters from an existing CRS manifest rather than a separate
+/// config file.
 pub fn load_params_from_manifest(manifest_path: &Path) -> Result<CircuitConfig, ApplicationError> {
     let content = std::fs::read_to_string(manifest_path).map_err(|e| {
         ApplicationError::InvalidFormat(format!("Failed to read manifest.json: {}", e))

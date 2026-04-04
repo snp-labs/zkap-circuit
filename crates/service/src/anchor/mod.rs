@@ -4,8 +4,11 @@ pub mod types;
 use circuit::constants::{F, CircuitConfig, PAD_CHAR};
 use gadget::matrix::VandermondeMatrix;
 
-/// Anchor configuration derived from CircuitConfig.
-/// Moved from common::constants to avoid common depending on gadget::matrix.
+/// Anchor configuration derived from [`CircuitConfig`].
+///
+/// Packages all parameters required by the Poseidon anchor scheme — matrix dimensions,
+/// field-length limits for claim padding, and the pre-built [`VandermondeMatrix`] — into a
+/// single struct.  Construct via [`AnchorConfig::from_params`].
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub struct AnchorConfig {

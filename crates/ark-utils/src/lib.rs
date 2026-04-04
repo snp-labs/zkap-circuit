@@ -1,3 +1,10 @@
+//! ark-utils — utility helpers for arkworks-based zero-knowledge proof code.
+//!
+//! Provides field-element conversion (`hex_decimal_to_field`, `try_str_to_fields`),
+//! R1CS array/slice gadgets (`select`, `slice`, `packing`), EVM calldata codegen (`evm`),
+//! serialisation helpers (`io`, `field-serde`), and shared error types.
+//! Feature flags: `r1cs`, `evm-codegen`, `field-serde`, `io`.
+
 extern crate alloc;
 
 // R1CS modules (feature = "r1cs")

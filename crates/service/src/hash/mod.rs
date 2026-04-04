@@ -9,6 +9,10 @@ use gadget::{
 
 use crate::error::ApplicationError;
 
+/// Compute a Poseidon hash of one or more field-element strings.
+///
+/// Each string in `messages` is parsed as a hex or decimal field element, then the collection
+/// is hashed with the cached Poseidon parameters. Returns the resulting field element `F`.
 pub fn generate_hash(messages: Vec<String>) -> Result<F, ApplicationError> {
     let poseidon_params = crate::poseidon_params();
 
@@ -29,6 +33,12 @@ pub fn generate_hash(messages: Vec<String>) -> Result<F, ApplicationError> {
     Ok(result)
 }
 
+/// Compute per-audience Poseidon hashes and a combined audience-list hash.
+///
+/// `aud_list` is padded with the circuit's `forbidden_string` up to `params.num_audience_limit`.
+/// Each padded audience string is converted to fixed-length limbs and individually hashed;
+/// the resulting field elements are then hashed together to produce `h_aud_list`.
+/// Returns `(aud_fields, h_aud_list)`.  Errors if `aud_list` exceeds the limit.
 pub fn generate_aud_hash(
     params: &CircuitConfig,
     aud_list: Vec<String>,
@@ -67,6 +77,11 @@ pub fn generate_aud_hash(
     Ok((aud_fields, h_aud_list))
 }
 
+/// Compute the Merkle leaf hash for an issuer + RSA public-key pair.
+///
+/// Pads `iss` to `params.max_iss_len` bytes, decodes the Base64 modulus `pk_b64`, converts
+/// it to BigNat limbs, then hashes `[iss_limbs || pk_n_limbs]` with Poseidon.
+/// Returns the leaf field element used when building or verifying the Merkle tree.
 pub fn generate_leaf_hash(
     params: &CircuitConfig,
     iss: &str,

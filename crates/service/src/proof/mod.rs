@@ -55,14 +55,18 @@ use self::context::ProofContextBuilder;
 use self::generator::ProofGenerator;
 use self::request::ProofRequest;
 
-/// Setup output containing proving key, verifying key, and prepared verifying key
+/// Output of [`groth16_setup`]: the proving key, verifying key, and pre-processed verifying key
+/// needed to generate and verify Groth16 proofs for the ZKAP circuit.
 pub struct SetupOutput {
     pub pk: ProvingKey<BN254>,
     pub vk: VerifyingKey<BN254>,
     pub pvk: PreparedVerifyingKey<BN254>,
 }
 
-/// Groth16 trusted setup
+/// Perform a Groth16 trusted setup for the ZKAP circuit parameterised by `params`.
+///
+/// Generates a random proving key (`pk`), verifying key (`vk`), and prepared verifying key
+/// (`pvk`). The resulting [`SetupOutput`] must be saved for later use by [`prove`] and [`verify`].
 pub fn groth16_setup(params: &CircuitConfig) -> Result<SetupOutput, ApplicationError> {
     let mut rng = OsRng;
     let circuit = ZkapCircuit::<CG, BNP>::generate_mock_circuit(params);
@@ -75,9 +79,16 @@ pub fn groth16_setup(params: &CircuitConfig) -> Result<SetupOutput, ApplicationE
     Ok(SetupOutput { pk, vk, pvk })
 }
 
-/// 1. RawProofRequest -> ProofRequest (validation and parsing)
-/// 2. ProofRequest -> CircuitInput[] (context building)
-/// 3. CircuitInput[] -> Proof[] (proof generation)
+/// Generate Groth16 proofs from raw user inputs via a 4-step pipeline:
+///
+/// 1. **Validate & parse** — [`RawProofRequest`] → [`ProofRequest`]: checks vector lengths and
+///    parses field elements, JWT tokens, and the anchor array.
+/// 2. **Build context** — constructs anchor and audience contexts from the parsed request.
+/// 3. **Build circuit inputs** — assembles one [`ZkapCircuitInput`] per JWT token.
+/// 4. **Generate proofs** — runs `Groth16::prove` for each circuit input using the proving key
+///    at `raw.pk_path`.
+///
+/// Returns a pair `(proofs, public_inputs)` where each entry corresponds to one JWT token.
 #[allow(clippy::type_complexity)]
 pub fn prove(
     params: &CircuitConfig,
@@ -117,7 +128,10 @@ pub fn prove(
     Ok((output.proofs, output.public_inputs))
 }
 
-/// Verify a Groth16 proof
+/// Verify a single Groth16 proof against the prepared verifying key and public inputs.
+///
+/// Returns `Ok(true)` if the proof is valid, `Ok(false)` if it is not, or an error if the
+/// verifier itself fails (e.g. malformed inputs).
 pub fn verify(
     pvk: &PreparedVerifyingKey<BN254>,
     proof: &Proof<BN254>,

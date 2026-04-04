@@ -5,42 +5,50 @@ use gadget::anchor::poseidon::PoseidonAnchor;
 
 use crate::{jwt::builder::TokenBuilder, error::ApplicationError};
 
-/// Raw input data for proof generation
+/// Raw, unvalidated proof request received from the outside world.
+///
+/// All string fields are either hex/decimal field-element strings or Base64-encoded bytes.
+/// Pass this to [`ProofRequest::from_raw`] to validate and parse it into a domain object.
+/// All slice fields must have exactly `K` entries (matching [`CircuitConfig::k`]), except
+/// `anchor` which must have `(N - K + 1) + 1` entries (the last being `hanchor`).
 #[derive(Debug, Clone)]
 pub struct RawProofRequest {
-    /// Proving key file path
+    /// Path to the Groth16 proving key file on disk.
     pub pk_path: PathBuf,
 
-    /// JWT tokens
+    /// JWT tokens — one per credential (must have exactly `K` entries).
     pub jwts: Vec<String>,
 
-    /// RSA public key modulus (Base64 encoded)
+    /// RSA public key moduli in Base64 — one per JWT (must have exactly `K` entries).
     pub pk_ops: Vec<String>,
 
-    /// Merkle paths (one per JWT)
+    /// Merkle authentication paths — one `Vec<String>` per JWT (must have exactly `K` entries).
     pub merkle_paths: Vec<Vec<String>>,
 
-    /// Merkle tree leaf indices
+    /// Merkle tree leaf indices — one per JWT (must have exactly `K` entries).
     pub leaf_indices: Vec<usize>,
 
-    /// Merkle root (hex/decimal string)
+    /// Merkle root as a hex or decimal field-element string.
     pub root: String,
 
-    /// Anchor values (last element is hanchor)
+    /// Anchor polynomial evaluations plus `hanchor` as the last element.
+    /// Length must be `(N - K + 1) + 1`.
     pub anchor: Vec<String>,
 
-    /// Signed UserOperation hash
+    /// Signed UserOperation hash (hex/decimal field-element string).
     pub h_sign_user_op: String,
 
-    /// Random value for blinding
+    /// Random blinding value (hex/decimal field-element string).
     pub random: String,
 
-    /// Allowed audience list
+    /// Allowed audience values as hex/decimal field-element strings.
     pub aud_list: Vec<String>,
 }
 
 impl RawProofRequest {
-    /// Create a new RawProofRequest
+    /// Construct a [`RawProofRequest`] from its constituent parts.
+    ///
+    /// No validation is performed here; call [`ProofRequest::from_raw`] to validate.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         pk_path: PathBuf,
@@ -99,7 +107,10 @@ pub struct ExecutionBindingData {
     pub random: F,
 }
 
-/// Domain object after raw input has been validated and parsed.
+/// Validated and parsed proof request — the domain object produced by [`ProofRequest::from_raw`].
+///
+/// All string fields from [`RawProofRequest`] have been parsed into typed field elements,
+/// `TokenBuilder` instances, and structured data ready for circuit input construction.
 #[derive(Clone)]
 pub struct ProofRequest {
     /// Proving key path
@@ -125,7 +136,12 @@ pub struct ProofRequest {
 }
 
 impl ProofRequest {
-    /// Validates and parses a RawProofRequest into a ProofRequest
+    /// Validate and parse a [`RawProofRequest`] into a [`ProofRequest`].
+    ///
+    /// Validation checks that all vectors have the correct length for the given `params` (K entries
+    /// for JWT/PK/path/index, and `N - K + 2` entries for `anchor`). Parsing converts hex/decimal
+    /// strings to field elements, decodes JWT tokens into `TokenBuilder` instances, and structures
+    /// Merkle, anchor, execution, and audience data into typed sub-structs.
     pub fn from_raw(
         params: &CircuitConfig,
         raw: RawProofRequest,

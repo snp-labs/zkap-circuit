@@ -3,6 +3,11 @@ use ark_utils::ConvertError;
 use gadget::anchor::error::AnchorError;
 use thiserror::Error;
 
+/// Top-level error type for the zkap-service layer.
+///
+/// Wraps lower-level errors from `ark-utils` and `gadget` crates alongside
+/// service-specific variants for invalid input formats, anchor failures, and
+/// Poseidon hash errors.
 #[derive(Debug, Error)]
 pub enum ApplicationError {
     #[error("{0}")]

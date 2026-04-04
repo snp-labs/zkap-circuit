@@ -1,13 +1,13 @@
 //! Error re-exports for backward compatibility.
 //!
 //! Error types are defined in their respective modules:
-//! - `FieldParseError` → `field_serde`
+//! - `FieldParseError` → `affine_serde`
 //! - `IoError` → `io`
 //! - `TextError` → `text`
 //! - `ConvertError` → `convert`
 
 #[cfg(feature = "field-serde")]
-pub use crate::field_serde::FieldParseError;
+pub use crate::affine_serde::FieldParseError;
 #[cfg(feature = "io")]
 pub use crate::io::IoError;
 pub use crate::text::TextError;

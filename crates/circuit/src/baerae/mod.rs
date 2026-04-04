@@ -63,7 +63,7 @@ use gadget::{
         constraints::{PublicKeyVar, SignatureVar},
     },
     utils::{
-        bit_bytes::pack_decompose_bytes_unchecked,
+        packing::pack_decompose_bytes_unchecked,
         comparison::is_less_than,
         single_multiplexer, slice_efficient,
         jwt_field::{jwt_exp_to_field, jwt_nonce_hex_to_field},

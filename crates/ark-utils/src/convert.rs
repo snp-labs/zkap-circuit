@@ -44,6 +44,32 @@ pub enum ConvertError {
         expected_multiple: usize,
         actual: usize,
     },
+    #[error("Invalid format: {0}")]
+    InvalidFormat(String),
+    #[cfg(feature = "field-serde")]
+    #[error("Invalid hex string: {0}")]
+    InvalidHex(String),
+    #[cfg(feature = "field-serde")]
+    #[error("Invalid decimal string: {0}")]
+    InvalidDecimal(String),
+}
+
+/// Pads a string to the target length using the given pad character.
+///
+/// Returns an error if the string is already longer than the target length.
+pub fn pad(s: &str, target_len: usize, pad_char: char) -> Result<String, crate::text::TextError> {
+    if s.len() > target_len {
+        return Err(crate::text::TextError::InvalidFormat(format!(
+            "String length {} exceeds target length {}",
+            s.len(),
+            target_len
+        )));
+    }
+    let mut result = String::with_capacity(target_len);
+    result.push_str(s);
+    let pad_needed = target_len - s.len();
+    result.extend(std::iter::repeat_n(pad_char, pad_needed));
+    Ok(result)
 }
 
 /// Converts a string to field elements after padding.
@@ -64,6 +90,27 @@ pub fn str_to_limbs<F: PrimeField>(s: &str, target_len: usize, pad: u8) -> Vec<F
         .chunks(limb_width)
         .map(|chunk| F::from_be_bytes_mod_order(chunk))
         .collect()
+}
+
+/// Parses an input string as a field element.
+/// - If it starts with "0x..." or "0X...", treats it as hex and reduces `mod p`.
+/// - Otherwise, parses it as a decimal.
+#[cfg(feature = "field-serde")]
+pub fn hex_decimal_to_field<F: PrimeField>(s: &str) -> Result<F, ConvertError> {
+    if s.starts_with("0x") || s.starts_with("0X") {
+        let mut hex_body = s.strip_prefix("0x")
+            .or_else(|| s.strip_prefix("0X"))
+            .unwrap_or(s)
+            .to_owned();
+        if hex_body.len() % 2 == 1 {
+            hex_body.insert(0, '0');
+        }
+        let bytes = hex::decode(&hex_body)
+            .map_err(|e| ConvertError::InvalidHex(e.to_string()))?;
+        Ok(F::from_be_bytes_mod_order(&bytes))
+    } else {
+        Ok(F::from_str(s).map_err(|_| ConvertError::InvalidDecimal(s.to_string()))?)
+    }
 }
 
 #[cfg(test)]

@@ -8,9 +8,35 @@ use ark_r1cs_std::{
 use ark_relations::r1cs::SynthesisError;
 
 use crate::{
-    divide_mod_power_of_2_circuit, is_less_than, lt_bit_vector,
+    is_less_than, lt_bit_vector,
     multi_mux, select_array_element,
 };
+
+/// Computes the quotient and remainder of dividing an input integer (UInt16) by 2^p
+/// within an Arkworks circuit.
+pub(crate) fn divide_mod_power_of_2_circuit<F: PrimeField>(
+    input: &UInt16<F>,
+    p: u32,
+) -> Result<(UInt16<F>, UInt16<F>), SynthesisError> {
+    assert!(
+        p > 0 && p < 16,
+        "p must be greater than 0 and less than 16 for UInt16"
+    );
+
+    let bits = input.to_bits_le()?;
+
+    let remainder_bits_slice = &bits[0..p as usize];
+    let mut remainder_bits_padded = remainder_bits_slice.to_vec();
+    remainder_bits_padded.resize(16, Boolean::FALSE);
+    let remainder = UInt16::from_bits_le(&remainder_bits_padded);
+
+    let quotient_bits_slice = &bits[p as usize..16];
+    let mut quotient_bits_padded = quotient_bits_slice.to_vec();
+    quotient_bits_padded.resize(16, Boolean::FALSE);
+    let quotient = UInt16::from_bits_le(&quotient_bits_padded);
+
+    Ok((quotient, remainder))
+}
 
 pub fn slice_in_binary_tree<F: PrimeField>(
     input: &[FpVar<F>],
@@ -75,7 +101,7 @@ pub fn slice_in_binary_tree<F: PrimeField>(
 
 /// Performs ceiling division.
 /// Computes ceil(n / q).
-pub fn ceil(n: u64, q: u64) -> u64 {
+pub(crate) fn ceil(n: u64, q: u64) -> u64 {
     assert!(q != 0, "Divisor q cannot be zero");
 
     let quotient = n / q;
@@ -139,7 +165,7 @@ fn pad_input<F: PrimeField>(input: &[FpVar<F>]) -> Vec<FpVar<F>> {
 ///
 /// # Returns
 /// * Some(log2(x)) if x is a power of 2, otherwise None
-pub fn log_base_2(x: usize) -> Option<u32> {
+pub(crate) fn log_base_2(x: usize) -> Option<u32> {
     if x == 0 {
         return None;
     }
@@ -673,5 +699,38 @@ mod tests {
         assert_eq!(log_base_2(100), None);
         assert_eq!(log_base_2(255), None);
         assert_eq!(log_base_2(1024), Some(10));
+    }
+
+    #[test]
+    fn test_divide_mod_power_of_2_basic() {
+        let cs = ConstraintSystem::<F>::new_ref();
+        let input = UInt16::new_witness(cs.clone(), || Ok(13u16)).unwrap();
+        let (quotient, remainder) = divide_mod_power_of_2_circuit(&input, 2).unwrap();
+        assert!(cs.is_satisfied().unwrap());
+        assert_eq!(quotient.value().unwrap(), 3u16);
+        assert_eq!(remainder.value().unwrap(), 1u16);
+    }
+
+    #[test]
+    fn test_divide_mod_power_of_2_boundaries() {
+        let cs = ConstraintSystem::<F>::new_ref();
+
+        let input = UInt16::new_witness(cs.clone(), || Ok(0u16)).unwrap();
+        let (q, r) = divide_mod_power_of_2_circuit(&input, 1).unwrap();
+        assert_eq!(q.value().unwrap(), 0u16);
+        assert_eq!(r.value().unwrap(), 0u16);
+
+        let input2 = UInt16::new_witness(cs.clone(), || Ok(65535u16)).unwrap();
+        let (q2, r2) = divide_mod_power_of_2_circuit(&input2, 15).unwrap();
+        assert_eq!(q2.value().unwrap(), 1u16);
+        assert_eq!(r2.value().unwrap(), 32767u16);
+    }
+
+    #[test]
+    #[should_panic(expected = "p must be greater than 0")]
+    fn test_divide_mod_power_of_2_invalid_p_panics() {
+        let cs = ConstraintSystem::<F>::new_ref();
+        let input = UInt16::new_witness(cs.clone(), || Ok(10u16)).unwrap();
+        let _ = divide_mod_power_of_2_circuit(&input, 0);
     }
 }

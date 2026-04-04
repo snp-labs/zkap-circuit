@@ -320,7 +320,7 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
             for l in modulus.limbs.iter() {
                 all_zero &= l.is_eq(&zero)?;
             }
-            crate::enforce_eq_internal!("bigint_modulus_nonzero", all_zero, Boolean::FALSE)?;
+            all_zero.enforce_equal(&Boolean::FALSE)?;
         }
 
         // Compute quotient and rem off-circuit; the circuit only verifies the relation
@@ -829,7 +829,7 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
                     n_bits % P::LIMB_WIDTH,
                 )?);
             } else {
-                crate::enforce_eq_internal!("bigint_limb_zero", limb.clone(), <FpVar<ConstraintF>>::zero())?;
+                limb.enforce_equal(&<FpVar<ConstraintF>>::zero())?;
             }
         }
         Ok(bit_vars)
@@ -1031,7 +1031,7 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
             // (b_i - a_i - borrow_prev) + borrow_out*B - diff_i == 0
             let lhs =
                 &b.limbs[i] - &a.limbs[i] - &borrow_prev + &borrow_out_fp * &base - &diff_limbs[i];
-            crate::enforce_eq_internal!("bigint_sub_limb_eq", lhs, FpVar::<ConstraintF>::zero())?;
+            lhs.enforce_equal(&FpVar::<ConstraintF>::zero())?;
 
             // diff != 0  (strict)
             let limb_is_nonzero = diff_limbs[i].is_neq(&FpVar::<ConstraintF>::zero())?;
@@ -1041,10 +1041,10 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
         }
 
         // final borrow must be 0  => a <= b
-        crate::enforce_eq_internal!("bigint_sub_borrow_zero", borrow_prev, FpVar::<ConstraintF>::zero())?;
+        borrow_prev.enforce_equal(&FpVar::<ConstraintF>::zero())?;
 
         // strict: diff != 0 => a != b
-        crate::enforce_true_internal!("bigint_sub_nonzero", any_nonzero)?;
+        any_nonzero.enforce_equal(&Boolean::TRUE)?;
 
         Ok(())
     }

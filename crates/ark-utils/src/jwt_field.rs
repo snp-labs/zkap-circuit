@@ -1,7 +1,5 @@
-use ark_ff::{BigInteger, PrimeField};
+use ark_ff::PrimeField;
 use ark_r1cs_std::{
-    R1CSVar,
-    alloc::AllocVar,
     eq::EqGadget,
     fields::{FieldVar, fp::FpVar},
     prelude::{Boolean, ToBitsGadget},
@@ -9,266 +7,245 @@ use ark_r1cs_std::{
 };
 use ark_relations::r1cs::SynthesisError;
 
-/// Converts a hex string in the JWT nonce field to a field element.
+/// Converts a JWT nonce string of the form `"0x[0-9A-Fa-f]+"` to a field element.
 ///
-/// # Format
-/// - Input: `"0x[0-9a-f]+"` (e.g. "0xabcd1234...")
-/// - Supports values up to 256 bits
-/// - When using the BN254 field, modular reduction is applied automatically if over 254 bits
+/// # Accepted format
+/// - Prefix is exactly `"0x`
+/// - Followed by 1..=64 hex digits
+/// - Followed by a closing quote `"` at `last_quote_index`
 ///
-/// # Constraints
-/// 1. First 3 bytes must be `"0x` (fixed)
-/// 2. All bytes up to `last_quote_index` must be valid hex characters
-/// 3. Position `last_quote_index` must be `"`
-/// 4. Hex string length must be 1-64 characters (4 bits ~ 256 bits)
+/// Example:
+/// - `"0x1"`
+/// - `"0xABCD1234"`
+/// - `"0xdeadbeef"`
 ///
 /// # Arguments
-/// * `hex_bytes` - byte array of the JWT nonce value (may include padding)
-/// * `last_quote_index` - position of the closing quote `"` (witness)
+/// - `hex_bytes`: padded byte array containing the JWT nonce substring
+/// - `last_quote_index`: witness index of the closing `"`
 ///
 /// # Returns
-/// * converted field element value
+/// - Field element equal to the parsed hex value, accumulated in the field
 ///
-/// # Example
-/// ```text
-/// Input:  ["0x1234...abcd"000000...]  (padded array)
-///          ^             ^
-///          |             last_quote_index
-///          start
-/// Output: Field element representing 0x1234...abcd
-/// ```
+/// # Important note
+/// - This function returns the value **in the field**.
+/// - If more than the field modulus can represent injectively (for example 64 hex digits in BN254),
+///   the result is the natural field reduction of that integer.
+///
+/// # Constraints
+/// 1. `hex_bytes[0..3] == "\"0x"`
+/// 2. `last_quote_index` is in the allowed range:
+///    - at least 4  (so there is at least 1 hex digit)
+///    - at most `min(hex_bytes.len() - 1, 67)`
+///      (so there are at most 64 hex digits)
+/// 3. At the selected `last_quote_index`, the byte must be `"`
+/// 4. Every byte before that quote must be a valid hex character
+/// 5. Bytes after `last_quote_index` are ignored by this function
+///
+/// # Soundness
+/// - If this function returns successfully, then the prefix is correct,
+///   the selected closing quote is in-range and present,
+///   and every character before it is valid hex.
+/// - Therefore the returned value is exactly the field accumulation of the parsed hex substring.
+///
+/// # Completeness
+/// - Every input matching the accepted format above is accepted.
 pub fn jwt_nonce_hex_to_field<F: PrimeField>(
     hex_bytes: &[FpVar<F>],
     last_quote_index: &UInt16<F>,
 ) -> Result<FpVar<F>, SynthesisError> {
     let hex_bytes_len = hex_bytes.len();
 
-    // Validate minimum length: "0x0" (5 bytes)
+    // Minimum valid string is: `"0x0"` => 5 bytes
     if hex_bytes_len < 5 {
         return Err(SynthesisError::Unsatisfiable);
     }
 
-    // --- Constant definitions ---
     let quote_char = FpVar::<F>::Constant(F::from(b'"'));
     let zero_char = FpVar::<F>::Constant(F::from(b'0'));
     let x_char = FpVar::<F>::Constant(F::from(b'x'));
-    let sixteen = FpVar::Constant(F::from(16u8));
+    let sixteen = FpVar::<F>::Constant(F::from(16u64));
+    let zero = FpVar::<F>::zero();
 
-    // --- 1. Validate fixed prefix: "0x ---
-    crate::enforce_eq_internal!("nonce_prefix_quote", quote_char, hex_bytes[0])?;
-    crate::enforce_eq_internal!("nonce_prefix_zero", zero_char, hex_bytes[1])?;
-    crate::enforce_eq_internal!("nonce_prefix_x", x_char, hex_bytes[2])?;
+    // Fixed prefix: `"0x`
+    quote_char.enforce_equal(&hex_bytes[0])?;
+    zero_char.enforce_equal(&hex_bytes[1])?;
+    x_char.enforce_equal(&hex_bytes[2])?;
 
-    // --- 2. Initialize accumulator variables ---
+    // The closing quote must appear after at least 1 hex digit and before/at the
+    // 64th hex digit position.
+    //
+    // Prefix occupies indices 0,1,2.
+    // Hex digits occupy indices 3..=66 (64 digits max).
+    // Closing quote must therefore be in 4..=67, but also within the provided array.
+    let max_quote_index = core::cmp::min(hex_bytes_len - 1, 67usize);
+
+    let idx_bits = last_quote_index.to_bits_le()?;
+    let lower_exclusive_bits = UInt16::constant(3u16).to_bits_le()?;
+    let upper_exclusive_bits = UInt16::constant((max_quote_index as u16) + 1).to_bits_le()?;
+
+    // 3 < last_quote_index < max_quote_index + 1
+    // i.e. 4 <= last_quote_index <= max_quote_index
+    crate::comparison::enforce_less_than(&lower_exclusive_bits, &idx_bits)?;
+    crate::comparison::enforce_less_than(&idx_bits, &upper_exclusive_bits)?;
+
     let mut accumulated_value = FpVar::<F>::zero();
     let mut found_closing_quote = Boolean::FALSE;
-    let mut hex_digit_count = FpVar::<F>::zero(); // hex digit count
 
-    // --- 3. Hex parsing loop (starting from index 3) ---
-    for (i, current_byte) in hex_bytes.iter().enumerate().skip(3).take(hex_bytes_len - 3) {
+    // Only the first 65 bytes after the prefix can matter:
+    // 64 hex digits + 1 closing quote.
+    for (i, current_byte) in hex_bytes.iter().enumerate().take(max_quote_index + 1).skip(3) {
         let current_index = UInt16::constant(i as u16);
 
-        // Is the current position the closing quote position?
+        // Is this the selected closing quote position?
         let is_closing_quote_pos = current_index.is_eq(last_quote_index)?;
 
-        // Is the current byte a quote character?
-        let is_quote_char = current_byte.is_eq(&quote_char)?;
+        // Parse until the selected closing quote.
+        let should_parse = &(!&found_closing_quote) & &(!&is_closing_quote_pos);
 
-        // Have we not yet seen the closing quote?
-        let is_before_closing_quote = !&found_closing_quote;
+        // If this is the selected closing-quote position, the byte must be '"'.
+        //
+        // gate * (current_byte - '"') == 0
+        let quote_gate = FpVar::<F>::from(is_closing_quote_pos.clone());
+        let quote_diff = current_byte - &quote_char;
+        quote_gate.mul_equals(&quote_diff, &zero)?;
 
-        // --- 3.1. Validate closing quote position ---
-        // "If this is the closing quote position, the character must be '"'"
-        let quote_pos_requirement = !&is_closing_quote_pos | &is_quote_char;
-        crate::enforce_true_internal!("nonce_quote_pos", quote_pos_requirement)?;
-
-        // --- 3.2. Hex parsing (only before the closing quote) ---
-        let should_parse = &is_before_closing_quote & !&is_closing_quote_pos;
-
-        // Convert hex character
+        // Convert current byte to hex.
         let (hex_value, is_valid_hex) = hex_char_to_value(current_byte)?;
 
-        // Validity check: "if we must parse, the character must be a valid hex digit"
-        let validity_requirement = !&should_parse | &is_valid_hex;
-        crate::enforce_true_internal!("nonce_hex_valid", validity_requirement)?;
+        // If we are still parsing, the character must be valid hex.
+        //
+        // should_parse * (1 - is_valid_hex) == 0
+        let parse_gate = FpVar::<F>::from(should_parse.clone());
+        let invalid_hex = FpVar::<F>::from(!&is_valid_hex);
+        parse_gate.mul_equals(&invalid_hex, &zero)?;
 
-        // Accumulate value (only when should_parse is true)
-        let potential_next_value = &accumulated_value * &sixteen + &hex_value;
-        accumulated_value = should_parse.select(&potential_next_value, &accumulated_value)?;
+        // accumulated = accumulated * 16 + hex_value   (only while parsing)
+        let next_value = &accumulated_value * &sixteen + &hex_value;
+        accumulated_value = should_parse.select(&next_value, &accumulated_value)?;
 
-        // Count hex digits
-        let should_parse_fp = FpVar::from(should_parse.clone());
-        hex_digit_count += &should_parse_fp;
-
-        // --- 3.3. Update state ---
         found_closing_quote |= is_closing_quote_pos;
     }
-
-    // --- 4. Final validation ---
-    // 4.1. Must have found the closing quote
-    crate::enforce_true_internal!("nonce_closing_quote_found", found_closing_quote)?;
-
-    // 4.2. Hex digit count must be 1~64 (4 bits ~ 256 bits)
-    // Minimum 1 digit
-    let zero = FpVar::<F>::zero();
-    let digit_count_ge_1 = hex_digit_count.is_neq(&zero)?;
-    crate::enforce_true_internal!("nonce_digit_count_ge_1", digit_count_ge_1)?;
-
-    // [ZKAPCIR-004] Maximum 64 digits (256 bits) - enforced inside the circuit
-    // The previous code did not constrain the comparison result, allowing 65+ digits.
-    let max_hex_digits = FpVar::<F>::Constant(F::from(64u64));
-    let digit_count_bits = hex_digit_count.to_bits_le()?;
-    let max_bits = max_hex_digits.to_bits_le()?;
-    let digit_le_max = crate::comparison::is_less_or_equal(&digit_count_bits, &max_bits)?;
-    crate::enforce_true_internal!("nonce_digit_le_max", digit_le_max)?;
 
     Ok(accumulated_value)
 }
 
-/// Converts a single hex character to its 0-15 value and validates it.
+/// Converts a single ASCII hex character to its 0..15 value.
 ///
-/// # Arguments
-/// * `byte` - ASCII byte ('0'-'9', 'a'-'f', 'A'-'F')
+/// # Accepted input
+/// - '0'..='9'
+/// - 'A'..='F'
+/// - 'a'..='f'
 ///
 /// # Returns
-/// * `(value, is_valid)` - converted value (0-15) and validity flag
+/// - `(value, is_valid)`
+///   - `is_valid == true`  => `value` is the exact hex value in `0..=15`
+///   - `is_valid == false` => `value` is unspecified and must be ignored
 ///
 /// # Constraints
-/// - Decompose byte into 8 bits once, then check 3 ranges via bit patterns
-/// - '0'-'9': 0x30..=0x39 → upper 4 bits == 0011, lower 4 bits <= 9
-/// - 'A'-'F': 0x41..=0x46 → upper 4 bits == 0100, lower 4 bits <= 5  (bit6=0, bit7=0)
-/// - 'a'-'f': 0x61..=0x66 → upper 4 bits == 0110, lower 4 bits <= 5  (bit7=0)
+/// - Decompose `byte` into 8 bits once and enforce exact reconstruction
+/// - Check upper/lower nibble patterns directly with Boolean formulas
+/// - Avoid full 4-bit comparators
 ///
 /// # Soundness
-/// - 8-bit decomposition + enforce_equal on reconstruction guarantees byte in [0, 255]
-/// - Upper bit pattern checks implemented as XOR with Boolean constants (near zero cost)
-/// - Lower nibble range check implemented as 4-bit is_less_or_equal
-fn hex_char_to_value<F: PrimeField>(
+/// - 8-bit decomposition + reconstruction guarantees `byte ∈ [0,255]`.
+/// - `is_valid` is true iff the byte is one of:
+///   - `0x30..=0x39` ('0'..='9')
+///   - `0x41..=0x46` ('A'..='F')
+///   - `0x61..=0x66` ('a'..='f')
+///
+/// # Completeness
+/// - Every valid hex character above is accepted and mapped to its exact value.
+pub fn hex_char_to_value<F: PrimeField>(
     byte: &FpVar<F>,
 ) -> Result<(FpVar<F>, Boolean<F>), SynthesisError> {
-    // Decompose byte into 8-bit witnesses and enforce reconstruction (guarantees byte in [0, 255])
-    let cs = byte.cs();
-    let byte_val = byte.value().unwrap_or_default();
-    let mut b: Vec<Boolean<F>> = Vec::with_capacity(8);
-    for i in 0..8usize {
-        let bit_val = byte_val.into_bigint().get_bit(i);
-        let bit = if cs.is_none() {
-            Boolean::constant(bit_val)
-        } else {
-            Boolean::new_witness(cs.clone(), || Ok(bit_val))?
+    // Enforce byte ∈ [0,255].
+    let (bits, _) = byte.to_bits_le_with_top_bits_zero(8)?;
+
+    // bits[0] = LSB, bits[7] = MSB
+    let b0 = bits[0].clone();
+    let b1 = bits[1].clone();
+    let b2 = bits[2].clone();
+    let b3 = bits[3].clone();
+    let b4 = bits[4].clone();
+    let b5 = bits[5].clone();
+    let b6 = bits[6].clone();
+    let b7 = bits[7].clone();
+
+    // Lower nibble value = b0 + 2*b1 + 4*b2 + 8*b3
+    let lo_value = Boolean::le_bits_to_fp(&bits[0..4])?;
+
+    // ----- Classify '0'..'9' -----
+    // High nibble must be 0x3 = 0011 (b7=0,b6=0,b5=1,b4=1)
+    let digit_hi = {
+        let not_b7 = !&b7;
+        let not_b6 = !&b6;
+        let hi_top_ok = &not_b7 & &not_b6;
+        let hi_low_ok = &b5 & &b4;
+        &hi_top_ok & &hi_low_ok
+    };
+
+    // Lower nibble <= 9
+    // Invalid for 10..15 iff b3 == 1 and (b2 == 1 or b1 == 1)
+    let digit_lo_ok = {
+        let b2_or_b1 = &b2 | &b1;
+        let invalid_10_to_15 = &b3 & &b2_or_b1;
+        !invalid_10_to_15
+    };
+
+    let is_digit = &digit_hi & &digit_lo_ok;
+
+    // ----- Classify 'A'..'F' or 'a'..'f' -----
+    // High nibble must be 0x4 or 0x6:
+    // - 'A'..'F' => 0100
+    // - 'a'..'f' => 0110
+    //
+    // Common condition:
+    //   b7 = 0, b6 = 1, b4 = 0
+    //   b5 is free (0 for uppercase, 1 for lowercase)
+    let letter_hi = {
+        let not_b7 = !&b7;
+        let not_b4 = !&b4;
+        let t = &not_b7 & &b6;
+        &t & &not_b4
+    };
+
+    // Lower nibble must be 1..=6.
+    // Equivalent to:
+    // - b3 == 0        (exclude 8..15)
+    // - at least one of b0,b1,b2 is 1   (exclude 0)
+    // - not all of b0,b1,b2 are 1        (exclude 7)
+    let letter_lo_ok = {
+        let not_b3 = !&b3;
+
+        let any_low = {
+            let t = &b0 | &b1;
+            &t | &b2
         };
-        b.push(bit);
-    }
-    // b[0]..b[7]: b[0]=LSB, b[7]=MSB
 
-    // Enforce reconstruction: reconstructed == byte
-    let mut reconstructed = FpVar::<F>::zero();
-    let mut power = F::one();
-    for bit in &b {
-        let bit_fp = FpVar::from(bit.clone());
-        reconstructed += bit_fp * FpVar::Constant(power);
-        power.double_in_place();
-    }
-    reconstructed.enforce_equal(byte)?;
+        let all_low = {
+            let t = &b0 & &b1;
+            &t & &b2
+        };
 
-    // Lower 4 bits (nibble): b[0..4]
-    // Upper 4 bits: b[4..8]
-    let lo_nibble = &b[0..4]; // bits 0-3
-    let hi_nibble = &b[4..8]; // bits 4-7
+        let not_all_low = !all_low;
+        let t = &any_low & &not_all_low;
+        &not_b3 & &t
+    };
 
-    // Upper 4-bit pattern checks (all XOR with constant bits → near zero cost)
-    // '0'-'9': 0x3? → hi = 0011 (b4=1,b5=1,b6=0,b7=0)
-    // 'A'-'F': 0x4? → hi = 0100 (b4=0,b5=0,b6=1,b7=0)  + lower nibble check
-    // 'a'-'f': 0x6? → hi = 0110 (b4=0,b5=1,b6=1,b7=0)  + lower nibble check
+    let is_letter = &letter_hi & &letter_lo_ok;
+
+    // Valid iff digit or letter.
+    let is_valid = &is_digit | &is_letter;
+
+    // Value:
+    // - '0'..'9' => lo_value
+    // - 'A'..'F', 'a'..'f' => lo_value + 9
     //
-    // hi_nibble[0]=b4, hi_nibble[1]=b5, hi_nibble[2]=b6, hi_nibble[3]=b7
+    // If invalid, the value is unspecified and must be ignored.
+    let letter_value = &lo_value + FpVar::<F>::Constant(F::from(9u64));
+    let value = is_letter.select(&letter_value, &lo_value)?;
 
-    // '0'-'9': b7=0, b6=0, b5=1, b4=1
-    let hi_is_3 = {
-        let b4_eq_1 = hi_nibble[0].clone(); // b4==1
-        let b5_eq_1 = hi_nibble[1].clone(); // b5==1
-        let b6_eq_0 = !&hi_nibble[2];       // b6==0
-        let b7_eq_0 = !&hi_nibble[3];       // b7==0
-        &(&b4_eq_1 & &b5_eq_1) & &(&b6_eq_0 & &b7_eq_0)
-    };
-
-    // 'A'-'F': b7=0, b6=1, b5=0, b4=0 (0x4?)
-    let hi_is_4 = {
-        let b4_eq_0 = !&hi_nibble[0];
-        let b5_eq_0 = !&hi_nibble[1];
-        let b6_eq_1 = hi_nibble[2].clone();
-        let b7_eq_0 = !&hi_nibble[3];
-        &(&b4_eq_0 & &b5_eq_0) & &(&b6_eq_1 & &b7_eq_0)
-    };
-
-    // 'a'-'f': b7=0, b6=1, b5=1, b4=0 (0x6?)
-    let hi_is_6 = {
-        let b4_eq_0 = !&hi_nibble[0];
-        let b5_eq_1 = hi_nibble[1].clone();
-        let b6_eq_1 = hi_nibble[2].clone();
-        let b7_eq_0 = !&hi_nibble[3];
-        &(&b4_eq_0 & &b5_eq_1) & &(&b6_eq_1 & &b7_eq_0)
-    };
-
-    // Lower nibble range checks
-    // '0'-'9': lo_nibble <= 9 (0x9 = 1001)
-    // 'A'-'F': lo_nibble <= 5 (0x5 = 0101) AND lo_nibble >= 1 (0x41='A', lo=1)
-    // 'a'-'f': lo_nibble <= 5 AND lo_nibble >= 1 (0x61='a', lo=1)
-    //
-    // Note: 0x40='@' (lo=0), 0x60='`' (lo=0) are invalid, so lo >= 1 check is required
-    let nine_bits: Vec<Boolean<F>> = vec![
-        Boolean::constant(true),  // bit0: 1
-        Boolean::constant(false), // bit1: 0
-        Boolean::constant(false), // bit2: 0
-        Boolean::constant(true),  // bit3: 1
-    ]; // 9 = 0b1001
-    let six_bits: Vec<Boolean<F>> = vec![
-        Boolean::constant(false), // bit0: 0
-        Boolean::constant(true),  // bit1: 1
-        Boolean::constant(true),  // bit2: 1
-        Boolean::constant(false), // bit3: 0
-    ]; // 6 = 0b0110
-    let one_bits: Vec<Boolean<F>> = vec![
-        Boolean::constant(true),  // bit0: 1
-        Boolean::constant(false), // bit1: 0
-        Boolean::constant(false), // bit2: 0
-        Boolean::constant(false), // bit3: 0
-    ]; // 1 = 0b0001
-
-    let lo_le_9 = crate::comparison::is_less_or_equal(lo_nibble, &nine_bits)?;
-    let lo_le_6 = crate::comparison::is_less_or_equal(lo_nibble, &six_bits)?;
-    let lo_ge_1 = crate::comparison::is_less_or_equal(&one_bits, lo_nibble)?;
-
-    // Range matching
-    let is_digit = &hi_is_3 & &lo_le_9;            // '0'-'9'
-    let is_upper = &hi_is_4 & &(&lo_ge_1 & &lo_le_6); // 'A'-'F'
-    let is_lower = &hi_is_6 & &(&lo_ge_1 & &lo_le_6); // 'a'-'f'
-
-    // Validity flag
-    let is_valid = &is_digit | &(&is_upper | &is_lower);
-
-    // Hex value calculation
-    // digit_value = lo_nibble value (0-9) = byte - 0x30
-    // upper_value = lo_nibble value - 1 + 10 = lo_nibble + 9 = byte - 0x41 + 10
-    // lower_value = lo_nibble value - 1 + 10 = byte - 0x61 + 10
-    let ten = FpVar::Constant(F::from(10u64));
-    let digit_value = byte - FpVar::Constant(F::from(48u64)); // 0-9
-    let upper_value = byte - FpVar::Constant(F::from(55u64)); // 'A'=65 → 65-55=10, 'F'=70 → 70-55=15
-    let lower_value = byte - FpVar::Constant(F::from(87u64)); // 'a'=97 → 97-87=10, 'f'=102 → 102-87=15
-
-    // If lo_nibble >= 1 and hi pattern matches, upper/lower value is in range 10-15
-    // upper_value = byte - 55 = (0x40 + lo) - 55 = lo + 9, lo in [1,5] → [10,14] ✓
-    // lower_value = byte - 87 = (0x60 + lo) - 87 = lo + 9, lo in [1,5] → [10,14] ✓
-    // Wait: 'F'=70 → 70-55=15, 'f'=102 → 102-87=15 ✓
-
-    // Conditional select: is_digit → digit value, is_upper → upper value, else → lower value
-    let value_if_upper_or_lower = is_upper.select(&upper_value, &lower_value)?;
-    let result = is_digit.select(&digit_value, &value_if_upper_or_lower)?;
-
-    // Drop unused variable
-    let _ = ten;
-
-    Ok((result, is_valid))
+    Ok((value, is_valid))
 }
 
 /// Converts a decimal byte array (e.g. JWT exp field) to a field element.
@@ -316,7 +293,7 @@ pub fn jwt_exp_to_field<F: PrimeField>(
         let (digit_value, is_valid_digit) = decimal_byte_to_digit(current_byte)?;
 
         // Validity check: must be a valid decimal digit
-        crate::enforce_true_internal!("exp_digit_valid", is_valid_digit)?;
+        is_valid_digit.enforce_equal(&Boolean::TRUE)?;
 
         // Accumulate value: accumulated_value = accumulated_value * 10 + digit_value
         accumulated_value = &accumulated_value * &ten + &digit_value;
@@ -324,7 +301,7 @@ pub fn jwt_exp_to_field<F: PrimeField>(
 
     // --- 2. Validate remaining bytes are all zero-padded ---
     for byte in decimal_bytes.iter().skip(10) {
-        crate::enforce_eq_internal!("exp_padding_zero", *byte, zero)?;
+        byte.enforce_equal(&zero)?;
     }
 
     Ok(accumulated_value)

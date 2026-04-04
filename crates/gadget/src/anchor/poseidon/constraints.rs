@@ -115,19 +115,14 @@ impl<F: PrimeField + Absorb> PoseidonAnchorSchemeGadget<F> {
 
     /// Function for split-proof.
     /// Verifies that vector a is not the zero vector (All Zeros).
-    pub fn is_a_nonzero(a: &[FpVar<F>]) -> Result<Boolean<F>, SynthesisError> {
-        let mut found_nonzero = Boolean::constant(false);
-        for elem in a {
-            let is_zero = elem.is_zero()?;
+    pub fn enforce_a_nonzero(a: &[FpVar<F>]) -> Result<(), SynthesisError> {
+        let zero = FpVar::<F>::zero();
+        let nonzero_bits = a.iter()
+            .map(|x| x.is_neq(&zero))
+            .collect::<Result<Vec<_>, _>>()?;
+        Boolean::kary_or(&nonzero_bits)?.enforce_equal(&Boolean::TRUE)?;
 
-            let is_nonzero = !is_zero;
-
-            // If any element so far is non-zero (found_nonzero),
-            // or the current element is non-zero (is_nonzero) -> result is True
-            found_nonzero |= &is_nonzero;
-        }
-
-        Ok(found_nonzero)
+        Ok(())
     }
 
     /// Function for split-proof.
@@ -172,6 +167,33 @@ impl<F: PrimeField + Absorb> PoseidonAnchorSchemeGadget<F> {
 
         Ok(is_all_valid)
     }
+
+    /// Enforces that b[j] == 0 for every j where selector[j] == 0.
+    ///
+    /// Uses: (1 - selector[j]) * b[j] == 0, which is 1 constraint per element.
+    /// Cost: N constraints vs is_b_sparsity + enforce_true: ~8N+1 constraints.
+    ///
+    /// Precondition: selector[j] ∈ {0,1} must be enforced separately (via enforce_boolean_selectors).
+    /// Soundness: selector[j]=0 → 1*b[j]=0 → b[j]=0. selector[j]=1 → 0*b[j]=0 → always holds.
+    pub fn enforce_b_sparsity(b: &[FpVar<F>], selector: &[FpVar<F>]) -> Result<(), SynthesisError> {
+        if b.is_empty() || selector.is_empty() {
+            return Err(SynthesisError::Unsatisfiable);
+        }
+        if b.len() != selector.len() {
+            return Err(SynthesisError::Unsatisfiable);
+        }
+
+        let one = FpVar::<F>::one();
+        let zero = FpVar::<F>::zero();
+
+        for j in 0..b.len() {
+            // (1 - selector[j]) * b[j] == 0
+            let mask = &one - &selector[j];
+            mask.mul_equals(&b[j], &zero)?;
+        }
+
+        Ok(())
+    }
 }
 
 /// indices[j] ∈ {0,1}  (boolean)
@@ -182,27 +204,11 @@ pub fn enforce_boolean_selectors<F: PrimeField>(
     let zero = FpVar::<F>::zero();
 
     for s in indices {
-        // s * (s - 1) == 0  <=> s ∈ {0,1}
+        // [OPT-5] s × (s - 1) = 0 as single R1CS constraint (was 2 constraints)
         let s_minus_one = s.clone() - one.clone();
-        crate::enforce_eq_internal!("anchor_selector_boolean", s.clone() * s_minus_one, zero)?;
+        s.mul_equals(&s_minus_one, &zero)?;
     }
     Ok(())
-}
-
-pub fn enforce_boolean_selector_debug<F: PrimeField>(
-    indices: &[FpVar<F>],
-) -> Result<Boolean<F>, SynthesisError> {
-    let one = FpVar::<F>::one();
-    let zero = FpVar::<F>::zero();
-    let mut ok = Boolean::constant(true);
-
-    for s in indices {
-        // s * (s - 1) == 0  <=> s ∈ {0,1}
-        let s_minus_one = s.clone() - one.clone();
-        let is_zero = (s.clone() * s_minus_one).is_eq(&zero)?;
-        ok &= is_zero;
-    }
-    Ok(ok)
 }
 
 /// Σ indices[j] == k  (cardinality)
@@ -214,21 +220,8 @@ pub fn enforce_selector_cardinality<F: PrimeField>(
     for s in indices {
         sum += s.clone();
     }
-    crate::enforce_eq_internal!("anchor_selector_cardinality", sum, k.clone())?;
+    sum.enforce_equal(k)?;
     Ok(())
-}
-
-/// Σ indices[j] == k  (cardinality)
-pub fn enforce_selector_cardinality_debug<F: PrimeField>(
-    indices: &[FpVar<F>],
-    k: &FpVar<F>,
-) -> Result<Boolean<F>, SynthesisError> {
-    let mut sum = FpVar::<F>::zero();
-    for s in indices {
-        sum += s.clone();
-    }
-    let is_eq = sum.is_eq(k)?;
-    Ok(is_eq)
 }
 
 impl<F> AllocVar<PoseidonAnchorPublicKey<F>, F> for PoseidonAnchorPublicKeyVar<F>
@@ -367,23 +360,21 @@ mod tests {
     }
 
     #[test]
-    fn test_is_a_nonzero_all_nonzero() {
+    fn test_enforce_a_nonzero_all_nonzero() {
         let cs = ConstraintSystem::<F>::new_ref();
         let a: Vec<FpVar<F>> = vec![fp(&cs, 1), fp(&cs, 2), fp(&cs, 3)];
 
-        let result = PoseidonAnchorSchemeGadget::<F>::is_a_nonzero(&a).unwrap();
+        PoseidonAnchorSchemeGadget::<F>::enforce_a_nonzero(&a).unwrap();
         assert!(cs.is_satisfied().unwrap());
-        assert!(result.value().unwrap());
     }
 
     #[test]
-    fn test_is_a_nonzero_all_zero() {
+    fn test_enforce_a_nonzero_all_zero() {
         let cs = ConstraintSystem::<F>::new_ref();
         let a: Vec<FpVar<F>> = vec![fp(&cs, 0), fp(&cs, 0), fp(&cs, 0)];
 
-        let result = PoseidonAnchorSchemeGadget::<F>::is_a_nonzero(&a).unwrap();
-        assert!(cs.is_satisfied().unwrap());
-        assert!(!result.value().unwrap());
+        PoseidonAnchorSchemeGadget::<F>::enforce_a_nonzero(&a).unwrap();
+        assert!(!cs.is_satisfied().unwrap());
     }
 
     #[test]
@@ -473,5 +464,150 @@ mod tests {
         enforce_boolean_selectors(&indices).unwrap();
         enforce_selector_cardinality(&indices, &k).unwrap();
         assert!(cs.is_satisfied().unwrap());
+    }
+
+    // =========================================================================
+    // enforce_a_nonzero tests
+    // =========================================================================
+
+    #[test]
+    fn test_enforce_a_nonzero_single_nonzero() {
+        let cs = ConstraintSystem::<F>::new_ref();
+        let a: Vec<FpVar<F>> = vec![fp(&cs, 1)];
+        PoseidonAnchorSchemeGadget::<F>::enforce_a_nonzero(&a).unwrap();
+        assert!(cs.is_satisfied().unwrap());
+    }
+
+    #[test]
+    fn test_enforce_a_nonzero_single_zero() {
+        let cs = ConstraintSystem::<F>::new_ref();
+        let a: Vec<FpVar<F>> = vec![fp(&cs, 0)];
+        PoseidonAnchorSchemeGadget::<F>::enforce_a_nonzero(&a).unwrap();
+        assert!(!cs.is_satisfied().unwrap());
+    }
+
+    #[test]
+    fn test_enforce_a_nonzero_one_among_zeros() {
+        let cs = ConstraintSystem::<F>::new_ref();
+        let a: Vec<FpVar<F>> = vec![fp(&cs, 0), fp(&cs, 0), fp(&cs, 5), fp(&cs, 0)];
+        PoseidonAnchorSchemeGadget::<F>::enforce_a_nonzero(&a).unwrap();
+        assert!(cs.is_satisfied().unwrap());
+    }
+
+    #[test]
+    fn test_enforce_a_nonzero_last_nonzero() {
+        let cs = ConstraintSystem::<F>::new_ref();
+        let a: Vec<FpVar<F>> = vec![fp(&cs, 0), fp(&cs, 0), fp(&cs, 0), fp(&cs, 1)];
+        PoseidonAnchorSchemeGadget::<F>::enforce_a_nonzero(&a).unwrap();
+        assert!(cs.is_satisfied().unwrap());
+    }
+
+    #[test]
+    fn test_enforce_a_nonzero_first_nonzero() {
+        let cs = ConstraintSystem::<F>::new_ref();
+        let a: Vec<FpVar<F>> = vec![fp(&cs, 1), fp(&cs, 0), fp(&cs, 0), fp(&cs, 0)];
+        PoseidonAnchorSchemeGadget::<F>::enforce_a_nonzero(&a).unwrap();
+        assert!(cs.is_satisfied().unwrap());
+    }
+
+    #[test]
+    fn test_enforce_a_nonzero_large_value() {
+        let cs = ConstraintSystem::<F>::new_ref();
+        let a: Vec<FpVar<F>> = vec![fp(&cs, 0), fp(&cs, 0), fp(&cs, u64::MAX)];
+        PoseidonAnchorSchemeGadget::<F>::enforce_a_nonzero(&a).unwrap();
+        assert!(cs.is_satisfied().unwrap());
+    }
+
+    // =========================================================================
+    // enforce_b_sparsity tests
+    // =========================================================================
+
+    #[test]
+    fn test_enforce_b_sparsity_valid() {
+        let cs = ConstraintSystem::<F>::new_ref();
+        let b: Vec<FpVar<F>> = vec![fp(&cs, 5), fp(&cs, 0), fp(&cs, 3)];
+        let selector: Vec<FpVar<F>> = vec![fp(&cs, 1), fp(&cs, 0), fp(&cs, 1)];
+        PoseidonAnchorSchemeGadget::<F>::enforce_b_sparsity(&b, &selector).unwrap();
+        assert!(cs.is_satisfied().unwrap());
+    }
+
+    #[test]
+    fn test_enforce_b_sparsity_all_selected() {
+        let cs = ConstraintSystem::<F>::new_ref();
+        let b: Vec<FpVar<F>> = vec![fp(&cs, 1), fp(&cs, 2), fp(&cs, 3)];
+        let selector: Vec<FpVar<F>> = vec![fp(&cs, 1), fp(&cs, 1), fp(&cs, 1)];
+        PoseidonAnchorSchemeGadget::<F>::enforce_b_sparsity(&b, &selector).unwrap();
+        assert!(cs.is_satisfied().unwrap());
+    }
+
+    #[test]
+    fn test_enforce_b_sparsity_all_zero_unselected() {
+        let cs = ConstraintSystem::<F>::new_ref();
+        let b: Vec<FpVar<F>> = vec![fp(&cs, 0), fp(&cs, 0), fp(&cs, 0)];
+        let selector: Vec<FpVar<F>> = vec![fp(&cs, 0), fp(&cs, 0), fp(&cs, 0)];
+        PoseidonAnchorSchemeGadget::<F>::enforce_b_sparsity(&b, &selector).unwrap();
+        assert!(cs.is_satisfied().unwrap());
+    }
+
+    #[test]
+    fn test_enforce_b_sparsity_single_selected() {
+        let cs = ConstraintSystem::<F>::new_ref();
+        let b: Vec<FpVar<F>> = vec![fp(&cs, 42)];
+        let selector: Vec<FpVar<F>> = vec![fp(&cs, 1)];
+        PoseidonAnchorSchemeGadget::<F>::enforce_b_sparsity(&b, &selector).unwrap();
+        assert!(cs.is_satisfied().unwrap());
+    }
+
+    #[test]
+    fn test_enforce_b_sparsity_invalid_nonzero_unselected() {
+        let cs = ConstraintSystem::<F>::new_ref();
+        let b: Vec<FpVar<F>> = vec![fp(&cs, 5), fp(&cs, 7), fp(&cs, 3)];
+        let selector: Vec<FpVar<F>> = vec![fp(&cs, 1), fp(&cs, 0), fp(&cs, 1)];
+        PoseidonAnchorSchemeGadget::<F>::enforce_b_sparsity(&b, &selector).unwrap();
+        assert!(!cs.is_satisfied().unwrap()); // b[1]=7 but selector[1]=0
+    }
+
+    #[test]
+    fn test_enforce_b_sparsity_single_unselected_nonzero() {
+        let cs = ConstraintSystem::<F>::new_ref();
+        let b: Vec<FpVar<F>> = vec![fp(&cs, 5)];
+        let selector: Vec<FpVar<F>> = vec![fp(&cs, 0)];
+        PoseidonAnchorSchemeGadget::<F>::enforce_b_sparsity(&b, &selector).unwrap();
+        assert!(!cs.is_satisfied().unwrap()); // b[0]=5 but selector[0]=0
+    }
+
+    #[test]
+    fn test_enforce_b_sparsity_last_violates() {
+        let cs = ConstraintSystem::<F>::new_ref();
+        let b: Vec<FpVar<F>> = vec![fp(&cs, 0), fp(&cs, 0), fp(&cs, 7)];
+        let selector: Vec<FpVar<F>> = vec![fp(&cs, 0), fp(&cs, 0), fp(&cs, 0)];
+        PoseidonAnchorSchemeGadget::<F>::enforce_b_sparsity(&b, &selector).unwrap();
+        assert!(!cs.is_satisfied().unwrap()); // b[2]=7 but selector[2]=0
+    }
+
+    #[test]
+    fn test_enforce_b_sparsity_first_violates() {
+        let cs = ConstraintSystem::<F>::new_ref();
+        let b: Vec<FpVar<F>> = vec![fp(&cs, 7), fp(&cs, 0), fp(&cs, 0)];
+        let selector: Vec<FpVar<F>> = vec![fp(&cs, 0), fp(&cs, 1), fp(&cs, 1)];
+        PoseidonAnchorSchemeGadget::<F>::enforce_b_sparsity(&b, &selector).unwrap();
+        assert!(!cs.is_satisfied().unwrap()); // b[0]=7 but selector[0]=0
+    }
+
+    #[test]
+    fn test_enforce_b_sparsity_empty_errors() {
+        let b: Vec<FpVar<F>> = vec![];
+        let selector: Vec<FpVar<F>> = vec![];
+        let result = PoseidonAnchorSchemeGadget::<F>::enforce_b_sparsity(&b, &selector);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_enforce_b_sparsity_length_mismatch_errors() {
+        let cs = ConstraintSystem::<F>::new_ref();
+        let b: Vec<FpVar<F>> = vec![fp(&cs, 1), fp(&cs, 2)];
+        let selector: Vec<FpVar<F>> = vec![fp(&cs, 1)];
+        let result = PoseidonAnchorSchemeGadget::<F>::enforce_b_sparsity(&b, &selector);
+        assert!(result.is_err());
     }
 }

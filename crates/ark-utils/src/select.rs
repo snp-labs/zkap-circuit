@@ -77,7 +77,7 @@ where
     }
 
     // Enforce that the sum equals 1 (exactly one index is in range)
-    crate::enforce_eq_internal!("one_bit_vector_sum", sum_of_bits, FpVar::one())?;
+    sum_of_bits.enforce_equal(&FpVar::one())?;
 
     Ok(eq_bits)
 }

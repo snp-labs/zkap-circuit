@@ -1671,7 +1671,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "zkpasskey-service"
+name = "zkap-service"
 version = "0.1.0"
 dependencies = [
  "ark-bn254",

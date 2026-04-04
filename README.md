@@ -54,7 +54,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-zkpasskey-service = { git = "https://github.com/snp-labs/zkap-circuit" }
+zkap-service = { git = "https://github.com/snp-labs/zkap-circuit" }
 ```
 
 To use individual gadgets with fine-grained features:

@@ -36,7 +36,7 @@ To run tests for a specific crate:
 ```sh
 cargo test -p circuit
 cargo test -p gadget
-cargo test -p zkpasskey-service
+cargo test -p zkap-service
 ```
 
 ### Linting

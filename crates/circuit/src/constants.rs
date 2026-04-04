@@ -6,7 +6,11 @@ use gadget::bigint::constraints::BigNatCircuitParams;
 
 pub const PAD_CHAR: char = '\0';
 
-/// JSON config file용 (사람이 읽을 수 있는 형태)
+/// JSON-friendly circuit configuration intended for human-readable config files.
+///
+/// All string-typed fields (e.g. `claims`, `forbidden_string`) are kept as `String`/`Vec<String>`
+/// for ergonomic serialisation.  Convert to [`CircuitConfig`] via `Into`/`From` before use in
+/// proof generation.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct RawCircuitConfig {
     pub max_jwt_b64_len: u64,
@@ -24,7 +28,12 @@ pub struct RawCircuitConfig {
     pub forbidden_string: String,
 }
 
-/// Circuit용 (CanonicalSerialize 호환)
+/// Runtime circuit parameters used throughout proof generation and verification.
+///
+/// Unlike [`RawCircuitConfig`], all byte-string fields are stored as `Vec<u8>` for compatibility
+/// with `CanonicalSerialize`.  Obtain an instance from [`RawCircuitConfig`] via `Into`, or load
+/// one from a JSON file with [`CircuitConfig::from_json_file`].  Call [`CircuitConfig::validate`]
+/// to enforce parameter constraints before use.
 #[derive(Clone, Debug, PartialEq, Eq, CanonicalSerialize, CanonicalDeserialize)]
 pub struct CircuitConfig {
     pub max_jwt_b64_len: u64,
@@ -63,6 +72,11 @@ impl From<RawCircuitConfig> for CircuitConfig {
 }
 
 impl CircuitConfig {
+    /// Validate the parameter constraints required by the ZKAP circuit.
+    ///
+    /// Checks that `k >= 1`, `k <= n`, `tree_height >= 1`, `max_payload_b64_len <= max_jwt_b64_len`,
+    /// `num_audience_limit >= 1`, and that `claims` is non-empty.  Returns an error string
+    /// describing the first violation found.
     pub fn validate(&self) -> Result<(), String> {
         if self.k < 1 {
             return Err(format!("k must be >= 1, got: {}", self.k));

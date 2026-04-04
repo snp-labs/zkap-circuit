@@ -2,10 +2,10 @@
 //!
 //! Tests that exercise public API functions across module boundaries.
 //! The `#[ignore]` tests require CRS generation and are slow (~30s+).
-//! Run with: `cargo test -p zkpasskey-service --test service_integration -- --ignored`
+//! Run with: `cargo test -p zkap-service --test service_integration -- --ignored`
 
 use circuit::constants::RawCircuitConfig;
-use zkpasskey_service::{
+use zkap_service::{
     CircuitConfig,
     generate_anchor, generate_hash, generate_aud_hash, generate_leaf_hash,
     Secret,
@@ -129,7 +129,7 @@ fn test_anchor_different_secrets_different_output() {
 #[test]
 #[ignore]
 fn test_groth16_setup_and_verify() {
-    use zkpasskey_service::{groth16_setup, verify};
+    use zkap_service::{groth16_setup, verify};
 
     let params = test_config();
 
@@ -141,7 +141,7 @@ fn test_groth16_setup_and_verify() {
     assert!(!setup.vk.gamma_abc_g1.is_empty());
 
     // Verify with dummy proof should fail gracefully
-    use zkpasskey_service::constants::{BN254, F};
+    use zkap_service::constants::{BN254, F};
     let dummy_proof = ark_groth16::Proof::<BN254>::default();
     let dummy_inputs = vec![F::from(0u64)];
     let result = verify(&setup.pvk, &dummy_proof, &dummy_inputs);

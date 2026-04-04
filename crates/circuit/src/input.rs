@@ -21,7 +21,11 @@ pub struct CircuitConstants<F: PrimeField> {
     pub base64_table: Base64Table,
 }
 
-/// Public inputs (exposed to the verifier)
+/// Public inputs for one ZKAP proof, visible to the on-chain verifier.
+///
+/// These eight field elements are passed to `Groth16::verify_proof` and must match the values
+/// committed to inside the circuit.  Obtain them via [`ZkapCircuitInput::extract_public_inputs`]
+/// or [`CircuitPublicInputs::to_vec`].
 #[derive(Clone, CanonicalSerialize, CanonicalDeserialize)]
 pub struct CircuitPublicInputs<F: PrimeField> {
     /// H(anchor)
@@ -119,7 +123,11 @@ pub struct MiscWitness<F: PrimeField> {
     pub random: F,
 }
 
-/// Struct bundling all circuit inputs
+/// Complete input bundle for one ZKAP proof.
+///
+/// Aggregates all sub-witnesses and public inputs required by [`ZkapCircuit`].  Build this
+/// struct via the `ProofContextBuilder` in `zkap-service`, then pass it to
+/// [`ZkapCircuit::from_input`].
 #[derive(Clone)]
 pub struct ZkapCircuitInput<F: PrimeField + Absorb> {
     /// Circuit configuration (runtime parameters)

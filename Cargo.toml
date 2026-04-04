@@ -15,7 +15,7 @@ repository = "https://github.com/snp-labs/zkap-circuit"
 ark-utils                 = { path = "crates/ark-utils" }
 gadget                    = { path = "crates/gadget", default-features = false }
 circuit                   = { path = "crates/circuit" }
-zkpasskey-service         = { path = "crates/service" }
+zkap-service              = { path = "crates/service" }
 
 thiserror = { version = "2.0.12" }
 serde = { version = "1.0.227", features = ["derive"] }

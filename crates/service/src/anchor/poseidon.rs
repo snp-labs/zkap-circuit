@@ -22,6 +22,12 @@ use gadget::{
     matrix::VandermondeMatrix,
 };
 
+/// Generate a `PoseidonAnchor` from a list of JWT claim secrets.
+///
+/// Each [`Secret`] (sub, iss, aud) is hashed via Poseidon into a scalar `x`, then the
+/// resulting `x` values are combined using the Vandermonde-based [`PoseidonAnchorScheme`]
+/// to produce the anchor polynomial evaluations.  The anchor encodes threshold membership
+/// without revealing which `K` of the `N` credentials were used.
 pub fn generate_anchor(
     params: &CircuitConfig,
     secrets: Vec<Secret>,

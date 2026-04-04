@@ -1,3 +1,10 @@
+//! zkap-service — high-level API for ZKAP proof generation and verification.
+//!
+//! This crate exposes the seven core public functions (`groth16_setup`, `prove`, `verify`,
+//! `generate_anchor`, `generate_hash`, `generate_aud_hash`, `generate_leaf_hash`) plus the
+//! supporting types (`Secret`, `RawProofRequest`, `CircuitConfig`) that callers need to produce
+//! and verify Groth16 zero-knowledge proofs for the ZK-Passkey protocol.
+
 pub mod anchor;
 pub mod dto;
 pub mod error;

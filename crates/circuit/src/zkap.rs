@@ -122,9 +122,6 @@ where
         assert!(self.anchor.selector.len() == Config::N);
         // Implement the constraint generation logic here
 
-        let initial_constraints = cs.num_constraints();
-        let mut cs_last = initial_constraints;
-
         // ============ Constants ============
         let vandermonde_matrix = VandermondeMatrixVar::<C::BaseField>::new_constant(
             cs.clone(),
@@ -233,14 +230,9 @@ where
         let zero = FpVar::<C::BaseField>::Constant(C::BaseField::from(0u64));
         let one = FpVar::<C::BaseField>::Constant(C::BaseField::from(1u64));
 
-        gadget::dbg_cs_total!(&cs, "Initial constraints");
-        gadget::dbg_cs_delta!(&cs, &mut cs_last, "[Setup] Variable allocation");
-
         // ============================================================
         // [Phase 1] JWT Authenticity & Claim Extraction
         // ============================================================
-        let phase1_start = cs.num_constraints();
-        let mut phase1_total_last = phase1_start;
 
         // [1.1] SHA256 Full Digest (from initial H constants) + RSA-2048 signature verification
         let mut digest = SHA256Gadget::<C::BaseField>::digest_full_with_pad_checked(
@@ -253,7 +245,6 @@ where
 
         let result = RSA2048VerifyGadget::verify_opt(&mut digest, &signature_op, &pk_op)?;
         result.enforce_equal(&Boolean::TRUE)?;
-        gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - RSA Verification");
 
         // [1.2] Base64 decoding and claim extraction
         let sha_pad_jwt_b64_to_fp = sha_pad_jwt_b64
@@ -274,8 +265,6 @@ where
             &payload_offset_fp.to_bits_le_with_top_bits_zero(16)?.0,
         )?;
 
-        gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Payload Offset >= 1");
-
         // Defense in depth: payload_offset + payload_len < buffer_len (prevent buffer overrun)
         let buf_len = FpVar::<C::BaseField>::Constant(C::BaseField::from(
             sha_pad_jwt_b64_to_fp.len() as u64,
@@ -285,8 +274,6 @@ where
             &second_dot_idx.to_bits_le_with_top_bits_zero(16)?.0,
             &buf_len.to_bits_le_with_top_bits_zero(16)?.0,
         )?;
-
-        gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Payload Index Range Check");
 
         // First '.': immediately before payload start (between header and payload)
         let first_dot_idx = &payload_offset_fp - &one;
@@ -304,8 +291,6 @@ where
         let pad_start_fp = pad_start_byte_idx.to_fp()?;
         second_dot_idx.enforce_equal(&pad_start_fp)?;
 
-        gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Payload Boundary Check");
-
         let payload_b64 = slice_efficient(
             &sha_pad_jwt_b64_to_fp,
             &payload_offset_b64,
@@ -318,7 +303,6 @@ where
             &payload_b64,
             &index_bits,
         )?;
-        gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Base64 Decoding");
 
         let aud_bytes = claim_extractor_v2("aud", &payload, &token_claim[0], Config::MAX_AUD_LEN)?;
         let exp_bytes = claim_extractor_v2("exp", &payload, &token_claim[1], Config::MAX_EXP_LEN)?;
@@ -337,18 +321,9 @@ where
         let nonce = jwt_nonce_hex_to_field(&nonce_bytes, &last_quote_index)?;
         let sub = pack_decompose_bytes_unchecked(&sub_bytes)?;
 
-        gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Claims Extraction");
-        gadget::dbg_cs_delta!(
-            &cs,
-            &mut phase1_total_last,
-            "[Phase 1] JWT Authenticity & Claim Extraction Total"
-        );
-
         // ============================================================
         // [Phase 2] Issuer Validation and Execution Binding
         // ============================================================
-        let phase2_start = cs.num_constraints();
-        let mut phase2_total_last = phase2_start;
 
         // [2.1] Issuer-Public Key verification
         let leaf_inputs = [iss.clone(), pk_op.n.limbs.clone()].concat();
@@ -357,31 +332,23 @@ where
         path.set_leaf_position(leaf_idx.to_bits_le()?);
         let result = path.verify_membership(&poseidon_param, &poseidon_param, &root, &[leaf])?;
         result.enforce_equal(&Boolean::TRUE)?;
-        gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Issuer-PublicKey MerkleVerify");
 
         // [2.2] expiry check: jwt_exp == exp
         exp.enforce_equal(&jwt_exp)?;
-        gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Expiry Check");
-
-        gadget::dbg_cs_delta!(&cs, &mut phase2_total_last, "[Phase 2] Validation Total");
 
         // ============================================================
         // [Phase 3] Threshold Membership and Anchor Binding (Binding)
         // ============================================================
-        let phase3_start = cs.num_constraints();
-        let mut phase3_total_last = phase3_start;
 
         // h_anchor == Poseidon(anchor)
         let target_hanchor = chain_hash_gadget(cs.clone(), &poseidon_param, &anchor.anchor)?;
         target_hanchor.enforce_equal(&hanchor)?;
-        gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Anchor Binding");
 
         // Nonce binding: nonce == Poseidon(h_sign_userop, random)
         let nonce_inputs = vec![h_sign_user_op, random.clone()];
         let target_nonce =
             PoseidonCRHGadget::<C::BaseField>::evaluate(&poseidon_param, &nonce_inputs)?;
         target_nonce.enforce_equal(&nonce)?;
-        gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Nonce Binding");
 
         // aud membership: Poseidon(aud) ∈ aud_list (product trick)
         let target_aud = PoseidonCRHGadget::<C::BaseField>::evaluate(&poseidon_param, &aud)?;
@@ -391,36 +358,25 @@ where
             product *= diff;
         }
         product.enforce_equal(&zero)?;
-        gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Aud Membership");
 
         // h_a == Poseidon(a, random)
         let mut a_inputs = a.clone();
         a_inputs.push(random.clone());
         let target_h_a = PoseidonCRHGadget::<C::BaseField>::evaluate(&poseidon_param, &a_inputs)?;
         target_h_a.enforce_equal(&h_a)?;
-        gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Context Binding");
 
         // h_aud_list == Poseidon(aud_list)
         let target_h_aud_list =
             PoseidonCRHGadget::<C::BaseField>::evaluate(&poseidon_param, &aud_list)?;
         target_h_aud_list.enforce_equal(&h_aud_list)?;
 
-        gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Aud List Binding");
-        gadget::dbg_cs_delta!(&cs, &mut phase3_total_last, "[Phase 3] Binding Total");
-
         // ============================================================
         // [Phase 4] Threshold logic (Vandermonde + indices constraints)
         // ============================================================
-        let phase4_start = cs.num_constraints();
-        let mut phase4_total_last = phase4_start;
 
         PoseidonAnchorSchemeGadget::<C::BaseField>::enforce_a_nonzero(&a)?;
 
-        gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - A Vector Nonzero");
-
         let b = vandermonde_matrix.vector_mul_matrix(&a)?;
-
-        gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Vandermonde Transform");
 
         // indices constraints:
         //  1) boolean
@@ -429,22 +385,16 @@ where
         //  4) b sparsity helper
         enforce_boolean_selectors(&indices)?;
 
-        gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Boolean Selectors");
-
         PoseidonAnchorSchemeGadget::<C::BaseField>::enforce_b_sparsity(&b, &indices)?;
 
         let k_fp = FpVar::<C::BaseField>::Constant(C::BaseField::from(Config::K as u64));
         enforce_selector_cardinality(&indices, &k_fp)?;
-        gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Selector Cardinality");
 
         let is_one = single_multiplexer(&indices, &current_idx)?;
         is_one.enforce_equal(&one)?;
 
-        gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Current Idx One-hot");
-
         // random != 0
         random.enforce_not_equal(&zero)?;
-        gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Random Nonzero");
 
         // current_idx < N
         let n =
@@ -454,14 +404,9 @@ where
             &n.to_bits_le_with_top_bits_zero(8)?.0,
         )?;
 
-        gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Index Range Check");
-        gadget::dbg_cs_delta!(&cs, &mut phase4_total_last, "[Phase 4] Logic Total");
-
         // ============================================================
         // [Phase 5] Output binding (h_id, partial_rhs, lhs)
         // ============================================================
-        let phase5_start = cs.num_constraints();
-        let mut phase5_total_last = phase5_start;
 
         // h_id = Poseidon(current_idx, Poseidon(aud, iss, sub))
         let mut h_id_inputs = Vec::<FpVar<C::BaseField>>::new();
@@ -474,8 +419,6 @@ where
         let h_id =
             PoseidonCRHGadget::<C::BaseField>::evaluate(&poseidon_param, &h_id_inputs_with_index)?;
 
-        gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Identity Hash");
-
         // partial_rhs[current_idx] = b[current_idx] * h_id * random
         // lhs = <a, anchor> * random
         let beta = single_multiplexer(&b, &current_idx)?;
@@ -485,11 +428,6 @@ where
         let lhs_ = PoseidonAnchorSchemeGadget::<C::BaseField>::inner_product(&anchor.anchor, &a)?;
         let calc_lhs = lhs_ * random.clone();
         calc_lhs.enforce_equal(&lhs)?;
-
-        gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - RHS/LHS Calculation");
-
-        gadget::dbg_cs_delta!(&cs, &mut phase5_total_last, "[Phase 5] Output Total");
-        gadget::dbg_cs_total!(&cs, "Total constraints");
 
         Ok(())
     }

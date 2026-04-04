@@ -1,6 +1,6 @@
 use std::{
     borrow::Borrow,
-    ops::{BitXor, Not},
+    ops::BitXor,
 };
 
 use ark_ff::PrimeField;
@@ -21,7 +21,7 @@ use crate::{
     hashes::sha256::{H, K, utils::conditionally_select_vec},
     utils::{
         UInt32Ext,
-        comparison::{is_greater_or_equal, is_less_than},
+        comparison::{enforce_less_than, is_greater_or_equal, is_less_than},
         slice_efficient,
     },
 };
@@ -222,7 +222,7 @@ impl<F: PrimeField> SHA256Gadget<F> {
         let sum_flags = flags.iter().fold(FpVar::<F>::zero(), |acc, b| {
             acc + FpVar::<F>::from(b.clone())
         });
-        crate::enforce_eq_internal!("sha256_nblocks_one_hot", sum_flags, one)?;
+        sum_flags.enforce_equal(&one)?;
 
         for (flag, state) in flags.iter().zip(hash_results.iter()) {
             // output = flag ? state : output
@@ -263,7 +263,7 @@ impl<F: PrimeField> SHA256Gadget<F> {
         let sum_flags = flags
             .iter()
             .fold(FpVar::<F>::zero(), |acc, f| acc + f.clone());
-        crate::enforce_eq_internal!("sha256_flags_one_hot", sum_flags, FpVar::<F>::one())?;
+        sum_flags.enforce_equal(&FpVar::<F>::one())?;
 
         // ------------------------------------------------------------
         // 1) Calculate total message length (in bits)
@@ -293,7 +293,7 @@ impl<F: PrimeField> SHA256Gadget<F> {
         }
 
         // Directly enforce enc_fp == total_len_bits_fp
-        crate::enforce_eq_internal!("sha256_len_field", enc_fp, total_len_bits_fp)?;
+        enc_fp.enforce_equal(&total_len_bits_fp)?;
 
         // ------------------------------------------------------------
         // 3) Verify pad_start position (FIXED, underflow-free)
@@ -348,7 +348,7 @@ impl<F: PrimeField> SHA256Gadget<F> {
         }
 
         // cond_b must be true for the selected b
-        crate::enforce_eq_internal!("sha256_pad_pos_valid", pos_ok_acc, FpVar::<F>::one())?;
+        pos_ok_acc.enforce_equal(&FpVar::<F>::one())?;
 
         // ------------------------------------------------------------
         // 4) Verify length linking equation
@@ -356,7 +356,7 @@ impl<F: PrimeField> SHA256Gadget<F> {
         // ------------------------------------------------------------
         let prefix_len_bytes_fp = prefix_blocks.to_fp()? * FpVar::<F>::constant(F::from(64u64));
         let total_len_fp = total_len_wo_pad_bytes.to_fp()?;
-        crate::enforce_eq_internal!("sha256_total_len", prefix_len_bytes_fp + &pad_start_fp, total_len_fp)?;
+        (prefix_len_bytes_fp + &pad_start_fp).enforce_equal(&total_len_fp)?;
 
         // ------------------------------------------------------------
         // 5) Verify padding bytes
@@ -367,19 +367,18 @@ impl<F: PrimeField> SHA256Gadget<F> {
         let padding_len_fp = &lenfield_start_fp - &pad_start_fp;
         let padding_len_bits = padding_len_fp.to_bits_le_with_top_bits_zero(16)?.0;
 
-        // padding_len >= 1
-        let one_bits = UInt16::constant(1u16).to_bits_le()?;
-        let lt_one = is_less_than(&padding_len_bits, &one_bits)?;
-        crate::enforce_true_internal!("sha256_padding_len_ge1", lt_one.not())?;
+        // [OPT-2] enforce 0 < padding_len directly (~17 vs ~81 constraints)
+        let zero_bits = UInt16::constant(0u16).to_bits_le()?;
+        enforce_less_than(&zero_bits, &padding_len_bits)?;
 
-        // padding_len <= 64  <=> padding_len < 65
+        // [OPT-3] enforce padding_len < 65 directly (~17 vs ~81 constraints)
         let sixty_five_bits = UInt16::constant(65u16).to_bits_le()?;
-        crate::enforce_true_internal!("sha256_padding_len_le64", is_less_than(&padding_len_bits, &sixty_five_bits)?)?;
+        enforce_less_than(&padding_len_bits, &sixty_five_bits)?;
 
         // If in_last_block, padding_len < 57; otherwise padding_len >= 57
         let fifty_seven_bits = UInt16::constant(57u16).to_bits_le()?;
         let padding_lt_57 = is_less_than(&padding_len_bits, &fifty_seven_bits)?;
-        crate::enforce_eq_internal!("sha256_padding_block_split", padding_lt_57, in_last_block)?;
+        padding_lt_57.enforce_equal(&in_last_block)?;
 
         let padding_len_u16 = UInt16::from_bits_le(&padding_len_bits);
 
@@ -399,11 +398,11 @@ impl<F: PrimeField> SHA256Gadget<F> {
         )?;
 
         // First byte must be SHA256_PAD_MARKER (0x80)
-        crate::enforce_eq_internal!("sha256_pad_marker", pad_region[0].clone(), FpVar::<F>::constant(F::from(crate::constants::SHA256_PAD_MARKER as u64)))?;
+        pad_region[0].enforce_equal(&FpVar::<F>::constant(F::from(crate::constants::SHA256_PAD_MARKER as u64)))?;
 
         // All remaining bytes must be 0
         for item in pad_region.iter().take(PAD_REGION_MAX).skip(1) {
-            crate::enforce_eq_internal!("sha256_pad_zero", item.clone(), FpVar::<F>::zero())?;
+            item.enforce_equal(&FpVar::<F>::zero())?;
         }
 
         // ------------------------------------------------------------
@@ -412,16 +411,13 @@ impl<F: PrimeField> SHA256Gadget<F> {
         // ------------------------------------------------------------
         let mut prefix_sum = FpVar::<F>::zero();
         for (b, flag) in flags.iter().enumerate().take(max_blocks) {
-            // prefix_sum == 1 means b > last_block
             let after_mask = prefix_sum.clone();
-
             for off in 0..64 {
                 let idx = b * 64 + off;
                 let byte_fp = sha_pad_payload_b64[idx].to_fp()?;
-                let prod = after_mask.clone() * byte_fp;
-                crate::enforce_eq_internal!("sha256_trailing_zero", prod, FpVar::<F>::zero())?;
+                // [OPT-4] Single R1CS constraint: after_mask × byte = 0 (was 2 constraints)
+                after_mask.mul_equals(&byte_fp, &FpVar::<F>::zero())?;
             }
-
             prefix_sum += flag.clone();
         }
 
@@ -522,7 +518,7 @@ impl<F: PrimeField> SHA256Gadget<F> {
         let sum_flags = flags
             .iter()
             .fold(FpVar::<F>::zero(), |acc, f| acc + f.clone());
-        crate::enforce_eq_internal!("sha256_full_flags_one_hot", sum_flags, FpVar::<F>::one())?;
+        sum_flags.enforce_equal(&FpVar::<F>::one())?;
 
         // ------------------------------------------------------------
         // 1) Calculate total message length in bits
@@ -552,7 +548,7 @@ impl<F: PrimeField> SHA256Gadget<F> {
         }
 
         // Enforce: encoded_length == total_len_bits
-        crate::enforce_eq_internal!("sha256_full_len_field", enc_fp, total_len_bits_fp)?;
+        enc_fp.enforce_equal(&total_len_bits_fp)?;
 
         // ------------------------------------------------------------
         // 3) Verify pad_start position is valid
@@ -605,14 +601,14 @@ impl<F: PrimeField> SHA256Gadget<F> {
         }
 
         // Enforce: position is valid for selected block
-        crate::enforce_eq_internal!("sha256_full_pad_pos_valid", pos_ok_acc, FpVar::<F>::one())?;
+        pos_ok_acc.enforce_equal(&FpVar::<F>::one())?;
 
         // ------------------------------------------------------------
         // 4) Verify pad_start == total_len (for full message, no prefix blocks)
         //    This ensures the padding starts immediately after the message
         // ------------------------------------------------------------
         let total_len_fp = total_len_wo_pad_bytes.to_fp()?;
-        crate::enforce_eq_internal!("sha256_full_pad_start", pad_start_fp, total_len_fp)?;
+        pad_start_fp.enforce_equal(&total_len_fp)?;
 
         // ------------------------------------------------------------
         // 5) Verify padding bytes
@@ -623,19 +619,18 @@ impl<F: PrimeField> SHA256Gadget<F> {
         let padding_len_fp = &lenfield_start_fp - &pad_start_fp;
         let padding_len_bits = padding_len_fp.to_bits_le_with_top_bits_zero(16)?.0;
 
-        // padding_len >= 1
-        let one_bits = UInt16::constant(1u16).to_bits_le()?;
-        let lt_one = is_less_than(&padding_len_bits, &one_bits)?;
-        crate::enforce_true_internal!("sha256_full_padding_len_ge1", lt_one.not())?;
+        // [OPT-2] enforce 0 < padding_len directly (~17 vs ~81 constraints)
+        let zero_bits = UInt16::constant(0u16).to_bits_le()?;
+        enforce_less_than(&zero_bits, &padding_len_bits)?;
 
-        // padding_len <= 64 <=> padding_len < 65
+        // [OPT-3] enforce padding_len < 65 directly (~17 vs ~81 constraints)
         let sixty_five_bits = UInt16::constant(65u16).to_bits_le()?;
-        crate::enforce_true_internal!("sha256_full_padding_len_le64", is_less_than(&padding_len_bits, &sixty_five_bits)?)?;
+        enforce_less_than(&padding_len_bits, &sixty_five_bits)?;
 
         // in_last_block implies padding_len < 57, otherwise padding_len >= 57
         let fifty_seven_bits = UInt16::constant(57u16).to_bits_le()?;
         let padding_lt_57 = is_less_than(&padding_len_bits, &fifty_seven_bits)?;
-        crate::enforce_eq_internal!("sha256_full_padding_block_split", padding_lt_57, in_last_block)?;
+        padding_lt_57.enforce_equal(&in_last_block)?;
 
         let padding_len_u16 = UInt16::from_bits_le(&padding_len_bits);
 
@@ -655,13 +650,13 @@ impl<F: PrimeField> SHA256Gadget<F> {
         )?;
 
         // First byte must be SHA256_PAD_MARKER (0x80)
-        crate::enforce_eq_internal!("sha256_full_pad_marker", pad_region[0].clone(), FpVar::<F>::constant(F::from(
+        pad_region[0].enforce_equal(&FpVar::<F>::constant(F::from(
             crate::constants::SHA256_PAD_MARKER as u64,
         )))?;
 
         // Remaining padding bytes must be 0
         for item in pad_region.iter().take(PAD_REGION_MAX).skip(1) {
-            crate::enforce_eq_internal!("sha256_full_pad_zero", item.clone(), FpVar::<F>::zero())?;
+            item.enforce_equal(&FpVar::<F>::zero())?;
         }
 
         // ------------------------------------------------------------
@@ -670,16 +665,13 @@ impl<F: PrimeField> SHA256Gadget<F> {
         // ------------------------------------------------------------
         let mut prefix_sum = FpVar::<F>::zero();
         for (b, flag) in flags.iter().enumerate().take(max_blocks) {
-            // prefix_sum == 1 means b > last_block
             let after_mask = prefix_sum.clone();
-
             for off in 0..64 {
                 let idx = b * 64 + off;
                 let byte_fp = data[idx].to_fp()?;
-                let prod = after_mask.clone() * byte_fp;
-                crate::enforce_eq_internal!("sha256_full_trailing_zero", prod, FpVar::<F>::zero())?;
+                // [OPT-4] Single R1CS constraint: after_mask × byte = 0 (was 2 constraints)
+                after_mask.mul_equals(&byte_fp, &FpVar::<F>::zero())?;
             }
-
             prefix_sum += flag.clone();
         }
 

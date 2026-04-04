@@ -2,7 +2,7 @@ extern crate alloc;
 
 // Always available
 pub mod constants;
-pub mod debug;
+
 
 // Re-export ark-utils as utils for backward compatibility
 pub use ark_utils as utils;

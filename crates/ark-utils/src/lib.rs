@@ -3,8 +3,7 @@ extern crate alloc;
 // R1CS modules (feature = "r1cs")
 #[cfg(feature = "r1cs")]
 pub mod comparison;
-#[cfg(feature = "r1cs")]
-pub mod enforce;
+
 #[cfg(feature = "r1cs")]
 pub mod jwt_field;
 #[cfg(feature = "r1cs")]

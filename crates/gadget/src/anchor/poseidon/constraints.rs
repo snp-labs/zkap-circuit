@@ -204,9 +204,9 @@ pub fn enforce_boolean_selectors<F: PrimeField>(
     let zero = FpVar::<F>::zero();
 
     for s in indices {
-        // s * (s - 1) == 0  <=> s ∈ {0,1}
+        // [OPT-5] s × (s - 1) = 0 as single R1CS constraint (was 2 constraints)
         let s_minus_one = s.clone() - one.clone();
-        crate::enforce_eq_internal!("anchor_selector_boolean", s.clone() * s_minus_one, zero)?;
+        s.mul_equals(&s_minus_one, &zero)?;
     }
     Ok(())
 }
@@ -220,7 +220,7 @@ pub fn enforce_selector_cardinality<F: PrimeField>(
     for s in indices {
         sum += s.clone();
     }
-    crate::enforce_eq_internal!("anchor_selector_cardinality", sum, k.clone())?;
+    sum.enforce_equal(&k)?;
     Ok(())
 }
 

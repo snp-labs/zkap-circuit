@@ -55,9 +55,9 @@ pub fn jwt_nonce_hex_to_field<F: PrimeField>(
     let sixteen = FpVar::Constant(F::from(16u8));
 
     // --- 1. Validate fixed prefix: "0x ---
-    crate::enforce_eq_internal!("nonce_prefix_quote", quote_char, hex_bytes[0])?;
-    crate::enforce_eq_internal!("nonce_prefix_zero", zero_char, hex_bytes[1])?;
-    crate::enforce_eq_internal!("nonce_prefix_x", x_char, hex_bytes[2])?;
+    quote_char.enforce_equal(&hex_bytes[0])?;
+    zero_char.enforce_equal(&hex_bytes[1])?;
+    x_char.enforce_equal(&hex_bytes[2])?;
 
     // --- 2. Initialize accumulator variables ---
     let mut accumulated_value = FpVar::<F>::zero();
@@ -80,7 +80,7 @@ pub fn jwt_nonce_hex_to_field<F: PrimeField>(
         // --- 3.1. Validate closing quote position ---
         // "If this is the closing quote position, the character must be '"'"
         let quote_pos_requirement = !&is_closing_quote_pos | &is_quote_char;
-        crate::enforce_true_internal!("nonce_quote_pos", quote_pos_requirement)?;
+        quote_pos_requirement.enforce_equal(&Boolean::TRUE)?;
 
         // --- 3.2. Hex parsing (only before the closing quote) ---
         let should_parse = &is_before_closing_quote & !&is_closing_quote_pos;
@@ -90,7 +90,7 @@ pub fn jwt_nonce_hex_to_field<F: PrimeField>(
 
         // Validity check: "if we must parse, the character must be a valid hex digit"
         let validity_requirement = !&should_parse | &is_valid_hex;
-        crate::enforce_true_internal!("nonce_hex_valid", validity_requirement)?;
+        validity_requirement.enforce_equal(&Boolean::TRUE)?;
 
         // Accumulate value (only when should_parse is true)
         let potential_next_value = &accumulated_value * &sixteen + &hex_value;
@@ -106,21 +106,20 @@ pub fn jwt_nonce_hex_to_field<F: PrimeField>(
 
     // --- 4. Final validation ---
     // 4.1. Must have found the closing quote
-    crate::enforce_true_internal!("nonce_closing_quote_found", found_closing_quote)?;
+    found_closing_quote.enforce_equal(&Boolean::TRUE)?;
 
     // 4.2. Hex digit count must be 1~64 (4 bits ~ 256 bits)
     // Minimum 1 digit
     let zero = FpVar::<F>::zero();
     let digit_count_ge_1 = hex_digit_count.is_neq(&zero)?;
-    crate::enforce_true_internal!("nonce_digit_count_ge_1", digit_count_ge_1)?;
+    digit_count_ge_1.enforce_equal(&Boolean::TRUE)?;
 
     // [ZKAPCIR-004] Maximum 64 digits (256 bits) - enforced inside the circuit
     // The previous code did not constrain the comparison result, allowing 65+ digits.
-    let max_hex_digits = FpVar::<F>::Constant(F::from(64u64));
-    let digit_count_bits = hex_digit_count.to_bits_le()?;
-    let max_bits = max_hex_digits.to_bits_le()?;
-    let digit_le_max = crate::comparison::is_less_or_equal(&digit_count_bits, &max_bits)?;
-    crate::enforce_true_internal!("nonce_digit_le_max", digit_le_max)?;
+    // [OPT-1] Use 7-bit decomposition (128 > 64) instead of full 254-bit field decomposition
+    let (digit_count_bits, _) = hex_digit_count.to_bits_le_with_top_bits_zero(7)?;
+    let sixty_five_bits = &UInt16::constant(65u16).to_bits_le()?[..7];
+    crate::comparison::enforce_less_than(&digit_count_bits, sixty_five_bits)?;
 
     Ok(accumulated_value)
 }
@@ -316,7 +315,7 @@ pub fn jwt_exp_to_field<F: PrimeField>(
         let (digit_value, is_valid_digit) = decimal_byte_to_digit(current_byte)?;
 
         // Validity check: must be a valid decimal digit
-        crate::enforce_true_internal!("exp_digit_valid", is_valid_digit)?;
+        is_valid_digit.enforce_equal(&Boolean::TRUE)?;
 
         // Accumulate value: accumulated_value = accumulated_value * 10 + digit_value
         accumulated_value = &accumulated_value * &ten + &digit_value;
@@ -324,7 +323,7 @@ pub fn jwt_exp_to_field<F: PrimeField>(
 
     // --- 2. Validate remaining bytes are all zero-padded ---
     for byte in decimal_bytes.iter().skip(10) {
-        crate::enforce_eq_internal!("exp_padding_zero", *byte, zero)?;
+        byte.enforce_equal(&zero)?;
     }
 
     Ok(accumulated_value)

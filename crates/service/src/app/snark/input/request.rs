@@ -102,7 +102,7 @@ impl ProofRequest {
 
     /// Parses raw input into domain objects
     fn parse<Config: ZkPasskeyConfig>(raw: RawProofRequest) -> Result<Self, ApplicationError> {
-        use ark_utils::field_serde::hex_decimal_to_field;
+        use ark_utils::hex_decimal_to_field;
 
         // Create TokenBuilders
         let token_builders: Vec<TokenBuilder> = raw
@@ -163,7 +163,7 @@ impl ProofRequest {
 
     /// Parses the anchor string array
     fn parse_anchor(raw_anchor: &[String]) -> Result<AnchorData, ApplicationError> {
-        use ark_utils::field_serde::hex_decimal_to_field;
+        use ark_utils::hex_decimal_to_field;
 
         if raw_anchor.is_empty() {
             return Err(ApplicationError::InvalidFormat(

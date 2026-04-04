@@ -20,7 +20,7 @@ use rsa::traits::PublicKeyParts;
 use sha2::Sha256;
 
 use regex::Regex;
-use ark_utils::field_serde::ascii_to_field_be;
+use ark_utils::try_str_to_fields;
 use ark_utils::pad;
 use circuit::{
     baerae::{BaeraeLightWeightCircuit, input::*},
@@ -232,7 +232,7 @@ fn derive_x(aud: &str, iss: &str, sub: &str, params: &PoseidonConfig<F>) -> F {
     let padded_sub = pad(sub, ZkapConfig::MAX_SUB_LEN, ZkapConfig::PAD_CHAR).unwrap();
 
     let input = format!("{}{}{}", padded_aud, padded_iss, padded_sub);
-    let limbs = ascii_to_field_be::<F>(&input).unwrap();
+    let limbs = try_str_to_fields::<F>(&input).unwrap();
     CRH::<F>::evaluate(params, limbs).unwrap()
 }
 

@@ -140,7 +140,103 @@ pub fn update_with_state(state: [u32; 8], data: &[u8]) -> [u32; 8] {
 
 pub fn finalize_with_state(state: [u32; 8], data: &[u8], len: usize) -> [u32; 8] {
     let padded_input = sha256_pad_with_len(data, len);
-    
+
 
     update_with_state(state, &padded_input)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sha256_pad_with_len_alignment() {
+        let input = b"hello";
+        let padded = sha256_pad_with_len(input, input.len());
+        assert_eq!(padded.len() % 64, 0, "Padded output must be 64-byte aligned");
+        assert_eq!(padded[input.len()], 0x80, "First padding byte must be 0x80");
+    }
+
+    #[test]
+    fn test_sha256_pad_with_len_length_field() {
+        let input = b"test data";
+        let padded = sha256_pad_with_len(input, input.len());
+        // Last 8 bytes = bit length in big-endian
+        let bit_len = u64::from_be_bytes(padded[padded.len()-8..].try_into().unwrap());
+        assert_eq!(bit_len, (input.len() as u64) * 8);
+    }
+
+    #[test]
+    fn test_sha256_block_len() {
+        assert_eq!(sha256_block_len(0), 1);   // 0+1+8 = 9 → ceil(9/64) = 1
+        assert_eq!(sha256_block_len(55), 1);  // 55+1+8 = 64 → 1
+        assert_eq!(sha256_block_len(56), 2);  // 56+1+8 = 65 → 2
+        assert_eq!(sha256_block_len(64), 2);  // 64+1+8 = 73 → 2
+        assert_eq!(sha256_block_len(119), 2); // 119+1+8 = 128 → 2
+        assert_eq!(sha256_block_len(120), 3); // 120+1+8 = 129 → 3
+    }
+
+    #[test]
+    fn test_stretch_shorter() {
+        let buf = vec![1, 2, 3];
+        let stretched = stretch(&buf, 8);
+        assert_eq!(stretched.len(), 8);
+        assert_eq!(&stretched[..3], &[1, 2, 3]);
+        assert_eq!(&stretched[3..], &[0, 0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn test_stretch_equal() {
+        let buf = vec![1, 2, 3];
+        let stretched = stretch(&buf, 3);
+        assert_eq!(stretched, buf);
+    }
+
+    #[test]
+    fn test_stretch_longer() {
+        let buf = vec![1, 2, 3, 4, 5];
+        let stretched = stretch(&buf, 3);
+        assert_eq!(stretched, buf); // returns original if >= max_len
+    }
+
+    #[test]
+    fn test_update_known_vector() {
+        // SHA256("") with padding: 0x80 followed by zeros, then 0x00..00 (length = 0 bits)
+        let mut block = vec![0x80u8];
+        block.resize(56, 0);
+        block.extend(&0u64.to_be_bytes());
+        assert_eq!(block.len(), 64);
+
+        let state = update(&block);
+        // SHA256 of empty string is e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+        assert_eq!(state[0], 0xe3b0c442);
+        assert_eq!(state[1], 0x98fc1c14);
+        assert_eq!(state[2], 0x9afbf4c8);
+        assert_eq!(state[7], 0x7852b855);
+    }
+
+    #[test]
+    fn test_update_with_state_deterministic() {
+        let data = [0u8; 64];
+        let r1 = update_with_state(H, &data);
+        let r2 = update_with_state(H, &data);
+        assert_eq!(r1, r2);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_update_with_state_wrong_size() {
+        let data = [0u8; 32]; // not 64
+        update_with_state(H, &data);
+    }
+
+    #[test]
+    fn test_to_units() {
+        type F = ark_bn254::Fr;
+        let buffer = vec![0, 1, 2, 3, 4, 5, 6, 7];
+        let units = to_units::<F>(&buffer, 8, 4);
+        assert_eq!(units.len(), 2);
+        // First 4 bytes [0,1,2,3] as BE → 0x00010203
+        assert_eq!(units[0], F::from(0x00010203u64));
+    }
 }

@@ -1,4 +1,0 @@
-# Require review for CI/CD and dependency changes
-.github/ @AudienceFirst-xyz/security
-Cargo.toml @AudienceFirst-xyz/security
-Cargo.lock @AudienceFirst-xyz/security

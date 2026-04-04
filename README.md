@@ -77,16 +77,51 @@ gadget = { git = "https://github.com/snp-labs/zkap-circuit", features = ["full"]
 | `cli` | CRS generation and hash utilities | `generate_crs`, `generate_hash` (binaries) |
 | `service` | Proof generation service layer | `prove`, `verify`, `groth16_setup`, `generate_anchor`, `generate_hash` |
 
+## Quick Start
+
+```rust
+use zkap_service::{CircuitConfig, groth16_setup, prove, verify, RawProofRequest};
+use std::path::PathBuf;
+
+// 1. Load circuit parameters from a JSON manifest
+let config = zkap_service::manifest::load_params_from_manifest("keys/manifest.json".as_ref())?;
+
+// 2. Trusted setup (run once, produces proving/verifying keys)
+let setup = groth16_setup(&config)?;
+
+// 3. Generate a proof
+let request = RawProofRequest::new(
+    PathBuf::from("keys/pk.bin"),
+    jwts,           // K JWT tokens
+    pk_ops,         // K RSA public key moduli (Base64)
+    merkle_paths,   // K Merkle authentication paths
+    leaf_indices,   // K leaf indices
+    root,           // Merkle root
+    anchor,         // Anchor values + hanchor
+    h_sign_user_op, // UserOperation hash
+    random,         // Blinding factor
+    aud_list,       // Audience hashes
+);
+let (proofs, public_inputs) = prove(&config, request)?;
+
+// 4. Verify
+let is_valid = verify(&setup.pvk, &proofs[0], &public_inputs[0])?;
+assert!(is_valid);
+```
+
 ## Building from Source
 
-**Requirements**: Rust (stable, 2024 edition), `cargo`
+**Requirements**: Rust 1.80+ (stable, 2024 edition)
 
 ```bash
-# Build all crates
+git clone https://github.com/snp-labs/zkap-circuit.git
+cd zkap-circuit
+
+# Build
 cargo build --release
 
-# Run tests
-cargo test --release
+# Run tests (258 tests across all crates)
+cargo test
 
 # Lint
 cargo clippy -- -D warnings
@@ -117,11 +152,18 @@ Additional defense-in-depth constraints enforced by the circuit:
 - All selector indices are constrained to be boolean with exactly `k` set bits (cardinality check).
 - The current signer index is range-checked to be less than `N`.
 
+## Documentation
+
+- [ARCHITECTURE.md](ARCHITECTURE.md) — crate dependencies, data flow, design decisions
+- [CONTRIBUTING.md](CONTRIBUTING.md) — build instructions, PR process, commit conventions
+- [SECURITY.md](SECURITY.md) — vulnerability reporting, known advisories, security design
+- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) — community guidelines
+
 ## Contributing
 
 Please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
 
-Bug reports, feature requests, and documentation improvements are welcome via GitHub Issues at [snp-labs/zkap-circuit](https://github.com/snp-labs/zkap-circuit/issues).
+Bug reports, feature requests, and documentation improvements are welcome via [GitHub Issues](https://github.com/snp-labs/zkap-circuit/issues).
 
 ## License
 

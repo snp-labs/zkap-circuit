@@ -7,6 +7,7 @@ use ark_ff::{BigInteger, PrimeField};
 use num::BigUint;
 use num_integer::Integer;
 
+#[allow(deprecated)]
 use crate::{anchor::error::AnchorError, utils::str_to_fields};
 
 #[allow(clippy::type_complexity)]

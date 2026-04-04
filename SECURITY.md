@@ -48,7 +48,6 @@ This library uses RSA for signature verification within ZK circuits. All operati
 
 The following Cargo features are available for development and debugging:
 
-- `constraints-logging`
 - `print-trace`
 - `num-cs-logging`
 
@@ -70,4 +69,4 @@ These flags are **compile-time opt-in** and carry zero overhead in default build
 
 ---
 
-*Last updated: 2026-04-03*
+*Last updated: 2026-04-05*

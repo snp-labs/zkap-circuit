@@ -18,14 +18,18 @@ A Rust library for generating Groth16 zero-knowledge proofs that verify JWT/OAut
 ```
 +----------------------------------------------------------+
 |                   crates/service                         |
-|   generate_proof()           RawProofRequest             |
-|   create_poseidon_anchor()   poseidon_hash()             |
+|   prove()  verify()  groth16_setup()  RawProofRequest    |
+|   generate_anchor()  generate_hash()  generate_aud_hash()|
 +------------------------+---------------------------------+
                          |
-+------------------------v---------------------------------+
++---------------------+  |  +------------------------------+
+|    crates/cli       |  |  |                              |
+|  generate_crs (bin) |  |  |                              |
++---------------------+  |  |                              |
+                         |  |                              |
++------------------------v--v------------------------------+
 |                   crates/circuit                         |
-|   ZkapCircuit                 ZkapCircuitInput            |
-|   CircuitPublicInputs         ZkPasskeyConfig            |
+|   ZkapCircuit     ZkapCircuitInput    CircuitConfig      |
 +------------------------+---------------------------------+
                          |
 +------------------------v---------------------------------+
@@ -38,7 +42,7 @@ A Rust library for generating Groth16 zero-knowledge proofs that verify JWT/OAut
                          |
 +------------------------v---------------------------------+
 |                  crates/ark-utils                        |
-|   R1CS constraint system helpers, field utilities        |
+|   R1CS constraint helpers, field arithmetic, EVM codegen |
 +----------------------------------------------------------+
 ```
 
@@ -69,8 +73,9 @@ gadget = { git = "https://github.com/snp-labs/zkap-circuit", features = ["full"]
 | `gadget` | ZK circuit gadgets (feature-gated) | `SHA256Gadget`, `Base64DecoderGadget`, `BigNatVar`, `VandermondeMatrixVar`, `PoseidonAnchorSchemeGadget` |
 | `gadget::signature::rsa` | RSA-2048 witness and constraint types | `PublicKey`, `Signature`, `PublicKeyVar`, `SignatureVar` |
 | `gadget::merkletree` | Poseidon Merkle tree | `MerkleTreeParams`, `MerkleTreeParamsVar` |
-| `circuit` | Main circuit implementation | `ZkapCircuit`, `ZkapCircuitInput`, `CircuitPublicInputs`, `ZkPasskeyConfig` |
-| `service` | Proof generation service layer | `generate_proof`, `RawProofRequest`, `create_poseidon_anchor`, `poseidon_hash` |
+| `circuit` | Main circuit implementation | `ZkapCircuit`, `ZkapCircuitInput`, `CircuitPublicInputs`, `CircuitConfig` |
+| `cli` | CRS generation and hash utilities | `generate_crs`, `generate_hash` (binaries) |
+| `service` | Proof generation service layer | `prove`, `verify`, `groth16_setup`, `generate_anchor`, `generate_hash` |
 
 ## Building from Source
 
@@ -87,16 +92,16 @@ cargo test --release
 cargo clippy -- -D warnings
 ```
 
-**Circuit parameters** (configure via environment variables):
+**Circuit parameters** are configured at runtime via `CircuitConfig` (or loaded from a JSON manifest):
 
-| Variable | Default | Description |
-|---|---|---|
-| `ZK_N` | 3 | Total number of signers |
-| `ZK_K` | 3 | Threshold (minimum signers required) |
-| `ZK_MAX_JWT_B64_LEN` | 1024 | Maximum JWT length in base64 bytes |
-| `ZK_MAX_PAYLOAD_B64_LEN` | 896 | Maximum payload length in base64 bytes |
-| `ZK_TREE_HEIGHT` | 16 | Issuer Merkle tree height (supports up to 2^16 issuers) |
-| `ZK_NUM_AUDIENCE_LIMIT` | 5 | Maximum allowed audience list size |
+| Parameter | Description |
+|---|---|
+| `n` | Total number of signers |
+| `k` | Threshold (minimum signers required) |
+| `max_jwt_b64_len` | Maximum JWT length in base64 bytes |
+| `max_payload_b64_len` | Maximum payload length in base64 bytes |
+| `tree_height` | Issuer Merkle tree height (supports up to 2^height issuers) |
+| `num_audience_limit` | Maximum allowed audience list size |
 
 ## Security
 

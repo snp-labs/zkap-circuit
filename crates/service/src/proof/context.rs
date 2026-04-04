@@ -12,13 +12,12 @@ use gadget::anchor::poseidon::{PoseidonAnchorScheme, PoseidonAnchorWitness, buil
 use gadget::merkletree::tree_config::MerkleTreeParams;
 
 use crate::Secret;
-use crate::app::anchor::poseidon::{derive_selector_from_x_list_and_anchor, derive_x_from_secret};
-use crate::app::snark::input::ProofRequest;
-use crate::app::snark::types::CircuitContext;
+use crate::anchor::poseidon::{derive_selector_from_x_list_and_anchor, derive_x_from_secret};
+use crate::proof::request::ProofRequest;
+use crate::proof::types::CircuitContext;
 use crate::error::ApplicationError;
 
-use super::anchor::AnchorContext;
-use super::audience::AudienceContext;
+use super::types::{AnchorContext, AudienceContext};
 
 /// Proof context builder
 ///

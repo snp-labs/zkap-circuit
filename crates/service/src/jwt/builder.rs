@@ -1,5 +1,5 @@
 use circuit::token::{Claim, ClaimIndices};
-use crate::app::jwt::parser::{TokenError, parse_claim_from_str};
+use crate::jwt::parser::{TokenError, parse_claim_from_str};
 use circuit::constants::CircuitConfig;
 use gadget::{
     base64::{IndexBits, decode_any_base64, decode_any_base64_to_string},
@@ -180,16 +180,6 @@ impl TokenBuilder {
     }
 
     fn compute_claim_indices(&self) -> Result<Vec<ClaimIndices>, TokenError> {
-        // // Decode payload (for JSON parsing)
-        // let payload_str = decode_any_base64_to_string(&self.payload_b64)?;
-
-        // // Iterate over the constant CLAIMS array to extract indices
-        // let mut claims_indices = Vec::with_capacity(CLAIMS.len());
-
-        // for &key in CLAIMS.iter() {
-        //     let indices = parse_claim_from_str(&payload_str, key)?;
-        //     claims_indices.push(indices.indices);
-        // }
         let mut claims_indices = Vec::with_capacity(self.claims.len());
 
         for claim in &self.claims {

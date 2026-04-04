@@ -22,7 +22,7 @@ use crate::{
     utils::{
         UInt32Ext,
         comparison::{is_greater_or_equal, is_less_than},
-        slice_v2,
+        slice_grouped,
     },
 };
 
@@ -391,7 +391,7 @@ impl<F: PrimeField> SHA256Gadget<F> {
 
         // Check up to 64 bytes max (prev-block tail case is at most 64)
         const PAD_REGION_MAX: usize = 64;
-        let pad_region = slice_v2::slice_efficient(
+        let pad_region = slice_grouped::slice_efficient(
             &sha_pad_fp,
             pad_start_in_suffix,
             &padding_len_u16,
@@ -647,7 +647,7 @@ impl<F: PrimeField> SHA256Gadget<F> {
 
         // Extract padding region (max 64 bytes)
         const PAD_REGION_MAX: usize = 64;
-        let pad_region = slice_v2::slice_efficient(
+        let pad_region = slice_grouped::slice_efficient(
             &data_fp,
             pad_start_byte_idx,
             &padding_len_u16,

@@ -10,9 +10,9 @@ pub mod select;
 #[cfg(feature = "r1cs")]
 pub mod slice;
 #[cfg(feature = "r1cs")]
-pub mod slice_v2;
+pub mod slice_grouped;
 #[cfg(feature = "r1cs")]
-pub mod string_v2;
+pub mod jwt_field;
 #[cfg(feature = "r1cs")]
 pub mod uint32;
 #[cfg(feature = "r1cs")]
@@ -53,4 +53,4 @@ pub use uint32::*;
 
 // Explicit re-exports from submodules for flat-path access
 #[cfg(feature = "r1cs")]
-pub use slice_v2::{slice_efficient, slice_grouped, log_base_2, segments_to_num_be};
+pub use slice_grouped::{slice_efficient, log_base_2, segments_to_num_be};

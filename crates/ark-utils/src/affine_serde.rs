@@ -7,7 +7,19 @@ use ark_ec::{
 };
 use ark_ff::PrimeField;
 
-use crate::error::FieldParseError;
+#[derive(Debug, thiserror::Error)]
+pub enum FieldParseError {
+    #[error("Invalid decimal string for field element")]
+    InvalidDecimal,
+    #[error("Invalid hex string for field element")]
+    InvalidHex,
+    #[error("Invalid length for ASCII to field conversion: expected multiple of {0}, got {1}")]
+    InvalidLength(usize, usize),
+    #[error("point is not on curve")]
+    NotOnCurve,
+    #[error("point is not in correct subgroup")]
+    NotInCorrectSubgroup,
+}
 
 /// Converts (x, y) coordinates of an Affine point to hex strings (["0x..", "0x.."]).
 /// - Returns "0x0" for the point at infinity.
@@ -55,6 +67,7 @@ fn hex_to_bytes_even(s: &str) -> Result<Vec<u8>, FieldParseError> {
 /// Parses an input string as a field element.
 /// - If it starts with "0x..." or "0X...", treats it as hex and reduces `mod p`.
 /// - Otherwise, parses it as a decimal.
+#[deprecated(note = "moved to ark_utils::hex_decimal_to_field (via convert module)")]
 pub fn hex_decimal_to_field<F: PrimeField>(s: &str) -> Result<F, FieldParseError> {
     if s.starts_with("0x") || s.starts_with("0X") {
         let bytes = hex_to_bytes_even(s)?;
@@ -65,21 +78,13 @@ pub fn hex_decimal_to_field<F: PrimeField>(s: &str) -> Result<F, FieldParseError
 }
 
 /// Splits ASCII bytes into big-endian limbs and interprets each limb as a field element.
-/// - Limb width is computed as `((MODULUS_BIT_SIZE-1)/8)`.
-/// - Returns an error if the input length is not a multiple of the limb width.
-/// - (Useful for packing JWT claims into fixed-width limbs)
+#[deprecated(note = "use ark_utils::try_str_to_fields instead")]
 pub fn ascii_to_field_be<F: PrimeField>(s: &str) -> Result<Vec<F>, FieldParseError> {
-    let bytes = s.as_bytes();
-    let limb_width = (F::MODULUS_BIT_SIZE - 1) as usize / 8;
-
-    if !bytes.len().is_multiple_of(limb_width) {
-        return Err(FieldParseError::InvalidLength(limb_width, bytes.len()));
-    }
-
-    Ok(bytes
-        .chunks(limb_width)
-        .map(|chunk| F::from_be_bytes_mod_order(chunk))
-        .collect())
+    crate::try_str_to_fields(s).map_err(|e| match e {
+        crate::convert::ConvertError::InvalidLength { expected_multiple, actual } =>
+            FieldParseError::InvalidLength(expected_multiple, actual),
+        _ => unreachable!("try_str_to_fields only returns InvalidLength"),
+    })
 }
 
 /// Converts (x, y) coordinate strings to an Affine point.
@@ -89,8 +94,18 @@ where
     A: FromCoords,
     A::BaseField: PrimeField,
 {
-    let x = hex_decimal_to_field::<A::BaseField>(x_str)?;
-    let y = hex_decimal_to_field::<A::BaseField>(y_str)?;
+    let x = crate::convert::hex_decimal_to_field::<A::BaseField>(x_str)
+        .map_err(|e| match e {
+            crate::convert::ConvertError::InvalidHex(_) => FieldParseError::InvalidHex,
+            crate::convert::ConvertError::InvalidDecimal(_) => FieldParseError::InvalidDecimal,
+            _ => unreachable!(),
+        })?;
+    let y = crate::convert::hex_decimal_to_field::<A::BaseField>(y_str)
+        .map_err(|e| match e {
+            crate::convert::ConvertError::InvalidHex(_) => FieldParseError::InvalidHex,
+            crate::convert::ConvertError::InvalidDecimal(_) => FieldParseError::InvalidDecimal,
+            _ => unreachable!(),
+        })?;
 
     let p = A::from_coords(x, y);
 

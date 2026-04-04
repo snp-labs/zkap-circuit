@@ -5,8 +5,8 @@ use circuit::{
     JwtWitness, MerkleWitness, MiscWitness,
 };
 use circuit::constants::{F, PoseidonHash, ZkPasskeyConfig};
-use ark_utils::field_serde::{ascii_to_field_be, hex_decimal_to_field};
-use ark_utils::text::pad;
+use ark_utils::{try_str_to_fields, hex_decimal_to_field};
+use ark_utils::pad;
 use gadget::anchor::AnchorUtils;
 use gadget::anchor::poseidon::{PoseidonAnchorScheme, PoseidonAnchorWitness, build_anchor_witness};
 use gadget::merkletree::tree_config::MerkleTreeParams;
@@ -107,7 +107,7 @@ impl<Config: ZkPasskeyConfig> ProofContextBuilder<Config> {
                 Config::MAX_AUD_LEN,
                 Config::PAD_CHAR,
             )?;
-            let limbs = ascii_to_field_be::<F>(&padded_str)
+            let limbs = try_str_to_fields::<F>(&padded_str)
                 .map_err(|e| ApplicationError::InvalidFormat(format!("{}", e)))?;
             let h = PoseidonHash::evaluate(&self.circuit_ctx.poseidon_params, limbs)
                 .map_err(|_| ApplicationError::PoseidonHashError)?;

@@ -1,4 +1,5 @@
 use ark_utils::error::{FieldParseError, TextError};
+use ark_utils::ConvertError;
 use gadget::anchor::error::AnchorError;
 use thiserror::Error;
 
@@ -24,4 +25,7 @@ pub enum ApplicationError {
 
     #[error("Text error: {0}")]
     TextError(#[from] TextError),
+
+    #[error("Convert error: {0}")]
+    ConvertError(#[from] ConvertError),
 }

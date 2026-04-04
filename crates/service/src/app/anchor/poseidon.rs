@@ -3,8 +3,8 @@ use ark_crypto_primitives::{
     sponge::{Absorb, poseidon::PoseidonConfig},
 };
 use ark_ff::PrimeField;
-use ark_utils::field_serde::ascii_to_field_be;
-use ark_utils::text::pad;
+use ark_utils::try_str_to_fields;
+use ark_utils::pad;
 use circuit::constants::{F, PoseidonHash, ZkPasskeyConfig};
 
 use super::AnchorConfig;
@@ -56,7 +56,7 @@ pub(crate) fn derive_x_from_secret(
     let input = [aud_processed, iss_processed, sub_processed].concat();
 
     let limbs =
-        ascii_to_field_be::<F>(&input).map_err(|e| ApplicationError::InvalidFormat(e.to_string()))?;
+        try_str_to_fields::<F>(&input).map_err(|e| ApplicationError::InvalidFormat(e.to_string()))?;
 
     let hashed = PoseidonHash::evaluate(poseidon_param, limbs)
         .map_err(|_| ApplicationError::PoseidonHashError)?;

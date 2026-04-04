@@ -1,43 +1,6 @@
 use ark_ff::PrimeField;
-use ark_r1cs_std::{
-    fields::{FieldVar, fp::FpVar},
-    prelude::{Boolean, ToBitsGadget},
-    uint16::UInt16,
-};
+use ark_r1cs_std::fields::{FieldVar, fp::FpVar};
 use ark_relations::r1cs::SynthesisError;
-
-/// Computes the quotient and remainder of dividing an input integer (UInt16) by 2^p
-/// within an Arkworks circuit.
-///
-/// # Arguments
-/// * `input`: the input integer to divide (`UInt16<ConstraintF>` type).
-/// * `p`: exponent that determines the divisor (2^p), must satisfy 0 < p < 16.
-///
-/// # Returns
-/// Tuple of (quotient, remainder) (`UInt16<ConstraintF>`, `UInt16<ConstraintF>`)
-pub fn divide_mod_power_of_2_circuit<F: PrimeField>(
-    input: &UInt16<F>,
-    p: u32,
-) -> Result<(UInt16<F>, UInt16<F>), SynthesisError> {
-    assert!(
-        p > 0 && p < 16,
-        "p must be greater than 0 and less than 16 for UInt16"
-    );
-
-    let bits = input.to_bits_le()?;
-
-    let remainder_bits_slice = &bits[0..p as usize];
-    let mut remainder_bits_padded = remainder_bits_slice.to_vec();
-    remainder_bits_padded.resize(16, Boolean::FALSE);
-    let remainder = UInt16::from_bits_le(&remainder_bits_padded);
-
-    let quotient_bits_slice = &bits[p as usize..16];
-    let mut quotient_bits_padded = quotient_bits_slice.to_vec();
-    quotient_bits_padded.resize(16, Boolean::FALSE);
-    let quotient = UInt16::from_bits_le(&quotient_bits_padded);
-
-    Ok((quotient, remainder))
-}
 
 /// Packs byte FpVars into a single FpVar (performance-optimized version).
 ///
@@ -311,45 +274,6 @@ mod tests {
                 multiple
             );
         }
-    }
-
-    #[test]
-    fn test_divide_mod_power_of_2_basic() {
-        let cs = ConstraintSystem::<TestField>::new_ref();
-        // 13 / 2^2 = 3 remainder 1
-        let input =
-            ark_r1cs_std::uint16::UInt16::new_witness(cs.clone(), || Ok(13u16)).unwrap();
-        let (quotient, remainder) = divide_mod_power_of_2_circuit(&input, 2).unwrap();
-        assert!(cs.is_satisfied().unwrap());
-        assert_eq!(quotient.value().unwrap(), 3u16);
-        assert_eq!(remainder.value().unwrap(), 1u16);
-    }
-
-    #[test]
-    fn test_divide_mod_power_of_2_boundaries() {
-        let cs = ConstraintSystem::<TestField>::new_ref();
-
-        // 0 / 2^1 = 0 remainder 0
-        let input = ark_r1cs_std::uint16::UInt16::new_witness(cs.clone(), || Ok(0u16)).unwrap();
-        let (q, r) = divide_mod_power_of_2_circuit(&input, 1).unwrap();
-        assert_eq!(q.value().unwrap(), 0u16);
-        assert_eq!(r.value().unwrap(), 0u16);
-
-        // 65535 / 2^15 = 1 remainder 32767
-        let input2 =
-            ark_r1cs_std::uint16::UInt16::new_witness(cs.clone(), || Ok(65535u16)).unwrap();
-        let (q2, r2) = divide_mod_power_of_2_circuit(&input2, 15).unwrap();
-        assert_eq!(q2.value().unwrap(), 1u16);
-        assert_eq!(r2.value().unwrap(), 32767u16);
-    }
-
-    #[test]
-    #[should_panic(expected = "p must be greater than 0")]
-    fn test_divide_mod_power_of_2_invalid_p_panics() {
-        let cs = ConstraintSystem::<TestField>::new_ref();
-        let input =
-            ark_r1cs_std::uint16::UInt16::new_witness(cs.clone(), || Ok(10u16)).unwrap();
-        let _ = divide_mod_power_of_2_circuit(&input, 0);
     }
 
     #[test]

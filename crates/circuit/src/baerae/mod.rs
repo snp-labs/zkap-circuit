@@ -63,10 +63,10 @@ use gadget::{
         constraints::{PublicKeyVar, SignatureVar},
     },
     utils::{
-        bit_bytes::pack_decompose_bytes_unchecked,
+        packing::pack_decompose_bytes_unchecked,
         comparison::is_less_than,
-        single_multiplexer, slice_v2,
-        string_v2::{jwt_exp_to_field, jwt_nonce_hex_to_field},
+        single_multiplexer, slice_efficient,
+        jwt_field::{jwt_exp_to_field, jwt_nonce_hex_to_field},
     },
 };
 
@@ -309,7 +309,7 @@ where
 
         gadget::dbg_cs_delta!(&cs, &mut cs_last, "  - Payload Boundary Check");
 
-        let payload_b64 = slice_v2::slice_efficient(
+        let payload_b64 = slice_efficient(
             &sha_pad_jwt_b64_to_fp,
             &payload_offset_b64,
             &payload_len_b64,

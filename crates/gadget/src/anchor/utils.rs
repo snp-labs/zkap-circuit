@@ -7,6 +7,7 @@ use ark_ff::{BigInteger, PrimeField};
 use num::BigUint;
 use num_integer::Integer;
 
+#[allow(deprecated)]
 use crate::{anchor::error::AnchorError, utils::str_to_fields};
 
 #[allow(clippy::type_complexity)]
@@ -42,6 +43,7 @@ where
     Ok((q_fields, r_fields))
 }
 
+#[allow(deprecated)]
 pub fn process_secret<C, CRH>(
     secret: &str,
     hash_param: &<CRH as CRHScheme>::Parameters,
@@ -90,6 +92,7 @@ where
         .collect()
 }
 
+#[allow(deprecated)]
 pub fn process_no_tk_secret<C, CRH>(
     secret: &str,
     hash_param: &CRH::Parameters,

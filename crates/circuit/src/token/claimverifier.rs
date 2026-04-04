@@ -7,7 +7,7 @@ use ark_r1cs_std::{
     uint16::UInt16,
 };
 use ark_relations::r1cs::SynthesisError;
-use gadget::utils::{is_less_than, single_multiplexer, slice_from_start, slice_v2};
+use gadget::utils::{is_less_than, single_multiplexer, slice_efficient, slice_from_start};
 
 use crate::token::constraints::ClaimIndicesVar;
 
@@ -27,7 +27,7 @@ pub fn claim_extractor_v2<F: PrimeField>(
     let key_len_uint = UInt16::constant(key_len as u16);
 
     // Extract the entire claim from payload (needed for format verification)
-    let claim = slice_v2::slice_efficient(payload, &pos.offset, &pos.claim_len, max_len)?;
+    let claim = slice_efficient(payload, &pos.offset, &pos.claim_len, max_len)?;
 
     // Extract key name from claim using slice_from_start
     // Claim format: "key":value
@@ -41,7 +41,7 @@ pub fn claim_extractor_v2<F: PrimeField>(
     let absolute_value_offset =
         UInt16::<F>::wrapping_add_many(&[pos.offset.clone(), pos.value_idx.clone()])?;
     let result_value =
-        slice_v2::slice_efficient(payload, &absolute_value_offset, &pos.value_len, max_len)?;
+        slice_efficient(payload, &absolute_value_offset, &pos.value_len, max_len)?;
 
     // Verify that extracted name matches the key (with quotes)
     result_name.enforce_equal(&key_bytes)?;
@@ -284,7 +284,7 @@ mod tests {
         // Step 1: Extract claim from payload
         println!("\n=== Step 1: Extract claim ===");
         let claim_extracted =
-            slice_v2::slice_efficient(&payload, &pos.offset, &pos.claim_len, 50).unwrap();
+            slice_efficient(&payload, &pos.offset, &pos.claim_len, 50).unwrap();
         println!(
             "Constraints after claim extraction: {}",
             cs.num_constraints()
@@ -354,7 +354,7 @@ mod tests {
         // Step 4: Extract value from claim
         println!("\n=== Step 4: Extract value from claim ===");
         let result_value =
-            slice_v2::slice_efficient(&claim_extracted, &pos.value_idx, &pos.value_len, 50)
+            slice_efficient(&claim_extracted, &pos.value_idx, &pos.value_len, 50)
                 .unwrap();
         println!(
             "Constraints after value extraction: {}",

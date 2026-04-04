@@ -637,7 +637,7 @@ mod tests {
         let mut claim = parse_claim_from_str(payload_str, "sub").unwrap();
 
         // Corrupt colon_idx to point to wrong position
-        claim.indices.colon_idx = claim.indices.colon_idx + 2;
+        claim.indices.colon_idx += 2;
 
         let pos = create_claim_indices_var(cs.clone(), &claim.indices);
 

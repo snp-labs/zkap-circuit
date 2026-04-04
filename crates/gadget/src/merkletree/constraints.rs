@@ -141,7 +141,7 @@ mod tests {
         let mut digests = vec![F::zero(); 1 << (tree_height - 1)];
         println!("digests length: {}", digests.len());
         for (i, leaf) in leaves.iter().enumerate() {
-            let digest = CRH::evaluate(&leaf_hash_param, [leaf.clone()]).unwrap();
+            let digest = CRH::evaluate(&leaf_hash_param, [*leaf]).unwrap();
             digests[i] = digest;
         }
 
@@ -280,7 +280,7 @@ mod tests {
         )
         .unwrap();
 
-        let _leaves = vec![F::from(1u64), F::from(2u64), F::from(3u64)];
+        let _leaves = [F::from(1u64), F::from(2u64), F::from(3u64)];
         let h1 = CRH::evaluate(&leaf_hash_param, [F::from(1u64)]).unwrap();
         let h2 = CRH::evaluate(&leaf_hash_param, [h1, F::from(2u64)]).unwrap();
         let h3 = CRH::evaluate(&leaf_hash_param, [h2, F::from(3u64)]).unwrap();
@@ -294,7 +294,7 @@ mod tests {
         println!("path: {:?}", path);
 
         let cs = ark_relations::r1cs::ConstraintSystem::<F>::new_ref();
-        let value = vec![F::from(1u64), F::from(2u64), F::from(3u64)];
+        let value = [F::from(1u64), F::from(2u64), F::from(3u64)];
         let values = value
             .iter()
             .map(|&v| FpVar::new_witness(cs.clone(), || Ok(v)).unwrap())

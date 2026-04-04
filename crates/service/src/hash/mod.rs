@@ -23,7 +23,7 @@ pub fn generate_hash(messages: Vec<String>) -> Result<F, ApplicationError> {
             ))
         })?;
 
-    let result = PoseidonHash::evaluate(&poseidon_params, field)
+    let result = PoseidonHash::evaluate(poseidon_params, field)
         .map_err(|e| ApplicationError::Other(format!("Poseidon hash evaluation failed: {}", e)))?;
 
     Ok(result)
@@ -56,12 +56,12 @@ pub fn generate_aud_hash(
         .iter()
         .map(|a| {
             let limbs = str_to_limbs(a, params.max_aud_len as usize, PAD_CHAR as u8);
-            PoseidonHash::evaluate(&poseidon_params, limbs)
+            PoseidonHash::evaluate(poseidon_params, limbs)
                 .map_err(|e| ApplicationError::Other(format!("Error processing aud '{}': {}", a, e)))
         })
         .collect::<Result<Vec<_>, _>>()?;
 
-    let h_aud_list = PoseidonHash::evaluate(&poseidon_params, &*aud_fields)
+    let h_aud_list = PoseidonHash::evaluate(poseidon_params, &*aud_fields)
         .map_err(|e| ApplicationError::Other(format!("Error computing h_aud_lists: {}", e)))?;
 
     Ok((aud_fields, h_aud_list))
@@ -95,7 +95,7 @@ pub fn generate_leaf_hash(
     leaf_inputs.extend_from_slice(&iss_limbs);
     leaf_inputs.extend_from_slice(&n_limbs);
 
-    let leaf = PoseidonHash::evaluate(&poseidon_params, &*leaf_inputs)
+    let leaf = PoseidonHash::evaluate(poseidon_params, &*leaf_inputs)
         .map_err(|e| ApplicationError::Other(format!("Error computing leaf: {}", e)))?;
 
     Ok(leaf)

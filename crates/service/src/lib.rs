@@ -13,7 +13,7 @@ use circuit::constants::F;
 /// Cached Poseidon parameters — constructed once, shared across all modules.
 pub(crate) fn poseidon_params() -> &'static PoseidonConfig<F> {
     static PARAMS: OnceLock<PoseidonConfig<F>> = OnceLock::new();
-    PARAMS.get_or_init(|| gadget::hashes::poseidon::get_poseidon_params::<F>())
+    PARAMS.get_or_init(gadget::hashes::poseidon::get_poseidon_params::<F>)
 }
 
 /// Extract forbidden_string as &str from CircuitConfig.

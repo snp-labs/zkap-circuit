@@ -171,14 +171,12 @@ mod tests {
         };
 
         // Create Secret objects
-        let all_secrets_data = vec![
-            Secret { sub: "user1".to_string(), iss: "issuer1".to_string(), aud: "aud1".to_string() },
+        let all_secrets_data = [Secret { sub: "user1".to_string(), iss: "issuer1".to_string(), aud: "aud1".to_string() },
             Secret { sub: "user2".to_string(), iss: "issuer2".to_string(), aud: "aud2".to_string() },
             Secret { sub: "user3".to_string(), iss: "issuer3".to_string(), aud: "aud3".to_string() },
             Secret { sub: "user4".to_string(), iss: "issuer4".to_string(), aud: "aud4".to_string() },
             Secret { sub: "user5".to_string(), iss: "issuer5".to_string(), aud: "aud5".to_string() },
-            Secret { sub: "user6".to_string(), iss: "issuer6".to_string(), aud: "aud6".to_string() },
-        ];
+            Secret { sub: "user6".to_string(), iss: "issuer6".to_string(), aud: "aud6".to_string() }];
 
         // Derive x values from secrets
         let all_x_values: Vec<F> = all_secrets_data
@@ -192,7 +190,7 @@ mod tests {
         let anchor = PoseidonAnchorScheme::<F>::generate_anchor(&pk, &anchor_secret, &matrix).unwrap();
 
         // Test case 1: known secrets at positions [1, 3]
-        let known_indices = vec![1, 3];
+        let known_indices = [1, 3];
         let known_x_list: Vec<F> = known_indices.iter().map(|&i| all_x_values[i]).collect();
 
         let result = derive_selector_from_x_list_and_anchor(&pk, &known_x_list, &anchor, &matrix);
@@ -237,14 +235,12 @@ mod tests {
         };
 
         // Create Secret objects
-        let all_secrets_data = vec![
-            Secret { sub: "alice".to_string(), iss: "auth1".to_string(), aud: "app1".to_string() },
+        let all_secrets_data = [Secret { sub: "alice".to_string(), iss: "auth1".to_string(), aud: "app1".to_string() },
             Secret { sub: "bob".to_string(), iss: "auth2".to_string(), aud: "app2".to_string() },
             Secret { sub: "charlie".to_string(), iss: "auth3".to_string(), aud: "app3".to_string() },
             Secret { sub: "david".to_string(), iss: "auth4".to_string(), aud: "app4".to_string() },
             Secret { sub: "eve".to_string(), iss: "auth5".to_string(), aud: "app5".to_string() },
-            Secret { sub: "frank".to_string(), iss: "auth6".to_string(), aud: "app6".to_string() },
-        ];
+            Secret { sub: "frank".to_string(), iss: "auth6".to_string(), aud: "app6".to_string() }];
 
         // Derive x values from secrets
         let all_x_values: Vec<F> = all_secrets_data
@@ -258,7 +254,7 @@ mod tests {
         let anchor = PoseidonAnchorScheme::<F>::generate_anchor(&pk, &anchor_secret, &matrix).unwrap();
 
         // Test case 2: known secrets at positions [0, 2, 5]
-        let known_indices = vec![0, 2, 5];
+        let known_indices = [0, 2, 5];
         let known_x_list: Vec<F> = known_indices.iter().map(|&i| all_x_values[i]).collect();
 
         let result = derive_selector_from_x_list_and_anchor(&pk, &known_x_list, &anchor, &matrix);
@@ -332,14 +328,12 @@ mod tests {
         };
 
         // Create Secret objects
-        let all_secrets_data = vec![
-            Secret { sub: "user1".to_string(), iss: "issuer1".to_string(), aud: "aud1".to_string() },
+        let all_secrets_data = [Secret { sub: "user1".to_string(), iss: "issuer1".to_string(), aud: "aud1".to_string() },
             Secret { sub: "user2".to_string(), iss: "issuer2".to_string(), aud: "aud2".to_string() },
             Secret { sub: "user3".to_string(), iss: "issuer3".to_string(), aud: "aud3".to_string() },
             Secret { sub: "user4".to_string(), iss: "issuer4".to_string(), aud: "aud4".to_string() },
             Secret { sub: "user5".to_string(), iss: "issuer5".to_string(), aud: "aud5".to_string() },
-            Secret { sub: "user6".to_string(), iss: "issuer6".to_string(), aud: "aud6".to_string() },
-        ];
+            Secret { sub: "user6".to_string(), iss: "issuer6".to_string(), aud: "aud6".to_string() }];
 
         // Derive x values from secrets
         let all_x_values: Vec<F> = all_secrets_data

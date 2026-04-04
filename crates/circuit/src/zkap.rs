@@ -34,7 +34,7 @@ use crate::{
         constraints::{ClaimIndicesVar, RSA2048VerifyGadget},
     },
 };
-use crate::constants::ZkPasskeyConfig;
+use crate::constants::CircuitConfig;
 use gadget::{
     anchor::poseidon::{
         PoseidonAnchor,
@@ -82,13 +82,14 @@ use gadget::{
 /// - `audience`: Audience list witness
 /// - `misc`: miscellaneous witness (random)
 #[derive(Clone, CanonicalSerialize, CanonicalDeserialize)]
-pub struct ZkapCircuit<C, BNP, Config>
+pub struct ZkapCircuit<C, BNP>
 where
     C: CurveGroup,
     C::BaseField: PrimeField + Absorb,
     BNP: BigNatCircuitParams + Send + Sync,
-    Config: ZkPasskeyConfig + Send + Sync,
 {
+    /// Circuit configuration (runtime parameters)
+    pub params: CircuitConfig,
     /// Circuit constants (determined at setup time)
     pub constants: input::CircuitConstants<C::BaseField>,
     /// Public inputs (exposed to the verifier)
@@ -104,22 +105,21 @@ where
     /// Miscellaneous witness
     pub misc: input::MiscWitness<C::BaseField>,
     /// Phantom data for type parameters
-    _phantom: PhantomData<(BNP, Config)>,
+    _phantom: PhantomData<BNP>,
 }
 
-impl<C, BNP, Config> ConstraintSynthesizer<C::BaseField>
-    for ZkapCircuit<C, BNP, Config>
+impl<C, BNP> ConstraintSynthesizer<C::BaseField>
+    for ZkapCircuit<C, BNP>
 where
     C: CurveGroup,
     C::BaseField: PrimeField + Absorb,
     BNP: BigNatCircuitParams + Send + Sync,
-    Config: ZkPasskeyConfig + Send + Sync,
 {
     fn generate_constraints(
         self,
         cs: ark_relations::r1cs::ConstraintSystemRef<C::BaseField>,
     ) -> ark_relations::r1cs::Result<()> {
-        assert!(self.anchor.selector.len() == Config::N);
+        assert!(self.anchor.selector.len() == self.params.n as usize);
         // Implement the constraint generation logic here
 
         // ============ Constants ============
@@ -295,7 +295,7 @@ where
             &sha_pad_jwt_b64_to_fp,
             &payload_offset_b64,
             &payload_len_b64,
-            Config::MAX_PAYLOAD_B64_LEN,
+            self.params.max_payload_b64_len as usize,
         )?;
 
         let payload = Base64DecoderGadget::<C::BaseField>::decode(
@@ -304,12 +304,12 @@ where
             &index_bits,
         )?;
 
-        let aud_bytes = claim_extractor_v2("aud", &payload, &token_claim[0], Config::MAX_AUD_LEN)?;
-        let exp_bytes = claim_extractor_v2("exp", &payload, &token_claim[1], Config::MAX_EXP_LEN)?;
-        let iss_bytes = claim_extractor_v2("iss", &payload, &token_claim[2], Config::MAX_ISS_LEN)?;
+        let aud_bytes = claim_extractor_v2("aud", &payload, &token_claim[0], self.params.max_aud_len as usize)?;
+        let exp_bytes = claim_extractor_v2("exp", &payload, &token_claim[1], self.params.max_exp_len as usize)?;
+        let iss_bytes = claim_extractor_v2("iss", &payload, &token_claim[2], self.params.max_iss_len as usize)?;
         let nonce_bytes =
-            claim_extractor_v2("nonce", &payload, &token_claim[3], Config::MAX_NONCE_LEN)?;
-        let sub_bytes = claim_extractor_v2("sub", &payload, &token_claim[4], Config::MAX_SUB_LEN)?;
+            claim_extractor_v2("nonce", &payload, &token_claim[3], self.params.max_nonce_len as usize)?;
+        let sub_bytes = claim_extractor_v2("sub", &payload, &token_claim[4], self.params.max_sub_len as usize)?;
         // Convert to field elements and pack
         let aud = pack_decompose_bytes_unchecked(&aud_bytes)?;
         let exp = jwt_exp_to_field(&exp_bytes)?;
@@ -387,7 +387,7 @@ where
 
         PoseidonAnchorSchemeGadget::<C::BaseField>::enforce_b_sparsity(&b, &indices)?;
 
-        let k_fp = FpVar::<C::BaseField>::Constant(C::BaseField::from(Config::K as u64));
+        let k_fp = FpVar::<C::BaseField>::Constant(C::BaseField::from(self.params.k));
         enforce_selector_cardinality(&indices, &k_fp)?;
 
         let is_one = single_multiplexer(&indices, &current_idx)?;
@@ -398,7 +398,7 @@ where
 
         // current_idx < N
         let n =
-            FpVar::<C::BaseField>::new_constant(cs.clone(), C::BaseField::from(Config::N as u8))?;
+            FpVar::<C::BaseField>::new_constant(cs.clone(), C::BaseField::from(self.params.n))?;
         enforce_less_than(
             &current_idx.to_bits_le_with_top_bits_zero(8)?.0,
             &n.to_bits_le_with_top_bits_zero(8)?.0,
@@ -433,17 +433,19 @@ where
     }
 }
 
-impl<C, BNP, Config> ZkapCircuit<C, BNP, Config>
+impl<C, BNP> ZkapCircuit<C, BNP>
 where
     C: CurveGroup,
     C::BaseField: PrimeField + Absorb,
     BNP: BigNatCircuitParams + Send + Sync,
-    Config: ZkPasskeyConfig + Send + Sync,
 {
-    pub fn generate_mock_circuit() -> Self {
+    pub fn generate_mock_circuit(params: &CircuitConfig) -> Self {
+        let n = params.n as usize;
+        let k = params.k as usize;
         Self {
+            params: params.clone(),
             constants: input::CircuitConstants {
-                vandermonde_matrix: VandermondeMatrix::new(Config::N, Config::K),
+                vandermonde_matrix: VandermondeMatrix::new(n, k),
                 poseidon_param: get_poseidon_params(),
                 base64_table: get_base64_table(),
             },
@@ -459,28 +461,28 @@ where
             },
             jwt: input::JwtWitness {
                 nblocks: 0,
-                claim_indices: vec![ClaimIndices::default(); Config::CLAIMS.len()],
+                claim_indices: vec![ClaimIndices::default(); params.claims.len()],
                 pay_offset_b64: 0,
                 pay_len_b64: 0,
-                sha_pad_jwt_b64: vec![0; Config::MAX_JWT_B64_LEN],
-                index_bits: IndexBits::empty(Config::MAX_PAYLOAD_B64_LEN),
+                sha_pad_jwt_b64: vec![0; params.max_jwt_b64_len as usize],
+                index_bits: IndexBits::empty(params.max_payload_b64_len as usize),
                 pk: PublicKey::empty(),
                 sig: Signature::default(),
                 total_len: 0,
                 pad_start_byte_idx: 0,
             },
             anchor: input::AnchorWitness {
-                anchor: PoseidonAnchor::empty(Config::N - Config::K + 1),
-                a: vec![C::BaseField::default(); Config::N - Config::K + 1],
-                selector: vec![0; Config::N],
+                anchor: PoseidonAnchor::empty(n - k + 1),
+                a: vec![C::BaseField::default(); n - k + 1],
+                selector: vec![0; n],
                 current_idx: 0,
             },
             merkle: input::MerkleWitness {
-                path: Path::empty(Config::TREE_HEIGHT),
+                path: Path::empty(params.tree_height as usize),
                 leaf_idx: 0,
             },
             audience: input::AudienceWitness {
-                aud_list: vec![C::BaseField::default(); Config::NUM_AUDIENCE_LIMIT],
+                aud_list: vec![C::BaseField::default(); params.num_audience_limit as usize],
             },
             misc: input::MiscWitness {
                 random: C::BaseField::default(),
@@ -492,6 +494,7 @@ where
     /// Create circuit from structured input (recommended)
     pub fn from_input(input: input::ZkapCircuitInput<C::BaseField>) -> Self {
         Self {
+            params: input.params,
             constants: input.constants,
             public_inputs: input.public_inputs,
             jwt: input.jwt,
@@ -504,12 +507,11 @@ where
     }
 }
 
-impl<C, BNP, Config> ExposesPublicInputs<C::BaseField> for ZkapCircuit<C, BNP, Config>
+impl<C, BNP> ExposesPublicInputs<C::BaseField> for ZkapCircuit<C, BNP>
 where
     C: CurveGroup,
     C::BaseField: PrimeField + Absorb,
     BNP: BigNatCircuitParams + Send + Sync,
-    Config: ZkPasskeyConfig + Send + Sync,
 {
     fn public_inputs(&self) -> Vec<C::BaseField> {
         self.public_inputs.to_vec()

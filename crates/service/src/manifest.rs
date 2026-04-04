@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use circuit::constants::ZkPasskeyConfig;
+use circuit::constants::CircuitConfig;
 use serde::Deserialize;
 
 use crate::error::ApplicationError;
@@ -14,23 +14,24 @@ pub struct CrsManifest {
 #[derive(Deserialize)]
 #[allow(non_snake_case)]
 pub struct CrsParams {
-    pub MAX_JWT_B64_LEN: usize,
-    pub MAX_PAYLOAD_B64_LEN: usize,
-    pub MAX_AUD_LEN: usize,
-    pub MAX_EXP_LEN: usize,
-    pub MAX_ISS_LEN: usize,
-    pub MAX_NONCE_LEN: usize,
-    pub MAX_SUB_LEN: usize,
-    pub N: usize,
-    pub K: usize,
-    pub TREE_HEIGHT: usize,
-    pub NUM_AUDIENCE_LIMIT: usize,
+    pub MAX_JWT_B64_LEN: u64,
+    pub MAX_PAYLOAD_B64_LEN: u64,
+    pub MAX_AUD_LEN: u64,
+    pub MAX_EXP_LEN: u64,
+    pub MAX_ISS_LEN: u64,
+    pub MAX_NONCE_LEN: u64,
+    pub MAX_SUB_LEN: u64,
+    pub N: u64,
+    pub K: u64,
+    pub TREE_HEIGHT: u64,
+    pub NUM_AUDIENCE_LIMIT: u64,
 }
 
 /// Load and validate manifest.json from the same directory as the proving key.
 /// Returns Ok(()) if manifest matches or doesn't exist (backwards compatible).
 /// Returns Err if manifest exists but parameters don't match.
-pub fn validate_crs_manifest<Config: ZkPasskeyConfig>(
+pub fn validate_crs_manifest(
+    params: &CircuitConfig,
     pk_path: &Path,
 ) -> Result<(), ApplicationError> {
     let keys_dir = match pk_path.parent() {
@@ -59,29 +60,29 @@ pub fn validate_crs_manifest<Config: ZkPasskeyConfig>(
     let mut mismatches = Vec::new();
 
     macro_rules! check {
-        ($name:ident) => {
-            if p.$name != Config::$name {
+        ($manifest_name:ident, $config_field:ident) => {
+            if p.$manifest_name != params.$config_field {
                 mismatches.push(format!(
-                    "  {} : CRS={}, binary={}",
-                    stringify!($name),
-                    p.$name,
-                    Config::$name
+                    "  {} : CRS={}, config={}",
+                    stringify!($manifest_name),
+                    p.$manifest_name,
+                    params.$config_field
                 ));
             }
         };
     }
 
-    check!(MAX_JWT_B64_LEN);
-    check!(MAX_PAYLOAD_B64_LEN);
-    check!(MAX_AUD_LEN);
-    check!(MAX_EXP_LEN);
-    check!(MAX_ISS_LEN);
-    check!(MAX_NONCE_LEN);
-    check!(MAX_SUB_LEN);
-    check!(N);
-    check!(K);
-    check!(TREE_HEIGHT);
-    check!(NUM_AUDIENCE_LIMIT);
+    check!(MAX_JWT_B64_LEN, max_jwt_b64_len);
+    check!(MAX_PAYLOAD_B64_LEN, max_payload_b64_len);
+    check!(MAX_AUD_LEN, max_aud_len);
+    check!(MAX_EXP_LEN, max_exp_len);
+    check!(MAX_ISS_LEN, max_iss_len);
+    check!(MAX_NONCE_LEN, max_nonce_len);
+    check!(MAX_SUB_LEN, max_sub_len);
+    check!(N, n);
+    check!(K, k);
+    check!(TREE_HEIGHT, tree_height);
+    check!(NUM_AUDIENCE_LIMIT, num_audience_limit);
 
     if mismatches.is_empty() {
         log::info!(
@@ -94,9 +95,49 @@ pub fn validate_crs_manifest<Config: ZkPasskeyConfig>(
             "CRS parameter mismatch! The proving key was generated with different parameters.\n\
              Manifest profile: {}\n\
              Mismatches:\n{}\n\
-             Regenerate CRS with matching ZK_PROFILE or rebuild the binary.",
+             Regenerate CRS with matching config or use the correct config file.",
             manifest.profile,
             mismatches.join("\n")
         )))
     }
+}
+
+/// Load CircuitConfig from a manifest.json file
+pub fn load_params_from_manifest(manifest_path: &Path) -> Result<CircuitConfig, ApplicationError> {
+    let content = std::fs::read_to_string(manifest_path).map_err(|e| {
+        ApplicationError::InvalidFormat(format!("Failed to read manifest.json: {}", e))
+    })?;
+
+    let manifest: CrsManifest = serde_json::from_str(&content).map_err(|e| {
+        ApplicationError::InvalidFormat(format!("Failed to parse manifest.json: {}", e))
+    })?;
+
+    let p = &manifest.params;
+    let config = CircuitConfig {
+        max_jwt_b64_len: p.MAX_JWT_B64_LEN,
+        max_payload_b64_len: p.MAX_PAYLOAD_B64_LEN,
+        max_aud_len: p.MAX_AUD_LEN,
+        max_exp_len: p.MAX_EXP_LEN,
+        max_iss_len: p.MAX_ISS_LEN,
+        max_nonce_len: p.MAX_NONCE_LEN,
+        max_sub_len: p.MAX_SUB_LEN,
+        n: p.N,
+        k: p.K,
+        tree_height: p.TREE_HEIGHT,
+        num_audience_limit: p.NUM_AUDIENCE_LIMIT,
+        claims: vec![
+            b"aud".to_vec(),
+            b"exp".to_vec(),
+            b"iss".to_vec(),
+            b"nonce".to_vec(),
+            b"sub".to_vec(),
+        ],
+        forbidden_string: b"forbidden".to_vec(),
+    };
+
+    config.validate().map_err(|e| {
+        ApplicationError::InvalidFormat(format!("Invalid manifest params: {}", e))
+    })?;
+
+    Ok(config)
 }

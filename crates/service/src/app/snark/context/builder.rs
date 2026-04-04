@@ -4,7 +4,7 @@ use circuit::{
     AnchorWitness, AudienceWitness, ZkapCircuitInput, CircuitConstants, CircuitPublicInputs,
     JwtWitness, MerkleWitness, MiscWitness,
 };
-use circuit::constants::{F, PoseidonHash, ZkPasskeyConfig};
+use circuit::constants::{F, PoseidonHash, CircuitConfig, PAD_CHAR};
 use ark_utils::{try_str_to_fields, hex_decimal_to_field};
 use ark_utils::pad;
 use gadget::anchor::AnchorUtils;
@@ -23,19 +23,21 @@ use super::audience::AudienceContext;
 /// Proof context builder
 ///
 /// Receives a `ProofRequest` and builds all context required for proof generation.
-pub struct ProofContextBuilder<Config: ZkPasskeyConfig> {
+pub struct ProofContextBuilder {
+    params: CircuitConfig,
     request: ProofRequest,
-    circuit_ctx: CircuitContext<Config>,
+    circuit_ctx: CircuitContext,
     anchor_ctx: Option<AnchorContext>,
     audience_ctx: Option<AudienceContext>,
 }
 
-impl<Config: ZkPasskeyConfig> ProofContextBuilder<Config> {
+impl ProofContextBuilder {
     /// Creates a new builder
-    pub fn new(request: ProofRequest) -> Self {
+    pub fn new(params: &CircuitConfig, request: ProofRequest) -> Self {
         Self {
+            params: params.clone(),
             request,
-            circuit_ctx: CircuitContext::<Config>::new(),
+            circuit_ctx: CircuitContext::new(params),
             anchor_ctx: None,
             audience_ctx: None,
         }
@@ -100,12 +102,15 @@ impl<Config: ZkPasskeyConfig> ProofContextBuilder<Config> {
         let mut padded = self.request.audience.raw_list.clone();
 
         // If padding is needed, fill with the forbidden string
-        if padded.len() < Config::NUM_AUDIENCE_LIMIT {
-            let padding_count = Config::NUM_AUDIENCE_LIMIT - padded.len();
+        let num_audience_limit = self.params.num_audience_limit as usize;
+        if padded.len() < num_audience_limit {
+            let padding_count = num_audience_limit - padded.len();
+            let forbidden_str = std::str::from_utf8(&self.params.forbidden_string)
+                .map_err(|e| ApplicationError::InvalidFormat(format!("Invalid forbidden_string: {}", e)))?;
             let padded_str = pad(
-                Config::FORBIDDEN_STRING,
-                Config::MAX_AUD_LEN,
-                Config::PAD_CHAR,
+                forbidden_str,
+                self.params.max_aud_len as usize,
+                PAD_CHAR,
             )?;
             let limbs = try_str_to_fields::<F>(&padded_str)
                 .map_err(|e| ApplicationError::InvalidFormat(format!("{}", e)))?;
@@ -142,7 +147,7 @@ impl<Config: ZkPasskeyConfig> ProofContextBuilder<Config> {
 
         // Build JWT witness
         let jwt_witness = self.request.token_builders[proof_index]
-            .build::<Config>(&self.request.pk_ops[proof_index])
+            .build(&self.params, &self.request.pk_ops[proof_index])
             .map_err(|e| ApplicationError::InvalidFormat(format!("JWT build failed: {}", e)))?;
 
         // Build merkle path
@@ -151,6 +156,7 @@ impl<Config: ZkPasskeyConfig> ProofContextBuilder<Config> {
         let leaf_idx = self.request.merkle.leaf_indices[proof_index];
 
         Ok(ZkapCircuitInput {
+            params: self.params.clone(),
             constants: CircuitConstants {
                 vandermonde_matrix: self.circuit_ctx.vandermonde_matrix.clone(),
                 poseidon_param: self.circuit_ctx.poseidon_params.clone(),
@@ -199,7 +205,7 @@ impl<Config: ZkPasskeyConfig> ProofContextBuilder<Config> {
 
     /// Builds ZkapCircuitInputs for all proofs
     pub fn build_all_circuit_inputs(&self) -> Result<Vec<ZkapCircuitInput<F>>, ApplicationError> {
-        (0..Config::K)
+        (0..self.params.k as usize)
             .map(|i| self.build_circuit_input(i))
             .collect()
     }

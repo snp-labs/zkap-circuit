@@ -1,7 +1,9 @@
 pub mod anchor;
 pub mod hash;
+pub mod setup;
 pub mod snark;
 
-pub use anchor::create_poseidon_anchor;
-pub use hash::poseidon_hash;
-pub use snark::generate_proof;
+pub use anchor::generate_anchor;
+pub use hash::{generate_hash, generate_aud_hash, generate_leaf_hash};
+pub use setup::groth16_setup;
+pub use snark::{prove, verify};

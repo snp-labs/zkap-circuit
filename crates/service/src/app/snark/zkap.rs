@@ -4,7 +4,7 @@
 //!
 //! ```text
 //! ┌─────────────────────────────────────────────────────────────────┐
-//! │                        generate_proof                           │
+//! │                           prove                                 │
 //! │                          (entry point)                          │
 //! └───────────────────────────────┬─────────────────────────────────┘
 //!                                 │
@@ -35,7 +35,7 @@
 //! ```
 
 use ark_groth16::Proof;
-use circuit::constants::{BN254, F, ZkPasskeyConfig};
+use circuit::constants::{BN254, F, CircuitConfig};
 use log;
 
 use crate::error::ApplicationError;
@@ -49,22 +49,24 @@ use super::proof::ProofGenerator;
 /// 3. CircuitInput[] → Proof[] (proof generation)
 ///
 /// # Arguments
+/// * `params` - circuit configuration parameters
 /// * `raw` - raw proof request data
 ///
 /// # Returns
 /// * tuple of proofs and public inputs
 #[allow(clippy::type_complexity)]
-pub fn generate_proof<Config: ZkPasskeyConfig>(
+pub fn prove(
+    params: &CircuitConfig,
     raw: RawProofRequest,
 ) -> Result<(Vec<Proof<BN254>>, Vec<Vec<F>>), ApplicationError> {
     // 1. Validate and parse inputs
     log::info!("[ZKAP-v2] Step 1: Validating and parsing inputs...");
-    let request = ProofRequest::from_raw::<Config>(raw)?;
+    let request = ProofRequest::from_raw(params, raw)?;
     log::info!("[ZKAP-v2] Step 1 completed: Input validation passed");
 
     // 2. Build context
     log::info!("[ZKAP-v2] Step 2: Building proof context...");
-    let builder = ProofContextBuilder::<Config>::new(request.clone())
+    let builder = ProofContextBuilder::new(params, request.clone())
         .build_anchor_context()?
         .build_audience_context()?;
     log::info!("[ZKAP-v2] Step 2 completed: Context built");
@@ -81,7 +83,7 @@ pub fn generate_proof<Config: ZkPasskeyConfig>(
     log::info!("[ZKAP-v2] Step 4: Generating proofs...");
     let generator = ProofGenerator::new(request.pk_path.clone());
 
-    let output = generator.generate::<Config>(&circuit_inputs)?;
+    let output = generator.generate(params, &circuit_inputs)?;
 
     log::info!(
         "[ZKAP-v2] Step 4 completed: {} proofs generated",

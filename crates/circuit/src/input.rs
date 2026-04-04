@@ -10,6 +10,7 @@ use gadget::{
     signature::rsa::{PublicKey, Signature},
 };
 
+use crate::constants::CircuitConfig;
 use crate::token::ClaimIndices;
 
 /// Circuit constants (determined at setup time)
@@ -121,6 +122,8 @@ pub struct MiscWitness<F: PrimeField> {
 /// Struct bundling all circuit inputs
 #[derive(Clone)]
 pub struct ZkapCircuitInput<F: PrimeField + Absorb> {
+    /// Circuit configuration (runtime parameters)
+    pub params: CircuitConfig,
     /// Circuit constants
     pub constants: CircuitConstants<F>,
     /// Public inputs

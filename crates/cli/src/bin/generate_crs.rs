@@ -1,6 +1,6 @@
 use ark_serialize::CanonicalSerialize;
 use ark_std::rand::{self, RngCore, SeedableRng, rngs::OsRng};
-use circuit::constants::{BNP, CG, ZkapConfig, ZkPasskeyConfig};
+use circuit::constants::{BNP, CG, CircuitConfig};
 use std::{
     collections::HashMap,
     env::args,
@@ -26,19 +26,25 @@ fn main() {
     };
 
     let args: Vec<_> = args().collect();
-    if args.len() < 2 {
-        eprintln!("Usage: cargo run --features zkap-circuit --bin generate_crs <file_path>");
+    if args.len() < 3 {
+        eprintln!("Usage: cargo run --features zkap-circuit --bin generate_crs <file_path> <config_path>");
         std::process::exit(1);
     }
 
     let seed_u64 = OsRng.next_u64();
     let rng: rand::rngs::StdRng = ark_std::rand::rngs::StdRng::seed_from_u64(seed_u64);
 
-    generate_crs_files(&args[1], rng);
+    let config_path = std::path::Path::new(&args[2]);
+    let params = CircuitConfig::from_json_file(config_path).unwrap_or_else(|e| {
+        eprintln!("Failed to load config: {}", e);
+        std::process::exit(1);
+    });
+
+    generate_crs_files(&args[1], &params, rng);
 }
 
 #[allow(unused)]
-fn generate_crs_files(file_path: &str, mut rng: rand::rngs::StdRng) {
+fn generate_crs_files(file_path: &str, params: &CircuitConfig, mut rng: rand::rngs::StdRng) {
     use ark_utils::evm::groth16_verifier_solidity::SolidityContractGenerator;
 
     use ark_bn254::Bn254;
@@ -53,30 +59,28 @@ fn generate_crs_files(file_path: &str, mut rng: rand::rngs::StdRng) {
     println!("  Configuring Circuit with the following parameters:");
     println!(
         "   [JWT] Max Len: {}, Payload: {}",
-        ZkapConfig::MAX_JWT_B64_LEN,
-        ZkapConfig::MAX_PAYLOAD_B64_LEN
+        params.max_jwt_b64_len,
+        params.max_payload_b64_len
     );
     println!(
         "   [JWT] Fields: Aud={}, Exp={}, Iss={}, Nonce={}, Sub={}",
-        ZkapConfig::MAX_AUD_LEN,
-        ZkapConfig::MAX_EXP_LEN,
-        ZkapConfig::MAX_ISS_LEN,
-        ZkapConfig::MAX_NONCE_LEN,
-        ZkapConfig::MAX_SUB_LEN
+        params.max_aud_len,
+        params.max_exp_len,
+        params.max_iss_len,
+        params.max_nonce_len,
+        params.max_sub_len
     );
     println!(
         "   [Logic] N={}, K={}, Height={}, NumAudienceLimit={}",
-        ZkapConfig::N,
-        ZkapConfig::K,
-        ZkapConfig::TREE_HEIGHT,
-        ZkapConfig::NUM_AUDIENCE_LIMIT
+        params.n,
+        params.k,
+        params.tree_height,
+        params.num_audience_limit
     );
-    println!("   [Logic] PadChar='{}' (Fixed)", ZkapConfig::PAD_CHAR);
-    println!("   [Logic] CLAIM_TYPES={:?} (Fixed)", ZkapConfig::CLAIMS);
     println!("==================================================");
 
     let circuit =
-        circuit::zkap::ZkapCircuit::<CG, BNP, ZkapConfig>::generate_mock_circuit();
+        circuit::zkap::ZkapCircuit::<CG, BNP>::generate_mock_circuit(params);
 
     let (pk, vk) = Groth16::<Bn254>::setup(circuit, &mut rng).unwrap();
     let pvk = prepare_verifying_key(&vk);
@@ -92,10 +96,10 @@ fn generate_crs_files(file_path: &str, mut rng: rand::rngs::StdRng) {
     vk.generate_solidity(&sol_path);
 
     // Generate manifest.json with parameters and file hashes
-    write_manifest(file_path, &[&pk_path, &vk_path, &pvk_path, &sol_path]);
+    write_manifest(file_path, params, &[&pk_path, &vk_path, &pvk_path, &sol_path]);
 }
 
-fn write_manifest(dir: &str, files: &[&str]) {
+fn write_manifest(dir: &str, params: &CircuitConfig, files: &[&str]) {
     let profile = std::env::var("ZK_PROFILE").unwrap_or_else(|_| "dev".to_string());
     let now = chrono_rfc3339_now();
 
@@ -116,17 +120,17 @@ fn write_manifest(dir: &str, files: &[&str]) {
         "profile": profile,
         "generated_at": now,
         "params": {
-            "MAX_JWT_B64_LEN": ZkapConfig::MAX_JWT_B64_LEN,
-            "MAX_PAYLOAD_B64_LEN": ZkapConfig::MAX_PAYLOAD_B64_LEN,
-            "MAX_AUD_LEN": ZkapConfig::MAX_AUD_LEN,
-            "MAX_EXP_LEN": ZkapConfig::MAX_EXP_LEN,
-            "MAX_ISS_LEN": ZkapConfig::MAX_ISS_LEN,
-            "MAX_NONCE_LEN": ZkapConfig::MAX_NONCE_LEN,
-            "MAX_SUB_LEN": ZkapConfig::MAX_SUB_LEN,
-            "N": ZkapConfig::N,
-            "K": ZkapConfig::K,
-            "TREE_HEIGHT": ZkapConfig::TREE_HEIGHT,
-            "NUM_AUDIENCE_LIMIT": ZkapConfig::NUM_AUDIENCE_LIMIT,
+            "MAX_JWT_B64_LEN": params.max_jwt_b64_len,
+            "MAX_PAYLOAD_B64_LEN": params.max_payload_b64_len,
+            "MAX_AUD_LEN": params.max_aud_len,
+            "MAX_EXP_LEN": params.max_exp_len,
+            "MAX_ISS_LEN": params.max_iss_len,
+            "MAX_NONCE_LEN": params.max_nonce_len,
+            "MAX_SUB_LEN": params.max_sub_len,
+            "N": params.n,
+            "K": params.k,
+            "TREE_HEIGHT": params.tree_height,
+            "NUM_AUDIENCE_LIMIT": params.num_audience_limit,
         },
         "files": file_hashes,
     });

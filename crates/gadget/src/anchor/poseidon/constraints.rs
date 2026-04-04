@@ -220,7 +220,7 @@ pub fn enforce_selector_cardinality<F: PrimeField>(
     for s in indices {
         sum += s.clone();
     }
-    sum.enforce_equal(&k)?;
+    sum.enforce_equal(k)?;
     Ok(())
 }
 

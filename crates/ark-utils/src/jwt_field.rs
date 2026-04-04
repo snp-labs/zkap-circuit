@@ -93,8 +93,7 @@ pub fn jwt_nonce_hex_to_field<F: PrimeField>(
 
     // Only the first 65 bytes after the prefix can matter:
     // 64 hex digits + 1 closing quote.
-    for i in 3..=max_quote_index {
-        let current_byte = &hex_bytes[i];
+    for (i, current_byte) in hex_bytes.iter().enumerate().take(max_quote_index + 1).skip(3) {
         let current_index = UInt16::constant(i as u16);
 
         // Is this the selected closing quote position?

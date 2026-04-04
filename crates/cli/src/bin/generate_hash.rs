@@ -3,7 +3,7 @@ use std::fs::File;
 use ark_crypto_primitives::crh::CRHScheme;
 use ark_ff::PrimeField;
 use clap::{Args, Parser, Subcommand};
-use circuit::constants::{BNP, CG, F, PoseidonHash, ZkPasskeyConfig, ZkapConfig};
+use circuit::constants::{BNP, CG, F, PoseidonHash, CircuitConfig, PAD_CHAR};
 use gadget::{
     base64::decode_any_base64, hashes::poseidon::get_poseidon_params, signature::rsa::PublicKey, utils::str_to_limbs
 };
@@ -11,6 +11,10 @@ use serde::Serialize;
 
 #[derive(Parser)]
 struct Cli {
+    /// Path to the JSON config file
+    #[arg(long)]
+    config: String,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -80,15 +84,26 @@ fn main() {
     // Parsing is done here in one shot.
     let cli = Cli::parse();
 
+    let config_path = std::path::Path::new(&cli.config);
+    let params = CircuitConfig::from_json_file(config_path).unwrap_or_else(|e| {
+        eprintln!("Failed to load config: {}", e);
+        std::process::exit(1);
+    });
+
     // Pattern match on the command.
     match &cli.command {
-        Commands::Aud(args) => generate_aud_hash(args),
-        Commands::Leaf(args) => generate_pk_leaf(args),
+        Commands::Aud(args) => generate_aud_hash(args, &params),
+        Commands::Leaf(args) => generate_pk_leaf(args, &params),
     }
 }
 
-fn generate_aud_hash(args: &AudArgs) {
-    let params = get_poseidon_params::<F>();
+fn generate_aud_hash(args: &AudArgs, params: &CircuitConfig) {
+    let poseidon_params = get_poseidon_params::<F>();
+
+    let forbidden_str = std::str::from_utf8(&params.forbidden_string).unwrap_or_else(|e| {
+        eprintln!("Error decoding forbidden_string: {}", e);
+        std::process::exit(1);
+    });
 
     let mut aud_vec: Vec<String> = args
         .values
@@ -96,31 +111,34 @@ fn generate_aud_hash(args: &AudArgs) {
         .map(|s| s.trim().to_string())
         .collect();
 
-    if aud_vec.len() > ZkapConfig::NUM_AUDIENCE_LIMIT {
+    let num_audience_limit = params.num_audience_limit as usize;
+
+    if aud_vec.len() > num_audience_limit {
         eprintln!(
             "Error: Input audience count ({}) exceeds the limit ({}).",
             aud_vec.len(),
-            ZkapConfig::NUM_AUDIENCE_LIMIT
+            num_audience_limit
         );
         std::process::exit(1);
     }
 
-    while aud_vec.len() < ZkapConfig::NUM_AUDIENCE_LIMIT {
-        aud_vec.push(ZkapConfig::FORBIDDEN_STRING.to_string());
+    while aud_vec.len() < num_audience_limit {
+        aud_vec.push(forbidden_str.to_string());
     }
 
+    let max_aud_len = params.max_aud_len as usize;
     let aud_fields: Vec<F> = aud_vec
         .iter()
         .map(|a| {
-            let limbs = str_to_limbs(a, ZkapConfig::MAX_AUD_LEN, ZkapConfig::PAD_CHAR as u8);
-            
-            PoseidonHash::evaluate(&params, limbs).unwrap_or_else(|e| {
+            let limbs = str_to_limbs(a, max_aud_len, PAD_CHAR as u8);
+
+            PoseidonHash::evaluate(&poseidon_params, limbs).unwrap_or_else(|e| {
                 eprintln!("Error processing aud '{}': {}", a, e);
                 std::process::exit(1);
             })
         })
         .collect();
-    let h_aud_lists = PoseidonHash::evaluate(&params, &*aud_fields).unwrap_or_else(|e| {
+    let h_aud_lists = PoseidonHash::evaluate(&poseidon_params, &*aud_fields).unwrap_or_else(|e| {
         eprintln!("Error computing h_aud_lists: {}", e);
         std::process::exit(1);
     });
@@ -140,8 +158,8 @@ fn generate_aud_hash(args: &AudArgs) {
     println!("Successfully generated aud hashes to {}", &args.out);
 }
 
-fn generate_pk_leaf(args: &LeafArgs) {
-    let params = get_poseidon_params::<F>();
+fn generate_pk_leaf(args: &LeafArgs, params: &CircuitConfig) {
+    let poseidon_params = get_poseidon_params::<F>();
 
     // 1. Parse into list by splitting on comma
     let iss_list: Vec<&str> = args.iss.split(',').map(|s| s.trim()).collect();
@@ -165,6 +183,8 @@ fn generate_pk_leaf(args: &LeafArgs) {
         std::process::exit(1);
     });
 
+    let max_iss_len = params.max_iss_len as usize;
+
     // 3. Process each pair and separate results (using unzip)
     let (inputs, outputs): (Vec<LeafInput>, Vec<String>) = iss_list
         .iter()
@@ -178,7 +198,7 @@ fn generate_pk_leaf(args: &LeafArgs) {
 
             // --- (2) Process logic ---
             // Convert issuer to limbs
-            let iss_limbs = str_to_limbs(iss, ZkapConfig::MAX_ISS_LEN, ZkapConfig::PAD_CHAR as u8);
+            let iss_limbs = str_to_limbs(iss, max_iss_len, PAD_CHAR as u8);
 
             // Decode public key and convert to limbs
             let n_decoded = decode_any_base64(pk).unwrap_or_else(|e| {
@@ -200,7 +220,7 @@ fn generate_pk_leaf(args: &LeafArgs) {
             leaf_inputs.extend_from_slice(&iss_limbs);
             leaf_inputs.extend_from_slice(&n_limbs);
 
-            let leaf = PoseidonHash::evaluate(&params, &*leaf_inputs).unwrap_or_else(|e| {
+            let leaf = PoseidonHash::evaluate(&poseidon_params, &*leaf_inputs).unwrap_or_else(|e| {
                 eprintln!("Error computing leaf for iss '{}': {}", iss, e);
                 std::process::exit(1);
             });

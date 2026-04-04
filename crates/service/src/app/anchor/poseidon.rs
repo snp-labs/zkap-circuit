@@ -5,7 +5,7 @@ use ark_crypto_primitives::{
 use ark_ff::PrimeField;
 use ark_utils::try_str_to_fields;
 use ark_utils::pad;
-use circuit::constants::{F, PoseidonHash, ZkPasskeyConfig};
+use circuit::constants::{F, PoseidonHash, CircuitConfig};
 
 use super::AnchorConfig;
 use crate::{Secret, error::ApplicationError};
@@ -23,10 +23,11 @@ use gadget::{
     matrix::VandermondeMatrix,
 };
 
-pub fn create_poseidon_anchor<Config: ZkPasskeyConfig>(
+pub fn generate_anchor(
+    params: &CircuitConfig,
     secrets: Vec<Secret>,
 ) -> Result<PoseidonAnchor<F>, ApplicationError> {
-    let ctx = AnchorConfig::from_config::<Config>();
+    let ctx = AnchorConfig::from_params(params);
 
     let anchor_key = PoseidonAnchorPublicKey {
         params: get_poseidon_params::<F>(),

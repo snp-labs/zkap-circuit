@@ -1,28 +1,112 @@
 use std::fmt::Debug;
 
 use ark_crypto_primitives::crh::poseidon::CRH;
+use ark_serialize::*;
 use gadget::bigint::constraints::BigNatCircuitParams;
 
-pub trait ZkPasskeyConfig: Clone + Debug + Send + Sync {
-    // === JWT Constraints ===
-    const MAX_JWT_B64_LEN: usize;
-    const MAX_PAYLOAD_B64_LEN: usize;
-    const MAX_AUD_LEN: usize;
-    const MAX_EXP_LEN: usize;
-    const MAX_ISS_LEN: usize;
-    const MAX_NONCE_LEN: usize;
-    const MAX_SUB_LEN: usize;
+pub const PAD_CHAR: char = '\0';
 
-    // === Logic Constraints ===
-    const N: usize;
-    const K: usize;
-    const TREE_HEIGHT: usize;
-    const CLAIMS: &'static [&'static str];
-    const NUM_AUDIENCE_LIMIT: usize;
-    const FORBIDDEN_STRING: &'static str;
-    const PAD_CHAR: char;
+/// JSON config file용 (사람이 읽을 수 있는 형태)
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct RawCircuitConfig {
+    pub max_jwt_b64_len: u64,
+    pub max_payload_b64_len: u64,
+    pub max_aud_len: u64,
+    pub max_exp_len: u64,
+    pub max_iss_len: u64,
+    pub max_nonce_len: u64,
+    pub max_sub_len: u64,
+    pub n: u64,
+    pub k: u64,
+    pub tree_height: u64,
+    pub num_audience_limit: u64,
+    pub claims: Vec<String>,
+    pub forbidden_string: String,
+}
 
-    type BigNatParams: BigNatCircuitParams;
+/// Circuit용 (CanonicalSerialize 호환)
+#[derive(Clone, Debug, PartialEq, Eq, CanonicalSerialize, CanonicalDeserialize)]
+pub struct CircuitConfig {
+    pub max_jwt_b64_len: u64,
+    pub max_payload_b64_len: u64,
+    pub max_aud_len: u64,
+    pub max_exp_len: u64,
+    pub max_iss_len: u64,
+    pub max_nonce_len: u64,
+    pub max_sub_len: u64,
+    pub n: u64,
+    pub k: u64,
+    pub tree_height: u64,
+    pub num_audience_limit: u64,
+    pub claims: Vec<Vec<u8>>,
+    pub forbidden_string: Vec<u8>,
+}
+
+impl From<RawCircuitConfig> for CircuitConfig {
+    fn from(raw: RawCircuitConfig) -> Self {
+        Self {
+            max_jwt_b64_len: raw.max_jwt_b64_len,
+            max_payload_b64_len: raw.max_payload_b64_len,
+            max_aud_len: raw.max_aud_len,
+            max_exp_len: raw.max_exp_len,
+            max_iss_len: raw.max_iss_len,
+            max_nonce_len: raw.max_nonce_len,
+            max_sub_len: raw.max_sub_len,
+            n: raw.n,
+            k: raw.k,
+            tree_height: raw.tree_height,
+            num_audience_limit: raw.num_audience_limit,
+            claims: raw.claims.into_iter().map(|s| s.into_bytes()).collect(),
+            forbidden_string: raw.forbidden_string.into_bytes(),
+        }
+    }
+}
+
+impl CircuitConfig {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.k < 1 {
+            return Err(format!("k must be >= 1, got: {}", self.k));
+        }
+        if self.k > self.n {
+            return Err(format!("k ({}) must be <= n ({})", self.k, self.n));
+        }
+        if self.n < 1 {
+            return Err(format!("n must be >= 1, got: {}", self.n));
+        }
+        if self.tree_height < 1 {
+            return Err(format!(
+                "tree_height must be >= 1, got: {}",
+                self.tree_height
+            ));
+        }
+        if self.max_payload_b64_len > self.max_jwt_b64_len {
+            return Err(format!(
+                "max_payload_b64_len ({}) must be <= max_jwt_b64_len ({})",
+                self.max_payload_b64_len, self.max_jwt_b64_len
+            ));
+        }
+        if self.num_audience_limit < 1 {
+            return Err(format!(
+                "num_audience_limit must be >= 1, got: {}",
+                self.num_audience_limit
+            ));
+        }
+        if self.claims.is_empty() {
+            return Err("claims must not be empty".into());
+        }
+        Ok(())
+    }
+
+    /// JSON config file에서 로드 (RawCircuitConfig → CircuitConfig 변환)
+    pub fn from_json_file(path: &std::path::Path) -> Result<Self, String> {
+        let content = std::fs::read_to_string(path)
+            .map_err(|e| format!("Failed to read config: {}", e))?;
+        let raw: RawCircuitConfig = serde_json::from_str(&content)
+            .map_err(|e| format!("Failed to parse config: {}", e))?;
+        let config: Self = raw.into();
+        config.validate()?;
+        Ok(config)
+    }
 }
 
 const LAMBDA: usize = 2048; // 2048 bits
@@ -40,10 +124,3 @@ pub type BigNatTestParams = BigNat2048Params;
 pub type BN254 = ark_bn254::Bn254;
 pub type CV = ark_ed_on_bn254::constraints::EdwardsVar;
 pub type BNP = BigNat2048Params;
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ZkapConfig;
-
-include!(concat!(env!("OUT_DIR"), "/generated_config.rs"));
-
-// AnchorConfig moved to zkpasskey-service crate (depends on gadget::matrix::VandermondeMatrix)

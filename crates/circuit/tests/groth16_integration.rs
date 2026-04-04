@@ -25,7 +25,7 @@ use ark_utils::pad;
 use circuit::{
     zkap::ZkapCircuit,
     input::*,
-    constants::{BNP, CG, ZkapConfig, ZkPasskeyConfig},
+    constants::{BNP, CG, CircuitConfig, PAD_CHAR, RawCircuitConfig},
     token::ClaimIndices,
 };
 use gadget::{
@@ -75,7 +75,27 @@ fn parse_claim_from_str(s: &str, key: &str) -> circuit::token::Claim {
 }
 
 type F = <CG as CurveGroup>::BaseField;
-type TestCircuit = ZkapCircuit<CG, BNP, ZkapConfig>;
+type TestCircuit = ZkapCircuit<CG, BNP>;
+
+/// Build a test CircuitConfig (dev profile)
+fn test_params() -> CircuitConfig {
+    let raw = RawCircuitConfig {
+        max_jwt_b64_len: 1024,
+        max_payload_b64_len: 640,
+        max_aud_len: 155,
+        max_exp_len: 20,
+        max_iss_len: 93,
+        max_nonce_len: 93,
+        max_sub_len: 93,
+        n: 6,
+        k: 3,
+        tree_height: 4,
+        num_audience_limit: 5,
+        claims: vec!["aud".into(), "exp".into(), "iss".into(), "nonce".into(), "sub".into()],
+        forbidden_string: "forbidden".into(),
+    };
+    raw.into()
+}
 
 // ============================================================
 // Test Secrets
@@ -136,7 +156,7 @@ fn build_jwt_and_sign(
 }
 
 /// Parse a JWT string into JwtWitness
-fn build_jwt_witness(jwt: &str, rsa_priv_key: &rsa::RsaPrivateKey) -> JwtWitness {
+fn build_jwt_witness(jwt: &str, rsa_priv_key: &rsa::RsaPrivateKey, cfg: &CircuitConfig) -> JwtWitness {
     let parts: Vec<&str> = jwt.split('.').collect();
     let (header_b64, payload_b64, sig_b64) = (parts[0], parts[1], parts[2]);
 
@@ -154,14 +174,14 @@ fn build_jwt_witness(jwt: &str, rsa_priv_key: &rsa::RsaPrivateKey) -> JwtWitness
     sha_padded.extend_from_slice(&bit_len.to_be_bytes());
 
     let nblocks = sha_padded.len() / 64 - 1;
-    sha_padded.resize(ZkapConfig::MAX_JWT_B64_LEN, 0x00);
+    sha_padded.resize(cfg.max_jwt_b64_len as usize, 0x00);
 
     let pay_offset_b64 = header_b64.len() + 1;
     let pay_len_b64 = payload_b64.len();
 
     // IndexBits
     let index_bits =
-        IndexBits::from_base64_url(payload_b64, ZkapConfig::MAX_PAYLOAD_B64_LEN).unwrap();
+        IndexBits::from_base64_url(payload_b64, cfg.max_payload_b64_len as usize).unwrap();
 
     // Decode payload for claim extraction
     let engine = base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -169,7 +189,10 @@ fn build_jwt_witness(jwt: &str, rsa_priv_key: &rsa::RsaPrivateKey) -> JwtWitness
     let payload_str = String::from_utf8(payload_bytes).unwrap();
 
     // ClaimIndices for each claim
-    let claim_indices: Vec<ClaimIndices> = ZkapConfig::CLAIMS
+    let claims: Vec<&str> = cfg.claims.iter()
+        .map(|c| std::str::from_utf8(c).unwrap())
+        .collect();
+    let claim_indices: Vec<ClaimIndices> = claims
         .iter()
         .map(|key| {
             let claim = parse_claim_from_str(&payload_str, key);
@@ -227,10 +250,10 @@ fn claim_value_bytes(payload_str: &str, key: &str, max_len: usize) -> Vec<u8> {
 
 /// Compute x = Poseidon(pad(aud) || pad(iss) || pad(sub)) as field limbs
 /// This uses the same null-padded representation for the anchor secret derivation
-fn derive_x(aud: &str, iss: &str, sub: &str, params: &PoseidonConfig<F>) -> F {
-    let padded_aud = pad(aud, ZkapConfig::MAX_AUD_LEN, ZkapConfig::PAD_CHAR).unwrap();
-    let padded_iss = pad(iss, ZkapConfig::MAX_ISS_LEN, ZkapConfig::PAD_CHAR).unwrap();
-    let padded_sub = pad(sub, ZkapConfig::MAX_SUB_LEN, ZkapConfig::PAD_CHAR).unwrap();
+fn derive_x(aud: &str, iss: &str, sub: &str, params: &PoseidonConfig<F>, cfg: &CircuitConfig) -> F {
+    let padded_aud = pad(aud, cfg.max_aud_len as usize, PAD_CHAR).unwrap();
+    let padded_iss = pad(iss, cfg.max_iss_len as usize, PAD_CHAR).unwrap();
+    let padded_sub = pad(sub, cfg.max_sub_len as usize, PAD_CHAR).unwrap();
 
     let input = format!("{}{}{}", padded_aud, padded_iss, padded_sub);
     let limbs = try_str_to_fields::<F>(&input).unwrap();
@@ -268,9 +291,10 @@ fn derive_selector(
     known_x_list: &[F],
     anchor: &PoseidonAnchor<F>,
     matrix: &VandermondeMatrix<F>,
+    cfg: &CircuitConfig,
 ) -> Vec<u8> {
-    let n = ZkapConfig::N;
-    let k = ZkapConfig::K;
+    let n = cfg.n as usize;
+    let k = cfg.k as usize;
 
     for combo in combinations(n, k) {
         let mut selector = vec![0u8; n];
@@ -327,8 +351,11 @@ struct AnchorTestContext {
 fn build_anchor_context(
     secrets: &[TestSecret],
     params: &PoseidonConfig<F>,
+    cfg: &CircuitConfig,
 ) -> AnchorTestContext {
-    let matrix = VandermondeMatrix::<F>::new(ZkapConfig::N, ZkapConfig::K);
+    let n = cfg.n as usize;
+    let k = cfg.k as usize;
+    let matrix = VandermondeMatrix::<F>::new(n, k);
     let pk = PoseidonAnchorPublicKey {
         params: params.clone(),
     };
@@ -336,15 +363,15 @@ fn build_anchor_context(
     // K real secrets
     let mut full_x_list = Vec::new();
     for s in secrets {
-        full_x_list.push(derive_x(s.aud, s.iss, s.sub, params));
+        full_x_list.push(derive_x(s.aud, s.iss, s.sub, params, cfg));
     }
 
     // N-K dummy secrets
-    for i in 0..(ZkapConfig::N - ZkapConfig::K) {
+    for i in 0..(n - k) {
         let dummy_aud = format!("dummy_aud_{}", i);
         let dummy_iss = format!("dummy_iss_{}", i);
         let dummy_sub = format!("dummy_sub_{}", i);
-        full_x_list.push(derive_x(&dummy_aud, &dummy_iss, &dummy_sub, params));
+        full_x_list.push(derive_x(&dummy_aud, &dummy_iss, &dummy_sub, params, cfg));
     }
 
     // Generate anchor (N secrets)
@@ -356,8 +383,8 @@ fn build_anchor_context(
     .unwrap();
 
     // Derive selector (K known secrets)
-    let known_x_list: Vec<F> = full_x_list[..ZkapConfig::K].to_vec();
-    let selector = derive_selector(&pk, &known_x_list, &anchor, &matrix);
+    let known_x_list: Vec<F> = full_x_list[..k].to_vec();
+    let selector = derive_selector(&pk, &known_x_list, &anchor, &matrix, cfg);
 
     // Build witness
     let witness = build_anchor_witness(params, &known_x_list, &selector, &matrix).unwrap();
@@ -388,8 +415,9 @@ fn build_anchor_context(
 fn build_merkle_witness_multi(
     leaves_data: &[(Vec<F>, Vec<F>)],
     params: &PoseidonConfig<F>,
+    cfg: &CircuitConfig,
 ) -> (Vec<MerkleWitness<F>>, F) {
-    let num_leaves = 1 << ZkapConfig::TREE_HEIGHT;
+    let num_leaves = 1 << cfg.tree_height;
 
     // Compute leaf digests
     let mut digests = vec![F::zero(); num_leaves];
@@ -416,17 +444,18 @@ fn build_merkle_witness_multi(
 }
 
 /// Build audience list and its hash using packed claim bytes (matching circuit)
-fn build_audience_list(aud_packed: &[F], params: &PoseidonConfig<F>) -> (Vec<F>, F) {
+fn build_audience_list(aud_packed: &[F], params: &PoseidonConfig<F>, cfg: &CircuitConfig) -> (Vec<F>, F) {
     let h_aud = CRH::<F>::evaluate(params, aud_packed.to_vec()).unwrap();
 
     // Forbidden value: pad "forbidden" with quotes to match circuit format
-    let mut forbidden_bytes = format!("\"{}\"", ZkapConfig::FORBIDDEN_STRING).into_bytes();
-    forbidden_bytes.resize(ZkapConfig::MAX_AUD_LEN, 0x00);
+    let forbidden_str = std::str::from_utf8(&cfg.forbidden_string).unwrap();
+    let mut forbidden_bytes = format!("\"{}\"", forbidden_str).into_bytes();
+    forbidden_bytes.resize(cfg.max_aud_len as usize, 0x00);
     let forbidden_packed = pack_bytes_to_field_native(&forbidden_bytes);
     let h_forbidden = CRH::<F>::evaluate(params, forbidden_packed).unwrap();
 
     let mut aud_list = vec![h_aud];
-    while aud_list.len() < ZkapConfig::NUM_AUDIENCE_LIMIT {
+    while aud_list.len() < cfg.num_audience_limit as usize {
         aud_list.push(h_forbidden);
     }
 
@@ -450,11 +479,14 @@ fn rsa_pk_n_limbs(rsa_priv_key: &rsa::RsaPrivateKey) -> Vec<F> {
 
 /// Main orchestrator: build K complete valid circuit inputs (one per secret/JWT)
 fn build_valid_circuit_inputs() -> Vec<ZkapCircuitInput<F>> {
+    let cfg = test_params();
     let params = get_poseidon_params::<F>();
     let random = F::from(12345u64);
     let h_sign_user_op = F::from(67890u64);
     let nonce_hex = build_nonce_hex(h_sign_user_op, random, &params);
 
+    let n = cfg.n as usize;
+    let k = cfg.k as usize;
     let secrets = &TEST_SECRETS;
 
     // Build K JWTs (each with different RSA key)
@@ -467,7 +499,7 @@ fn build_valid_circuit_inputs() -> Vec<ZkapCircuitInput<F>> {
         .collect();
 
     // Build anchor context (shared across all K proofs)
-    let anchor_ctx = build_anchor_context(secrets, &params);
+    let anchor_ctx = build_anchor_context(secrets, &params, &cfg);
 
     // h_a = Poseidon(a..., random)
     let mut h_a_inputs = anchor_ctx.a.clone();
@@ -492,39 +524,39 @@ fn build_valid_circuit_inputs() -> Vec<ZkapCircuitInput<F>> {
             let jwt_parts: Vec<&str> = jwt.split('.').collect();
             let payload_bytes = engine.decode(jwt_parts[1]).unwrap();
             let payload_str = String::from_utf8(payload_bytes).unwrap();
-            let iss_bytes = claim_value_bytes(&payload_str, "iss", ZkapConfig::MAX_ISS_LEN);
+            let iss_bytes = claim_value_bytes(&payload_str, "iss", cfg.max_iss_len as usize);
             let iss_packed = pack_bytes_to_field_native(&iss_bytes);
             let pk_n_limbs = rsa_pk_n_limbs(rsa_key);
             (iss_packed, pk_n_limbs)
         })
         .collect();
 
-    let (merkle_witnesses, root) = build_merkle_witness_multi(&leaves_data, &params);
+    let (merkle_witnesses, root) = build_merkle_witness_multi(&leaves_data, &params, &cfg);
 
-    // Audience (shared — all secrets use the same aud)
+    // Audience (shared -- all secrets use the same aud)
     let first_jwt = &jwt_data[0].0;
     let jwt_parts: Vec<&str> = first_jwt.split('.').collect();
     let payload_bytes = engine.decode(jwt_parts[1]).unwrap();
     let payload_str = String::from_utf8(payload_bytes).unwrap();
-    let aud_bytes = claim_value_bytes(&payload_str, "aud", ZkapConfig::MAX_AUD_LEN);
+    let aud_bytes = claim_value_bytes(&payload_str, "aud", cfg.max_aud_len as usize);
     let aud_packed = pack_bytes_to_field_native(&aud_bytes);
-    let (aud_list, h_aud_list) = build_audience_list(&aud_packed, &params);
+    let (aud_list, h_aud_list) = build_audience_list(&aud_packed, &params, &cfg);
 
     // Build K circuit inputs
-    (0..ZkapConfig::K)
+    (0..k)
         .map(|i| {
             let s = &secrets[i];
             let (jwt, rsa_key) = &jwt_data[i];
-            let jwt_witness = build_jwt_witness(jwt, rsa_key);
+            let jwt_witness = build_jwt_witness(jwt, rsa_key, &cfg);
             let current_idx = anchor_ctx.current_idx_list[i];
 
             // Compute h_id for this proof
             let jwt_parts: Vec<&str> = jwt.split('.').collect();
             let payload_bytes = engine.decode(jwt_parts[1]).unwrap();
             let payload_str = String::from_utf8(payload_bytes).unwrap();
-            let aud_bytes_i = claim_value_bytes(&payload_str, "aud", ZkapConfig::MAX_AUD_LEN);
-            let iss_bytes_i = claim_value_bytes(&payload_str, "iss", ZkapConfig::MAX_ISS_LEN);
-            let sub_bytes_i = claim_value_bytes(&payload_str, "sub", ZkapConfig::MAX_SUB_LEN);
+            let aud_bytes_i = claim_value_bytes(&payload_str, "aud", cfg.max_aud_len as usize);
+            let iss_bytes_i = claim_value_bytes(&payload_str, "iss", cfg.max_iss_len as usize);
+            let sub_bytes_i = claim_value_bytes(&payload_str, "sub", cfg.max_sub_len as usize);
             let aud_packed_i = pack_bytes_to_field_native(&aud_bytes_i);
             let iss_packed_i = pack_bytes_to_field_native(&iss_bytes_i);
             let sub_packed_i = pack_bytes_to_field_native(&sub_bytes_i);
@@ -546,8 +578,9 @@ fn build_valid_circuit_inputs() -> Vec<ZkapCircuitInput<F>> {
             let jwt_exp = F::from(s.exp);
 
             ZkapCircuitInput {
+                params: cfg.clone(),
                 constants: CircuitConstants {
-                    vandermonde_matrix: VandermondeMatrix::new(ZkapConfig::N, ZkapConfig::K),
+                    vandermonde_matrix: VandermondeMatrix::new(n, k),
                     poseidon_param: params.clone(),
                     base64_table: get_base64_table(),
                 },
@@ -584,8 +617,9 @@ fn build_valid_circuit_inputs() -> Vec<ZkapCircuitInput<F>> {
 
 #[test]
 fn groth16_setup_with_mock() {
+    let cfg = test_params();
     let mut rng = ark_std::rand::rngs::StdRng::seed_from_u64(42);
-    let circuit = TestCircuit::generate_mock_circuit();
+    let circuit = TestCircuit::generate_mock_circuit(&cfg);
     let (pk, vk) = Groth16::<Bn254>::setup(circuit, &mut rng).unwrap();
     assert!(!pk.vk.gamma_abc_g1.is_empty());
     println!(
@@ -623,7 +657,7 @@ fn debug_constraint_satisfaction() {
 fn groth16_prove_verify_k_proofs() {
     let mut rng = ark_std::rand::rngs::StdRng::seed_from_u64(42);
 
-    // Setup (use first valid input — all have the same constraint structure)
+    // Setup (use first valid input -- all have the same constraint structure)
     let inputs = build_valid_circuit_inputs();
     let k = inputs.len();
 

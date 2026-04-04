@@ -28,9 +28,6 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 hex = { workspace = true }
 
-[build-dependencies]
-dotenvy = { workspace = true }
-
 [features]
 default = []
 print-trace = ["gadget/print-trace"]

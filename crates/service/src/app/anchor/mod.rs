@@ -1,10 +1,10 @@
 pub mod poseidon;
 pub mod types;
 
-use circuit::constants::{F, ZkPasskeyConfig};
+use circuit::constants::{F, CircuitConfig, PAD_CHAR};
 use gadget::matrix::VandermondeMatrix;
 
-/// Anchor configuration derived from ZkPasskeyConfig.
+/// Anchor configuration derived from CircuitConfig.
 /// Moved from common::constants to avoid common depending on gadget::matrix.
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -19,15 +19,15 @@ pub struct AnchorConfig {
 }
 
 impl AnchorConfig {
-    pub fn from_config<C: ZkPasskeyConfig>() -> Self {
+    pub fn from_params(params: &CircuitConfig) -> Self {
         Self {
-            matrix_rows: C::N,
-            matrix_cols: C::K,
-            max_aud_len: C::MAX_AUD_LEN,
-            max_iss_len: C::MAX_ISS_LEN,
-            max_sub_len: C::MAX_SUB_LEN,
-            pad_char: C::PAD_CHAR,
-            matrix: VandermondeMatrix::<F>::new(C::N, C::K),
+            matrix_rows: params.n as usize,
+            matrix_cols: params.k as usize,
+            max_aud_len: params.max_aud_len as usize,
+            max_iss_len: params.max_iss_len as usize,
+            max_sub_len: params.max_sub_len as usize,
+            pad_char: PAD_CHAR,
+            matrix: VandermondeMatrix::<F>::new(params.n as usize, params.k as usize),
         }
     }
 }

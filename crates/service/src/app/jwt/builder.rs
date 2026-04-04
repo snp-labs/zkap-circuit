@@ -1,6 +1,6 @@
 use circuit::token::{Claim, ClaimIndices};
 use crate::app::jwt::parser::{TokenError, parse_claim_from_str};
-use circuit::constants::ZkPasskeyConfig;
+use circuit::constants::CircuitConfig;
 use gadget::{
     base64::{IndexBits, decode_any_base64, decode_any_base64_to_string},
     signature::rsa::{PublicKey, Signature},
@@ -71,8 +71,9 @@ impl TokenBuilder {
     /// Computes and returns all Witness data required by the circuit.
     /// Passes the full JWT to the circuit so that the complete SHA256 computation
     /// is performed inside the circuit starting from the initial H constants.
-    pub fn build<Config: ZkPasskeyConfig>(
+    pub fn build(
         &self,
+        params: &CircuitConfig,
         pk_modulus_b64: &str,
     ) -> Result<JwtCircuitWitness, TokenError> {
         // 1. Compute Full JWT SHA-256 Padding (midstate removed)
@@ -84,7 +85,7 @@ impl TokenBuilder {
             pay_len_b64,
             total_len,
             pad_start_byte_idx,
-        ) = self.compute_sha_and_base64_witness::<Config>()?;
+        ) = self.compute_sha_and_base64_witness(params)?;
 
         // 2. Decode Public Key and Signature
         let (pk, sig) = self.compute_crypto_witness(pk_modulus_b64)?;
@@ -109,8 +110,9 @@ impl TokenBuilder {
     /// Applies SHA256 padding to the full JWT and returns it.
     /// The circuit performs the complete SHA256 computation starting from the initial H constants.
     #[allow(clippy::type_complexity)]
-    fn compute_sha_and_base64_witness<Config: ZkPasskeyConfig>(
+    fn compute_sha_and_base64_witness(
         &self,
+        params: &CircuitConfig,
     ) -> Result<
         (
             usize,      // nblocks
@@ -135,7 +137,7 @@ impl TokenBuilder {
         let pad_start_byte_idx = total_len;
 
         // Compute Base64 Index Bits (Payload only)
-        let index_bits = IndexBits::from_base64_url(&self.payload_b64, Config::MAX_PAYLOAD_B64_LEN)
+        let index_bits = IndexBits::from_base64_url(&self.payload_b64, params.max_payload_b64_len as usize)
             .map_err(|e| TokenError::InvalidFormat(format!("index_bits error: {:?}", e)))?;
 
         // Apply SHA-256 padding (over the full JWT)
@@ -145,7 +147,7 @@ impl TokenBuilder {
         let nblocks = sha_pad_jwt_b64.len() / SHA_BLOCK_LEN - 1;
 
         // Resize to match circuit input size
-        sha_pad_jwt_b64.resize(Config::MAX_JWT_B64_LEN, 0);
+        sha_pad_jwt_b64.resize(params.max_jwt_b64_len as usize, 0);
 
         Ok((
             nblocks,

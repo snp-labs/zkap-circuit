@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use circuit::constants::{F, ZkPasskeyConfig};
+use circuit::constants::{F, CircuitConfig};
 use gadget::anchor::poseidon::PoseidonAnchor;
 
 use crate::{app::jwt::builder::TokenBuilder, error::ApplicationError};
@@ -59,27 +59,31 @@ pub struct ProofRequest {
 
 impl ProofRequest {
     /// Validates and parses a RawProofRequest into a ProofRequest
-    pub fn from_raw<Config: ZkPasskeyConfig>(
+    pub fn from_raw(
+        params: &CircuitConfig,
         raw: RawProofRequest,
     ) -> Result<Self, ApplicationError> {
         // 1. Input validation
-        Self::validate::<Config>(&raw)?;
+        Self::validate(params, &raw)?;
 
         // 2. Parsing
-        Self::parse::<Config>(raw)
+        Self::parse(params, raw)
     }
 
     /// Validates input data
-    fn validate<Config: ZkPasskeyConfig>(raw: &RawProofRequest) -> Result<(), ApplicationError> {
+    fn validate(params: &CircuitConfig, raw: &RawProofRequest) -> Result<(), ApplicationError> {
+        let k = params.k as usize;
+        let n = params.n as usize;
+
         // Must have K JWT/PK/path/index entries
-        if raw.jwts.len() != Config::K
-            || raw.pk_ops.len() != Config::K
-            || raw.merkle_paths.len() != Config::K
-            || raw.leaf_indices.len() != Config::K
+        if raw.jwts.len() != k
+            || raw.pk_ops.len() != k
+            || raw.merkle_paths.len() != k
+            || raw.leaf_indices.len() != k
         {
             return Err(ApplicationError::InvalidFormat(format!(
                 "All input vectors must have length K={}, got: jwts={}, pk_ops={}, mp={}, leaf_index={}",
-                Config::K,
+                k,
                 raw.jwts.len(),
                 raw.pk_ops.len(),
                 raw.merkle_paths.len(),
@@ -88,7 +92,7 @@ impl ProofRequest {
         }
 
         // Validate anchor length: (N - K + 1) + 1 (last element is hanchor)
-        let expected_anchor_len = (Config::N - Config::K + 1) + 1;
+        let expected_anchor_len = (n - k + 1) + 1;
         if raw.anchor.len() != expected_anchor_len {
             return Err(ApplicationError::InvalidFormat(format!(
                 "Invalid anchor length: expected {}, got {}",
@@ -101,15 +105,19 @@ impl ProofRequest {
     }
 
     /// Parses raw input into domain objects
-    fn parse<Config: ZkPasskeyConfig>(raw: RawProofRequest) -> Result<Self, ApplicationError> {
+    fn parse(params: &CircuitConfig, raw: RawProofRequest) -> Result<Self, ApplicationError> {
         use ark_utils::hex_decimal_to_field;
 
         // Create TokenBuilders
+        let claims: Vec<&str> = params.claims.iter()
+            .map(|c| std::str::from_utf8(c).unwrap())
+            .collect();
+
         let token_builders: Vec<TokenBuilder> = raw
             .jwts
             .iter()
             .map(|jwt| {
-                TokenBuilder::new(jwt, Config::CLAIMS.to_vec()).map_err(|e| {
+                TokenBuilder::new(jwt, claims.clone()).map_err(|e| {
                     ApplicationError::InvalidFormat(format!("JWT parsing failed: {}", e))
                 })
             })

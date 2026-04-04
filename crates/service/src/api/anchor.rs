@@ -1,10 +1,11 @@
-use circuit::constants::{F, ZkPasskeyConfig};
+use circuit::constants::{F, CircuitConfig};
 use gadget::anchor::poseidon::PoseidonAnchor;
 
 use crate::{Secret, app, error::ApplicationError};
 
-pub fn create_poseidon_anchor<Config: ZkPasskeyConfig>(
+pub fn generate_anchor(
+    params: &CircuitConfig,
     secrets: Vec<Secret>,
 ) -> Result<PoseidonAnchor<F>, ApplicationError> {
-    app::anchor::poseidon::create_poseidon_anchor::<Config>(secrets)
+    app::anchor::poseidon::generate_anchor(params, secrets)
 }

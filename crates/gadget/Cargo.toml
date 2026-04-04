@@ -55,5 +55,4 @@ full = ["crypto", "base64", "rsa"]
 
 # Debug features
 print-trace = ["ark-std/print-trace"]
-constraints-logging = []
 num-cs-logging = []

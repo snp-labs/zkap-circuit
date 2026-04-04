@@ -31,7 +31,6 @@ hex = { workspace = true }
 [features]
 default = []
 print-trace = ["gadget/print-trace"]
-constraints-logging = ["gadget/constraints-logging"]
 zkap-circuit = []
 num-cs-logging = ["gadget/num-cs-logging"]
 

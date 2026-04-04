@@ -18,8 +18,6 @@ use crate::{
     signature::rsa::{PublicKey, Signature},
 };
 
-#[cfg(feature = "constraints-logging")]
-use crate::debug::log_r1cs_eq;
 
 pub type ConstraintF<C> = <<C as CurveGroup>::BaseField as Field>::BasePrimeField;
 
@@ -259,7 +257,7 @@ mod tests {
         BigNatVar::<F, BNP>::alloc_from_limbs(
             cs.clone(),
             &limbs,
-            BigNat::from(1u8) << BNP::LIMB_WIDTH as u32 - 1,
+            BigNat::from(1u8) << (BNP::LIMB_WIDTH as u32 - 1),
             ark_r1cs_std::prelude::AllocationMode::Witness,
         )
         .unwrap()
@@ -308,14 +306,14 @@ mod tests {
         let n_var = BigNatVar::<F, BNP>::alloc_from_limbs(
             cs.clone(),
             &n,
-            BigNat::from(1u8) << BNP::LIMB_WIDTH as u32 - 1,
+            BigNat::from(1u8) << (BNP::LIMB_WIDTH as u32 - 1),
             ark_r1cs_std::prelude::AllocationMode::Witness,
         )
         .unwrap();
         let e_var = BigNatVar::<F, BNP>::alloc_from_limbs(
             cs.clone(),
             &vk_op,
-            BigNat::from(1u8) << BNP::LIMB_WIDTH as u32 - 1,
+            BigNat::from(1u8) << (BNP::LIMB_WIDTH as u32 - 1),
             ark_r1cs_std::prelude::AllocationMode::Witness,
         )
         .unwrap();

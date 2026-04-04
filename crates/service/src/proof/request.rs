@@ -272,3 +272,147 @@ impl ProofRequest {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+    use circuit::constants::RawCircuitConfig;
+
+    fn test_config() -> CircuitConfig {
+        let raw = RawCircuitConfig {
+            max_jwt_b64_len: 1024,
+            max_payload_b64_len: 640,
+            max_aud_len: 155,
+            max_exp_len: 20,
+            max_iss_len: 93,
+            max_nonce_len: 93,
+            max_sub_len: 93,
+            n: 6,
+            k: 3,
+            tree_height: 4,
+            num_audience_limit: 5,
+            claims: vec!["aud".into(), "exp".into(), "iss".into(), "nonce".into(), "sub".into()],
+            forbidden_string: "forbidden".into(),
+        };
+        raw.into()
+    }
+
+    #[test]
+    fn test_raw_proof_request_new() {
+        let req = RawProofRequest::new(
+            PathBuf::from("/tmp/pk"),
+            vec!["jwt1".into()],
+            vec!["pk1".into()],
+            vec![vec!["path1".into()]],
+            vec![0],
+            "0".into(),
+            vec!["1".into(), "2".into()],
+            "0".into(),
+            "0".into(),
+            vec!["aud1".into()],
+        );
+        assert_eq!(req.token_count(), 1);
+        assert_eq!(req.pk_path, PathBuf::from("/tmp/pk"));
+    }
+
+    #[test]
+    fn test_validate_mismatched_jwt_count() {
+        let params = test_config(); // k=3
+        let raw = RawProofRequest::new(
+            PathBuf::from("/tmp/pk"),
+            vec!["jwt1".into(), "jwt2".into()], // only 2, need 3
+            vec!["pk1".into(), "pk2".into(), "pk3".into()],
+            vec![vec![], vec![], vec![]],
+            vec![0, 1, 2],
+            "0".into(),
+            vec!["1".into(); 5], // n-k+1+1 = 6-3+1+1 = 5
+            "0".into(),
+            "0".into(),
+            vec![],
+        );
+        let result = ProofRequest::from_raw(&params, raw);
+        assert!(result.is_err());
+        let err = format!("{}", result.err().unwrap());
+        assert!(err.contains("must have length K=3"));
+    }
+
+    #[test]
+    fn test_validate_wrong_anchor_length() {
+        let params = test_config(); // n=6, k=3 → expected anchor len = 4+1 = 5
+        let raw = RawProofRequest::new(
+            PathBuf::from("/tmp/pk"),
+            vec!["jwt1".into(), "jwt2".into(), "jwt3".into()],
+            vec!["pk1".into(), "pk2".into(), "pk3".into()],
+            vec![vec![], vec![], vec![]],
+            vec![0, 1, 2],
+            "0".into(),
+            vec!["1".into(); 3], // wrong: should be 5
+            "0".into(),
+            "0".into(),
+            vec![],
+        );
+        let result = ProofRequest::from_raw(&params, raw);
+        assert!(result.is_err());
+        let err = format!("{}", result.err().unwrap());
+        assert!(err.contains("Invalid anchor length"));
+    }
+
+    #[test]
+    fn test_validate_mismatched_pk_ops_count() {
+        let params = test_config(); // k=3
+        let raw = RawProofRequest::new(
+            PathBuf::from("/tmp/pk"),
+            vec!["jwt1".into(), "jwt2".into(), "jwt3".into()],
+            vec!["pk1".into()], // only 1, need 3
+            vec![vec![], vec![], vec![]],
+            vec![0, 1, 2],
+            "0".into(),
+            vec!["1".into(); 5],
+            "0".into(),
+            "0".into(),
+            vec![],
+        );
+        let result = ProofRequest::from_raw(&params, raw);
+        assert!(result.is_err());
+        let err = format!("{}", result.err().unwrap());
+        assert!(err.contains("must have length K=3"));
+    }
+
+    #[test]
+    fn test_validate_mismatched_leaf_indices() {
+        let params = test_config(); // k=3
+        let raw = RawProofRequest::new(
+            PathBuf::from("/tmp/pk"),
+            vec!["jwt1".into(), "jwt2".into(), "jwt3".into()],
+            vec!["pk1".into(), "pk2".into(), "pk3".into()],
+            vec![vec![], vec![], vec![]],
+            vec![0], // only 1, need 3
+            "0".into(),
+            vec!["1".into(); 5],
+            "0".into(),
+            "0".into(),
+            vec![],
+        );
+        let result = ProofRequest::from_raw(&params, raw);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_anchor_empty() {
+        let result = ProofRequest::parse_anchor(&[]);
+        assert!(result.is_err());
+        let err = format!("{}", result.err().unwrap());
+        assert!(err.contains("cannot be empty"));
+    }
+
+    #[test]
+    fn test_parse_anchor_valid() {
+        // 3 anchor values + 1 hanchor
+        let raw_anchor: Vec<String> = vec!["1".into(), "2".into(), "3".into(), "42".into()];
+        let result = ProofRequest::parse_anchor(&raw_anchor);
+        assert!(result.is_ok());
+        let data = result.unwrap();
+        assert_eq!(data.anchor.0.len(), 3);
+    }
+}

@@ -20,8 +20,6 @@ use crate::{
     matrix::constraints::VandermondeMatrixVar,
 };
 
-#[cfg(feature = "constraints-logging")]
-use crate::debug::log_r1cs_eq;
 
 #[derive(Clone)]
 pub struct PoseidonAnchorPublicKeyVar<F: PrimeField + Absorb> {
@@ -328,8 +326,7 @@ impl<F: PrimeField + Absorb> AnchorSchemeGadget<PoseidonAnchorScheme<F>, F>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ark_ff::{One, Zero};
-    use ark_r1cs_std::{R1CSVar, alloc::AllocVar, eq::EqGadget, fields::fp::FpVar};
+    use ark_r1cs_std::{R1CSVar, alloc::AllocVar, fields::fp::FpVar};
     use ark_relations::r1cs::ConstraintSystem;
 
     type F = ark_bn254::Fr;

@@ -149,7 +149,7 @@ fn build_jwt_and_sign(
 
     let signing_key = SigningKey::<Sha256>::new(priv_key.clone());
     let signature = signing_key.sign(signing_input.as_bytes());
-    let sig_b64 = engine.encode(&signature.to_bytes());
+    let sig_b64 = engine.encode(signature.to_bytes());
 
     let jwt = format!("{}.{}", signing_input, sig_b64);
     (jwt, priv_key)
@@ -231,10 +231,10 @@ fn build_jwt_witness(jwt: &str, rsa_priv_key: &rsa::RsaPrivateKey, cfg: &Circuit
 /// pack_decompose_bytes_unchecked
 fn pack_bytes_to_field_native(bytes: &[u8]) -> Vec<F> {
     let limb_width = 31; // (254 - 1) / 8 = 31 for BN254
-    assert!(bytes.len() % limb_width == 0);
+    assert!(bytes.len().is_multiple_of(limb_width));
     bytes
         .chunks(limb_width)
-        .map(|chunk| F::from_be_bytes_mod_order(chunk))
+        .map(F::from_be_bytes_mod_order)
         .collect()
 }
 
@@ -473,7 +473,7 @@ fn rsa_pk_n_limbs(rsa_priv_key: &rsa::RsaPrivateKey) -> Vec<F> {
     n_le.reverse(); // BE -> LE (same as circuit)
     n_le.resize(limb_byte_width * 32, 0);
     n_le.chunks(limb_byte_width)
-        .map(|chunk| F::from_le_bytes_mod_order(chunk))
+        .map(F::from_le_bytes_mod_order)
         .collect()
 }
 

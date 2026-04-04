@@ -197,7 +197,7 @@ mod tests {
         assert_eq!(result.len(), 3);
 
         // "Man" = [77, 97, 110]
-        let expected_values = vec![77u64, 97u64, 110u64];
+        let expected_values = [77u64, 97u64, 110u64];
         for (i, (r, &expected)) in result.iter().zip(expected_values.iter()).enumerate() {
             let actual = r.value().unwrap().into_bigint().0[0];
             assert_eq!(actual, expected, "Byte {} mismatch", i);
@@ -405,7 +405,7 @@ mod tests {
     #[test]
     fn test_decode_standard_chars() {
         // Test all base64url alphabet in 4-char chunks
-        let cs = ConstraintSystem::<F>::new_ref();
+        let _cs = ConstraintSystem::<F>::new_ref();
         let table = get_base64_table();
 
         // "ABCD" — first 4 chars of base64 alphabet

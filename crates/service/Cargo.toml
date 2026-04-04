@@ -47,4 +47,3 @@ jsonwebtoken = { workspace = true }
 
 [features]
 default = []
-constraints-logging = ["gadget/constraints-logging", "circuit/constraints-logging"]

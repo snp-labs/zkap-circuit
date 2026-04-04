@@ -120,7 +120,7 @@ mod tests {
         let mut expected = TestField::zero();
         let base = TestField::from(256u64);
         for (i, &b) in bytes.iter().enumerate() {
-            let power = base.pow(&[(bytes.len() - 1 - i) as u64]);
+            let power = base.pow([(bytes.len() - 1 - i) as u64]);
             expected += TestField::from(b) * power;
         }
 

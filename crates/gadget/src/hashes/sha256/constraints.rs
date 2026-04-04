@@ -833,11 +833,11 @@ mod tests {
 
         let mut gadget = SHA256Gadget::new_variable(
             cs.clone(),
-            || Ok(H.iter().cloned().collect::<Vec<u32>>()),
+            || Ok(H.to_vec()),
             AllocationMode::Witness,
         )?;
 
-        let data = vec![0u8; 64];
+        let data = [0u8; 64];
         let data_vars: Vec<UInt8<Fr>> = data
             .iter()
             .map(|&b| UInt8::new_witness(cs.clone(), || Ok(b)))

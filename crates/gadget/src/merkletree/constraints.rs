@@ -18,8 +18,6 @@ use crate::merkletree::{
     tree_config::{MerkleTreeParams, MerkleTreeParamsVar},
 };
 
-#[cfg(feature = "constraints-logging")]
-use crate::debug::log_r1cs_eq;
 
 #[derive(Clone)]
 pub struct MerkleCircuitInputVar<F>
@@ -36,13 +34,6 @@ where
     F: PrimeField + Absorb,
 {
     pub fn enforce_equal_leaf(&self, other: &FpVar<F>) -> Result<(), SynthesisError> {
-        #[cfg(feature = "constraints-logging")]
-        log_r1cs_eq(
-            "Merkle Leaf Equality",
-            &[self.leaf.clone()],
-            &[other.clone()],
-        );
-
         self.leaf.enforce_equal(other)
     }
 
@@ -56,13 +47,6 @@ where
         let membership =
             self.path
                 .verify_membership(hash_param, hash_param, root, std::slice::from_ref(&self.leaf))?;
-
-        #[cfg(feature = "constraints-logging")]
-        log_r1cs_eq(
-            "Merkle Membership Validity",
-            &[membership.clone()],
-            &[Boolean::TRUE],
-        );
 
         membership.enforce_equal(&Boolean::TRUE)?;
         Ok(())
@@ -100,7 +84,6 @@ where
 
 #[cfg(test)]
 mod tests {
-    use ark_bn254::Fr;
     use ark_crypto_primitives::{
         crh::{
             CRHScheme, CRHSchemeGadget,
@@ -158,7 +141,7 @@ mod tests {
         let mut digests = vec![F::zero(); 1 << (tree_height - 1)];
         println!("digests length: {}", digests.len());
         for (i, leaf) in leaves.iter().enumerate() {
-            let digest = CRH::evaluate(&leaf_hash_param, [leaf.clone()]).unwrap();
+            let digest = CRH::evaluate(&leaf_hash_param, [*leaf]).unwrap();
             digests[i] = digest;
         }
 
@@ -297,7 +280,7 @@ mod tests {
         )
         .unwrap();
 
-        let _leaves = vec![F::from(1u64), F::from(2u64), F::from(3u64)];
+        let _leaves = [F::from(1u64), F::from(2u64), F::from(3u64)];
         let h1 = CRH::evaluate(&leaf_hash_param, [F::from(1u64)]).unwrap();
         let h2 = CRH::evaluate(&leaf_hash_param, [h1, F::from(2u64)]).unwrap();
         let h3 = CRH::evaluate(&leaf_hash_param, [h2, F::from(3u64)]).unwrap();
@@ -311,7 +294,7 @@ mod tests {
         println!("path: {:?}", path);
 
         let cs = ark_relations::r1cs::ConstraintSystem::<F>::new_ref();
-        let value = vec![F::from(1u64), F::from(2u64), F::from(3u64)];
+        let value = [F::from(1u64), F::from(2u64), F::from(3u64)];
         let values = value
             .iter()
             .map(|&v| FpVar::new_witness(cs.clone(), || Ok(v)).unwrap())

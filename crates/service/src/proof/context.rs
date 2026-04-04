@@ -104,8 +104,7 @@ impl ProofContextBuilder {
         let num_audience_limit = self.params.num_audience_limit as usize;
         if padded.len() < num_audience_limit {
             let padding_count = num_audience_limit - padded.len();
-            let forbidden_str = std::str::from_utf8(&self.params.forbidden_string)
-                .map_err(|e| ApplicationError::InvalidFormat(format!("Invalid forbidden_string: {}", e)))?;
+            let forbidden_str = crate::forbidden_str(&self.params)?;
             let padded_str = pad(
                 forbidden_str,
                 self.params.max_aud_len as usize,

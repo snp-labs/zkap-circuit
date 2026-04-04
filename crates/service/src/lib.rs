@@ -6,6 +6,22 @@ pub mod jwt;
 pub mod manifest;
 pub mod proof;
 
+use std::sync::OnceLock;
+use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;
+use circuit::constants::F;
+
+/// Cached Poseidon parameters — constructed once, shared across all modules.
+pub(crate) fn poseidon_params() -> &'static PoseidonConfig<F> {
+    static PARAMS: OnceLock<PoseidonConfig<F>> = OnceLock::new();
+    PARAMS.get_or_init(gadget::hashes::poseidon::get_poseidon_params::<F>)
+}
+
+/// Extract forbidden_string as &str from CircuitConfig.
+pub(crate) fn forbidden_str(params: &CircuitConfig) -> Result<&str, error::ApplicationError> {
+    std::str::from_utf8(&params.forbidden_string)
+        .map_err(|e| error::ApplicationError::InvalidFormat(format!("Invalid forbidden_string: {}", e)))
+}
+
 pub use circuit::constants;
 pub use ark_utils::evm;
 pub use ark_utils::io;

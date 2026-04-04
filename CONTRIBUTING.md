@@ -16,7 +16,7 @@ cargo build
 
 ### Prerequisites
 
-- Rust 1.75 or later (`rustup update stable`)
+- Rust 1.80 or later (`rustup update stable`)
 - `cargo` (included with Rust)
 
 ### Building
@@ -34,8 +34,9 @@ cargo test --release
 To run tests for a specific crate:
 
 ```sh
-cargo test --release -p zkap-circuit
-cargo test --release -p zkap-gadget
+cargo test -p circuit
+cargo test -p gadget
+cargo test -p zkpasskey-service
 ```
 
 ### Linting
@@ -57,12 +58,19 @@ cargo fmt
 ```
 zkap-circuit/
 ├── crates/
-│   ├── circuit/    # Main ZK circuit definitions
+│   ├── ark-utils/  # R1CS helpers, field arithmetic, EVM codegen
+│   ├── circuit/    # Main ZK circuit definitions (ZkapCircuit, CircuitConfig)
+│   ├── cli/        # CLI binaries (generate_crs, generate_hash)
 │   ├── gadget/     # Reusable circuit gadgets (anchors, signatures, matrix ops)
-│   └── service/    # Service layer and bindings
-├── bindings/       # Language bindings (e.g., WASM, FFI)
-├── packages/       # Additional packages
-└── docs/           # Documentation
+│   └── service/    # Proof generation service (prove, verify, generate_anchor)
+│       ├── src/
+│       │   ├── proof/    # Proof orchestration (prove, verify, groth16_setup)
+│       │   ├── anchor/   # Anchor generation (Poseidon anchor scheme)
+│       │   ├── hash/     # Hash utilities (Poseidon hash, audience hash, leaf hash)
+│       │   ├── jwt/      # JWT parsing and witness construction
+│       │   └── dto/      # Platform-agnostic DTOs for bindings
+│       └── tests/        # Integration tests
+└── vendor/         # Vendored dependencies
 ```
 
 ## Pull Request Process

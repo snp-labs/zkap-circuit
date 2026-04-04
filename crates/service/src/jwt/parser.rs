@@ -65,3 +65,62 @@ pub fn parse_claim_from_str(s: &str, key: &str) -> Result<Claim, TokenError> {
         indices,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SAMPLE_PAYLOAD: &str = r#"{"aud":"test-audience","exp":1700000000,"iss":"https://accounts.google.com","nonce":"abc123","sub":"user_0"}"#;
+
+    #[test]
+    fn test_parse_string_claim() {
+        let claim = parse_claim_from_str(SAMPLE_PAYLOAD, "aud").unwrap();
+        assert_eq!(claim.key, "aud");
+        assert_eq!(claim.value, "\"test-audience\"");
+    }
+
+    #[test]
+    fn test_parse_numeric_claim() {
+        let claim = parse_claim_from_str(SAMPLE_PAYLOAD, "exp").unwrap();
+        assert_eq!(claim.key, "exp");
+        assert_eq!(claim.value, "1700000000");
+    }
+
+    #[test]
+    fn test_parse_url_claim() {
+        let claim = parse_claim_from_str(SAMPLE_PAYLOAD, "iss").unwrap();
+        assert_eq!(claim.key, "iss");
+        assert!(claim.value.contains("accounts.google.com"));
+    }
+
+    #[test]
+    fn test_parse_last_claim() {
+        let claim = parse_claim_from_str(SAMPLE_PAYLOAD, "sub").unwrap();
+        assert_eq!(claim.key, "sub");
+        assert_eq!(claim.value, "\"user_0\"");
+    }
+
+    #[test]
+    fn test_parse_nonexistent_key() {
+        let result = parse_claim_from_str(SAMPLE_PAYLOAD, "nonexistent");
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            TokenError::NotFoundKeyError(key) => assert_eq!(key, "nonexistent"),
+            other => panic!("Expected NotFoundKeyError, got: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_claim_indices_valid() {
+        let claim = parse_claim_from_str(SAMPLE_PAYLOAD, "aud").unwrap();
+        assert!(claim.indices.claim_len > 0);
+        assert!(claim.indices.value_len > 0);
+        assert!(claim.indices.colon_idx > 0);
+    }
+
+    #[test]
+    fn test_parse_empty_payload() {
+        let result = parse_claim_from_str("{}", "aud");
+        assert!(result.is_err());
+    }
+}

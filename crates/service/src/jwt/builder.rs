@@ -243,3 +243,103 @@ fn sha256_pad(input: &[u8]) -> Vec<u8> {
 
     padded
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn b64url_encode(data: &[u8]) -> String {
+        const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+        let mut out = String::new();
+        for chunk in data.chunks(3) {
+            let b0 = chunk[0] as u32;
+            let b1 = if chunk.len() > 1 { chunk[1] as u32 } else { 0 };
+            let b2 = if chunk.len() > 2 { chunk[2] as u32 } else { 0 };
+            let n = (b0 << 16) | (b1 << 8) | b2;
+            out.push(TABLE[((n >> 18) & 0x3F) as usize] as char);
+            out.push(TABLE[((n >> 12) & 0x3F) as usize] as char);
+            if chunk.len() > 1 { out.push(TABLE[((n >> 6) & 0x3F) as usize] as char); }
+            if chunk.len() > 2 { out.push(TABLE[(n & 0x3F) as usize] as char); }
+        }
+        out
+    }
+
+    fn make_jwt(header_json: &str, payload_json: &str) -> String {
+        let h = b64url_encode(header_json.as_bytes());
+        let p = b64url_encode(payload_json.as_bytes());
+        let sig = b64url_encode(b"fake-signature-data-here");
+        format!("{}.{}.{}", h, p, sig)
+    }
+
+    #[test]
+    fn test_token_builder_new_valid() {
+        let payload = r#"{"aud":"test-aud","exp":1700000000,"iss":"https://issuer.com","sub":"user1"}"#;
+        let jwt = make_jwt(r#"{"alg":"RS256","typ":"JWT"}"#, payload);
+        let keys = vec!["aud", "exp", "iss", "sub"];
+
+        let builder = TokenBuilder::new(&jwt, keys);
+        assert!(builder.is_ok());
+        let tb = builder.unwrap();
+        assert_eq!(tb.claims.len(), 4);
+    }
+
+    #[test]
+    fn test_token_builder_invalid_format() {
+        let result = TokenBuilder::new("not.a-jwt", vec!["aud"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_token_builder_missing_dot() {
+        let result = TokenBuilder::new("onlyone", vec!["aud"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_token_builder_get_claim_by() {
+        let payload = r#"{"aud":"my-app","exp":9999999999,"iss":"https://auth.com","sub":"u1"}"#;
+        let jwt = make_jwt(r#"{"alg":"RS256"}"#, payload);
+
+        let tb = TokenBuilder::new(&jwt, vec!["aud", "exp", "iss", "sub"]).unwrap();
+        assert_eq!(tb.get_claim_by("exp").unwrap(), "9999999999");
+        assert!(tb.get_claim_by("nonexistent").is_err());
+    }
+
+    #[test]
+    fn test_token_builder_parse_secret() {
+        let payload = r#"{"aud":"app1","exp":1700000000,"iss":"issuer1","nonce":"abc","sub":"user1"}"#;
+        let jwt = make_jwt(r#"{"alg":"RS256"}"#, payload);
+
+        let tb = TokenBuilder::new(&jwt, vec!["aud", "exp", "iss", "nonce", "sub"]).unwrap();
+        let secret = tb.parse_secret().unwrap();
+        assert_eq!(secret.aud, "\"app1\"");
+        assert_eq!(secret.iss, "\"issuer1\"");
+        assert_eq!(secret.sub, "\"user1\"");
+    }
+
+    #[test]
+    fn test_token_builder_parse_secret_missing_sub() {
+        let payload = r#"{"aud":"app1","exp":1700000000,"iss":"issuer1"}"#;
+        let jwt = make_jwt(r#"{"alg":"RS256"}"#, payload);
+
+        let tb = TokenBuilder::new(&jwt, vec!["aud", "exp", "iss"]).unwrap();
+        let result = tb.parse_secret();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_sha256_pad_alignment() {
+        let input = b"hello";
+        let padded = sha256_pad(input);
+        assert_eq!(padded.len() % 64, 0);
+        assert_eq!(padded[input.len()], 0x80);
+    }
+
+    #[test]
+    fn test_sha256_pad_block_boundary() {
+        // 55 bytes + 1 (0x80) + 8 (length) = 64 → exactly 1 block
+        let input = vec![b'A'; 55];
+        let padded = sha256_pad(&input);
+        assert_eq!(padded.len(), 64);
+    }
+}

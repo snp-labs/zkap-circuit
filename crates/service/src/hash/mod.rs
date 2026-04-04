@@ -102,3 +102,136 @@ pub fn generate_leaf_hash(
 
     Ok(leaf)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use circuit::constants::RawCircuitConfig;
+
+    fn test_config() -> CircuitConfig {
+        let raw = RawCircuitConfig {
+            max_jwt_b64_len: 1024,
+            max_payload_b64_len: 640,
+            max_aud_len: 155,
+            max_exp_len: 20,
+            max_iss_len: 93,
+            max_nonce_len: 93,
+            max_sub_len: 93,
+            n: 6,
+            k: 3,
+            tree_height: 4,
+            num_audience_limit: 5,
+            claims: vec!["aud".into(), "exp".into(), "iss".into(), "nonce".into(), "sub".into()],
+            forbidden_string: "forbidden".into(),
+        };
+        raw.into()
+    }
+
+    #[test]
+    fn test_generate_hash_single_element() {
+        let result = generate_hash(vec!["1".to_string()]);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_generate_hash_multiple_elements() {
+        let result = generate_hash(vec!["1".to_string(), "2".to_string(), "3".to_string()]);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_generate_hash_deterministic() {
+        let r1 = generate_hash(vec!["42".to_string()]).unwrap();
+        let r2 = generate_hash(vec!["42".to_string()]).unwrap();
+        assert_eq!(r1, r2);
+    }
+
+    #[test]
+    fn test_generate_hash_different_inputs_different_outputs() {
+        let r1 = generate_hash(vec!["1".to_string()]).unwrap();
+        let r2 = generate_hash(vec!["2".to_string()]).unwrap();
+        assert_ne!(r1, r2);
+    }
+
+    #[test]
+    fn test_generate_hash_invalid_input() {
+        let result = generate_hash(vec!["not_a_number".to_string()]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_generate_aud_hash_within_limit() {
+        let params = test_config();
+        let aud_list = vec!["aud1".to_string(), "aud2".to_string()];
+        let result = generate_aud_hash(&params, aud_list);
+        assert!(result.is_ok());
+        let (fields, h) = result.unwrap();
+        // Should be padded to num_audience_limit (5)
+        assert_eq!(fields.len(), 5);
+        assert_ne!(h, F::from(0u64));
+    }
+
+    #[test]
+    fn test_generate_aud_hash_exact_limit() {
+        let params = test_config();
+        let aud_list: Vec<String> = (0..5).map(|i| format!("aud{}", i)).collect();
+        let result = generate_aud_hash(&params, aud_list);
+        assert!(result.is_ok());
+        let (fields, _) = result.unwrap();
+        assert_eq!(fields.len(), 5);
+    }
+
+    #[test]
+    fn test_generate_aud_hash_exceeds_limit() {
+        let params = test_config();
+        let aud_list: Vec<String> = (0..6).map(|i| format!("aud{}", i)).collect();
+        let result = generate_aud_hash(&params, aud_list);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("exceeds the limit"));
+    }
+
+    #[test]
+    fn test_generate_aud_hash_deterministic() {
+        let params = test_config();
+        let aud = vec!["test".to_string()];
+        let (_, h1) = generate_aud_hash(&params, aud.clone()).unwrap();
+        let (_, h2) = generate_aud_hash(&params, aud).unwrap();
+        assert_eq!(h1, h2);
+    }
+
+    #[test]
+    fn test_generate_leaf_hash_valid() {
+        let params = test_config();
+        // Use a minimal valid base64-encoded RSA public key modulus
+        // This is a small test value, not a real RSA key
+        let pk_b64 = "AQAB"; // base64 of [1, 0, 1] (65537 in big-endian... actually just a small value)
+        let result = generate_leaf_hash(&params, "https://accounts.google.com", pk_b64);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_generate_leaf_hash_deterministic() {
+        let params = test_config();
+        let pk_b64 = "AQAB";
+        let h1 = generate_leaf_hash(&params, "issuer1", pk_b64).unwrap();
+        let h2 = generate_leaf_hash(&params, "issuer1", pk_b64).unwrap();
+        assert_eq!(h1, h2);
+    }
+
+    #[test]
+    fn test_generate_leaf_hash_different_issuers() {
+        let params = test_config();
+        let pk_b64 = "AQAB";
+        let h1 = generate_leaf_hash(&params, "issuer1", pk_b64).unwrap();
+        let h2 = generate_leaf_hash(&params, "issuer2", pk_b64).unwrap();
+        assert_ne!(h1, h2);
+    }
+
+    #[test]
+    fn test_generate_leaf_hash_invalid_pk() {
+        let params = test_config();
+        let result = generate_leaf_hash(&params, "issuer", "!!!invalid-base64!!!");
+        assert!(result.is_err());
+    }
+}

@@ -9,9 +9,9 @@ use std::{
 };
 
 fn main() {
-    if !cfg!(feature = "baerae") {
+    if !cfg!(feature = "zkap-circuit") {
         eprintln!(
-            "This binary must be run with `--features baerae` because it depends on the baerae circuit."
+            "This binary must be run with `--features zkap-circuit` because it depends on the zkap circuit."
         );
 
         std::process::exit(1);
@@ -27,7 +27,7 @@ fn main() {
 
     let args: Vec<_> = args().collect();
     if args.len() < 2 {
-        eprintln!("Usage: cargo run --features baerae --bin generate_baerae_crs <file_path>");
+        eprintln!("Usage: cargo run --features zkap-circuit --bin generate_crs <file_path>");
         std::process::exit(1);
     }
 
@@ -47,7 +47,7 @@ fn generate_crs_files(file_path: &str, mut rng: rand::rngs::StdRng) {
         Groth16, PreparedVerifyingKey, ProvingKey, VerifyingKey, prepare_verifying_key,
     };
 
-    println!("Generate Baerae CRS files at path: {}", file_path);
+    println!("Generate CRS files at path: {}", file_path);
 
     println!("==================================================");
     println!("  Configuring Circuit with the following parameters:");
@@ -76,7 +76,7 @@ fn generate_crs_files(file_path: &str, mut rng: rand::rngs::StdRng) {
     println!("==================================================");
 
     let circuit =
-        circuit::baerae::BaeraeLightWeightCircuit::<CG, BNP, ZkapConfig>::generate_mock_circuit();
+        circuit::zkap::ZkapCircuit::<CG, BNP, ZkapConfig>::generate_mock_circuit();
 
     let (pk, vk) = Groth16::<Bn254>::setup(circuit, &mut rng).unwrap();
     let pvk = prepare_verifying_key(&vk);

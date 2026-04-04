@@ -120,7 +120,7 @@ pub struct MiscWitness<F: PrimeField> {
 
 /// Struct bundling all circuit inputs
 #[derive(Clone)]
-pub struct BaeraeCircuitInput<F: PrimeField + Absorb> {
+pub struct ZkapCircuitInput<F: PrimeField + Absorb> {
     /// Circuit constants
     pub constants: CircuitConstants<F>,
     /// Public inputs
@@ -137,7 +137,7 @@ pub struct BaeraeCircuitInput<F: PrimeField + Absorb> {
     pub misc: MiscWitness<F>,
 }
 
-impl<F: PrimeField + Absorb> BaeraeCircuitInput<F> {
+impl<F: PrimeField + Absorb> ZkapCircuitInput<F> {
     /// Extract only the public inputs
     pub fn extract_public_inputs(&self) -> Vec<F> {
         self.public_inputs.to_vec()

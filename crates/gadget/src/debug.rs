@@ -203,7 +203,7 @@ macro_rules! enforce_eq_internal {
 }
 
 /// External enforce for Boolean == TRUE with debug logging.
-/// Use in circuit code (e.g., baerae/mod.rs) for top-level checks.
+/// Use in circuit code (e.g., zkap.rs) for top-level checks.
 #[macro_export]
 macro_rules! enforce_true_debug {
     ($label:expr, $result:expr) => {{
@@ -225,7 +225,7 @@ macro_rules! enforce_true_debug {
 }
 
 /// External enforce for value equality with debug logging.
-/// Use in circuit code (e.g., baerae/mod.rs) for top-level checks.
+/// Use in circuit code (e.g., zkap.rs) for top-level checks.
 #[macro_export]
 macro_rules! enforce_eq_debug {
     ($label:expr, $lhs:expr, $rhs:expr) => {{

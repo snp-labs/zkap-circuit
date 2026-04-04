@@ -1,5 +1,5 @@
-//! Groth16 integration tests for BaeraeLightWeightCircuit
-//! Run: cargo test -p circuit --test groth16_integration --features baerae
+//! Groth16 integration tests for ZkapCircuit
+//! Run: cargo test -p circuit --test groth16_integration --features zkap-circuit
 
 use ark_bn254::Bn254;
 use ark_crypto_primitives::{
@@ -23,7 +23,8 @@ use regex::Regex;
 use ark_utils::try_str_to_fields;
 use ark_utils::pad;
 use circuit::{
-    baerae::{BaeraeLightWeightCircuit, input::*},
+    zkap::ZkapCircuit,
+    input::*,
     constants::{BNP, CG, ZkapConfig, ZkPasskeyConfig},
     token::ClaimIndices,
 };
@@ -74,7 +75,7 @@ fn parse_claim_from_str(s: &str, key: &str) -> circuit::token::Claim {
 }
 
 type F = <CG as CurveGroup>::BaseField;
-type TestCircuit = BaeraeLightWeightCircuit<CG, BNP, ZkapConfig>;
+type TestCircuit = ZkapCircuit<CG, BNP, ZkapConfig>;
 
 // ============================================================
 // Test Secrets
@@ -448,7 +449,7 @@ fn rsa_pk_n_limbs(rsa_priv_key: &rsa::RsaPrivateKey) -> Vec<F> {
 }
 
 /// Main orchestrator: build K complete valid circuit inputs (one per secret/JWT)
-fn build_valid_circuit_inputs() -> Vec<BaeraeCircuitInput<F>> {
+fn build_valid_circuit_inputs() -> Vec<ZkapCircuitInput<F>> {
     let params = get_poseidon_params::<F>();
     let random = F::from(12345u64);
     let h_sign_user_op = F::from(67890u64);
@@ -544,7 +545,7 @@ fn build_valid_circuit_inputs() -> Vec<BaeraeCircuitInput<F>> {
 
             let jwt_exp = F::from(s.exp);
 
-            BaeraeCircuitInput {
+            ZkapCircuitInput {
                 constants: CircuitConstants {
                     vandermonde_matrix: VandermondeMatrix::new(ZkapConfig::N, ZkapConfig::K),
                     poseidon_param: params.clone(),

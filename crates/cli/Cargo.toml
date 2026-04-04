@@ -25,12 +25,12 @@ hex = { workspace = true }
 
 [features]
 default = []
-baerae = ["circuit/baerae"]
+zkap-circuit = ["circuit/zkap-circuit"]
 num-cs-logging = ["circuit/num-cs-logging"]
 
 [[bin]]
-name = "generate_baerae_crs"
-path = "src/bin/generate_baerae_crs.rs"
+name = "generate_crs"
+path = "src/bin/generate_crs.rs"
 
 [[bin]]
 name = "generate_hash"

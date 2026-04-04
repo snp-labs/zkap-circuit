@@ -1,7 +1,7 @@
 #![allow(unused_variables)]
 #![allow(unused_mut)]
 
-pub mod input;
+
 
 use ark_crypto_primitives::{
     crh::{
@@ -27,6 +27,7 @@ use std::marker::PhantomData;
 
 use crate::{
     ExposesPublicInputs,
+    input,
     token::{
         ClaimIndices,
         claimverifier::claim_extractor_v2,
@@ -70,7 +71,7 @@ use gadget::{
     },
 };
 
-/// ZK-Passkey circuit (Baerae Lightweight)
+/// ZK-Passkey circuit
 ///
 /// Fields organized by logical group:
 /// - `constants`: circuit constants (Vandermonde, Poseidon, Base64)
@@ -81,7 +82,7 @@ use gadget::{
 /// - `audience`: Audience list witness
 /// - `misc`: miscellaneous witness (random)
 #[derive(Clone, CanonicalSerialize, CanonicalDeserialize)]
-pub struct BaeraeLightWeightCircuit<C, BNP, Config>
+pub struct ZkapCircuit<C, BNP, Config>
 where
     C: CurveGroup,
     C::BaseField: PrimeField + Absorb,
@@ -107,7 +108,7 @@ where
 }
 
 impl<C, BNP, Config> ConstraintSynthesizer<C::BaseField>
-    for BaeraeLightWeightCircuit<C, BNP, Config>
+    for ZkapCircuit<C, BNP, Config>
 where
     C: CurveGroup,
     C::BaseField: PrimeField + Absorb,
@@ -504,7 +505,7 @@ where
     }
 }
 
-impl<C, BNP, Config> BaeraeLightWeightCircuit<C, BNP, Config>
+impl<C, BNP, Config> ZkapCircuit<C, BNP, Config>
 where
     C: CurveGroup,
     C::BaseField: PrimeField + Absorb,
@@ -561,7 +562,7 @@ where
     }
 
     /// Create circuit from structured input (recommended)
-    pub fn from_input(input: input::BaeraeCircuitInput<C::BaseField>) -> Self {
+    pub fn from_input(input: input::ZkapCircuitInput<C::BaseField>) -> Self {
         Self {
             constants: input.constants,
             public_inputs: input.public_inputs,
@@ -575,7 +576,7 @@ where
     }
 }
 
-impl<C, BNP, Config> ExposesPublicInputs<C::BaseField> for BaeraeLightWeightCircuit<C, BNP, Config>
+impl<C, BNP, Config> ExposesPublicInputs<C::BaseField> for ZkapCircuit<C, BNP, Config>
 where
     C: CurveGroup,
     C::BaseField: PrimeField + Absorb,

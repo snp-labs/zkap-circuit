@@ -1,6 +1,6 @@
 //! Anchor generation DTOs
 
-pub use crate::app::anchor::types::Secret;
+pub use crate::anchor::types::Secret;
 
 /// Anchor generation request (platform-agnostic core type)
 #[derive(Debug, Clone)]

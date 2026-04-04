@@ -1,4 +1,4 @@
-//! ZKAP proof generation service (refactored version)
+//! ZKAP proof generation service
 //!
 //! ## Architecture
 //!
@@ -34,26 +34,50 @@
 //!                                          └──────────────────────┘
 //! ```
 
-use ark_groth16::Proof;
-use circuit::constants::{BN254, F, CircuitConfig};
-use log;
+pub mod context;
+pub mod generator;
+pub mod request;
+pub mod types;
+
+pub use request::RawProofRequest;
+
+#[allow(unused_imports)]
+use ark_crypto_primitives::snark::SNARK;
+use ark_crypto_primitives::snark::CircuitSpecificSetupSNARK;
+use ark_groth16::{Groth16, PreparedVerifyingKey, Proof, ProvingKey, VerifyingKey, prepare_verifying_key};
+use circuit::constants::{BN254, BNP, CG, F, CircuitConfig};
+use circuit::zkap::ZkapCircuit;
+use rand::rngs::OsRng;
 
 use crate::error::ApplicationError;
 
-use super::context::ProofContextBuilder;
-use super::input::{ProofRequest, RawProofRequest};
-use super::proof::ProofGenerator;
+use self::context::ProofContextBuilder;
+use self::generator::ProofGenerator;
+use self::request::ProofRequest;
 
-/// 1. RawProofRequest → ProofRequest (validation and parsing)
-/// 2. ProofRequest → CircuitInput[] (context building)
-/// 3. CircuitInput[] → Proof[] (proof generation)
-///
-/// # Arguments
-/// * `params` - circuit configuration parameters
-/// * `raw` - raw proof request data
-///
-/// # Returns
-/// * tuple of proofs and public inputs
+/// Setup output containing proving key, verifying key, and prepared verifying key
+pub struct SetupOutput {
+    pub pk: ProvingKey<BN254>,
+    pub vk: VerifyingKey<BN254>,
+    pub pvk: PreparedVerifyingKey<BN254>,
+}
+
+/// Groth16 trusted setup
+pub fn groth16_setup(params: &CircuitConfig) -> Result<SetupOutput, ApplicationError> {
+    let mut rng = OsRng;
+    let circuit = ZkapCircuit::<CG, BNP>::generate_mock_circuit(params);
+
+    let (pk, vk) = Groth16::<BN254>::setup(circuit, &mut rng)
+        .map_err(|e| ApplicationError::InvalidFormat(format!("Groth16 setup failed: {}", e)))?;
+
+    let pvk = prepare_verifying_key(&vk);
+
+    Ok(SetupOutput { pk, vk, pvk })
+}
+
+/// 1. RawProofRequest -> ProofRequest (validation and parsing)
+/// 2. ProofRequest -> CircuitInput[] (context building)
+/// 3. CircuitInput[] -> Proof[] (proof generation)
 #[allow(clippy::type_complexity)]
 pub fn prove(
     params: &CircuitConfig,
@@ -91,4 +115,14 @@ pub fn prove(
     );
 
     Ok((output.proofs, output.public_inputs))
+}
+
+/// Verify a Groth16 proof
+pub fn verify(
+    pvk: &PreparedVerifyingKey<BN254>,
+    proof: &Proof<BN254>,
+    public_inputs: &[F],
+) -> Result<bool, ApplicationError> {
+    Groth16::<BN254>::verify_proof(pvk, proof, public_inputs)
+        .map_err(|e| ApplicationError::InvalidFormat(format!("Proof verification failed: {}", e)))
 }

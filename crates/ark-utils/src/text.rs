@@ -1,4 +1,8 @@
-use crate::error::TextError;
+#[derive(Debug, thiserror::Error)]
+pub enum TextError {
+    #[error("Invalid format: {0}")]
+    InvalidFormat(String),
+}
 
 pub fn pad(s: &str, target_len: usize, pad_char: char) -> Result<String, TextError> {
     if s.len() > target_len {

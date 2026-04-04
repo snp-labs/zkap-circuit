@@ -1,36 +1,14 @@
-use thiserror::Error;
+//! Error re-exports for backward compatibility.
+//!
+//! Error types are defined in their respective modules:
+//! - `FieldParseError` → `field_serde`
+//! - `IoError` → `io`
+//! - `TextError` → `text`
+//! - `ConvertError` → `convert`
 
-/// Error type for the circuit module
-#[derive(Error, Debug, PartialEq, Eq)]
-pub enum UtilError {
-    #[error("failed to convert")]
-    ConversionError,
-}
-
-#[derive(Debug, Error)]
-pub enum FieldParseError {
-    #[error("Invalid decimal string for field element")]
-    InvalidDecimal,
-    #[error("Invalid hex string for field element")]
-    InvalidHex,
-    #[error("Invalid length for ASCII to field conversion: expected multiple of {0}, got {1}")]
-    InvalidLength(usize, usize),
-    #[error("point is not on curve")]
-    NotOnCurve,
-    #[error("point is not in correct subgroup")]
-    NotInCorrectSubgroup,
-}
-
-#[derive(Debug, Error)]
-pub enum IoError {
-    #[error("Failed to load key file")]
-    LoadKeyFailed,
-    #[error("Failed to deserialize key file")]
-    DeserializeFailed,
-}
-
-#[derive(Debug, Error)]
-pub enum TextError {
-    #[error("Invalid format: {0}")]
-    InvalidFormat(String),
-}
+#[cfg(feature = "field-serde")]
+pub use crate::field_serde::FieldParseError;
+#[cfg(feature = "io")]
+pub use crate::io::IoError;
+pub use crate::text::TextError;
+pub use crate::convert::ConvertError;

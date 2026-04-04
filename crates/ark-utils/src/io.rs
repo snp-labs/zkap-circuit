@@ -1,6 +1,13 @@
 use std::{fs::File, io::BufReader, path::PathBuf};
 use ark_serialize::CanonicalDeserialize;
-use crate::error::IoError;
+
+#[derive(Debug, thiserror::Error)]
+pub enum IoError {
+    #[error("Failed to load key file")]
+    LoadKeyFailed,
+    #[error("Failed to deserialize key file")]
+    DeserializeFailed,
+}
 
 pub fn load_key_uncompressed<T: CanonicalDeserialize + Send + Sync + 'static>(
     path: &PathBuf,

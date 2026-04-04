@@ -7,7 +7,19 @@ use ark_ec::{
 };
 use ark_ff::PrimeField;
 
-use crate::error::FieldParseError;
+#[derive(Debug, thiserror::Error)]
+pub enum FieldParseError {
+    #[error("Invalid decimal string for field element")]
+    InvalidDecimal,
+    #[error("Invalid hex string for field element")]
+    InvalidHex,
+    #[error("Invalid length for ASCII to field conversion: expected multiple of {0}, got {1}")]
+    InvalidLength(usize, usize),
+    #[error("point is not on curve")]
+    NotOnCurve,
+    #[error("point is not in correct subgroup")]
+    NotInCorrectSubgroup,
+}
 
 /// Converts (x, y) coordinates of an Affine point to hex strings (["0x..", "0x.."]).
 /// - Returns "0x0" for the point at infinity.

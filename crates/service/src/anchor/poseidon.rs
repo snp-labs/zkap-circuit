@@ -19,7 +19,6 @@ use gadget::{
             build_anchor_witness,
         },
     },
-    hashes::poseidon::get_poseidon_params,
     matrix::VandermondeMatrix,
 };
 
@@ -30,7 +29,7 @@ pub fn generate_anchor(
     let ctx = AnchorConfig::from_params(params);
 
     let anchor_key = PoseidonAnchorPublicKey {
-        params: get_poseidon_params::<F>(),
+        params: crate::poseidon_params().clone(),
     };
 
     let x_list: Vec<F> = secrets
@@ -146,6 +145,7 @@ fn combinations(n: usize, k: usize) -> Vec<Vec<usize>> {
 mod tests {
     use super::*;
     use gadget::anchor::poseidon::PoseidonAnchorScheme;
+    use gadget::hashes::poseidon::get_poseidon_params;
     use crate::Secret;
 
     type F = ark_bn254::Fr;

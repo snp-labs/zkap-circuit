@@ -3,7 +3,6 @@ use ark_utils::hex_decimal_to_field;
 use circuit::constants::{F, PoseidonHash, CircuitConfig, PAD_CHAR};
 use gadget::{
     base64::decode_any_base64,
-    hashes::poseidon::get_poseidon_params,
     signature::rsa::PublicKey,
     utils::str_to_limbs,
 };
@@ -11,7 +10,7 @@ use gadget::{
 use crate::error::ApplicationError;
 
 pub fn generate_hash(messages: Vec<String>) -> Result<F, ApplicationError> {
-    let poseidon_params = get_poseidon_params::<F>();
+    let poseidon_params = crate::poseidon_params();
 
     let field = messages
         .iter()
@@ -34,10 +33,9 @@ pub fn generate_aud_hash(
     params: &CircuitConfig,
     aud_list: Vec<String>,
 ) -> Result<(Vec<F>, F), ApplicationError> {
-    let poseidon_params = get_poseidon_params::<F>();
+    let poseidon_params = crate::poseidon_params();
 
-    let forbidden_str = std::str::from_utf8(&params.forbidden_string)
-        .map_err(|e| ApplicationError::InvalidFormat(format!("Invalid forbidden_string: {}", e)))?;
+    let forbidden_str = crate::forbidden_str(params)?;
 
     let mut aud_vec = aud_list;
     let num_audience_limit = params.num_audience_limit as usize;
@@ -77,7 +75,7 @@ pub fn generate_leaf_hash(
     use circuit::constants::BNP;
     use circuit::constants::CG;
 
-    let poseidon_params = get_poseidon_params::<F>();
+    let poseidon_params = crate::poseidon_params();
 
     let iss_limbs = str_to_limbs(iss, params.max_iss_len as usize, PAD_CHAR as u8);
 

@@ -4,7 +4,6 @@ use crate::anchor::AnchorConfig;
 use gadget::{
     anchor::poseidon::PoseidonAnchorPublicKey,
     base64::{Base64Table, get_base64_table},
-    hashes::poseidon::get_poseidon_params,
     matrix::VandermondeMatrix,
 };
 
@@ -20,13 +19,13 @@ pub(crate) struct CircuitContext {
 impl CircuitContext {
     pub fn new(params: &CircuitConfig) -> Self {
         let poseidon_anchor_key = PoseidonAnchorPublicKey {
-            params: get_poseidon_params::<F>(),
+            params: crate::poseidon_params().clone(),
         };
 
         Self {
             poseidon_anchor_key,
             anchor_cfg: AnchorConfig::from_params(params),
-            poseidon_params: get_poseidon_params::<F>(),
+            poseidon_params: crate::poseidon_params().clone(),
             vandermonde_matrix: VandermondeMatrix::<F>::new(params.n as usize, params.k as usize),
             base64_table: get_base64_table(),
         }

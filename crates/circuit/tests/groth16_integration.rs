@@ -172,7 +172,7 @@ fn build_jwt_witness(jwt: &str, rsa_priv_key: &rsa::RsaPrivateKey) -> JwtWitness
     let claim_indices: Vec<ClaimIndices> = ZkapConfig::CLAIMS
         .iter()
         .map(|key| {
-            let claim = parse_claim_from_str(&payload_str, key).unwrap();
+            let claim = parse_claim_from_str(&payload_str, key);
             claim.indices
         })
         .collect();
@@ -218,7 +218,7 @@ fn pack_bytes_to_field_native(bytes: &[u8]) -> Vec<F> {
 /// Get the claim value bytes as the circuit would see them (with quotes for strings,
 /// zero-padded to max_len)
 fn claim_value_bytes(payload_str: &str, key: &str, max_len: usize) -> Vec<u8> {
-    let claim = parse_claim_from_str(payload_str, key).unwrap();
+    let claim = parse_claim_from_str(payload_str, key);
     let value_str = &claim.value;
     let mut bytes = value_str.as_bytes().to_vec();
     bytes.resize(max_len, 0x00);

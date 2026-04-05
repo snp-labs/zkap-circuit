@@ -9,8 +9,12 @@ pub mod anchor;
 pub mod dto;
 pub mod error;
 pub mod hash;
+
+#[cfg(feature = "proof")]
 pub mod jwt;
+#[cfg(feature = "proof")]
 pub mod manifest;
+#[cfg(feature = "proof")]
 pub mod proof;
 
 use std::sync::OnceLock;
@@ -33,12 +37,14 @@ pub use circuit::constants;
 pub use ark_utils::evm;
 pub use ark_utils::io;
 
-// Public API (7 functions)
-pub use proof::{groth16_setup, prove, verify};
+// Public API (always available)
 pub use anchor::poseidon::generate_anchor;
 pub use hash::{generate_hash, generate_aud_hash, generate_leaf_hash};
-
-// Public types
 pub use anchor::types::Secret;
-pub use proof::RawProofRequest;
 pub use circuit::constants::{CircuitConfig, PAD_CHAR};
+
+// Public API (proof feature only)
+#[cfg(feature = "proof")]
+pub use proof::{groth16_setup, prove, verify};
+#[cfg(feature = "proof")]
+pub use proof::RawProofRequest;

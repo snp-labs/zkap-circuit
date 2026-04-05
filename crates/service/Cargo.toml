@@ -9,6 +9,7 @@ keywords = ["zk", "proof-generation", "groth16"]
 categories = ["cryptography"]
 
 [dependencies]
+# --- Always required (lightweight, WASM-compatible) ---
 gadget = { workspace = true, default-features = false, features = ["crypto", "base64", "rsa"] }
 circuit = { workspace = true }
 ark-utils = { workspace = true, features = ["field-serde", "io", "evm-codegen"] }
@@ -18,32 +19,32 @@ thiserror = { workspace = true }
 serde      = { workspace = true }
 serde_json = { workspace = true }
 
-ark-groth16           = { workspace = true }
 ark-ec                = { workspace = true }
 ark-ff                = { workspace = true }
-ark-poly              = { workspace = true }
-ark-r1cs-std          = { workspace = true }
-ark-relations         = { workspace = true }
 ark-std               = { workspace = true }
 ark-crypto-primitives = { workspace = true }
 ark-bn254             = { workspace = true }
 ark-ed-on-bn254       = { workspace = true }
-ark-serialize         = { workspace = true }
-memmap2               = { workspace = true }
 once_cell             = { workspace = true }
 
 num         = { workspace = true }
 num-integer = { workspace = true }
 num-bigint  = { workspace = true }
-
 num-traits  = { workspace = true }
 log = { workspace = true }
+hex = { workspace = true }
 
-blake2 = { workspace = true }
-hex    = { workspace = true }
-rand   = { workspace = true }
-sha2   = { workspace = true }
-jsonwebtoken = { workspace = true }
+# --- Proof-only dependencies (optional, heavy) ---
+ark-groth16           = { workspace = true, optional = true }
+ark-poly              = { workspace = true, optional = true }
+ark-r1cs-std          = { workspace = true, optional = true }
+ark-relations         = { workspace = true, optional = true }
+ark-serialize         = { workspace = true, optional = true }
+memmap2               = { workspace = true, optional = true }
+jsonwebtoken          = { workspace = true, optional = true }
+blake2                = { workspace = true, optional = true }
+sha2                  = { workspace = true, optional = true }
+rand                  = { workspace = true, optional = true }
 
 [dev-dependencies]
 signature = "2"
@@ -53,7 +54,19 @@ base64 = { workspace = true }
 hex = { workspace = true }
 
 [features]
-default = []
+default = ["proof"]
+proof = [
+    "dep:ark-groth16",
+    "dep:ark-poly",
+    "dep:ark-r1cs-std",
+    "dep:ark-relations",
+    "dep:ark-serialize",
+    "dep:memmap2",
+    "dep:jsonwebtoken",
+    "dep:blake2",
+    "dep:sha2",
+    "dep:rand",
+]
 
 [[example]]
 name = "groth16_proof"

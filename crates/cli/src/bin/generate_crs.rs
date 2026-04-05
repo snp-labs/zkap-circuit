@@ -162,10 +162,8 @@ fn to_file<T: CanonicalSerialize>(value: &T, file_path: &str) -> Result<(), Stri
     let mut cursor = Cursor::new(Vec::new());
 
     let dir_path = std::path::Path::new(file_path).parent().unwrap();
-    if !dir_path.exists() {
-        if let Err(err) = std::fs::create_dir_all(dir_path) {
-            return Err(format!("Failed to create folder: {}", err));
-        }
+    if !dir_path.exists() && let Err(err) = std::fs::create_dir_all(dir_path) {
+        return Err(format!("Failed to create folder: {}", err));
     }
 
     if let Err(e) = value.serialize_uncompressed(&mut cursor) {

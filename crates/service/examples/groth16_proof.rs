@@ -1,16 +1,13 @@
 //! Full Groth16 proof lifecycle example for the ZKAP protocol.
 //!
-//! Demonstrates the complete 7-step pipeline:
-//!   1. Circuit configuration
-//!   2. Groth16 trusted setup (CRS generation)
-//!   3. RSA key generation + JWT construction
-//!   4. Merkle tree construction (issuer registry)
-//!   5. Anchor generation (threshold membership)
-//!   6. Zero-knowledge proof generation
-//!   7. Proof verification
-//!
-//! This example uses the zkap-service API for setup, anchor, and hash generation,
-//! and constructs circuit inputs directly to show the full data flow.
+//! Demonstrates all 7 public API functions of `zkap-service`:
+//!   - `groth16_setup`    — Step 2: Trusted setup (CRS generation)
+//!   - `generate_hash`    — Step 3: General-purpose Poseidon hash (nonce computation)
+//!   - `generate_leaf_hash` — Step 4: Merkle leaf hash
+//!   - `generate_anchor`  — Step 5: Threshold anchor generation
+//!   - `generate_aud_hash` — Step 6: Audience hash
+//!   - `prove`            — Step 6: Zero-knowledge proof generation
+//!   - `verify`           — Step 7: Proof verification
 //!
 //! Run with:
 //!   cargo run -p zkap-service --example groth16_proof --release
@@ -20,9 +17,8 @@
 
 use ark_crypto_primitives::crh::CRHScheme;
 use ark_crypto_primitives::merkle_tree::MerkleTree;
-use ark_crypto_primitives::snark::{CircuitSpecificSetupSNARK, SNARK};
 use ark_ff::{BigInteger, PrimeField, Zero};
-use ark_groth16::Groth16;
+use ark_serialize::CanonicalSerialize;
 use ark_std::rand::SeedableRng;
 use base64::Engine;
 use rsa::pkcs1v15::SigningKey;
@@ -31,24 +27,14 @@ use sha2::Sha256;
 use signature::{SignatureEncoding, Signer};
 
 use zkap_service::{
-    CircuitConfig, PAD_CHAR, Secret,
-    generate_anchor, generate_aud_hash, generate_leaf_hash,
-    verify,
+    CircuitConfig, RawProofRequest, Secret,
+    generate_anchor, generate_aud_hash, generate_hash, generate_leaf_hash,
+    groth16_setup, prove, verify,
 };
-use zkap_service::constants::{BN254, BNP, CG, F, PoseidonHash, RawCircuitConfig};
+use zkap_service::constants::{F, PoseidonHash, RawCircuitConfig};
 
-use circuit::input::*;
-use circuit::token::ClaimIndices;
-use circuit::zkap::ZkapCircuit;
-use gadget::anchor::poseidon::{PoseidonAnchorPublicKey, build_anchor_witness};
-use gadget::base64::{get_base64_table, IndexBits};
 use gadget::hashes::poseidon::get_poseidon_params;
-use gadget::matrix::VandermondeMatrix;
 use gadget::merkletree::tree_config::MerkleTreeParams;
-use gadget::signature::rsa::{PublicKey as RsaCircuitPubKey, Signature as RsaCircuitSig};
-
-use ark_utils::{try_str_to_fields, pad};
-use regex::Regex;
 
 // ============================================================
 // Constants
@@ -70,21 +56,51 @@ fn main() {
     println!("[Step 1] Creating circuit configuration (N={}, K={})...", N, K);
 
     let config = build_config();
-    let poseidon_params = get_poseidon_params::<F>();
     println!("  Circuit params: JWT max={}B, payload max={}B, tree_height={}",
         config.max_jwt_b64_len, config.max_payload_b64_len, config.tree_height);
 
-    // Step 2 (Groth16 trusted setup) is deferred to Step 6 where we use a real
-    // circuit input for setup. This ensures the proving key matches the constraint structure.
+    // ============================================================
+    // Step 2: Groth16 Trusted Setup (CRS Generation)
+    //   API: groth16_setup()
+    // ============================================================
+    println!("\n[Step 2] Running Groth16 trusted setup (CRS generation)...");
+
+    let setup_output = groth16_setup(&config).expect("Groth16 setup failed");
+    println!("  Setup complete: VK has {} public input elements",
+        setup_output.vk.gamma_abc_g1.len());
+
+    // Serialize proving key to temp directory (prove() loads pk from disk)
+    let pk_dir = std::env::temp_dir().join("zkap-example");
+    std::fs::create_dir_all(&pk_dir).expect("Failed to create temp dir");
+    let pk_path = pk_dir.join("pk.key");
+
+    let mut pk_file = std::fs::File::create(&pk_path).expect("Failed to create pk file");
+    setup_output.pk.serialize_uncompressed(&mut pk_file).expect("Failed to serialize pk");
+    drop(pk_file);
+
+    // Write manifest.json (required by prove() for parameter validation)
+    let manifest_path = pk_dir.join("manifest.json");
+    let manifest = format!(
+        r#"{{"profile":"example","params":{{"MAX_JWT_B64_LEN":{},"MAX_PAYLOAD_B64_LEN":{},"MAX_AUD_LEN":{},"MAX_EXP_LEN":{},"MAX_ISS_LEN":{},"MAX_NONCE_LEN":{},"MAX_SUB_LEN":{},"N":{},"K":{},"TREE_HEIGHT":{},"NUM_AUDIENCE_LIMIT":{}}}}}"#,
+        config.max_jwt_b64_len, config.max_payload_b64_len, config.max_aud_len,
+        config.max_exp_len, config.max_iss_len, config.max_nonce_len, config.max_sub_len,
+        config.n, config.k, config.tree_height, config.num_audience_limit,
+    );
+    std::fs::write(&manifest_path, &manifest).expect("Failed to write manifest.json");
+    println!("  PK serialized to {}", pk_path.display());
 
     // ============================================================
     // Step 3: RSA Key Generation + JWT Construction
+    //   API: generate_hash() — for nonce computation
     // ============================================================
     println!("\n[Step 3] Generating {} RSA-2048 keys and signing JWTs...", K);
 
     let random = F::from(12345u64);
     let h_sign_user_op = F::from(67890u64);
-    let nonce = PoseidonHash::evaluate(&poseidon_params, [h_sign_user_op, random]).unwrap();
+    let nonce = generate_hash(vec![
+        field_to_decimal(&h_sign_user_op),
+        field_to_decimal(&random),
+    ]).expect("Nonce hash failed");
     let nonce_hex = format!("0x{}", hex::encode(nonce.into_bigint().to_bytes_be()));
 
     let mut jwts = Vec::new();
@@ -102,24 +118,29 @@ fn main() {
     }
 
     // ============================================================
-    // Step 4: Merkle Tree Construction (using service API for leaf hashes)
+    // Step 4: Merkle Tree Construction
+    //   API: generate_leaf_hash() — for computing leaf hashes
     // ============================================================
     println!("\n[Step 4] Building issuer Merkle tree (height={})...", TREE_HEIGHT);
 
+    let poseidon_params = get_poseidon_params::<F>();
     let num_leaves = 1usize << TREE_HEIGHT;
-    let engine = base64::engine::general_purpose::STANDARD;
+    let b64_engine = base64::engine::general_purpose::STANDARD;
 
-    // Use generate_leaf_hash() service API for each leaf
     // IMPORTANT: The circuit extracts ISS from JWT claims WITH JSON quotes,
     // so we must pass the quoted form to generate_leaf_hash for consistency.
     let quoted_iss = format!("\"{}\"", ISS);
     let mut leaf_digests = vec![F::zero(); num_leaves];
+    let mut pk_ops = Vec::new();
+
     for i in 0..K {
         let n_bytes = rsa_keys[i].to_public_key().n().to_bytes_be();
-        let pk_b64 = engine.encode(&n_bytes);
+        let pk_b64 = b64_engine.encode(&n_bytes);
         let leaf = generate_leaf_hash(&config, &quoted_iss, &pk_b64).expect("Leaf hash failed");
+        // Merkle tree needs the inner-hash of the leaf (Poseidon(leaf))
         let leaf_digest = PoseidonHash::evaluate(&poseidon_params, [leaf]).unwrap();
         leaf_digests[i] = leaf_digest;
+        pk_ops.push(pk_b64);
     }
 
     let tree = MerkleTree::<MerkleTreeParams<F>>::new_with_leaf_digest(
@@ -128,16 +149,26 @@ fn main() {
     let root = tree.root();
     println!("  Tree root: {}...", &field_to_decimal(&root)[..20]);
 
-    let merkle_witnesses: Vec<MerkleWitness<F>> = (0..K)
-        .map(|i| MerkleWitness {
-            path: tree.generate_proof(i).unwrap(),
-            leaf_idx: i,
-        })
-        .collect();
+    // Extract merkle paths as string vectors for RawProofRequest
+    // Format: [leaf_sibling_hash, auth_path_nodes...] (auth path in reverse order)
+    let mut merkle_paths: Vec<Vec<String>> = Vec::new();
+    let leaf_indices: Vec<usize> = (0..K).collect();
+
+    for i in 0..K {
+        let proof = tree.generate_proof(i).unwrap();
+        let mut path_strings = vec![field_to_decimal(&proof.leaf_sibling_hash)];
+        // auth_path must be reversed for the service API (it reverses back internally)
+        for node in proof.auth_path.iter().rev() {
+            path_strings.push(field_to_decimal(node));
+        }
+        merkle_paths.push(path_strings);
+    }
     println!("  {} merkle proofs extracted", K);
 
     // ============================================================
-    // Step 5: Anchor Generation (using service API)
+    // Step 5: Anchor Generation
+    //   API: generate_anchor() — for threshold membership
+    //   API: generate_hash() — for hanchor chain hash
     // ============================================================
     println!("\n[Step 5] Generating threshold anchor (N={}, K={})...", N, K);
 
@@ -158,118 +189,60 @@ fn main() {
         });
     }
 
-    let anchor = generate_anchor(&config, all_secrets.clone()).expect("Anchor generation failed");
-    let hanchor = chain_hash_native(&anchor.0, &poseidon_params);
-    println!("  Anchor: {} values, hanchor computed", anchor.0.len());
+    let anchor = generate_anchor(&config, all_secrets).expect("Anchor generation failed");
 
-    // Build anchor witness (selector + a/b vectors)
-    let matrix = VandermondeMatrix::<F>::new(N, K);
-    let pk_anchor = PoseidonAnchorPublicKey { params: poseidon_params.clone() };
+    // Compute hanchor via chain hash using generate_hash()
+    let mut hanchor = generate_hash(vec![field_to_decimal(&anchor.0[0])])
+        .expect("Hash failed");
+    for v in &anchor.0[1..] {
+        hanchor = generate_hash(vec![field_to_decimal(&hanchor), field_to_decimal(v)])
+            .expect("Hash failed");
+    }
 
-    let known_x_list: Vec<F> = all_secrets[..K]
-        .iter()
-        .map(|s| derive_x(s, &poseidon_params, &config))
-        .collect();
-
-    let selector = derive_selector(&pk_anchor, &known_x_list, &anchor, &matrix, &config);
-    let witness = build_anchor_witness(&poseidon_params, &known_x_list, &selector, &matrix).unwrap();
-
-    let current_idx_list: Vec<usize> = selector.iter().enumerate()
-        .filter(|&(_, &s)| s == 1).map(|(i, _)| i).collect();
-
-    // Shared public inputs
-    let mut h_a_inputs = witness.a.clone();
-    h_a_inputs.push(random);
-    let h_a = PoseidonHash::evaluate(&poseidon_params, h_a_inputs).unwrap();
-
-    let inner: F = witness.a.iter().zip(anchor.0.iter()).map(|(a, anc)| *a * *anc).sum();
-    let lhs = inner * random;
+    // Build anchor string array: [anchor_values..., hanchor]
+    let mut anchor_strings: Vec<String> = anchor.0.iter().map(field_to_decimal).collect();
+    anchor_strings.push(field_to_decimal(&hanchor));
+    println!("  Anchor: {} values, hanchor computed via generate_hash()", anchor.0.len());
 
     // ============================================================
     // Step 6: Proof Generation
+    //   API: generate_aud_hash() — for audience hash
+    //   API: prove() — for zero-knowledge proof generation
     // ============================================================
-    println!("\n[Step 6] Building circuit inputs and generating {} Groth16 proofs...", K);
+    println!("\n[Step 6] Generating {} Groth16 proofs via prove() API...", K);
 
-    // Audience list (using service API)
-    // Same as ISS: circuit sees quoted aud, so pass quoted form
+    // Audience list (quoted form, matching circuit extraction)
     let quoted_aud = format!("\"{}\"", AUD);
-    let (aud_fields, h_aud_list) = generate_aud_hash(&config, vec![quoted_aud])
+    let (aud_fields, _h_aud_list) = generate_aud_hash(&config, vec![quoted_aud])
         .expect("Audience hash failed");
+    let aud_list: Vec<String> = aud_fields.iter().map(field_to_decimal).collect();
 
-    // Build K circuit inputs
-    let mut rng = ark_std::rand::rngs::StdRng::seed_from_u64(42);
-    let mut circuit_inputs = Vec::new();
+    // Construct RawProofRequest with all prepared data
+    let raw_request = RawProofRequest::new(
+        pk_path.clone(),
+        jwts,
+        pk_ops,
+        merkle_paths,
+        leaf_indices,
+        field_to_decimal(&root),
+        anchor_strings,
+        field_to_decimal(&h_sign_user_op),
+        field_to_decimal(&random),
+        aud_list,
+    );
 
+    let (proofs, all_public_inputs) = prove(&config, raw_request).expect("Proof generation failed");
     for i in 0..K {
-        let jwt_witness = build_jwt_witness(&jwts[i], &rsa_keys[i], &config);
-        let current_idx = current_idx_list[i];
-
-        // Compute h_id and partial_rhs for this proof
-        let (aud_packed, iss_packed, sub_packed) = pack_claims_native(&jwts[i], &config);
-        let mut h_id_inputs = Vec::new();
-        h_id_inputs.extend_from_slice(&aud_packed);
-        h_id_inputs.extend_from_slice(&iss_packed);
-        h_id_inputs.extend_from_slice(&sub_packed);
-        let h_id_inner = PoseidonHash::evaluate(&poseidon_params, h_id_inputs).unwrap();
-        let h_id = PoseidonHash::evaluate(&poseidon_params, [F::from(current_idx as u64), h_id_inner]).unwrap();
-        let partial_rhs = witness.b[current_idx] * h_id * random;
-
-        let circuit_input = ZkapCircuitInput {
-            params: config.clone(),
-            constants: CircuitConstants {
-                vandermonde_matrix: VandermondeMatrix::new(N, K),
-                poseidon_param: poseidon_params.clone(),
-                base64_table: get_base64_table(),
-            },
-            public_inputs: CircuitPublicInputs {
-                hanchor,
-                h_a,
-                root,
-                h_sign_user_op,
-                jwt_exp: F::from(EXP),
-                partial_rhs,
-                lhs,
-                h_aud_list,
-            },
-            jwt: jwt_witness,
-            anchor: AnchorWitness {
-                anchor: anchor.clone(),
-                a: witness.a.clone(),
-                selector: selector.clone(),
-                current_idx,
-            },
-            merkle: merkle_witnesses[i].clone(),
-            audience: AudienceWitness { aud_list: aud_fields.clone() },
-            misc: MiscWitness { random },
-        };
-
-        circuit_inputs.push(circuit_input);
-    }
-
-    // Setup with the first real circuit (avoids any mock circuit divergence)
-    println!("  Running Groth16 setup with real circuit...");
-    let setup_circuit = ZkapCircuit::<CG, BNP>::from_input(circuit_inputs[0].clone());
-    let (pk, vk) = Groth16::<BN254>::setup(setup_circuit, &mut rng).unwrap();
-    let pvk = ark_groth16::prepare_verifying_key(&vk);
-
-    // Generate proofs
-    let mut proofs = Vec::new();
-    let mut all_public_inputs = Vec::new();
-    for (i, input) in circuit_inputs.into_iter().enumerate() {
-        let pub_inputs = input.extract_public_inputs();
-        let circuit = ZkapCircuit::<CG, BNP>::from_input(input);
-        let proof = Groth16::<BN254>::prove(&pk, circuit, &mut rng)
-            .expect("Proof generation failed");
-        proofs.push(proof);
-        all_public_inputs.push(pub_inputs);
         println!("  Proof {}/{} generated", i + 1, K);
     }
 
     // ============================================================
-    // Step 7: Proof Verification (using service API)
+    // Step 7: Proof Verification
+    //   API: verify() — for proof verification
     // ============================================================
     println!("\n[Step 7] Verifying proofs...");
 
+    let pvk = setup_output.pvk;
     for (i, (proof, pub_input)) in proofs.iter().zip(all_public_inputs.iter()).enumerate() {
         let valid = verify(&pvk, proof, pub_input).expect("Verification call failed");
         println!("  Proof {}/{}: {}", i + 1, K, if valid { "VALID" } else { "INVALID" });
@@ -282,6 +255,9 @@ fn main() {
     let invalid = verify(&pvk, &proofs[0], &tampered).expect("Verification call failed");
     println!("  Tampered proof: {}", if invalid { "VALID (unexpected!)" } else { "INVALID (expected)" });
     assert!(!invalid, "Tampered proof should not verify");
+
+    // Cleanup temp files
+    let _ = std::fs::remove_dir_all(&pk_dir);
 
     println!("\n=== All steps completed successfully! ===");
 }
@@ -330,150 +306,4 @@ fn build_and_sign_jwt(
 
 fn field_to_decimal(f: &F) -> String {
     f.into_bigint().to_string()
-}
-
-fn chain_hash_native(
-    values: &[F],
-    params: &ark_crypto_primitives::sponge::poseidon::PoseidonConfig<F>,
-) -> F {
-    let mut h = PoseidonHash::evaluate(params, [values[0]]).unwrap();
-    for v in &values[1..] {
-        h = PoseidonHash::evaluate(params, [h, *v]).unwrap();
-    }
-    h
-}
-
-/// Parse a JWT claim from the decoded payload string (same as circuit test helper)
-fn parse_claim_from_str(s: &str, key: &str) -> ClaimIndices {
-    let escaped_key = regex::escape(key);
-    let pattern = format!(r#"\s*("{}")\s*:\s*("?[^",]*"?)\s*([,\}}])"#, escaped_key);
-    let re = Regex::new(&pattern).unwrap();
-    let caps = re.captures(s).unwrap_or_else(|| panic!("Key '{}' not found", key));
-    let full_match = caps.get(0).unwrap();
-    let full_match_str = full_match.as_str();
-    let offset = full_match.start();
-    let claim_len = full_match_str.len();
-    let captured_value = caps.get(2).unwrap().as_str();
-    let colon_idx = full_match_str.find(':').unwrap();
-    let rel_search_start = colon_idx + 1;
-    let value_idx = full_match_str[rel_search_start..]
-        .find(captured_value)
-        .map(|i| i + rel_search_start)
-        .unwrap();
-    let value_len = captured_value.len();
-    ClaimIndices { offset, claim_len, colon_idx, value_idx, value_len }
-}
-
-fn build_jwt_witness(jwt: &str, rsa_priv_key: &rsa::RsaPrivateKey, cfg: &CircuitConfig) -> JwtWitness {
-    let parts: Vec<&str> = jwt.split('.').collect();
-    let (header_b64, payload_b64, sig_b64) = (parts[0], parts[1], parts[2]);
-    let full_jwt = format!("{}.{}", header_b64, payload_b64);
-    let total_len = full_jwt.len();
-    let pad_start_byte_idx = total_len;
-
-    // SHA256 padding
-    let mut sha_padded = full_jwt.as_bytes().to_vec();
-    sha_padded.push(0x80);
-    while (sha_padded.len() % 64) != 56 { sha_padded.push(0x00); }
-    let bit_len = (total_len as u64) * 8;
-    sha_padded.extend_from_slice(&bit_len.to_be_bytes());
-    let nblocks = sha_padded.len() / 64 - 1;
-    sha_padded.resize(cfg.max_jwt_b64_len as usize, 0x00);
-
-    let pay_offset_b64 = header_b64.len() + 1;
-    let pay_len_b64 = payload_b64.len();
-    let index_bits = IndexBits::from_base64_url(payload_b64, cfg.max_payload_b64_len as usize).unwrap();
-
-    // Decode payload for claim extraction
-    let engine = base64::engine::general_purpose::URL_SAFE_NO_PAD;
-    let payload_bytes = engine.decode(payload_b64).unwrap();
-    let payload_str = String::from_utf8(payload_bytes).unwrap();
-    let claims: Vec<&str> = cfg.claims.iter().map(|c| std::str::from_utf8(c).unwrap()).collect();
-    let claim_indices: Vec<ClaimIndices> = claims.iter()
-        .map(|key| parse_claim_from_str(&payload_str, key))
-        .collect();
-
-    // RSA key
-    let pub_key = rsa_priv_key.to_public_key();
-    let pk = RsaCircuitPubKey {
-        n: pub_key.n().to_bytes_be().to_vec(),
-        e: pub_key.e().to_bytes_be().to_vec(),
-    };
-    let sig = RsaCircuitSig(engine.decode(sig_b64).unwrap());
-
-    JwtWitness {
-        nblocks, claim_indices, pay_offset_b64, pay_len_b64,
-        sha_pad_jwt_b64: sha_padded, index_bits, pk, sig, total_len, pad_start_byte_idx,
-    }
-}
-
-/// Pack claim bytes into field elements (31 bytes per chunk, big-endian)
-fn pack_bytes_to_field_native(bytes: &[u8]) -> Vec<F> {
-    let limb_width = 31;
-    assert!(bytes.len().is_multiple_of(limb_width));
-    bytes.chunks(limb_width).map(F::from_be_bytes_mod_order).collect()
-}
-
-fn claim_value_bytes(payload_str: &str, key: &str, max_len: usize) -> Vec<u8> {
-    let escaped_key = regex::escape(key);
-    let pattern = format!(r#"\s*("{}")\s*:\s*("?[^",]*"?)\s*([,\}}])"#, escaped_key);
-    let re = Regex::new(&pattern).unwrap();
-    let caps = re.captures(payload_str).unwrap();
-    let value = caps.get(2).unwrap().as_str();
-    let mut bytes = value.as_bytes().to_vec();
-    bytes.resize(max_len, 0x00);
-    bytes
-}
-
-fn pack_claims_native(jwt: &str, cfg: &CircuitConfig) -> (Vec<F>, Vec<F>, Vec<F>) {
-    let parts: Vec<&str> = jwt.split('.').collect();
-    let engine = base64::engine::general_purpose::URL_SAFE_NO_PAD;
-    let payload_bytes = engine.decode(parts[1]).unwrap();
-    let payload_str = String::from_utf8(payload_bytes).unwrap();
-    let aud = pack_bytes_to_field_native(&claim_value_bytes(&payload_str, "aud", cfg.max_aud_len as usize));
-    let iss = pack_bytes_to_field_native(&claim_value_bytes(&payload_str, "iss", cfg.max_iss_len as usize));
-    let sub = pack_bytes_to_field_native(&claim_value_bytes(&payload_str, "sub", cfg.max_sub_len as usize));
-    (aud, iss, sub)
-}
-
-fn derive_x(secret: &Secret, params: &ark_crypto_primitives::sponge::poseidon::PoseidonConfig<F>, cfg: &CircuitConfig) -> F {
-    let padded_aud = pad(&secret.aud, cfg.max_aud_len as usize, PAD_CHAR).unwrap();
-    let padded_iss = pad(&secret.iss, cfg.max_iss_len as usize, PAD_CHAR).unwrap();
-    let padded_sub = pad(&secret.sub, cfg.max_sub_len as usize, PAD_CHAR).unwrap();
-    let input = format!("{}{}{}", padded_aud, padded_iss, padded_sub);
-    let limbs = try_str_to_fields::<F>(&input).unwrap();
-    PoseidonHash::evaluate(params, limbs).unwrap()
-}
-
-fn combinations(n: usize, k: usize) -> Vec<Vec<usize>> {
-    let mut result = Vec::new();
-    let mut combo = vec![0usize; k];
-    fn helper(start: usize, depth: usize, n: usize, k: usize, combo: &mut Vec<usize>, result: &mut Vec<Vec<usize>>) {
-        if depth == k { result.push(combo.clone()); return; }
-        for i in start..=(n - k + depth) {
-            combo[depth] = i;
-            helper(i + 1, depth + 1, n, k, combo, result);
-        }
-    }
-    helper(0, 0, n, k, &mut combo, &mut result);
-    result
-}
-
-fn derive_selector(
-    pk: &PoseidonAnchorPublicKey<F>, known_x_list: &[F],
-    anchor: &gadget::anchor::poseidon::PoseidonAnchor<F>,
-    matrix: &VandermondeMatrix<F>, cfg: &CircuitConfig,
-) -> Vec<u8> {
-    let n = cfg.n as usize;
-    let k = cfg.k as usize;
-    for combo in combinations(n, k) {
-        let mut selector = vec![0u8; n];
-        for &idx in &combo { selector[idx] = 1; }
-        if let Ok(w) = build_anchor_witness(&pk.params, known_x_list, &selector, matrix) {
-            let lhs: F = w.a.iter().zip(anchor.0.iter()).map(|(a, anc)| *a * *anc).sum();
-            let rhs: F = w.b.iter().zip(w.h_known.iter()).map(|(b, h)| *b * *h).sum();
-            if lhs == rhs { return selector; }
-        }
-    }
-    panic!("No valid selector found");
 }

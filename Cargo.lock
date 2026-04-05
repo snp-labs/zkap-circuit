@@ -1654,21 +1654,16 @@ dependencies = [
 name = "zkap-cli"
 version = "0.1.0"
 dependencies = [
- "ark-bn254",
- "ark-crypto-primitives",
- "ark-ed-on-bn254",
  "ark-ff",
- "ark-groth16",
  "ark-serialize",
- "ark-std",
  "ark-utils",
  "circuit",
  "clap",
- "gadget",
  "hex",
  "serde",
  "serde_json",
  "sha2",
+ "zkap-service",
 ]
 
 [[package]]

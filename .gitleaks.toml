@@ -3,8 +3,6 @@ title = "zkup-baerae gitleaks config"
 [allowlist]
   description = "Test fixtures and well-known development keys"
   paths = [
-    '''crates/.*/tests/.*\.rs''',
-    '''crates/gadget/tests/.*''',
-    '''crates/circuit/tests/.*''',
-    '''\.env\.example''',
+    '''crates/circuit/tests/groth16_integration\.rs''',
+    '''crates/service/tests/service_integration\.rs''',
   ]

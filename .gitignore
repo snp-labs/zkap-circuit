@@ -22,10 +22,7 @@ crates/gadget/tests/
 # Packages (WIP, not yet tracked)
 packages/
 
-# Environment & secrets
-.env
-.env.*
-!.env.example
+# Secrets & keys
 *.pem
 *.key
 

@@ -8,26 +8,16 @@ repository = "https://github.com/snp-labs/zkap-circuit"
 
 [dependencies]
 circuit = { workspace = true }
-gadget = { workspace = true, features = ["crypto", "base64", "rsa"] }
+zkap-service = { workspace = true }
 ark-utils = { workspace = true, features = ["evm-codegen"] }
 
 clap = { workspace = true, features = ["derive"] }
 ark-serialize = { workspace = true }
-ark-std = { workspace = true }
-ark-bn254 = { workspace = true }
-ark-ed-on-bn254 = { workspace = true }
 ark-ff = { workspace = true }
-ark-groth16 = { workspace = true }
-ark-crypto-primitives = { workspace = true, features = ["snark", "crh"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 hex = { workspace = true }
 sha2 = { workspace = true }
-
-[features]
-default = []
-zkap-circuit = ["circuit/zkap-circuit"]
-num-cs-logging = ["circuit/num-cs-logging"]
 
 [[bin]]
 name = "generate_crs"

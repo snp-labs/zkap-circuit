@@ -50,15 +50,14 @@ This library uses RSA for signature verification within ZK circuits. All operati
 The following Cargo features are available for development and debugging:
 
 - `print-trace`
-- `num-cs-logging`
 
-These flags are **compile-time opt-in** and carry zero overhead in default builds. They are not enabled in CI workflows.
+This flag is **compile-time opt-in** and carries zero overhead in default builds. It is not enabled in CI workflows.
 
-**Warning:** When enabled, these flags can log ZK witness values, which may include secret circuit inputs. They must **never** be enabled in production builds or in published packages. Treat any output produced with these flags as potentially sensitive.
+**Warning:** When enabled, this flag can log ZK witness values, which may include secret circuit inputs. It must **never** be enabled in production builds or in published packages. Treat any output produced with this flag as potentially sensitive.
 
-### Environment Files
+### Configuration Files
 
-`.env` files are listed in `.gitignore` and are never committed to the repository. The committed `.env.example` contains only circuit parameters (such as field sizes and curve identifiers) and holds no secret material.
+The committed `example.json` contains only circuit parameters (such as field sizes and curve identifiers) for local development and holds no secret material.
 
 ---
 

@@ -5,8 +5,10 @@
 
 mod anchor;
 mod hash;
+#[cfg(feature = "proof")]
 mod proof;
 
 pub use anchor::*;
 pub use hash::*;
+#[cfg(feature = "proof")]
 pub use proof::*;

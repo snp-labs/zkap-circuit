@@ -1,4 +1,5 @@
 use ark_ff::PrimeField;
+use ark_r1cs_std::eq::EqGadget;
 use ark_r1cs_std::fields::{FieldVar, fp::FpVar};
 use ark_relations::r1cs::SynthesisError;
 
@@ -94,6 +95,28 @@ pub fn pack_decompose_bytes_unchecked<F: PrimeField>(
     }
 
     Ok(packed_fields)
+}
+
+/// Packs decompose_bytes with byte-range constraints enforced.
+///
+/// Same as [`pack_decompose_bytes_unchecked`] but additionally constrains each input
+/// value to the range [0, 255] by decomposing to 8 bits and verifying the round-trip.
+/// Use this variant when the input may originate from adversary-controlled witness data.
+pub fn pack_decompose_bytes_checked<F: PrimeField>(
+    decompose_bytes: &[FpVar<F>],
+) -> Result<Vec<FpVar<F>>, SynthesisError> {
+    use ark_r1cs_std::prelude::ToBitsGadget;
+
+    // Enforce byte range: decompose each FpVar to 8 bits and verify round-trip
+    for byte_fp in decompose_bytes {
+        let bits = byte_fp.to_bits_le()?;
+        // Reconstruct from the low 8 bits and enforce equality
+        let reconstructed = ark_r1cs_std::prelude::Boolean::le_bits_to_fp(&bits[..8])?;
+        reconstructed.enforce_equal(byte_fp)?;
+    }
+
+    // Delegate to unchecked packing (range is now guaranteed)
+    pack_decompose_bytes_unchecked(decompose_bytes)
 }
 
 #[cfg(test)]

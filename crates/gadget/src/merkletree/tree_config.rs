@@ -49,7 +49,7 @@ impl<P: Config> Empty<P> for Path<P> {
     fn empty(height: usize) -> Self {
         Self {
             leaf_sibling_hash: P::LeafDigest::default(),
-            auth_path: vec![P::InnerDigest::default(); height - 2],
+            auth_path: vec![P::InnerDigest::default(); height - 1],
             leaf_index: 0,
         }
     }

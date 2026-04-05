@@ -34,7 +34,7 @@ build-android:
 
 # CRS generation
 setup:
-    cargo run --release --features zkap-circuit,num-cs-logging --bin generate_crs -- ./dist
+    cargo run --release -p zkap-cli --bin generate_crs -- --output ./dist --config example.json
 
 # Debug with constraint logging
 test-debug:

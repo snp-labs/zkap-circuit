@@ -43,9 +43,19 @@ pub fn validate_crs_manifest(
 
     let manifest_path = keys_dir.join("manifest.json");
     if !manifest_path.exists() {
-        log::warn!(
-            "No manifest.json found in {}. Cannot verify CRS parameter match.",
+        return Err(ApplicationError::InvalidFormat(format!(
+            "No manifest.json found in {}. Cannot verify CRS parameter integrity. \
+             Regenerate CRS keys with generate_crs to create a manifest, \
+             or set ZKAP_SKIP_MANIFEST_CHECK=1 for development only.",
             keys_dir.display()
+        )));
+    }
+
+    // Allow skipping manifest check for development workflows only
+    if std::env::var("ZKAP_SKIP_MANIFEST_CHECK").is_ok() {
+        log::warn!(
+            "ZKAP_SKIP_MANIFEST_CHECK is set — skipping CRS manifest validation. \
+             Do NOT use this in production."
         );
         return Ok(());
     }

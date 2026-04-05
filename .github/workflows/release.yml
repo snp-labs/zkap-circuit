@@ -11,6 +11,8 @@ on:
         required: true
         type: string
 
+permissions: {}
+
 env:
   CARGO_TERM_COLOR: always
   ZK_N: 3
@@ -24,6 +26,12 @@ jobs:
       version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Enforce main branch for manual dispatch
+        if: github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main'
+        run: |
+          echo "ERROR: Releases can only be triggered from the main branch."
+          exit 1
 
       - name: Extract version
         id: version
@@ -68,7 +76,7 @@ jobs:
         # ZK_N and ZK_K are inherited from workflow-level env: block.
         # Removing those env vars causes build_common.rs to use dev defaults (N=6),
         # which may OOM on CI runners.
-        run: cargo run --release --features zkap-circuit,num-cs-logging --bin generate_crs -- output/keys
+        run: cargo run --release --features zkap-circuit --bin generate_crs -- output/keys
 
       - name: Upload keys
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

@@ -32,7 +32,6 @@ hex = { workspace = true }
 default = []
 print-trace = ["gadget/print-trace"]
 zkap-circuit = []
-num-cs-logging = ["gadget/num-cs-logging"]
 
 [dev-dependencies]
 ark-utils = { workspace = true, features = ["field-serde"] }

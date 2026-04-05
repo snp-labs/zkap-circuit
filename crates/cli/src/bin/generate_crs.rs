@@ -26,6 +26,13 @@ struct Cli {
 fn main() {
     let cli = Cli::parse();
 
+    // Ensure output directory exists before writing any files.
+    let output_dir = std::path::Path::new(&cli.output);
+    if let Err(e) = std::fs::create_dir_all(output_dir) {
+        eprintln!("Failed to create output directory {}: {}", cli.output, e);
+        std::process::exit(1);
+    }
+
     let config_path = std::path::Path::new(&cli.config);
     let params =
         circuit::constants::CircuitConfig::from_json_file(config_path).unwrap_or_else(|e| {
@@ -63,9 +70,19 @@ fn main() {
     let pvk_path = format!("{}/pvk.key", cli.output);
     let sol_path = format!("{}/Groth16Verifier.sol", cli.output);
 
-    to_file(&setup_output.pk, &pk_path).unwrap();
-    to_file(&setup_output.vk, &vk_path).unwrap();
-    to_file(&setup_output.pvk, &pvk_path).unwrap();
+    to_file(&setup_output.pk, &pk_path).unwrap_or_else(|e| {
+        eprintln!("Failed to write pk.key: {}", e);
+        std::process::exit(1);
+    });
+    to_file(&setup_output.vk, &vk_path).unwrap_or_else(|e| {
+        eprintln!("Failed to write vk.key: {}", e);
+        std::process::exit(1);
+    });
+    to_file(&setup_output.pvk, &pvk_path).unwrap_or_else(|e| {
+        eprintln!("Failed to write pvk.key: {}", e);
+        std::process::exit(1);
+    });
+
     setup_output.vk.generate_solidity(&sol_path);
 
     write_manifest(
@@ -84,6 +101,10 @@ fn write_manifest(
     params: &circuit::constants::CircuitConfig,
     files: &[&str],
 ) {
+    if let Err(e) = std::fs::create_dir_all(dir) {
+        panic!("Failed to create manifest directory {}: {}", dir, e);
+    }
+
     let mut file_hashes = HashMap::new();
     for path in files {
         let filename = std::path::Path::new(path)

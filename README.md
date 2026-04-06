@@ -18,7 +18,6 @@ A Rust library for generating Groth16 zero-knowledge proofs that verify JWT/OAut
 - **Merkle tree issuer registry**: Proves the RSA public key belongs to a trusted issuer set
 - **Audience allowlist**: Zero-knowledge membership check against a hashed audience list
 - **Groth16 on BN254**: Proof-friendly field using `ark-bn254`
-- **CSO-audited**: External security audit completed
 
 ## Architecture
 

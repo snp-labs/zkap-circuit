@@ -96,8 +96,8 @@ fn generate_aud_hash(args: &AudArgs, params: &circuit::constants::CircuitConfig)
         .map(|s| s.trim().to_string())
         .collect();
 
-    let (aud_fields, h_aud_lists) =
-        zkap_service::generate_aud_hash(params, aud_vec.clone()).unwrap_or_else(|e| {
+    let (aud_fields, h_aud_lists) = zkap_service::generate_aud_hash(params, aud_vec.clone())
+        .unwrap_or_else(|e| {
             eprintln!("Error generating audience hash: {}", e);
             std::process::exit(1);
         });

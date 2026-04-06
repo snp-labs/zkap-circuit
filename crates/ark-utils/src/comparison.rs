@@ -176,12 +176,7 @@ pub fn compare_bits_raw<F: PrimeField>(
 
 #[cfg(test)]
 mod tests {
-    use ark_r1cs_std::{
-        R1CSVar,
-        alloc::AllocVar,
-        eq::EqGadget,
-        fields::fp::FpVar,
-    };
+    use ark_r1cs_std::{R1CSVar, alloc::AllocVar, eq::EqGadget, fields::fp::FpVar};
     use ark_relations::r1cs::{ConstraintSystem, ConstraintSystemRef};
 
     use crate::lt_bit_vector;
@@ -306,7 +301,7 @@ mod tests {
 
         let (less, equal) = compare_bits_raw(&a_bits[..8], &b_bits[..8]).unwrap();
         assert!(cs.is_satisfied().unwrap());
-        assert!(less.value().unwrap());   // 3 < 5
+        assert!(less.value().unwrap()); // 3 < 5
         assert!(!equal.value().unwrap()); // 3 != 5
     }
 
@@ -323,8 +318,8 @@ mod tests {
 
         let (less, equal) = compare_bits_raw(&a_bits[..8], &b_bits[..8]).unwrap();
         assert!(cs.is_satisfied().unwrap());
-        assert!(!less.value().unwrap());  // 7 is NOT less than 7
-        assert!(equal.value().unwrap());  // 7 == 7
+        assert!(!less.value().unwrap()); // 7 is NOT less than 7
+        assert!(equal.value().unwrap()); // 7 == 7
     }
 
     // =========================================================================

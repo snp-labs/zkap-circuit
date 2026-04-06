@@ -93,7 +93,12 @@ pub fn jwt_nonce_hex_to_field<F: PrimeField>(
 
     // Only the first 65 bytes after the prefix can matter:
     // 64 hex digits + 1 closing quote.
-    for (i, current_byte) in hex_bytes.iter().enumerate().take(max_quote_index + 1).skip(3) {
+    for (i, current_byte) in hex_bytes
+        .iter()
+        .enumerate()
+        .take(max_quote_index + 1)
+        .skip(3)
+    {
         let current_index = UInt16::constant(i as u16);
 
         // Is this the selected closing quote position?
@@ -288,7 +293,6 @@ pub fn jwt_exp_to_field<F: PrimeField>(
 
     // --- 1. Parse and validate first 10 digits ---
     for current_byte in decimal_bytes.iter().take(10) {
-
         // Convert decimal character
         let (digit_value, is_valid_digit) = decimal_byte_to_digit(current_byte)?;
 

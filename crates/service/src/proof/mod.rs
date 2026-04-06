@@ -41,11 +41,13 @@ pub mod types;
 
 pub use request::RawProofRequest;
 
+use ark_crypto_primitives::snark::CircuitSpecificSetupSNARK;
 #[allow(unused_imports)]
 use ark_crypto_primitives::snark::SNARK;
-use ark_crypto_primitives::snark::CircuitSpecificSetupSNARK;
-use ark_groth16::{Groth16, PreparedVerifyingKey, Proof, ProvingKey, VerifyingKey, prepare_verifying_key};
-use circuit::constants::{BN254, BNP, CG, F, CircuitConfig};
+use ark_groth16::{
+    Groth16, PreparedVerifyingKey, Proof, ProvingKey, VerifyingKey, prepare_verifying_key,
+};
+use circuit::constants::{BN254, BNP, CG, CircuitConfig, F};
 use circuit::zkap::ZkapCircuit;
 use rand::rngs::OsRng;
 

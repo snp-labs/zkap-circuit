@@ -3,9 +3,9 @@ use ark_crypto_primitives::{
     sponge::{Absorb, poseidon::PoseidonConfig},
 };
 use ark_ff::PrimeField;
-use ark_utils::try_str_to_fields;
 use ark_utils::pad;
-use circuit::constants::{F, PoseidonHash, CircuitConfig};
+use ark_utils::try_str_to_fields;
+use circuit::constants::{CircuitConfig, F, PoseidonHash};
 
 use super::AnchorConfig;
 use crate::{Secret, error::ApplicationError};
@@ -61,8 +61,8 @@ pub(crate) fn derive_x_from_secret(
 
     let input = [aud_processed, iss_processed, sub_processed].concat();
 
-    let limbs =
-        try_str_to_fields::<F>(&input).map_err(|e| ApplicationError::InvalidFormat(e.to_string()))?;
+    let limbs = try_str_to_fields::<F>(&input)
+        .map_err(|e| ApplicationError::InvalidFormat(e.to_string()))?;
 
     let hashed = PoseidonHash::evaluate(poseidon_param, limbs)
         .map_err(|_| ApplicationError::PoseidonHashError)?;
@@ -150,9 +150,9 @@ fn combinations(n: usize, k: usize) -> Vec<Vec<usize>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Secret;
     use gadget::anchor::poseidon::PoseidonAnchorScheme;
     use gadget::hashes::poseidon::get_poseidon_params;
-    use crate::Secret;
 
     type F = ark_bn254::Fr;
 
@@ -177,12 +177,38 @@ mod tests {
         };
 
         // Create Secret objects
-        let all_secrets_data = [Secret { sub: "user1".to_string(), iss: "issuer1".to_string(), aud: "aud1".to_string() },
-            Secret { sub: "user2".to_string(), iss: "issuer2".to_string(), aud: "aud2".to_string() },
-            Secret { sub: "user3".to_string(), iss: "issuer3".to_string(), aud: "aud3".to_string() },
-            Secret { sub: "user4".to_string(), iss: "issuer4".to_string(), aud: "aud4".to_string() },
-            Secret { sub: "user5".to_string(), iss: "issuer5".to_string(), aud: "aud5".to_string() },
-            Secret { sub: "user6".to_string(), iss: "issuer6".to_string(), aud: "aud6".to_string() }];
+        let all_secrets_data = [
+            Secret {
+                sub: "user1".to_string(),
+                iss: "issuer1".to_string(),
+                aud: "aud1".to_string(),
+            },
+            Secret {
+                sub: "user2".to_string(),
+                iss: "issuer2".to_string(),
+                aud: "aud2".to_string(),
+            },
+            Secret {
+                sub: "user3".to_string(),
+                iss: "issuer3".to_string(),
+                aud: "aud3".to_string(),
+            },
+            Secret {
+                sub: "user4".to_string(),
+                iss: "issuer4".to_string(),
+                aud: "aud4".to_string(),
+            },
+            Secret {
+                sub: "user5".to_string(),
+                iss: "issuer5".to_string(),
+                aud: "aud5".to_string(),
+            },
+            Secret {
+                sub: "user6".to_string(),
+                iss: "issuer6".to_string(),
+                aud: "aud6".to_string(),
+            },
+        ];
 
         // Derive x values from secrets
         let all_x_values: Vec<F> = all_secrets_data
@@ -193,7 +219,8 @@ mod tests {
         let anchor_secret = PoseidonAnchorSecret(all_x_values.clone());
 
         // Generate anchor
-        let anchor = PoseidonAnchorScheme::<F>::generate_anchor(&pk, &anchor_secret, &matrix).unwrap();
+        let anchor =
+            PoseidonAnchorScheme::<F>::generate_anchor(&pk, &anchor_secret, &matrix).unwrap();
 
         // Test case 1: known secrets at positions [1, 3]
         let known_indices = [1, 3];
@@ -241,12 +268,38 @@ mod tests {
         };
 
         // Create Secret objects
-        let all_secrets_data = [Secret { sub: "alice".to_string(), iss: "auth1".to_string(), aud: "app1".to_string() },
-            Secret { sub: "bob".to_string(), iss: "auth2".to_string(), aud: "app2".to_string() },
-            Secret { sub: "charlie".to_string(), iss: "auth3".to_string(), aud: "app3".to_string() },
-            Secret { sub: "david".to_string(), iss: "auth4".to_string(), aud: "app4".to_string() },
-            Secret { sub: "eve".to_string(), iss: "auth5".to_string(), aud: "app5".to_string() },
-            Secret { sub: "frank".to_string(), iss: "auth6".to_string(), aud: "app6".to_string() }];
+        let all_secrets_data = [
+            Secret {
+                sub: "alice".to_string(),
+                iss: "auth1".to_string(),
+                aud: "app1".to_string(),
+            },
+            Secret {
+                sub: "bob".to_string(),
+                iss: "auth2".to_string(),
+                aud: "app2".to_string(),
+            },
+            Secret {
+                sub: "charlie".to_string(),
+                iss: "auth3".to_string(),
+                aud: "app3".to_string(),
+            },
+            Secret {
+                sub: "david".to_string(),
+                iss: "auth4".to_string(),
+                aud: "app4".to_string(),
+            },
+            Secret {
+                sub: "eve".to_string(),
+                iss: "auth5".to_string(),
+                aud: "app5".to_string(),
+            },
+            Secret {
+                sub: "frank".to_string(),
+                iss: "auth6".to_string(),
+                aud: "app6".to_string(),
+            },
+        ];
 
         // Derive x values from secrets
         let all_x_values: Vec<F> = all_secrets_data
@@ -257,7 +310,8 @@ mod tests {
         let anchor_secret = PoseidonAnchorSecret(all_x_values.clone());
 
         // Generate anchor
-        let anchor = PoseidonAnchorScheme::<F>::generate_anchor(&pk, &anchor_secret, &matrix).unwrap();
+        let anchor =
+            PoseidonAnchorScheme::<F>::generate_anchor(&pk, &anchor_secret, &matrix).unwrap();
 
         // Test case 2: known secrets at positions [0, 2, 5]
         let known_indices = [0, 2, 5];
@@ -334,12 +388,38 @@ mod tests {
         };
 
         // Create Secret objects
-        let all_secrets_data = [Secret { sub: "user1".to_string(), iss: "issuer1".to_string(), aud: "aud1".to_string() },
-            Secret { sub: "user2".to_string(), iss: "issuer2".to_string(), aud: "aud2".to_string() },
-            Secret { sub: "user3".to_string(), iss: "issuer3".to_string(), aud: "aud3".to_string() },
-            Secret { sub: "user4".to_string(), iss: "issuer4".to_string(), aud: "aud4".to_string() },
-            Secret { sub: "user5".to_string(), iss: "issuer5".to_string(), aud: "aud5".to_string() },
-            Secret { sub: "user6".to_string(), iss: "issuer6".to_string(), aud: "aud6".to_string() }];
+        let all_secrets_data = [
+            Secret {
+                sub: "user1".to_string(),
+                iss: "issuer1".to_string(),
+                aud: "aud1".to_string(),
+            },
+            Secret {
+                sub: "user2".to_string(),
+                iss: "issuer2".to_string(),
+                aud: "aud2".to_string(),
+            },
+            Secret {
+                sub: "user3".to_string(),
+                iss: "issuer3".to_string(),
+                aud: "aud3".to_string(),
+            },
+            Secret {
+                sub: "user4".to_string(),
+                iss: "issuer4".to_string(),
+                aud: "aud4".to_string(),
+            },
+            Secret {
+                sub: "user5".to_string(),
+                iss: "issuer5".to_string(),
+                aud: "aud5".to_string(),
+            },
+            Secret {
+                sub: "user6".to_string(),
+                iss: "issuer6".to_string(),
+                aud: "aud6".to_string(),
+            },
+        ];
 
         // Derive x values from secrets
         let all_x_values: Vec<F> = all_secrets_data
@@ -350,7 +430,8 @@ mod tests {
         let anchor_secret = PoseidonAnchorSecret(all_x_values.clone());
 
         // Generate anchor
-        let anchor = PoseidonAnchorScheme::<F>::generate_anchor(&pk, &anchor_secret, &matrix).unwrap();
+        let anchor =
+            PoseidonAnchorScheme::<F>::generate_anchor(&pk, &anchor_secret, &matrix).unwrap();
 
         // Test with completely wrong known secrets
         let wrong_known_x_list = vec![F::from(999u64), F::from(888u64), F::from(777u64)];

@@ -6,7 +6,7 @@ pub use constraints::*;
 pub use decoder::*;
 pub use error::*;
 
-use ark_serialize::{CanonicalSerialize, CanonicalDeserialize};
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 
 #[derive(Clone, Debug, CanonicalSerialize, CanonicalDeserialize)]
 pub struct Base64Table {

@@ -113,10 +113,10 @@ impl CircuitConfig {
 
     /// Load from a JSON config file (RawCircuitConfig → CircuitConfig conversion).
     pub fn from_json_file(path: &std::path::Path) -> Result<Self, String> {
-        let content = std::fs::read_to_string(path)
-            .map_err(|e| format!("Failed to read config: {}", e))?;
-        let raw: RawCircuitConfig = serde_json::from_str(&content)
-            .map_err(|e| format!("Failed to parse config: {}", e))?;
+        let content =
+            std::fs::read_to_string(path).map_err(|e| format!("Failed to read config: {}", e))?;
+        let raw: RawCircuitConfig =
+            serde_json::from_str(&content).map_err(|e| format!("Failed to parse config: {}", e))?;
         let config: Self = raw.into();
         config.validate()?;
         Ok(config)

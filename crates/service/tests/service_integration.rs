@@ -6,9 +6,7 @@
 
 use circuit::constants::RawCircuitConfig;
 use zkap_service::{
-    CircuitConfig,
-    generate_anchor, generate_hash, generate_aud_hash, generate_leaf_hash,
-    Secret,
+    CircuitConfig, Secret, generate_anchor, generate_aud_hash, generate_hash, generate_leaf_hash,
 };
 
 fn test_config() -> CircuitConfig {
@@ -24,7 +22,13 @@ fn test_config() -> CircuitConfig {
         k: 3,
         tree_height: 4,
         num_audience_limit: 5,
-        claims: vec!["aud".into(), "exp".into(), "iss".into(), "nonce".into(), "sub".into()],
+        claims: vec![
+            "aud".into(),
+            "exp".into(),
+            "iss".into(),
+            "nonce".into(),
+            "sub".into(),
+        ],
         forbidden_string: "forbidden".into(),
     };
     raw.into()

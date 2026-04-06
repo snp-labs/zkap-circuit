@@ -20,7 +20,6 @@ use crate::{
     matrix::constraints::VandermondeMatrixVar,
 };
 
-
 #[derive(Clone)]
 pub struct PoseidonAnchorPublicKeyVar<F: PrimeField + Absorb> {
     pub params: CRHParametersVar<F>,
@@ -115,7 +114,8 @@ impl<F: PrimeField + Absorb> PoseidonAnchorSchemeGadget<F> {
     /// Verifies that vector a is not the zero vector (All Zeros).
     pub fn enforce_a_nonzero(a: &[FpVar<F>]) -> Result<(), SynthesisError> {
         let zero = FpVar::<F>::zero();
-        let nonzero_bits = a.iter()
+        let nonzero_bits = a
+            .iter()
             .map(|x| x.is_neq(&zero))
             .collect::<Result<Vec<_>, _>>()?;
         Boolean::kary_or(&nonzero_bits)?.enforce_equal(&Boolean::TRUE)?;

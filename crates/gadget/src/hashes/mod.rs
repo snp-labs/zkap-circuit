@@ -1,9 +1,9 @@
 use ark_ff::Field;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::hash::Hash;
-use error::HashError;
 use core::borrow::Borrow;
 use core::fmt::Debug;
+use error::HashError;
 
 pub mod constraints;
 pub mod error;

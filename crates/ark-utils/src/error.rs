@@ -8,7 +8,7 @@
 
 #[cfg(feature = "field-serde")]
 pub use crate::affine_serde::FieldParseError;
+pub use crate::convert::ConvertError;
+pub use crate::convert::TextError;
 #[cfg(feature = "io")]
 pub use crate::io::IoError;
-pub use crate::convert::TextError;
-pub use crate::convert::ConvertError;

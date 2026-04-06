@@ -1,8 +1,6 @@
 #![allow(unused_variables)]
 #![allow(unused_mut)]
 
-
-
 use ark_crypto_primitives::{
     crh::{
         CRHSchemeGadget,
@@ -25,16 +23,15 @@ use ark_relations::r1cs::ConstraintSynthesizer;
 use ark_serialize::*;
 use std::marker::PhantomData;
 
+use crate::constants::CircuitConfig;
 use crate::{
-    ExposesPublicInputs,
-    input,
+    ExposesPublicInputs, input,
     token::{
         ClaimIndices,
         claimverifier::claim_extractor_v2,
         constraints::{ClaimIndicesVar, RSA2048VerifyGadget},
     },
 };
-use crate::constants::CircuitConfig;
 use gadget::{
     anchor::poseidon::{
         PoseidonAnchor,
@@ -44,10 +41,9 @@ use gadget::{
         },
     },
     base64::{
-        Base64TableVar,
+        Base64TableVar, IndexBits,
         constraints::{Base64DecoderGadget, IndexBitsVar},
         get_base64_table,
-        IndexBits,
     },
     bigint::{
         constraints::{BigNatCircuitParams, BigNatVar},
@@ -64,10 +60,10 @@ use gadget::{
         constraints::{PublicKeyVar, SignatureVar},
     },
     utils::{
-        packing::pack_decompose_bytes_unchecked,
         comparison::enforce_less_than,
-        single_multiplexer, slice_efficient,
         jwt_field::{jwt_exp_to_field, jwt_nonce_hex_to_field},
+        packing::pack_decompose_bytes_unchecked,
+        single_multiplexer, slice_efficient,
     },
 };
 
@@ -115,8 +111,7 @@ where
     _phantom: PhantomData<BNP>,
 }
 
-impl<C, BNP> ConstraintSynthesizer<C::BaseField>
-    for ZkapCircuit<C, BNP>
+impl<C, BNP> ConstraintSynthesizer<C::BaseField> for ZkapCircuit<C, BNP>
 where
     C: CurveGroup,
     C::BaseField: PrimeField + Absorb,
@@ -144,7 +139,8 @@ where
             Base64TableVar::<C::BaseField>::new_constant(cs.clone(), self.constants.base64_table)?;
 
         // ============ Public Inputs ============
-        let hanchor = FpVar::<C::BaseField>::new_input(cs.clone(), || Ok(self.public_inputs.hanchor))?;
+        let hanchor =
+            FpVar::<C::BaseField>::new_input(cs.clone(), || Ok(self.public_inputs.hanchor))?;
 
         let h_a = FpVar::<C::BaseField>::new_input(cs.clone(), || Ok(self.public_inputs.h_a))?;
 
@@ -153,13 +149,16 @@ where
         let h_sign_user_op =
             FpVar::<C::BaseField>::new_input(cs.clone(), || Ok(self.public_inputs.h_sign_user_op))?;
 
-        let jwt_exp = FpVar::<C::BaseField>::new_input(cs.clone(), || Ok(self.public_inputs.jwt_exp))?;
+        let jwt_exp =
+            FpVar::<C::BaseField>::new_input(cs.clone(), || Ok(self.public_inputs.jwt_exp))?;
 
-        let partial_rhs = FpVar::<C::BaseField>::new_input(cs.clone(), || Ok(self.public_inputs.partial_rhs))?;
+        let partial_rhs =
+            FpVar::<C::BaseField>::new_input(cs.clone(), || Ok(self.public_inputs.partial_rhs))?;
 
         let lhs = FpVar::<C::BaseField>::new_input(cs.clone(), || Ok(self.public_inputs.lhs))?;
 
-        let h_aud_list = FpVar::<C::BaseField>::new_input(cs.clone(), || Ok(self.public_inputs.h_aud_list))?;
+        let h_aud_list =
+            FpVar::<C::BaseField>::new_input(cs.clone(), || Ok(self.public_inputs.h_aud_list))?;
 
         // ============ Misc Witness ============
         let random = FpVar::<C::BaseField>::new_witness(cs.clone(), || Ok(self.misc.random))?;
@@ -182,7 +181,8 @@ where
 
         let indices = Vec::<FpVar<C::BaseField>>::new_witness(cs.clone(), || {
             Ok(self
-                .anchor.selector
+                .anchor
+                .selector
                 .iter()
                 .map(|&i| C::BaseField::from(i as u64))
                 .collect::<Vec<C::BaseField>>())
@@ -197,8 +197,9 @@ where
             Ok(C::BaseField::from(self.jwt.nblocks as u64))
         })?;
 
-        let token_claim =
-            Vec::<ClaimIndicesVar<C::BaseField>>::new_witness(cs.clone(), || Ok(self.jwt.claim_indices))?;
+        let token_claim = Vec::<ClaimIndicesVar<C::BaseField>>::new_witness(cs.clone(), || {
+            Ok(self.jwt.claim_indices)
+        })?;
 
         let payload_offset_b64 =
             UInt16::<C::BaseField>::new_witness(cs.clone(), || Ok(self.jwt.pay_offset_b64 as u16))?;
@@ -216,7 +217,9 @@ where
         let pk_op = PublicKeyVar::<C::BaseField, BNP>::new_witness(cs.clone(), || Ok(self.jwt.pk))?;
 
         // Enforce RSA public exponent e == 65537, preventing substitution of weak exponents.
-        let expected_e = BigNatVar::<C::BaseField, BNP>::constant(&BigNat::from(gadget::constants::RSA_DEFAULT_EXPONENT))?;
+        let expected_e = BigNatVar::<C::BaseField, BNP>::constant(&BigNat::from(
+            gadget::constants::RSA_DEFAULT_EXPONENT,
+        ))?;
         pk_op.e.enforce_equal_when_carried(&expected_e)?;
 
         let signature_op =
@@ -225,14 +228,13 @@ where
         let total_len =
             UInt16::<C::BaseField>::new_witness(cs.clone(), || Ok(self.jwt.total_len as u16))?;
 
-        let pad_start_byte_idx =
-            UInt16::<C::BaseField>::new_witness(
-                cs.clone(),
-                || Ok(self.jwt.pad_start_byte_idx as u16),
-            )?;
+        let pad_start_byte_idx = UInt16::<C::BaseField>::new_witness(cs.clone(), || {
+            Ok(self.jwt.pad_start_byte_idx as u16)
+        })?;
 
         // ============ Audience Witness ============
-        let aud_list = Vec::<FpVar<C::BaseField>>::new_witness(cs.clone(), || Ok(self.audience.aud_list))?;
+        let aud_list =
+            Vec::<FpVar<C::BaseField>>::new_witness(cs.clone(), || Ok(self.audience.aud_list))?;
 
         let zero = FpVar::<C::BaseField>::Constant(C::BaseField::from(0u64));
         let one = FpVar::<C::BaseField>::Constant(C::BaseField::from(1u64));
@@ -273,9 +275,8 @@ where
         )?;
 
         // Defense in depth: payload_offset + payload_len < buffer_len (prevent buffer overrun)
-        let buf_len = FpVar::<C::BaseField>::Constant(C::BaseField::from(
-            sha_pad_jwt_b64_to_fp.len() as u64,
-        ));
+        let buf_len =
+            FpVar::<C::BaseField>::Constant(C::BaseField::from(sha_pad_jwt_b64_to_fp.len() as u64));
         let second_dot_idx = &payload_offset_fp + &payload_len_fp;
         enforce_less_than(
             &second_dot_idx.to_bits_le_with_top_bits_zero(16)?.0,
@@ -305,18 +306,39 @@ where
             self.params.max_payload_b64_len as usize,
         )?;
 
-        let payload = Base64DecoderGadget::<C::BaseField>::decode(
-            &base64_table,
-            &payload_b64,
-            &index_bits,
-        )?;
+        let payload =
+            Base64DecoderGadget::<C::BaseField>::decode(&base64_table, &payload_b64, &index_bits)?;
 
-        let aud_bytes = claim_extractor_v2("aud", &payload, &token_claim[0], self.params.max_aud_len as usize)?;
-        let exp_bytes = claim_extractor_v2("exp", &payload, &token_claim[1], self.params.max_exp_len as usize)?;
-        let iss_bytes = claim_extractor_v2("iss", &payload, &token_claim[2], self.params.max_iss_len as usize)?;
-        let nonce_bytes =
-            claim_extractor_v2("nonce", &payload, &token_claim[3], self.params.max_nonce_len as usize)?;
-        let sub_bytes = claim_extractor_v2("sub", &payload, &token_claim[4], self.params.max_sub_len as usize)?;
+        let aud_bytes = claim_extractor_v2(
+            "aud",
+            &payload,
+            &token_claim[0],
+            self.params.max_aud_len as usize,
+        )?;
+        let exp_bytes = claim_extractor_v2(
+            "exp",
+            &payload,
+            &token_claim[1],
+            self.params.max_exp_len as usize,
+        )?;
+        let iss_bytes = claim_extractor_v2(
+            "iss",
+            &payload,
+            &token_claim[2],
+            self.params.max_iss_len as usize,
+        )?;
+        let nonce_bytes = claim_extractor_v2(
+            "nonce",
+            &payload,
+            &token_claim[3],
+            self.params.max_nonce_len as usize,
+        )?;
+        let sub_bytes = claim_extractor_v2(
+            "sub",
+            &payload,
+            &token_claim[4],
+            self.params.max_sub_len as usize,
+        )?;
         // Convert to field elements and pack
         let aud = pack_decompose_bytes_unchecked(&aud_bytes)?;
         let exp = jwt_exp_to_field(&exp_bytes)?;
@@ -404,8 +426,7 @@ where
         random.enforce_not_equal(&zero)?;
 
         // current_idx < N
-        let n =
-            FpVar::<C::BaseField>::new_constant(cs.clone(), C::BaseField::from(self.params.n))?;
+        let n = FpVar::<C::BaseField>::new_constant(cs.clone(), C::BaseField::from(self.params.n))?;
         enforce_less_than(
             &current_idx.to_bits_le_with_top_bits_zero(8)?.0,
             &n.to_bits_le_with_top_bits_zero(8)?.0,

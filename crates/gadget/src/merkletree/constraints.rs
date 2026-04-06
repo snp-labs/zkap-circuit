@@ -18,7 +18,6 @@ use crate::merkletree::{
     tree_config::{MerkleTreeParams, MerkleTreeParamsVar},
 };
 
-
 #[derive(Clone)]
 pub struct MerkleCircuitInputVar<F>
 where
@@ -44,9 +43,12 @@ where
     ) -> Result<(), SynthesisError> {
         self.path.set_leaf_position(self.leaf_idx.to_bits_be()?);
 
-        let membership =
-            self.path
-                .verify_membership(hash_param, hash_param, root, std::slice::from_ref(&self.leaf))?;
+        let membership = self.path.verify_membership(
+            hash_param,
+            hash_param,
+            root,
+            std::slice::from_ref(&self.leaf),
+        )?;
 
         membership.enforce_equal(&Boolean::TRUE)?;
         Ok(())
@@ -341,12 +343,7 @@ mod tests {
 
         path_var.set_leaf_position(leaf_pos_var.to_bits_le().unwrap());
         let verify_membership = path_var
-            .verify_membership(
-                &hash_params_var,
-                &hash_params_var,
-                &rt_var,
-                &[leaf_pos_var],
-            )
+            .verify_membership(&hash_params_var, &hash_params_var, &rt_var, &[leaf_pos_var])
             .unwrap();
         verify_membership.enforce_equal(&Boolean::TRUE).unwrap();
 
@@ -378,12 +375,7 @@ mod tests {
 
         path_var.set_leaf_position(wrong_leaf.to_bits_le().unwrap());
         let verify_membership = path_var
-            .verify_membership(
-                &hash_params_var,
-                &hash_params_var,
-                &rt_var,
-                &[wrong_leaf],
-            )
+            .verify_membership(&hash_params_var, &hash_params_var, &rt_var, &[wrong_leaf])
             .unwrap();
         verify_membership.enforce_equal(&Boolean::TRUE).unwrap();
 
@@ -400,13 +392,7 @@ mod tests {
         let (root, path, _) = generate_merkle_tree_input::<F>(tree_height, n_leaves, idx);
 
         let cs = ark_relations::r1cs::ConstraintSystem::<F>::new_ref();
-        generate_merkle_tree_verify_gadget(
-            &cs,
-            get_poseidon_params::<F>(),
-            &path,
-            &root,
-            idx,
-        );
+        generate_merkle_tree_verify_gadget(&cs, get_poseidon_params::<F>(), &path, &root, idx);
 
         assert!(cs.is_satisfied().unwrap());
         println!("height-2 tree: {} constraints", cs.num_constraints());

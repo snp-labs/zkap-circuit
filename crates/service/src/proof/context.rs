@@ -1,21 +1,21 @@
 use ark_crypto_primitives::crh::CRHScheme;
 use ark_crypto_primitives::merkle_tree::Path;
-use circuit::{
-    AnchorWitness, AudienceWitness, ZkapCircuitInput, CircuitConstants, CircuitPublicInputs,
-    JwtWitness, MerkleWitness, MiscWitness,
-};
-use circuit::constants::{F, PoseidonHash, CircuitConfig, PAD_CHAR};
-use ark_utils::{try_str_to_fields, hex_decimal_to_field};
 use ark_utils::pad;
+use ark_utils::{hex_decimal_to_field, try_str_to_fields};
+use circuit::constants::{CircuitConfig, F, PAD_CHAR, PoseidonHash};
+use circuit::{
+    AnchorWitness, AudienceWitness, CircuitConstants, CircuitPublicInputs, JwtWitness,
+    MerkleWitness, MiscWitness, ZkapCircuitInput,
+};
 use gadget::anchor::AnchorUtils;
 use gadget::anchor::poseidon::{PoseidonAnchorScheme, PoseidonAnchorWitness, build_anchor_witness};
 use gadget::merkletree::tree_config::MerkleTreeParams;
 
 use crate::Secret;
 use crate::anchor::poseidon::{derive_selector_from_x_list_and_anchor, derive_x_from_secret};
+use crate::error::ApplicationError;
 use crate::proof::request::ProofRequest;
 use crate::proof::types::CircuitContext;
-use crate::error::ApplicationError;
 
 use super::types::{AnchorContext, AudienceContext};
 
@@ -105,11 +105,7 @@ impl ProofContextBuilder {
         if padded.len() < num_audience_limit {
             let padding_count = num_audience_limit - padded.len();
             let forbidden_str = crate::forbidden_str(&self.params)?;
-            let padded_str = pad(
-                forbidden_str,
-                self.params.max_aud_len as usize,
-                PAD_CHAR,
-            )?;
+            let padded_str = pad(forbidden_str, self.params.max_aud_len as usize, PAD_CHAR)?;
             let limbs = try_str_to_fields::<F>(&padded_str)
                 .map_err(|e| ApplicationError::InvalidFormat(format!("{}", e)))?;
             let h = PoseidonHash::evaluate(&self.circuit_ctx.poseidon_params, limbs)
@@ -216,7 +212,10 @@ impl ProofContextBuilder {
             .request
             .token_builders
             .iter()
-            .map(|b| b.parse_secret().map_err(|e| ApplicationError::InvalidFormat(format!("{}", e))))
+            .map(|b| {
+                b.parse_secret()
+                    .map_err(|e| ApplicationError::InvalidFormat(format!("{}", e)))
+            })
             .collect::<Result<Vec<_>, _>>()?;
 
         secrets

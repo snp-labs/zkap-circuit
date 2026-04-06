@@ -235,7 +235,7 @@ mod tests {
             value_start + 1 + closing + 1
         } else {
             s[value_start..]
-                .find(|c: char| c == ',' || c == '}')
+                .find([',', '}'])
                 .map(|i| value_start + i)
                 .unwrap_or(s.len())
         };

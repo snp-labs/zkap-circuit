@@ -63,7 +63,7 @@ pub fn parse_claim_from_str(s: &str, key: &str) -> Result<Claim, TokenError> {
     } else {
         // Bare value (number / bool / null): ends at ',' or '}'
         s[value_start..]
-            .find(|c: char| c == ',' || c == '}')
+            .find([',', '}'])
             .map(|i| value_start + i)
             .unwrap_or(s.len())
     };

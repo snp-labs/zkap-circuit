@@ -3,7 +3,7 @@
 //! Provides feature-gated modules for all building blocks used by `zkap-circuit`:
 //! Poseidon hashing (`hashes-poseidon`), the threshold anchor scheme (`anchor`),
 //! Base64 decoding gadgets (`base64`), RSA-2048 signature verification (`rsa`),
-//! Merkle tree helpers (`merkletree`), and the Vandermonde matrix (`anchor`).
+//! Merkle tree helpers (`merkletree`), Vandermonde matrix (`matrix`), and the threshold anchor scheme (`anchor`).
 //! Most application code should interact with this crate through `zkap-circuit` or
 //! `zkap-service` rather than directly.
 

@@ -71,7 +71,7 @@ use gadget::{
     },
 };
 
-/// The main Groth16 R1CS circuit for the ZK-Passkey (ZKAP) protocol.
+/// The main Groth16 R1CS circuit for the ZKAP protocol.
 ///
 /// Implements [`ConstraintSynthesizer`] and encodes the full five-phase proof statement:
 /// JWT authenticity and claim extraction (SHA-256 + RSA-2048), issuer/key Merkle membership,

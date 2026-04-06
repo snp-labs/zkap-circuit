@@ -201,12 +201,6 @@ impl<F: PrimeField> SHA256Gadget<F> {
 
         for chunk in data.chunks(64) {
             Self::update_state(&mut self.state, chunk)?;
-            // let bytes = Vec::from_iter(self.state.iter().flat_map(|i| i.to_bytes_be().unwrap()));
-            // println!("{} chunk {:?}", i, bytes.value().unwrap());
-            // if let Ok(value) = bytes.value() {
-            //     println!("{} chunk {:?}", i, value);
-            // }
-
             hash_results.push(self.state.clone());
         }
 

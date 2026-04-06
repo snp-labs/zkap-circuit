@@ -46,7 +46,7 @@ pub fn slice_in_binary_tree<F: PrimeField>(
 ) -> Result<Vec<FpVar<F>>, SynthesisError> {
     let input_len = input.len();
 
-    let zero = FpVar::<F>::Constant(F::from(b'A'));
+    let pad_char = FpVar::<F>::Constant(F::from(b'A'));
 
     // Pad input array
     let input_padded = pad_input(input);
@@ -92,7 +92,7 @@ pub fn slice_in_binary_tree<F: PrimeField>(
         let input_elem = select_array_element(&input_padded, &idx_bits_sel)?;
 
         // Select value based on valid
-        let output_elem = FpVar::conditionally_select(&valid, &input_elem, &zero)?;
+        let output_elem = FpVar::conditionally_select(&valid, &input_elem, &pad_char)?;
 
         output.push(output_elem);
     }

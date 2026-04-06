@@ -111,7 +111,7 @@ impl CircuitConfig {
         Ok(())
     }
 
-    /// JSON config file에서 로드 (RawCircuitConfig → CircuitConfig 변환)
+    /// Load from a JSON config file (RawCircuitConfig → CircuitConfig conversion).
     pub fn from_json_file(path: &std::path::Path) -> Result<Self, String> {
         let content = std::fs::read_to_string(path)
             .map_err(|e| format!("Failed to read config: {}", e))?;

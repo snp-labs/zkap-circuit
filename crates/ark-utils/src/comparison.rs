@@ -34,27 +34,17 @@ pub fn lt_bit_vector<F: PrimeField>(
         out[i] = &out[i] + &out[i + 1];
     }
 
-    // let mut out = vec![FpVar::Constant(F::zero()); n];
-
-    // if n > 0 {
-    //     out[n - 1] = eq[n - 1].clone();
-    // }
-
-    // if n >= 2 {
-    //     for i in (0..=(n - 2)).rev() {
-    //         out[i] = eq[i].clone() + &out[i + 1];
-    //     }
-    // }
-
     Ok(out)
 }
 
 // =============================================================================
-// Boolean bit vector comparison functions (merged from comparison_v2)
+// Boolean bit vector comparison functions
 // =============================================================================
 //
-// Custom implementation used due to a bug in FpVar::enforce_cmp in arkworks 0.5.0
+// Custom implementation: arkworks 0.5.0 FpVar::enforce_cmp produces incorrect
+// constraints for unsigned comparison in certain field configurations.
 // Reference: https://github.com/arkworks-rs/r1cs-std/issues/161
+// TODO: Switch back to upstream when the fix is released.
 
 /// A < B (Strictly Less) - for Boolean bit vectors
 ///

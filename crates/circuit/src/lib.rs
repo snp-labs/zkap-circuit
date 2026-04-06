@@ -1,4 +1,4 @@
-//! zkap-circuit — the Groth16 R1CS circuit definition for the ZK-Passkey protocol.
+//! zkap-circuit — the Groth16 R1CS circuit definition for the ZKAP protocol.
 //!
 //! Provides [`ZkapCircuit`], the main constraint synthesizer, along with all input types
 //! ([`ZkapCircuitInput`], [`CircuitPublicInputs`], witness structs) and the shared

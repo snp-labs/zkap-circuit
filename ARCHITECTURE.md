@@ -63,7 +63,7 @@ A proof is generated end-to-end as follows:
 service/src/
 ├── proof/         Prove, verify, groth16_setup orchestration
 │   ├── request.rs     RawProofRequest validation
-│   ├── types.rs       ProofRequest, Proof, VerifyRequest types
+│   ├── types.rs       CircuitContext, AnchorContext, AudienceContext
 │   ├── context.rs     Circuit input construction from witness
 │   └── generator.rs   Groth16 proving and verification
 ├── anchor/        Poseidon anchor generation for threshold schemes

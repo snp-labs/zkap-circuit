@@ -61,7 +61,6 @@ where
     F: PrimeField,
     Out: R1CSVar<F> + From<Boolean<F>>,
 {
-    // [updated] removed cs argument
     if n == 0 {
         return Ok(vec![]);
     }

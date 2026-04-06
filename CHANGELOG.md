@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `proof` feature flag for `zkap-service`: separates the heavyweight Groth16 proving stack (enabled by default) from a lightweight WASM-compatible build. Disable with `default-features = false` for browser and mobile targets where proof generation happens server-side.
 
+### Changed
+
+- Removed unused workspace dependency `dotenvy` (unreferenced across all crates).
+- Removed unused direct dependencies from `zkap-service`: `once_cell` (stdlib `OnceLock` used instead), `num`, `num-integer`, `num-bigint`, `num-traits` (RSA numeric ops handled inside `gadget`), `ark-ed-on-bn254`, and `ark-ec` (available transitively via `circuit`/`gadget`).
+- Explicitly declared `[lib]` section in `zkap-service` (`staticlib`, `cdylib`, `rlib`) for clarity.
+
 ---
 
 ## [0.1.0] - 2026-04-03

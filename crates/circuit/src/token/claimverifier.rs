@@ -203,31 +203,58 @@ fn is_whitespace<F: PrimeField>(byte: &FpVar<F>) -> Result<Boolean<F>, Synthesis
 #[cfg(test)]
 mod tests {
     use crate::token::{Claim, ClaimIndices};
-    use regex::Regex;
 
     use super::*;
 
-    /// Test-local copy of parse_claim_from_str (moved to service crate)
+    /// Test-local copy of parse_claim_from_str using pure std string operations.
     fn parse_claim_from_str(s: &str, key: &str) -> Result<Claim, String> {
-        let escaped_key = regex::escape(key);
-        let pattern = format!(r#"\s*("{}")\s*:\s*("?[^",]*"?)\s*([,\}}])"#, escaped_key);
-        let re = Regex::new(&pattern).unwrap();
-        let caps = re
-            .captures(s)
+        let needle = format!("\"{}\"", key);
+        let key_start = s
+            .find(&needle)
             .ok_or_else(|| format!("Key '{}' not found", key))?;
-        let full_match = caps.get(0).unwrap();
-        let full_match_str = full_match.as_str();
-        let offset = full_match.start();
-        let claim_len = full_match_str.len();
-        let captured_value = caps.get(2).unwrap().as_str();
-        let colon_idx = full_match_str.find(':').unwrap();
-        let value_str = captured_value.to_string();
-        let rel_search_start = colon_idx + 1;
-        let value_idx = full_match_str[rel_search_start..]
-            .find(captured_value)
-            .map(|i| i + rel_search_start)
-            .unwrap();
-        let value_len = captured_value.len();
+
+        let mut offset = key_start;
+        while offset > 0 && s.as_bytes()[offset - 1].is_ascii_whitespace() {
+            offset -= 1;
+        }
+
+        let after_key = key_start + needle.len();
+        let colon_rel = s[after_key..].find(':').ok_or("Colon not found")?;
+        let colon_idx = (after_key + colon_rel) - offset;
+
+        let after_colon = after_key + colon_rel + 1;
+        let mut value_start = after_colon;
+        while value_start < s.len() && s.as_bytes()[value_start].is_ascii_whitespace() {
+            value_start += 1;
+        }
+
+        let value_end = if s.as_bytes()[value_start] == b'"' {
+            let closing = s[value_start + 1..]
+                .find('"')
+                .ok_or("Unterminated string")?;
+            value_start + 1 + closing + 1
+        } else {
+            s[value_start..]
+                .find([',', '}'])
+                .map(|i| value_start + i)
+                .unwrap_or(s.len())
+        };
+
+        let value_str = s[value_start..value_end].to_string();
+        let value_idx = value_start - offset;
+        let value_len = value_end - value_start;
+
+        let mut trail = value_end;
+        while trail < s.len() && s.as_bytes()[trail].is_ascii_whitespace() {
+            trail += 1;
+        }
+        let claim_len =
+            if trail < s.len() && (s.as_bytes()[trail] == b',' || s.as_bytes()[trail] == b'}') {
+                trail + 1 - offset
+            } else {
+                trail - offset
+            };
+
         Ok(Claim {
             key: key.to_string(),
             value: value_str,

@@ -316,7 +316,6 @@ where
     F: PrimeField + Absorb,
 {
     let (n, k) = matrix.dimensions();
-    // let m = n - k + 1;
 
     if known_secrets.0.len() != k {
         return Err(AnchorError::DimensionMismatch(format!(

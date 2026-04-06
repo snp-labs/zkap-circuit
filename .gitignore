@@ -26,6 +26,8 @@ packages/
 # Secrets & keys
 *.pem
 *.key
+.env
+.env.*
 
 # Security audit reports
 .gstack/

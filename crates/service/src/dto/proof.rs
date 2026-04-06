@@ -54,7 +54,7 @@ impl From<(Vec<Proof<BN254>>, Vec<Vec<F>>)> for GenerateProofResCore {
         }
 
         // Index definitions for readability
-        // 0: hanchor, 1: h_ctx, 2: root, 3: h_sign_userop, 4: jwt_exp,
+        // 0: hanchor, 1: h_a, 2: root, 3: h_sign_userop, 4: jwt_exp,
         // 5: partial_rhs, 6: lhs, 7: h_aud_list
         const JWT_EXP_INDEX: usize = 4;
         const PARTIAL_RHS_INDEX: usize = 5;

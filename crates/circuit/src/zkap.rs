@@ -71,7 +71,7 @@ use gadget::{
     },
 };
 
-/// The main Groth16 R1CS circuit for the ZK-Passkey (ZKAP) protocol.
+/// The main Groth16 R1CS circuit for the ZKAP protocol.
 ///
 /// Implements [`ConstraintSynthesizer`] and encodes the full five-phase proof statement:
 /// JWT authenticity and claim extraction (SHA-256 + RSA-2048), issuer/key Merkle membership,
@@ -215,7 +215,7 @@ where
 
         let pk_op = PublicKeyVar::<C::BaseField, BNP>::new_witness(cs.clone(), || Ok(self.jwt.pk))?;
 
-        // [ZKAPCIR-001] Enforce RSA e=65537
+        // Enforce RSA public exponent e == 65537, preventing substitution of weak exponents.
         let expected_e = BigNatVar::<C::BaseField, BNP>::constant(&BigNat::from(gadget::constants::RSA_DEFAULT_EXPONENT))?;
         pk_op.e.enforce_equal_when_carried(&expected_e)?;
 
@@ -259,7 +259,7 @@ where
             .map(|u8| u8.to_fp())
             .collect::<ark_relations::r1cs::Result<Vec<_>>>()?;
 
-        // [ZKAPCIR-002] Bind JWT payload boundary to '.' separator
+        // Bind JWT payload boundary to the '.' separator positions.
         // If payload_offset_b64/payload_len_b64 are independent of the actual JWT '.' position,
         // an attacker could designate arbitrary regions (e.g. header) as payload to forge claims.
         let dot_char = FpVar::<C::BaseField>::Constant(C::BaseField::from(b'.' as u64));
@@ -292,7 +292,7 @@ where
 
         first_dot_char.enforce_equal(&dot_char)?;
 
-        // ZKAPCIR-002: structurally bind payload end position == SHA-256 padding start position
+        // Structurally bind payload end position to the SHA-256 padding start position.
         // The SHA-256 gadget already verifies buffer[pad_start_byte_idx] == 0x80,
         // so binding the position alone is sufficient here
         let pad_start_fp = pad_start_byte_idx.to_fp()?;

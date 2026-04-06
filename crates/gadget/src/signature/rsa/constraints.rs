@@ -54,7 +54,6 @@ impl<ConstraintF: PrimeField, BNP: BigNatCircuitParams> AllocVar<PublicKey, Cons
     ) -> Result<Self, SynthesisError> {
         f().and_then(|val| {
             let cs = cs.into();
-            // let n: Vec<u8> = val.borrow().n.0.to_bytes_le();
             let mut n = val.borrow().n.clone();
             n.reverse();
             let chunked_n = n

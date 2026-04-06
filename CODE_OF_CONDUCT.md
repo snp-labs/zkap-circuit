@@ -41,7 +41,7 @@ an individual is officially representing the community in public spaces.
 ## Enforcement
 
 Instances of unacceptable behavior may be reported to the project team at
-**security@snp-labs.io**. All complaints will be reviewed and investigated
+**security@baerae.com**. All complaints will be reviewed and investigated
 promptly and fairly.
 
 ## Attribution

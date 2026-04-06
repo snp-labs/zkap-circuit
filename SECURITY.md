@@ -1,17 +1,29 @@
 # Security Policy
 
-This document describes the security policy for [zkup-baerae](https://github.com/snp-labs/zkap-circuit), an open-source Rust library for zero-knowledge proof circuits.
+This document describes the security policy for [zkap-circuit](https://github.com/snp-labs/zkap-circuit), an open-source Rust library for zero-knowledge proof circuits.
 
 ---
 
-## 1. Reporting a Vulnerability
+## 1. Supported Versions
+
+| Version | Supported |
+|---------|-----------|
+| `main` (0.1.x, pre-release) | Yes — security fixes applied to `main` |
+| Any prior version | No |
+
+This project has not yet published a stable release to crates.io.
+Security updates are applied to the `main` branch.
+There is no long-term support policy at this time.
+
+---
+
+## 2. Reporting a Vulnerability
 
 **Please do not open public GitHub issues for security vulnerabilities.**
 
-You can report security issues through either channel:
+Please report security issues by email:
 
-- **GitHub Security Advisories** (preferred): [Report a vulnerability](https://github.com/snp-labs/zkap-circuit/security/advisories/new)
-- **Email**: **security@snp-labs.io**
+- **Email**: **security@baerae.com**
 
 Include as much detail as possible: affected component, reproduction steps, potential impact, and any suggested mitigations.
 
@@ -22,51 +34,59 @@ Include as much detail as possible: affected component, reproduction steps, pote
 
 ---
 
-## 2. Known Advisories
+## 3. Disclosure Policy
 
-### RUSTSEC-2023-0071 — RSA Marvin Attack (CVSS 5.9)
+We follow coordinated disclosure:
 
-| Field    | Detail                                                                                    |
-|----------|-------------------------------------------------------------------------------------------|
-| Advisory | [RUSTSEC-2023-0071](https://rustsec.org/advisories/RUSTSEC-2023-0071.html)                |
-| Crate    | `rsa` 0.9.10                                                                              |
-| Feature  | `rsa` (opt-in, in the `gadget` crate)                                                     |
-| Status   | No upstream fix available; monitoring for updates                                         |
+1. Reporter submits via GitHub Security Advisories or email.
+2. We acknowledge within 48 hours and begin triage.
+3. We develop and release a fix, coordinating timing with the reporter.
+4. We publish a GitHub Security Advisory upon or after the fix.
+5. The reporter may disclose publicly 90 days after submission,
+   or immediately once a fix has been released — whichever comes first.
 
-**Description:** A timing side-channel in the `rsa` crate's PKCS#1 v1.5 decryption path allows a remote attacker to recover private key material via the Marvin Attack.
-
-**Impact for this project: LIMITED.**
-
-This library uses RSA for signature verification within ZK circuits. All operations are performed on finite field elements inside the circuit arithmetization; timing of those operations is not directly observable by an external adversary. The native RSA functions exposed by the `gadget` crate are used for testing and witness generation only, not for production cryptographic operations.
-
-**Mitigation:** The `rsa` feature is opt-in and is not enabled by default. Users who do not explicitly enable this feature are not affected. If you enable the `rsa` feature, ensure it is used solely for testing and not in contexts where timing side-channels can be exploited.
+We ask that reporters do not disclose vulnerabilities publicly before
+a fix is available or the 90-day window has elapsed.
 
 ---
 
-## 3. Security Design
+## 4. Known Advisories
+
+### RUSTSEC-2024-0388 — `derivative` crate unmaintained
+
+| Field    | Detail                                                                 |
+|----------|------------------------------------------------------------------------|
+| Advisory | [RUSTSEC-2024-0388](https://rustsec.org/advisories/RUSTSEC-2024-0388.html) |
+| Crate    | `derivative` 2.2.0                                                     |
+| Feature  | Transitive dependency via `ark-crypto-primitives`, `gadget`, `circuit` |
+| Status   | No upstream fix available; monitoring for updates from the arkworks project |
+
+**Description:** The `derivative` crate has been flagged as unmaintained. There is no known active exploit. The risk is that future security issues will go unpatched, and abandoned proc-macro crates carry a supply-chain takeover risk.
+
+**Impact for this project: LOW.**
+
+`derivative` is a transitive dependency pulled in by the arkworks ecosystem (`ark-crypto-primitives`). It is not a direct dependency of this project. Removal requires an upstream fix from arkworks.
+
+**Mitigation:** Monitoring the arkworks project for migration to a maintained alternative (`bon` or `educe`). Added to `.cargo/audit.toml` ignore list with a review date.
+
+---
+
+## 5. Security Design
 
 ### Debug Feature Flags
 
-The following Cargo features are available for development and debugging:
+The following Cargo feature is available for development and debugging:
 
 - `print-trace`
 
 This flag is **compile-time opt-in** and carries zero overhead in default builds. It is not enabled in CI workflows.
 
-**Warning:** When enabled, this flag can log ZK witness values, which may include secret circuit inputs. It must **never** be enabled in production builds or in published packages. Treat any output produced with this flag as potentially sensitive.
+When enabled, this feature prints timing/trace information useful for debugging circuit execution. It does **not** print ZK witness values or secret circuit inputs.
 
 ### Configuration Files
 
-The committed `example.json` contains only circuit parameters (such as field sizes and curve identifiers) for local development and holds no secret material.
+The committed `example.json` contains only circuit setup parameters and does not contain any secret or sensitive material.
 
 ---
 
-## 4. Dependency Policy
-
-- **Audit:** Run `cargo audit` regularly against the advisory database. In CI, this should be part of the standard check pipeline.
-- **Lockfile:** `Cargo.lock` is committed and tracked. Do not ignore or regenerate it without review, as this ensures reproducible builds and makes dependency changes explicit in pull requests.
-- **GitHub Actions pinning:** All GitHub Actions steps are pinned to full commit SHAs rather than mutable tags. This prevents supply-chain attacks where a tag is silently moved to a malicious commit.
-
----
-
-*Last updated: 2026-04-05*
+*Last updated: 2026-04-06*

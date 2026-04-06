@@ -66,9 +66,6 @@ pub fn update(data: &[u8]) -> [u32; 8] {
     data
         .chunks_exact(64)
         .fold(state, update_with_state)
-    // for chunk in data.chunks_exact(64) {
-    //     let new_state = update_with_state(state, chunk);
-    // }
 }
 
 pub fn update_with_state(state: [u32; 8], data: &[u8]) -> [u32; 8] {

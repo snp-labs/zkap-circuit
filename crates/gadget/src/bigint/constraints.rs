@@ -1082,7 +1082,10 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> EqGadget<ConstraintF>
         self.limbs.is_eq(&other.limbs)
     }
 }
-// TODO(P4-5): This limb-wise comparison is semantically incorrect for non-canonical representations. Use enforce_equal_when_carried for semantic equality.
+// KNOWN LIMITATION: This EqGadget impl uses limb-wise comparison, which is semantically
+// incorrect for BigNatVar values in non-canonical form (i.e., where the same integer
+// can be represented by different limb combinations). Callers that require semantic
+// equality should use `enforce_equal_when_carried` instead of `is_eq`.
 
 pub fn log2(x: usize) -> u32 {
     if x == 0 {

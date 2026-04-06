@@ -19,18 +19,10 @@ thiserror = { workspace = true }
 serde      = { workspace = true }
 serde_json = { workspace = true }
 
-ark-ec                = { workspace = true }
 ark-ff                = { workspace = true }
 ark-std               = { workspace = true }
 ark-crypto-primitives = { workspace = true }
 ark-bn254             = { workspace = true }
-ark-ed-on-bn254       = { workspace = true }
-once_cell             = { workspace = true }
-
-num         = { workspace = true }
-num-integer = { workspace = true }
-num-bigint  = { workspace = true }
-num-traits  = { workspace = true }
 log = { workspace = true }
 hex = { workspace = true }
 

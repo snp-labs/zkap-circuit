@@ -77,13 +77,12 @@ pub fn parse_claim_from_str(s: &str, key: &str) -> Result<Claim, TokenError> {
     while trail < s.len() && s.as_bytes()[trail].is_ascii_whitespace() {
         trail += 1;
     }
-    let claim_len = if trail < s.len()
-        && (s.as_bytes()[trail] == b',' || s.as_bytes()[trail] == b'}')
-    {
-        trail + 1 - offset
-    } else {
-        trail - offset
-    };
+    let claim_len =
+        if trail < s.len() && (s.as_bytes()[trail] == b',' || s.as_bytes()[trail] == b'}') {
+            trail + 1 - offset
+        } else {
+            trail - offset
+        };
 
     Ok(Claim {
         key: key.to_string(),

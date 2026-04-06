@@ -229,7 +229,9 @@ mod tests {
         }
 
         let value_end = if s.as_bytes()[value_start] == b'"' {
-            let closing = s[value_start + 1..].find('"').ok_or("Unterminated string")?;
+            let closing = s[value_start + 1..]
+                .find('"')
+                .ok_or("Unterminated string")?;
             value_start + 1 + closing + 1
         } else {
             s[value_start..]
@@ -246,13 +248,12 @@ mod tests {
         while trail < s.len() && s.as_bytes()[trail].is_ascii_whitespace() {
             trail += 1;
         }
-        let claim_len = if trail < s.len()
-            && (s.as_bytes()[trail] == b',' || s.as_bytes()[trail] == b'}')
-        {
-            trail + 1 - offset
-        } else {
-            trail - offset
-        };
+        let claim_len =
+            if trail < s.len() && (s.as_bytes()[trail] == b',' || s.as_bytes()[trail] == b'}') {
+                trail + 1 - offset
+            } else {
+                trail - offset
+            };
 
         Ok(Claim {
             key: key.to_string(),

@@ -1,10 +1,23 @@
 # Security Policy
 
-This document describes the security policy for [zkup-baerae](https://github.com/snp-labs/zkap-circuit), an open-source Rust library for zero-knowledge proof circuits.
+This document describes the security policy for [zkap-circuit](https://github.com/snp-labs/zkap-circuit), an open-source Rust library for zero-knowledge proof circuits.
 
 ---
 
-## 1. Reporting a Vulnerability
+## 1. Supported Versions
+
+| Version | Supported |
+|---------|-----------|
+| `main` (0.1.x, pre-release) | Yes — security fixes applied to `main` |
+| Any prior version | No |
+
+This project has not yet published a stable release to crates.io.
+Security updates are applied to the `main` branch.
+There is no long-term support policy at this time.
+
+---
+
+## 2. Reporting a Vulnerability
 
 **Please do not open public GitHub issues for security vulnerabilities.**
 
@@ -21,7 +34,23 @@ Include as much detail as possible: affected component, reproduction steps, pote
 
 ---
 
-## 2. Known Advisories
+## 3. Disclosure Policy
+
+We follow coordinated disclosure:
+
+1. Reporter submits via GitHub Security Advisories or email.
+2. We acknowledge within 48 hours and begin triage.
+3. We develop and release a fix, coordinating timing with the reporter.
+4. We publish a GitHub Security Advisory upon or after the fix.
+5. The reporter may disclose publicly 90 days after submission,
+   or immediately once a fix has been released — whichever comes first.
+
+We ask that reporters do not disclose vulnerabilities publicly before
+a fix is available or the 90-day window has elapsed.
+
+---
+
+## 4. Known Advisories
 
 ### RUSTSEC-2024-0388 — `derivative` crate unmaintained
 
@@ -42,7 +71,7 @@ Include as much detail as possible: affected component, reproduction steps, pote
 
 ---
 
-## 3. Security Design
+## 5. Security Design
 
 ### Debug Feature Flags
 

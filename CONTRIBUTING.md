@@ -28,7 +28,7 @@ cargo build
 
 ### Prerequisites
 
-- Rust 1.80 or later (`rustup update stable`)
+- Rust 1.85 or later (`rustup update stable`) — required for edition 2024
 - `cargo` (included with Rust)
 
 ### Building
@@ -49,6 +49,21 @@ To run tests for a specific crate:
 cargo test -p circuit
 cargo test -p gadget
 cargo test -p zkap-service
+```
+
+### Documentation
+
+Build and browse the API docs locally:
+
+```sh
+cargo doc --workspace --no-deps --open
+```
+
+### Running Examples
+
+```sh
+# Full proof lifecycle (setup → prove → verify), ~2–5 min in release mode
+cargo run -p zkap-service --example groth16_proof --release
 ```
 
 ### Linting
@@ -84,6 +99,20 @@ zkap-circuit/
 │       └── tests/        # Integration tests
 └── vendor/         # Vendored dependencies
 ```
+
+## Branch and Review
+
+### Branch Strategy
+
+- Create branches from `main`.
+- Use the naming convention: `<type>/<short-description>`
+  (e.g. `feat/poseidon-cache`, `fix/anchor-length`, `docs/contributing-guide`).
+
+### Review Expectations
+
+- All pull requests require at least one approving review before merge.
+- CI must pass: `cargo clippy`, `cargo test --release`, `cargo fmt --check`.
+- Changes to circuit constraints or cryptographic logic may require additional review.
 
 ## Pull Request Process
 
@@ -122,6 +151,15 @@ feat(gadget): add Poseidon hash constraints for BN254
 fix(circuit): correct witness assignment in anchor gadget
 test(circuit): add Groth16 integration tests with K=3
 ```
+
+## Contributing Documentation and Examples
+
+Documentation and example improvements are welcome. When contributing:
+
+- Verify that code examples compile: `cargo build` and, if runnable, `cargo run`.
+- Do not include real JWT tokens, private keys, or secrets in examples or docs.
+- Keep examples self-contained — no external services or files outside the repo.
+- Update `README.md` if your change affects the public API or build instructions.
 
 ## Reporting Issues
 

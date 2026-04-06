@@ -2,11 +2,18 @@
 
 A Rust library for generating Groth16 zero-knowledge proofs that verify JWT/OAuth tokens without revealing their contents. Built on [arkworks](https://github.com/arkworks-rs).
 
+## Status
+
+> **Experimental.** This library is under active development and has not reached a
+> stable release. The API, circuit constraints, and serialisation formats may change
+> without notice. An external security audit (CSO review) has been completed, but the
+> library has not been battle-tested in production deployments. Use at your own risk.
+
 ## Features
 
 - **JWT verification in ZK**: Proves a valid JWT was issued by a known provider without exposing the token
-- **RSA-2048 signature verification**: Enforces `e = 65537` inside the circuit ([ZKAPCIR-001])
-- **Payload boundary binding**: Cryptographically binds the claimed payload region to the actual `.` separators ([ZKAPCIR-002])
+- **RSA-2048 signature verification**: Enforces `e = 65537` inside the circuit
+- **Payload boundary binding**: Cryptographically binds the claimed payload region to the actual `.` separators
 - **Threshold membership (k-of-N)**: Vandermonde-based anchor scheme for multi-party settings
 - **Merkle tree issuer registry**: Proves the RSA public key belongs to a trusted issuer set
 - **Audience allowlist**: Zero-knowledge membership check against a hashed audience list
@@ -46,7 +53,8 @@ A Rust library for generating Groth16 zero-knowledge proofs that verify JWT/OAut
 +----------------------------------------------------------+
 ```
 
-For platform-specific bindings (Node.js, WASM, iOS/Android), see [zkap-circuit-bindings](https://github.com/baerae-zkap/zkap-circuit-bindings).
+For platform-specific bindings (Node.js, WASM, iOS/Android), see [zkap-zkp](https://github.com/baerae-zkap/zkap-zkp)
+(currently private; public release planned).
 
 ## Installation
 
@@ -88,37 +96,63 @@ gadget = { git = "https://github.com/snp-labs/zkap-circuit", features = ["full"]
 
 ```rust
 use zkap_service::{CircuitConfig, groth16_setup, prove, verify, RawProofRequest};
-use std::path::PathBuf;
 
-// 1. Load circuit parameters from a JSON manifest
-let config = zkap_service::manifest::load_params_from_manifest("keys/manifest.json".as_ref())?;
+// 1. Load circuit parameters from a JSON config file
+let config = CircuitConfig::from_json_file("example.json".as_ref())
+    .expect("Failed to load config");
 
-// 2. Trusted setup (run once, produces proving/verifying keys)
-let setup = groth16_setup(&config)?;
+// 2. Trusted setup — run once to produce proving/verifying keys
+let setup = groth16_setup(&config).expect("Setup failed");
 
-// 3. Generate a proof
+// 3. Build a proof request (JWTs, RSA keys, Merkle paths, anchors)
 let request = RawProofRequest::new(
-    PathBuf::from("keys/pk.bin"),
-    jwts,           // K JWT tokens
-    pk_ops,         // K RSA public key moduli (Base64)
+    pk_path,        // Path to the proving key
+    jwts,           // K JWT token strings
+    pk_ops,         // K RSA public key moduli (Base64-encoded)
     merkle_paths,   // K Merkle authentication paths
     leaf_indices,   // K leaf indices
-    root,           // Merkle root
+    root,           // Merkle root (decimal field element string)
     anchor,         // Anchor values + hanchor
-    h_sign_user_op, // UserOperation hash
-    random,         // Blinding factor
-    aud_list,       // Audience hashes
+    h_sign_user_op, // UserOperation hash (decimal field element string)
+    random,         // Blinding factor (decimal field element string)
+    aud_list,       // Audience hashes (field element strings)
 );
-let (proofs, public_inputs) = prove(&config, request)?;
+let (proofs, public_inputs) = prove(&config, request).expect("Proving failed");
 
 // 4. Verify
-let is_valid = verify(&setup.pvk, &proofs[0], &public_inputs[0])?;
-assert!(is_valid);
+let valid = verify(&setup.pvk, &proofs[0], &public_inputs[0])
+    .expect("Verification failed");
+assert!(valid);
 ```
+
+> All field-element parameters are decimal or `0x`-prefixed hex strings.
+> For a fully runnable example, see [Running the Full Example](#running-the-full-example).
+
+## Running the Full Example
+
+A self-contained example exercising all 7 public API functions is included:
+
+```bash
+cargo run -p zkap-service --example groth16_proof --release
+```
+
+> **Note:** The trusted setup step is computationally expensive.
+> Use `--release` for reasonable performance (approximately 2–5 minutes on modern hardware).
+
+The example performs the complete lifecycle:
+1. Circuit configuration from `example.json`
+2. Groth16 trusted setup (`groth16_setup`)
+3. RSA-2048 key generation and JWT signing
+4. Merkle tree construction (`generate_leaf_hash`)
+5. Threshold anchor generation (`generate_anchor`, `generate_aud_hash`)
+6. Proof generation (`prove`)
+7. Proof verification (`verify`)
+
+Source: [`crates/service/examples/groth16_proof.rs`](crates/service/examples/groth16_proof.rs)
 
 ## Building from Source
 
-**Requirements**: Rust 1.80+ (stable, 2024 edition)
+**Requirements**: Rust 1.85+ (stable, required for the 2024 edition)
 
 ```bash
 git clone https://github.com/snp-labs/zkap-circuit.git
@@ -142,15 +176,24 @@ cargo clippy -- -D warnings
 | `k` | Threshold (minimum signers required) |
 | `max_jwt_b64_len` | Maximum JWT length in base64 bytes |
 | `max_payload_b64_len` | Maximum payload length in base64 bytes |
+| `max_aud_len` | Maximum `aud` claim length in bytes |
+| `max_exp_len` | Maximum `exp` claim length in bytes |
+| `max_iss_len` | Maximum `iss` claim length in bytes |
+| `max_nonce_len` | Maximum `nonce` claim length in bytes |
+| `max_sub_len` | Maximum `sub` claim length in bytes |
 | `tree_height` | Issuer Merkle tree height (supports up to 2^height issuers) |
 | `num_audience_limit` | Maximum allowed audience list size |
+| `claims` | JWT claim names to extract (e.g. `["aud","exp","iss","nonce","sub"]`) |
+| `forbidden_string` | String forbidden inside JWT claims (injection guard) |
+
+An example configuration is provided in [`example.json`](example.json).
 
 ## Security
 
 An external security audit (CSO review) was completed. Key findings addressed in the circuit:
 
-- **[ZKAPCIR-001]** The RSA public exponent `e` is enforced equal to `65537` inside the R1CS circuit via `enforce_equal_when_carried`, preventing substitution of weak exponents.
-- **[ZKAPCIR-002]** JWT payload boundaries are cryptographically bound to the `.` separator positions and the SHA-256 padding start index (`pad_start_byte_idx`), preventing an attacker from designating arbitrary byte regions as the payload.
+- The RSA public exponent `e` is enforced equal to `65537` inside the R1CS circuit via `enforce_equal_when_carried`, preventing substitution of weak exponents.
+- JWT payload boundaries are cryptographically bound to the `.` separator positions and the SHA-256 padding start index (`pad_start_byte_idx`), preventing an attacker from designating arbitrary byte regions as the payload.
 
 Additional defense-in-depth constraints enforced by the circuit:
 - Payload offset is enforced to be at least 1 (prevents field underflow on subtraction).

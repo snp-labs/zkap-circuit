@@ -2,6 +2,18 @@
 
 Thank you for your interest in contributing. This document explains how to get started, build the project, and submit changes.
 
+## Git Configuration
+
+Before your first commit, configure Git to use your GitHub noreply email address.
+This prevents your personal email from being permanently embedded in public git history.
+
+```sh
+git config user.email "username@users.noreply.github.com"
+```
+
+Replace `username` with your GitHub username. You can find your noreply address at
+**GitHub → Settings → Emails**.
+
 ## Getting Started
 
 Clone the repository and build:

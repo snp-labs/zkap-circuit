@@ -29,6 +29,10 @@ zkap-service ─────────→ circuit ─────────�
 
 **zkap-service** is the public API layer that orchestrates proof generation end-to-end. It parses JWTs, validates requests, builds circuit witness, invokes Groth16 proving/verification, and provides utilities for anchor generation, hash computation, and CRS manifest validation. All request/response types (RawProofRequest, ProofRequest) are defined here and serializable for platform bindings.
 
+The crate is split into two build profiles via the `proof` Cargo feature (enabled by default):
+- **With `proof`** (default): full Groth16 proving stack, including `ark-groth16`, `ark-serialize`, `memmap2`, `jsonwebtoken`, and hash crates. Use for native server-side proof generation.
+- **Without `proof`** (`default-features = false`): lightweight, WASM-compatible build. Only witness construction, DTOs, and data types are included. Proof generation functions are unavailable. Use for browser or mobile targets where proving happens server-side.
+
 **cli** provides two binary utilities: `generate_crs` for structured reference string generation and `generate_hash` for standalone Poseidon hash computation for testing and setup.
 
 ## Data Flow

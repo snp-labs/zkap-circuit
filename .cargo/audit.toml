@@ -8,4 +8,8 @@ ignore = [
     # tracing-subscriber: ANSI log injection (transitive dep via ark-relations).
     # No user input reaches tracing in this crate.
     "RUSTSEC-2025-0055",
+    # derivative: unmaintained (transitive dep via ark-crypto-primitives / arkworks).
+    # No known exploit. Awaiting upstream migration by arkworks project.
+    # Documented in SECURITY.md. Review date: 2026-07-06.
+    "RUSTSEC-2024-0388",
 ]

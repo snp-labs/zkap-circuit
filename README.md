@@ -54,8 +54,15 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
+# Full build — includes Groth16 proving, key loading, and all heavy dependencies
 zkap-service = { git = "https://github.com/snp-labs/zkap-circuit" }
+
+# Lightweight build — WASM-compatible, no proving/verifying, no heavy arkworks deps
+# Use this for platforms where proof generation happens server-side (browser, mobile)
+zkap-service = { git = "https://github.com/snp-labs/zkap-circuit", default-features = false }
 ```
+
+The `proof` feature (enabled by default) pulls in Groth16 proving, key deserialization, and all heavyweight `ark-*` dependencies. Disable it for WASM targets or bindings that only need witness construction and data types.
 
 To use individual gadgets with fine-grained features:
 

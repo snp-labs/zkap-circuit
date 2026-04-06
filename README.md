@@ -6,8 +6,9 @@ A Rust library for generating Groth16 zero-knowledge proofs that verify JWT/OAut
 
 > **Experimental.** This library is under active development and has not reached a
 > stable release. The API, circuit constraints, and serialisation formats may change
-> without notice. An external security audit (CSO review) has been completed, but the
-> library has not been battle-tested in production deployments. Use at your own risk.
+> without notice. It has not been battle-tested in production deployments. Use at your own risk.
+
+
 
 ## Features
 

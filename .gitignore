@@ -4,6 +4,7 @@
 
 # Test artifacts / generated files
 crates/test/test_outputs/
+test_outputs/
 artifacts/
 dist/
 

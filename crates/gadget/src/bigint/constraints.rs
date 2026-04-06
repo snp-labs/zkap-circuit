@@ -426,7 +426,14 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
             }
         }
 
-        Self::verify_mod_relation(cs, &lr_prod_limbs, lr_len, modulus, &prod_value, &lhs_word_size)
+        Self::verify_mod_relation(
+            cs,
+            &lr_prod_limbs,
+            lr_len,
+            modulus,
+            &prod_value,
+            &lhs_word_size,
+        )
     }
 
     /// Modular squaring (checked): range-checks inputs, then delegates to the core impl
@@ -473,7 +480,14 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
             }
         }
 
-        Self::verify_mod_relation(cs, &lr_prod_limbs, lr_len, modulus, &prod_value, &lhs_word_size)
+        Self::verify_mod_relation(
+            cs,
+            &lr_prod_limbs,
+            lr_len,
+            modulus,
+            &prod_value,
+            &lhs_word_size,
+        )
     }
 
     /// Common verification for modular multiplication/squaring (unchecked path).
@@ -757,7 +771,7 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
         }) * current_word_size.clone();
 
         let grouped_carry_bits =
-            grouped_word_size.bits() as usize - P::LIMB_WIDTH * limbs_per_group + 1 ;
+            grouped_word_size.bits() as usize - P::LIMB_WIDTH * limbs_per_group + 1;
 
         // Propagate carries over grouped limbs.
         let mut carry_in = FpVar::<ConstraintF>::Constant(ConstraintF::ZERO);
@@ -1878,16 +1892,14 @@ mod test {
             BigNat512TestParams::N_LIMBS,
         );
 
-        let reconstructed =
-            limbs_to_nat::<Fq>(&limbs, BigNat512TestParams::LIMB_WIDTH);
+        let reconstructed = limbs_to_nat::<Fq>(&limbs, BigNat512TestParams::LIMB_WIDTH);
         assert_eq!(original, reconstructed);
 
         // Also test through BigNatVar
         let cs = ConstraintSystem::<Fq>::new_ref();
-        let var = BigNatVar::<Fq, BigNat512TestParams>::new_witness(cs.clone(), || {
-            Ok(original.clone())
-        })
-        .unwrap();
+        let var =
+            BigNatVar::<Fq, BigNat512TestParams>::new_witness(cs.clone(), || Ok(original.clone()))
+                .unwrap();
         assert_eq!(var.value().unwrap(), original);
     }
 }

@@ -15,7 +15,6 @@ pub fn conditionally_select_vec<F: PrimeField>(
         .collect()
 }
 
-
 pub fn sha256_pad_with_len(input: &[u8], max_len: usize) -> Vec<u8> {
     let block_size = 64; // Block size in bytes
     let mut padded = input.to_vec();
@@ -61,11 +60,7 @@ pub fn update(data: &[u8]) -> [u32; 8] {
     assert!(data.len().is_multiple_of(64));
     let state = H;
 
-    
-
-    data
-        .chunks_exact(64)
-        .fold(state, update_with_state)
+    data.chunks_exact(64).fold(state, update_with_state)
 }
 
 pub fn update_with_state(state: [u32; 8], data: &[u8]) -> [u32; 8] {
@@ -138,7 +133,6 @@ pub fn update_with_state(state: [u32; 8], data: &[u8]) -> [u32; 8] {
 pub fn finalize_with_state(state: [u32; 8], data: &[u8], len: usize) -> [u32; 8] {
     let padded_input = sha256_pad_with_len(data, len);
 
-
     update_with_state(state, &padded_input)
 }
 
@@ -150,7 +144,11 @@ mod tests {
     fn test_sha256_pad_with_len_alignment() {
         let input = b"hello";
         let padded = sha256_pad_with_len(input, input.len());
-        assert_eq!(padded.len() % 64, 0, "Padded output must be 64-byte aligned");
+        assert_eq!(
+            padded.len() % 64,
+            0,
+            "Padded output must be 64-byte aligned"
+        );
         assert_eq!(padded[input.len()], 0x80, "First padding byte must be 0x80");
     }
 
@@ -159,16 +157,16 @@ mod tests {
         let input = b"test data";
         let padded = sha256_pad_with_len(input, input.len());
         // Last 8 bytes = bit length in big-endian
-        let bit_len = u64::from_be_bytes(padded[padded.len()-8..].try_into().unwrap());
+        let bit_len = u64::from_be_bytes(padded[padded.len() - 8..].try_into().unwrap());
         assert_eq!(bit_len, (input.len() as u64) * 8);
     }
 
     #[test]
     fn test_sha256_block_len() {
-        assert_eq!(sha256_block_len(0), 1);   // 0+1+8 = 9 → ceil(9/64) = 1
-        assert_eq!(sha256_block_len(55), 1);  // 55+1+8 = 64 → 1
-        assert_eq!(sha256_block_len(56), 2);  // 56+1+8 = 65 → 2
-        assert_eq!(sha256_block_len(64), 2);  // 64+1+8 = 73 → 2
+        assert_eq!(sha256_block_len(0), 1); // 0+1+8 = 9 → ceil(9/64) = 1
+        assert_eq!(sha256_block_len(55), 1); // 55+1+8 = 64 → 1
+        assert_eq!(sha256_block_len(56), 2); // 56+1+8 = 65 → 2
+        assert_eq!(sha256_block_len(64), 2); // 64+1+8 = 73 → 2
         assert_eq!(sha256_block_len(119), 2); // 119+1+8 = 128 → 2
         assert_eq!(sha256_block_len(120), 3); // 120+1+8 = 129 → 3
     }

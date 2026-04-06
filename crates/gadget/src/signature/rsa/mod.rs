@@ -92,8 +92,8 @@ where
         let bits = BNP::LIMB_WIDTH * BNP::N_LIMBS; // 2048 bits for RSA-2048
         let mut rng = OsRng; // Use OsRng for cryptographic randomness
 
-        let priv_key = RsaPrivateKey::new(&mut rng, bits)
-            .map_err(|_| SignatureError::GenerateLibKeyError)?;
+        let priv_key =
+            RsaPrivateKey::new(&mut rng, bits).map_err(|_| SignatureError::GenerateLibKeyError)?;
 
         let pub_key = RsaPublicKey::from(&priv_key);
         let pub_key = PublicKey {
@@ -139,11 +139,9 @@ where
         message: &[u8],
         signature: &Signature,
     ) -> Result<bool, SignatureError> {
-        let pub_key = RsaPublicKey::new(
-            BigUint::from_bytes_be(&pk.n),
-            BigUint::from_bytes_be(&pk.e),
-        )
-        .map_err(|_| SignatureError::GenerateLibKeyError)?;
+        let pub_key =
+            RsaPublicKey::new(BigUint::from_bytes_be(&pk.n), BigUint::from_bytes_be(&pk.e))
+                .map_err(|_| SignatureError::GenerateLibKeyError)?;
 
         let verifying_key = VerifyingKey::<D>::new(pub_key);
         let signature = CrateSignature::try_from(signature.0.as_slice())

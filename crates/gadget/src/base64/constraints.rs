@@ -190,8 +190,7 @@ mod tests {
             .map(|&byte| FpVar::new_witness(cs.clone(), || Ok(F::from(byte as u64))).unwrap())
             .collect();
 
-        let result =
-            Base64DecoderGadget::decode(&table_var, &enc_asciis, &index_bits_var).unwrap();
+        let result = Base64DecoderGadget::decode(&table_var, &enc_asciis, &index_bits_var).unwrap();
 
         assert!(cs.is_satisfied().unwrap());
         assert_eq!(result.len(), 3);
@@ -228,8 +227,7 @@ mod tests {
             .map(|&byte| FpVar::new_witness(cs.clone(), || Ok(F::from(byte as u64))).unwrap())
             .collect();
 
-        let result =
-            Base64DecoderGadget::decode(&table_var, &enc_asciis, &index_bits_var).unwrap();
+        let result = Base64DecoderGadget::decode(&table_var, &enc_asciis, &index_bits_var).unwrap();
 
         assert!(cs.is_satisfied().unwrap());
         assert_eq!(result.len(), 6);
@@ -320,13 +318,15 @@ mod tests {
             .map(|&byte| FpVar::new_witness(cs.clone(), || Ok(F::from(byte as u64))).unwrap())
             .collect();
 
-        let result =
-            Base64DecoderGadget::decode(&table_var, &enc_asciis, &index_bits_var).unwrap();
+        let result = Base64DecoderGadget::decode(&table_var, &enc_asciis, &index_bits_var).unwrap();
 
         // NULL padding with index_bits=0 ('A') should satisfy constraints
         assert!(cs.is_satisfied().unwrap());
         assert_eq!(result.len(), 3);
-        println!("decode null padding: satisfied, {} constraints", cs.num_constraints());
+        println!(
+            "decode null padding: satisfied, {} constraints",
+            cs.num_constraints()
+        );
     }
 
     #[test]
@@ -378,27 +378,24 @@ mod tests {
                 Base64TableVar::new_variable(cs.clone(), || Ok(&table), AllocationMode::Constant)
                     .unwrap();
             let index_bits = IndexBits::from_base64_url(&input_str, input_len).unwrap();
-            let index_bits_var = IndexBitsVar::new_variable(
-                cs.clone(),
-                || Ok(&index_bits),
-                AllocationMode::Witness,
-            )
-            .unwrap();
+            let index_bits_var =
+                IndexBitsVar::new_variable(cs.clone(), || Ok(&index_bits), AllocationMode::Witness)
+                    .unwrap();
             let enc_asciis: Vec<FpVar<F>> = input_str
                 .as_bytes()
                 .iter()
-                .map(|&byte| {
-                    FpVar::new_witness(cs.clone(), || Ok(F::from(byte as u64))).unwrap()
-                })
+                .map(|&byte| FpVar::new_witness(cs.clone(), || Ok(F::from(byte as u64))).unwrap())
                 .collect();
             let _result =
-                Base64DecoderGadget::decode(&table_var, &enc_asciis, &index_bits_var)
-                    .unwrap();
+                Base64DecoderGadget::decode(&table_var, &enc_asciis, &index_bits_var).unwrap();
             let constraints = cs.num_constraints();
             let per_char = constraints as f64 / input_len as f64;
 
             assert!(cs.is_satisfied().unwrap());
-            println!("Input length: {} chars → {} constraints ({:.1}/char)", input_len, constraints, per_char);
+            println!(
+                "Input length: {} chars → {} constraints ({:.1}/char)",
+                input_len, constraints, per_char
+            );
         }
     }
 
@@ -409,8 +406,10 @@ mod tests {
         let table = get_base64_table();
 
         // "ABCD" — first 4 chars of base64 alphabet
-        for input in &["ABCD", "EFGH", "IJKL", "MNOP", "QRST", "UVWX", "YZab", "cdef",
-                       "ghij", "klmn", "opqr", "stuv", "wxyz", "0123", "4567", "89-_"] {
+        for input in &[
+            "ABCD", "EFGH", "IJKL", "MNOP", "QRST", "UVWX", "YZab", "cdef", "ghij", "klmn", "opqr",
+            "stuv", "wxyz", "0123", "4567", "89-_",
+        ] {
             let cs = ConstraintSystem::<F>::new_ref();
             let table_var =
                 Base64TableVar::new_variable(cs.clone(), || Ok(&table), AllocationMode::Constant)
@@ -452,8 +451,7 @@ mod tests {
             .map(|&b| FpVar::new_witness(cs.clone(), || Ok(F::from(b as u64))).unwrap())
             .collect();
 
-        let result =
-            Base64DecoderGadget::decode(&table_var, &enc_asciis, &index_bits_var).unwrap();
+        let result = Base64DecoderGadget::decode(&table_var, &enc_asciis, &index_bits_var).unwrap();
         assert!(cs.is_satisfied().unwrap());
 
         // Tamper: enforce result[0] == 0 (should be 77='M')
@@ -483,8 +481,7 @@ mod tests {
             .map(|&b| FpVar::new_witness(cs.clone(), || Ok(F::from(b as u64))).unwrap())
             .collect();
 
-        let result =
-            Base64DecoderGadget::decode(&table_var, &enc_asciis, &index_bits_var).unwrap();
+        let result = Base64DecoderGadget::decode(&table_var, &enc_asciis, &index_bits_var).unwrap();
         assert!(cs.is_satisfied().unwrap());
         assert_eq!(result.len(), 24); // 32 * 6 / 8 = 24 bytes
     }

@@ -1,4 +1,4 @@
-use ark_serialize::{CanonicalSerialize, CanonicalDeserialize};
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 
 pub mod claimverifier;
 pub mod constraints;

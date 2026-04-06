@@ -97,10 +97,7 @@ pub fn validate_crs_manifest(
     check!(NUM_AUDIENCE_LIMIT, num_audience_limit);
 
     if mismatches.is_empty() {
-        log::info!(
-            "CRS manifest validated OK (profile: {})",
-            manifest.profile
-        );
+        log::info!("CRS manifest validated OK (profile: {})", manifest.profile);
         Ok(())
     } else {
         Err(ApplicationError::InvalidFormat(format!(
@@ -152,9 +149,9 @@ pub fn load_params_from_manifest(manifest_path: &Path) -> Result<CircuitConfig, 
         forbidden_string: b"forbidden".to_vec(),
     };
 
-    config.validate().map_err(|e| {
-        ApplicationError::InvalidFormat(format!("Invalid manifest params: {}", e))
-    })?;
+    config
+        .validate()
+        .map_err(|e| ApplicationError::InvalidFormat(format!("Invalid manifest params: {}", e)))?;
 
     Ok(config)
 }

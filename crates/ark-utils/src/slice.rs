@@ -7,10 +7,7 @@ use ark_r1cs_std::{
 };
 use ark_relations::r1cs::SynthesisError;
 
-use crate::{
-    is_less_than, lt_bit_vector,
-    multi_mux, select_array_element,
-};
+use crate::{is_less_than, lt_bit_vector, multi_mux, select_array_element};
 
 /// Computes the quotient and remainder of dividing an input integer (UInt16) by 2^p
 /// within an Arkworks circuit.
@@ -129,7 +126,10 @@ pub fn slice_from_start<F: PrimeField>(
 ) -> Result<Vec<FpVar<F>>, SynthesisError> {
     let in_len = in_vec.len();
 
-    assert!(out_len > 0, "Output length (out_len) must be greater than 0.");
+    assert!(
+        out_len > 0,
+        "Output length (out_len) must be greater than 0."
+    );
     assert!(
         out_len <= in_len,
         "Output length (out_len) must be less than or equal to input length (in_len = {}).",
@@ -268,8 +268,7 @@ pub fn slice_grouped<F: PrimeField>(
     let in_len = data.len();
 
     // Check that nums_per_group is a power of 2
-    let log_p = log_base_2(nums_per_group)
-        .expect("nums_per_group must be a power of 2");
+    let log_p = log_base_2(nums_per_group).expect("nums_per_group must be a power of 2");
 
     // --- Range Checks ---
     // 1. index in [0, inLen - 1]
@@ -277,7 +276,10 @@ pub fn slice_grouped<F: PrimeField>(
 
     // 2. length in [1, outLen]
     let length_minus_one = length.wrapping_add(&UInt16::constant(u16::MAX)); // length - 1
-    Boolean::enforce_smaller_or_equal_than_le(&length_minus_one.to_bits_le()?, [max_len as u64 - 1])?;
+    Boolean::enforce_smaller_or_equal_than_le(
+        &length_minus_one.to_bits_le()?,
+        [max_len as u64 - 1],
+    )?;
 
     // 3. index + length in [0, inLen]
     let end_index = index.wrapping_add(length);
@@ -320,7 +322,8 @@ pub fn slice_grouped<F: PrimeField>(
         length.clone(),
         UInt16::constant(u16::MAX), // -1
     ])?;
-    let (end_idx_by_p, _end_idx_mod_p) = divide_mod_power_of_2_circuit(&index_plus_length_minus_one, log_p)?;
+    let (end_idx_by_p, _end_idx_mod_p) =
+        divide_mod_power_of_2_circuit(&index_plus_length_minus_one, log_p)?;
 
     // --- Compute number of output groups ---
     // The sublist spans the most groups when it starts at the last element of a group.
@@ -527,7 +530,10 @@ mod tests {
         let result = slice_grouped(&input_var, &start, &length, max_len, 16).unwrap();
         assert!(cs.is_satisfied().unwrap());
 
-        println!("slice_grouped - number of constraints: {}", cs.num_constraints());
+        println!(
+            "slice_grouped - number of constraints: {}",
+            cs.num_constraints()
+        );
 
         // Verify result
         let result_values: Vec<u8> = result
@@ -559,7 +565,10 @@ mod tests {
         let result = slice_efficient(&input_var, &start, &length, max_len).unwrap();
         assert!(cs.is_satisfied().unwrap());
 
-        println!("slice_efficient - number of constraints: {}", cs.num_constraints());
+        println!(
+            "slice_efficient - number of constraints: {}",
+            cs.num_constraints()
+        );
 
         // Verify result
         let result_values: Vec<u8> = result
@@ -600,7 +609,11 @@ mod tests {
             let result = slice_grouped(&input_var, &start, &length, max_len, group_size).unwrap();
             assert!(cs.is_satisfied().unwrap());
 
-            println!("  Group size {}: {} constraints", group_size, cs.num_constraints());
+            println!(
+                "  Group size {}: {} constraints",
+                group_size,
+                cs.num_constraints()
+            );
 
             // Verify correctness
             let result_values: Vec<u8> = result
@@ -610,8 +623,13 @@ mod tests {
 
             // Expected values
             for i in 0..slice_len as usize {
-                assert_eq!(result_values[i], input[start_pos as usize + i],
-                          "Mismatch at position {} for group_size {}", i, group_size);
+                assert_eq!(
+                    result_values[i],
+                    input[start_pos as usize + i],
+                    "Mismatch at position {} for group_size {}",
+                    i,
+                    group_size
+                );
             }
         }
     }
@@ -634,7 +652,10 @@ mod tests {
         let result = slice_from_start(&input_var, &length, out_len, &pad_zero).unwrap();
         assert!(cs.is_satisfied().unwrap());
 
-        println!("slice_from_start - number of constraints: {}", cs.num_constraints());
+        println!(
+            "slice_from_start - number of constraints: {}",
+            cs.num_constraints()
+        );
 
         // Verify result
         let result_values: Vec<u8> = result
@@ -686,10 +707,7 @@ mod tests {
         assert!(cs.is_satisfied().unwrap());
 
         for (orig, recov) in original_segments.iter().zip(recovered.iter()) {
-            assert_eq!(
-                orig.value().unwrap(),
-                recov.value().unwrap(),
-            );
+            assert_eq!(orig.value().unwrap(), recov.value().unwrap(),);
         }
     }
 

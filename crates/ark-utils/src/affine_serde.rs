@@ -81,8 +81,10 @@ pub fn hex_decimal_to_field<F: PrimeField>(s: &str) -> Result<F, FieldParseError
 #[deprecated(note = "use ark_utils::try_str_to_fields instead")]
 pub fn ascii_to_field_be<F: PrimeField>(s: &str) -> Result<Vec<F>, FieldParseError> {
     crate::try_str_to_fields(s).map_err(|e| match e {
-        crate::convert::ConvertError::InvalidLength { expected_multiple, actual } =>
-            FieldParseError::InvalidLength(expected_multiple, actual),
+        crate::convert::ConvertError::InvalidLength {
+            expected_multiple,
+            actual,
+        } => FieldParseError::InvalidLength(expected_multiple, actual),
         _ => unreachable!("try_str_to_fields only returns InvalidLength"),
     })
 }
@@ -94,18 +96,16 @@ where
     A: FromCoords,
     A::BaseField: PrimeField,
 {
-    let x = crate::convert::hex_decimal_to_field::<A::BaseField>(x_str)
-        .map_err(|e| match e {
-            crate::convert::ConvertError::InvalidHex(_) => FieldParseError::InvalidHex,
-            crate::convert::ConvertError::InvalidDecimal(_) => FieldParseError::InvalidDecimal,
-            _ => unreachable!(),
-        })?;
-    let y = crate::convert::hex_decimal_to_field::<A::BaseField>(y_str)
-        .map_err(|e| match e {
-            crate::convert::ConvertError::InvalidHex(_) => FieldParseError::InvalidHex,
-            crate::convert::ConvertError::InvalidDecimal(_) => FieldParseError::InvalidDecimal,
-            _ => unreachable!(),
-        })?;
+    let x = crate::convert::hex_decimal_to_field::<A::BaseField>(x_str).map_err(|e| match e {
+        crate::convert::ConvertError::InvalidHex(_) => FieldParseError::InvalidHex,
+        crate::convert::ConvertError::InvalidDecimal(_) => FieldParseError::InvalidDecimal,
+        _ => unreachable!(),
+    })?;
+    let y = crate::convert::hex_decimal_to_field::<A::BaseField>(y_str).map_err(|e| match e {
+        crate::convert::ConvertError::InvalidHex(_) => FieldParseError::InvalidHex,
+        crate::convert::ConvertError::InvalidDecimal(_) => FieldParseError::InvalidDecimal,
+        _ => unreachable!(),
+    })?;
 
     let p = A::from_coords(x, y);
 

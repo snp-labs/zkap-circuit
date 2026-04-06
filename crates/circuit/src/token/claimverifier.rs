@@ -40,8 +40,7 @@ pub fn claim_extractor_v2<F: PrimeField>(
     // absolute_value_offset = pos.offset + pos.value_idx
     let absolute_value_offset =
         UInt16::<F>::wrapping_add_many(&[pos.offset.clone(), pos.value_idx.clone()])?;
-    let result_value =
-        slice_efficient(payload, &absolute_value_offset, &pos.value_len, max_len)?;
+    let result_value = slice_efficient(payload, &absolute_value_offset, &pos.value_len, max_len)?;
 
     // Verify that extracted name matches the key (with quotes)
     result_name.enforce_equal(&key_bytes)?;
@@ -77,7 +76,8 @@ fn claim_format_verifier_v2<F: PrimeField>(
     // Changed due to a bug in enforce_cmp in r1cs-std "0.5.0".
     let name_len_boolean = name_len.to_bits_le()?;
     let colon_idx_boolean = colon_idx.to_bits_le()?;
-    let result = is_less_than(&name_len_boolean, &colon_idx_boolean)? | name_len.is_eq(colon_idx)?;
+    let result =
+        is_less_than(&name_len_boolean, &colon_idx_boolean)? | name_len.is_eq(colon_idx)?;
     result.enforce_equal(&Boolean::TRUE)?;
 
     // check2: colon index must be less than value index.
@@ -212,7 +212,9 @@ mod tests {
         let escaped_key = regex::escape(key);
         let pattern = format!(r#"\s*("{}")\s*:\s*("?[^",]*"?)\s*([,\}}])"#, escaped_key);
         let re = Regex::new(&pattern).unwrap();
-        let caps = re.captures(s).ok_or_else(|| format!("Key '{}' not found", key))?;
+        let caps = re
+            .captures(s)
+            .ok_or_else(|| format!("Key '{}' not found", key))?;
         let full_match = caps.get(0).unwrap();
         let full_match_str = full_match.as_str();
         let offset = full_match.start();
@@ -229,7 +231,13 @@ mod tests {
         Ok(Claim {
             key: key.to_string(),
             value: value_str,
-            indices: ClaimIndices { offset, claim_len, colon_idx, value_idx, value_len },
+            indices: ClaimIndices {
+                offset,
+                claim_len,
+                colon_idx,
+                value_idx,
+                value_len,
+            },
         })
     }
     use ark_r1cs_std::{R1CSVar, alloc::AllocVar};
@@ -283,8 +291,7 @@ mod tests {
 
         // Step 1: Extract claim from payload
         println!("\n=== Step 1: Extract claim ===");
-        let claim_extracted =
-            slice_efficient(&payload, &pos.offset, &pos.claim_len, 50).unwrap();
+        let claim_extracted = slice_efficient(&payload, &pos.offset, &pos.claim_len, 50).unwrap();
         println!(
             "Constraints after claim extraction: {}",
             cs.num_constraints()
@@ -354,8 +361,7 @@ mod tests {
         // Step 4: Extract value from claim
         println!("\n=== Step 4: Extract value from claim ===");
         let result_value =
-            slice_efficient(&claim_extracted, &pos.value_idx, &pos.value_len, 50)
-                .unwrap();
+            slice_efficient(&claim_extracted, &pos.value_idx, &pos.value_len, 50).unwrap();
         println!(
             "Constraints after value extraction: {}",
             cs.num_constraints()

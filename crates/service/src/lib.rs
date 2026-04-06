@@ -17,9 +17,9 @@ pub mod manifest;
 #[cfg(feature = "proof")]
 pub mod proof;
 
-use std::sync::OnceLock;
 use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;
 use circuit::constants::F;
+use std::sync::OnceLock;
 
 /// Cached Poseidon parameters — constructed once, shared across all modules.
 pub(crate) fn poseidon_params() -> &'static PoseidonConfig<F> {
@@ -29,22 +29,23 @@ pub(crate) fn poseidon_params() -> &'static PoseidonConfig<F> {
 
 /// Extract forbidden_string as &str from CircuitConfig.
 pub(crate) fn forbidden_str(params: &CircuitConfig) -> Result<&str, error::ApplicationError> {
-    std::str::from_utf8(&params.forbidden_string)
-        .map_err(|e| error::ApplicationError::InvalidFormat(format!("Invalid forbidden_string: {}", e)))
+    std::str::from_utf8(&params.forbidden_string).map_err(|e| {
+        error::ApplicationError::InvalidFormat(format!("Invalid forbidden_string: {}", e))
+    })
 }
 
-pub use circuit::constants;
 pub use ark_utils::evm;
 pub use ark_utils::io;
+pub use circuit::constants;
 
 // Public API (always available)
 pub use anchor::poseidon::generate_anchor;
-pub use hash::{generate_hash, generate_aud_hash, generate_leaf_hash};
 pub use anchor::types::Secret;
 pub use circuit::constants::{CircuitConfig, PAD_CHAR};
+pub use hash::{generate_aud_hash, generate_hash, generate_leaf_hash};
 
 // Public API (proof feature only)
 #[cfg(feature = "proof")]
-pub use proof::{groth16_setup, prove, verify};
-#[cfg(feature = "proof")]
 pub use proof::RawProofRequest;
+#[cfg(feature = "proof")]
+pub use proof::{groth16_setup, prove, verify};

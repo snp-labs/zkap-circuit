@@ -1,6 +1,6 @@
-use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;
-use circuit::constants::{F, CircuitConfig};
 use crate::anchor::AnchorConfig;
+use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;
+use circuit::constants::{CircuitConfig, F};
 use gadget::{
     anchor::poseidon::PoseidonAnchorPublicKey,
     base64::{Base64Table, get_base64_table},

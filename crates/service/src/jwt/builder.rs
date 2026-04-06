@@ -1,6 +1,6 @@
-use circuit::token::{Claim, ClaimIndices};
 use crate::jwt::parser::{TokenError, parse_claim_from_str};
 use circuit::constants::CircuitConfig;
+use circuit::token::{Claim, ClaimIndices};
 use gadget::{
     base64::{IndexBits, decode_any_base64, decode_any_base64_to_string},
     signature::rsa::{PublicKey, Signature},
@@ -115,13 +115,13 @@ impl TokenBuilder {
         params: &CircuitConfig,
     ) -> Result<
         (
-            usize,      // nblocks
-            Vec<u8>,    // sha_pad_jwt_b64
-            IndexBits,  // index_bits
-            usize,      // pay_offset_b64
-            usize,      // pay_len_b64
-            usize,      // total_len
-            usize,      // pad_start_byte_idx
+            usize,     // nblocks
+            Vec<u8>,   // sha_pad_jwt_b64
+            IndexBits, // index_bits
+            usize,     // pay_offset_b64
+            usize,     // pay_len_b64
+            usize,     // total_len
+            usize,     // pad_start_byte_idx
         ),
         TokenError,
     > {
@@ -137,8 +137,9 @@ impl TokenBuilder {
         let pad_start_byte_idx = total_len;
 
         // Compute Base64 Index Bits (Payload only)
-        let index_bits = IndexBits::from_base64_url(&self.payload_b64, params.max_payload_b64_len as usize)
-            .map_err(|e| TokenError::InvalidFormat(format!("index_bits error: {:?}", e)))?;
+        let index_bits =
+            IndexBits::from_base64_url(&self.payload_b64, params.max_payload_b64_len as usize)
+                .map_err(|e| TokenError::InvalidFormat(format!("index_bits error: {:?}", e)))?;
 
         // Apply SHA-256 padding (over the full JWT)
         let mut sha_pad_jwt_b64 = sha256_pad(full_jwt.as_bytes());
@@ -249,7 +250,8 @@ mod tests {
     use super::*;
 
     fn b64url_encode(data: &[u8]) -> String {
-        const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+        const TABLE: &[u8; 64] =
+            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
         let mut out = String::new();
         for chunk in data.chunks(3) {
             let b0 = chunk[0] as u32;
@@ -258,8 +260,12 @@ mod tests {
             let n = (b0 << 16) | (b1 << 8) | b2;
             out.push(TABLE[((n >> 18) & 0x3F) as usize] as char);
             out.push(TABLE[((n >> 12) & 0x3F) as usize] as char);
-            if chunk.len() > 1 { out.push(TABLE[((n >> 6) & 0x3F) as usize] as char); }
-            if chunk.len() > 2 { out.push(TABLE[(n & 0x3F) as usize] as char); }
+            if chunk.len() > 1 {
+                out.push(TABLE[((n >> 6) & 0x3F) as usize] as char);
+            }
+            if chunk.len() > 2 {
+                out.push(TABLE[(n & 0x3F) as usize] as char);
+            }
         }
         out
     }
@@ -273,7 +279,8 @@ mod tests {
 
     #[test]
     fn test_token_builder_new_valid() {
-        let payload = r#"{"aud":"test-aud","exp":1700000000,"iss":"https://issuer.com","sub":"user1"}"#;
+        let payload =
+            r#"{"aud":"test-aud","exp":1700000000,"iss":"https://issuer.com","sub":"user1"}"#;
         let jwt = make_jwt(r#"{"alg":"RS256","typ":"JWT"}"#, payload);
         let keys = vec!["aud", "exp", "iss", "sub"];
 
@@ -307,7 +314,8 @@ mod tests {
 
     #[test]
     fn test_token_builder_parse_secret() {
-        let payload = r#"{"aud":"app1","exp":1700000000,"iss":"issuer1","nonce":"abc","sub":"user1"}"#;
+        let payload =
+            r#"{"aud":"app1","exp":1700000000,"iss":"issuer1","nonce":"abc","sub":"user1"}"#;
         let jwt = make_jwt(r#"{"alg":"RS256"}"#, payload);
 
         let tb = TokenBuilder::new(&jwt, vec!["aud", "exp", "iss", "nonce", "sub"]).unwrap();

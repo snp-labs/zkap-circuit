@@ -1,5 +1,5 @@
-use ark_utils::error::{FieldParseError, TextError};
 use ark_utils::ConvertError;
+use ark_utils::error::{FieldParseError, TextError};
 use gadget::anchor::error::AnchorError;
 use thiserror::Error;
 

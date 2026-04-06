@@ -1,7 +1,4 @@
-use std::{
-    borrow::Borrow,
-    ops::BitXor,
-};
+use std::{borrow::Borrow, ops::BitXor};
 
 use ark_ff::PrimeField;
 use ark_r1cs_std::{
@@ -392,7 +389,9 @@ impl<F: PrimeField> SHA256Gadget<F> {
         )?;
 
         // First byte must be SHA256_PAD_MARKER (0x80)
-        pad_region[0].enforce_equal(&FpVar::<F>::constant(F::from(crate::constants::SHA256_PAD_MARKER as u64)))?;
+        pad_region[0].enforce_equal(&FpVar::<F>::constant(F::from(
+            crate::constants::SHA256_PAD_MARKER as u64,
+        )))?;
 
         // All remaining bytes must be 0
         for item in pad_region.iter().take(PAD_REGION_MAX).skip(1) {
@@ -819,17 +818,14 @@ mod tests {
     use super::*;
     use ark_bn254::Fr;
     use ark_relations::r1cs::ConstraintSystem;
-    use sha2::{Sha256, Digest};
+    use sha2::{Digest, Sha256};
 
     #[test]
     fn test_update_state_constraints() -> Result<(), SynthesisError> {
         let cs = ConstraintSystem::<Fr>::new_ref();
 
-        let mut gadget = SHA256Gadget::new_variable(
-            cs.clone(),
-            || Ok(H.to_vec()),
-            AllocationMode::Witness,
-        )?;
+        let mut gadget =
+            SHA256Gadget::new_variable(cs.clone(), || Ok(H.to_vec()), AllocationMode::Witness)?;
 
         let data = [0u8; 64];
         let data_vars: Vec<UInt8<Fr>> = data
@@ -906,7 +902,11 @@ mod tests {
 
         println!("test_digest_full_with_pad_checked passed!");
         println!("Message length: {} bytes", message_len);
-        println!("Padded length: {} bytes ({} blocks)", padded.len(), padded.len() / 64);
+        println!(
+            "Padded length: {} bytes ({} blocks)",
+            padded.len(),
+            padded.len() / 64
+        );
         println!("Number of constraints: {}", cs.num_constraints());
         println!("Digest: {:?}", hex::encode(circuit_digest));
 
@@ -972,7 +972,11 @@ mod tests {
 
         println!("test_digest_full_with_pad_checked_jwt passed!");
         println!("JWT header.payload length: {} bytes", message_len);
-        println!("Padded length: {} bytes ({} blocks)", padded.len(), padded.len() / 64);
+        println!(
+            "Padded length: {} bytes ({} blocks)",
+            padded.len(),
+            padded.len() / 64
+        );
         println!("Number of constraints: {}", cs.num_constraints());
         println!("Digest: {}", hex::encode(circuit_digest));
 

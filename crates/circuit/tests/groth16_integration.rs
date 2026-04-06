@@ -19,34 +19,36 @@ use rsa::signature::{SignatureEncoding, Signer};
 use rsa::traits::PublicKeyParts;
 use sha2::Sha256;
 
-use regex::Regex;
-use ark_utils::try_str_to_fields;
 use ark_utils::pad;
+use ark_utils::try_str_to_fields;
 use circuit::{
-    zkap::ZkapCircuit,
-    input::*,
     constants::{BNP, CG, CircuitConfig, PAD_CHAR, RawCircuitConfig},
+    input::*,
     token::ClaimIndices,
+    zkap::ZkapCircuit,
 };
 use gadget::{
+    anchor::AnchorScheme,
     anchor::poseidon::{
         PoseidonAnchor, PoseidonAnchorPublicKey, PoseidonAnchorScheme, PoseidonAnchorSecret,
         build_anchor_witness,
     },
-    anchor::AnchorScheme,
-    base64::{get_base64_table, IndexBits},
+    base64::{IndexBits, get_base64_table},
     hashes::poseidon::get_poseidon_params,
     matrix::VandermondeMatrix,
     merkletree::tree_config::MerkleTreeParams,
     signature::rsa::{PublicKey as RsaCircuitPubKey, Signature as RsaCircuitSig},
 };
+use regex::Regex;
 
 /// Test-local copy of parse_claim_from_str (moved to service crate)
 fn parse_claim_from_str(s: &str, key: &str) -> circuit::token::Claim {
     let escaped_key = regex::escape(key);
     let pattern = format!(r#"\s*("{}")\s*:\s*("?[^",]*"?)\s*([,\}}])"#, escaped_key);
     let re = Regex::new(&pattern).unwrap();
-    let caps = re.captures(s).unwrap_or_else(|| panic!("Key '{}' not found", key));
+    let caps = re
+        .captures(s)
+        .unwrap_or_else(|| panic!("Key '{}' not found", key));
     let full_match = caps.get(0).unwrap();
     let full_match_str = full_match.as_str();
     let offset = full_match.start();
@@ -91,7 +93,13 @@ fn test_params() -> CircuitConfig {
         k: 3,
         tree_height: 4,
         num_audience_limit: 5,
-        claims: vec!["aud".into(), "exp".into(), "iss".into(), "nonce".into(), "sub".into()],
+        claims: vec![
+            "aud".into(),
+            "exp".into(),
+            "iss".into(),
+            "nonce".into(),
+            "sub".into(),
+        ],
         forbidden_string: "forbidden".into(),
     };
     raw.into()
@@ -109,9 +117,24 @@ struct TestSecret {
 }
 
 const TEST_SECRETS: [TestSecret; 3] = [
-    TestSecret { aud: "test-audience", iss: "https://accounts.google.com", sub: "user_0", exp: 1700000000 },
-    TestSecret { aud: "test-audience", iss: "https://accounts.google.com", sub: "user_1", exp: 1700000000 },
-    TestSecret { aud: "test-audience", iss: "https://accounts.google.com", sub: "user_2", exp: 1700000000 },
+    TestSecret {
+        aud: "test-audience",
+        iss: "https://accounts.google.com",
+        sub: "user_0",
+        exp: 1700000000,
+    },
+    TestSecret {
+        aud: "test-audience",
+        iss: "https://accounts.google.com",
+        sub: "user_1",
+        exp: 1700000000,
+    },
+    TestSecret {
+        aud: "test-audience",
+        iss: "https://accounts.google.com",
+        sub: "user_2",
+        exp: 1700000000,
+    },
 ];
 
 // ============================================================
@@ -156,7 +179,11 @@ fn build_jwt_and_sign(
 }
 
 /// Parse a JWT string into JwtWitness
-fn build_jwt_witness(jwt: &str, rsa_priv_key: &rsa::RsaPrivateKey, cfg: &CircuitConfig) -> JwtWitness {
+fn build_jwt_witness(
+    jwt: &str,
+    rsa_priv_key: &rsa::RsaPrivateKey,
+    cfg: &CircuitConfig,
+) -> JwtWitness {
     let parts: Vec<&str> = jwt.split('.').collect();
     let (header_b64, payload_b64, sig_b64) = (parts[0], parts[1], parts[2]);
 
@@ -189,7 +216,9 @@ fn build_jwt_witness(jwt: &str, rsa_priv_key: &rsa::RsaPrivateKey, cfg: &Circuit
     let payload_str = String::from_utf8(payload_bytes).unwrap();
 
     // ClaimIndices for each claim
-    let claims: Vec<&str> = cfg.claims.iter()
+    let claims: Vec<&str> = cfg
+        .claims
+        .iter()
         .map(|c| std::str::from_utf8(c).unwrap())
         .collect();
     let claim_indices: Vec<ClaimIndices> = claims
@@ -444,7 +473,11 @@ fn build_merkle_witness_multi(
 }
 
 /// Build audience list and its hash using packed claim bytes (matching circuit)
-fn build_audience_list(aud_packed: &[F], params: &PoseidonConfig<F>, cfg: &CircuitConfig) -> (Vec<F>, F) {
+fn build_audience_list(
+    aud_packed: &[F],
+    params: &PoseidonConfig<F>,
+    cfg: &CircuitConfig,
+) -> (Vec<F>, F) {
     let h_aud = CRH::<F>::evaluate(params, aud_packed.to_vec()).unwrap();
 
     // Forbidden value: pad "forbidden" with quotes to match circuit format
@@ -493,9 +526,7 @@ fn build_valid_circuit_inputs() -> Vec<ZkapCircuitInput<F>> {
     let jwt_data: Vec<(String, rsa::RsaPrivateKey)> = secrets
         .iter()
         .enumerate()
-        .map(|(i, s)| {
-            build_jwt_and_sign(s.aud, s.exp, s.iss, &nonce_hex, s.sub, 99 + i as u64)
-        })
+        .map(|(i, s)| build_jwt_and_sign(s.aud, s.exp, s.iss, &nonce_hex, s.sub, 99 + i as u64))
         .collect();
 
     // Build anchor context (shared across all K proofs)
@@ -566,11 +597,8 @@ fn build_valid_circuit_inputs() -> Vec<ZkapCircuitInput<F>> {
             h_id_inputs.extend_from_slice(&iss_packed_i);
             h_id_inputs.extend_from_slice(&sub_packed_i);
             let h_id_inner = CRH::<F>::evaluate(&params, h_id_inputs).unwrap();
-            let h_id = CRH::<F>::evaluate(
-                &params,
-                [F::from(current_idx as u64), h_id_inner],
-            )
-            .unwrap();
+            let h_id =
+                CRH::<F>::evaluate(&params, [F::from(current_idx as u64), h_id_inner]).unwrap();
 
             // partial_rhs = b[current_idx] * h_id * random
             let partial_rhs = anchor_ctx.b[current_idx] * h_id * random;

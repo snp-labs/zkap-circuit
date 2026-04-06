@@ -18,7 +18,6 @@ use crate::{
     signature::rsa::{PublicKey, Signature},
 };
 
-
 pub type ConstraintF<C> = <<C as CurveGroup>::BaseField as Field>::BasePrimeField;
 
 #[derive(Clone, Debug, Default)]

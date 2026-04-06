@@ -201,7 +201,9 @@ mod tests {
 
         // Input array: [10, 20, 30, 40, 50]
         let inputs: Vec<FpVar<F>> = (0..n)
-            .map(|i| FpVar::<F>::new_witness(cs.clone(), || Ok(F::from((i + 1) as u64 * 10))).unwrap())
+            .map(|i| {
+                FpVar::<F>::new_witness(cs.clone(), || Ok(F::from((i + 1) as u64 * 10))).unwrap()
+            })
             .collect();
 
         // Select index 2 -> should return 30
@@ -241,9 +243,15 @@ mod tests {
         assert!(cs.is_satisfied().unwrap());
         assert_eq!(result.len(), 3);
 
-        result[0].enforce_equal(&FpVar::Constant(F::from(2))).unwrap();
-        result[1].enforce_equal(&FpVar::Constant(F::from(5))).unwrap();
-        result[2].enforce_equal(&FpVar::Constant(F::from(8))).unwrap();
+        result[0]
+            .enforce_equal(&FpVar::Constant(F::from(2)))
+            .unwrap();
+        result[1]
+            .enforce_equal(&FpVar::Constant(F::from(5)))
+            .unwrap();
+        result[2]
+            .enforce_equal(&FpVar::Constant(F::from(8)))
+            .unwrap();
 
         println!("Multi-mux selected column 1: [2, 5, 8]");
         println!("Number of constraints: {}", cs.num_constraints());
@@ -297,7 +305,9 @@ mod tests {
         let result = single_multiplexer(&inputs, &index).unwrap();
 
         assert!(cs.is_satisfied().unwrap());
-        result.enforce_equal(&FpVar::Constant(F::from(10u64))).unwrap();
+        result
+            .enforce_equal(&FpVar::Constant(F::from(10u64)))
+            .unwrap();
         assert!(cs.is_satisfied().unwrap());
     }
 
@@ -315,7 +325,9 @@ mod tests {
         let result = single_multiplexer(&inputs, &index).unwrap();
 
         assert!(cs.is_satisfied().unwrap());
-        result.enforce_equal(&FpVar::Constant(F::from(30u64))).unwrap();
+        result
+            .enforce_equal(&FpVar::Constant(F::from(30u64)))
+            .unwrap();
         assert!(cs.is_satisfied().unwrap());
     }
 
@@ -338,7 +350,9 @@ mod tests {
 
         let result = select_array_element(&input, &idx_bits).unwrap();
         assert!(cs.is_satisfied().unwrap());
-        result.enforce_equal(&FpVar::Constant(F::from(30u64))).unwrap();
+        result
+            .enforce_equal(&FpVar::Constant(F::from(30u64)))
+            .unwrap();
         assert!(cs.is_satisfied().unwrap());
     }
 
@@ -360,7 +374,9 @@ mod tests {
 
         let result = select_array_element_be(&input, &idx_bits).unwrap();
         assert!(cs.is_satisfied().unwrap());
-        result.enforce_equal(&FpVar::Constant(F::from(30u64))).unwrap();
+        result
+            .enforce_equal(&FpVar::Constant(F::from(30u64)))
+            .unwrap();
         assert!(cs.is_satisfied().unwrap());
     }
 }

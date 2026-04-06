@@ -1,11 +1,7 @@
 use ark_crypto_primitives::crh::CRHScheme;
 use ark_utils::hex_decimal_to_field;
-use circuit::constants::{F, PoseidonHash, CircuitConfig, PAD_CHAR};
-use gadget::{
-    base64::decode_any_base64,
-    signature::rsa::PublicKey,
-    utils::str_to_limbs,
-};
+use circuit::constants::{CircuitConfig, F, PAD_CHAR, PoseidonHash};
+use gadget::{base64::decode_any_base64, signature::rsa::PublicKey, utils::str_to_limbs};
 
 use crate::error::ApplicationError;
 
@@ -66,8 +62,9 @@ pub fn generate_aud_hash(
         .iter()
         .map(|a| {
             let limbs = str_to_limbs(a, params.max_aud_len as usize, PAD_CHAR as u8);
-            PoseidonHash::evaluate(poseidon_params, limbs)
-                .map_err(|e| ApplicationError::Other(format!("Error processing aud '{}': {}", a, e)))
+            PoseidonHash::evaluate(poseidon_params, limbs).map_err(|e| {
+                ApplicationError::Other(format!("Error processing aud '{}': {}", a, e))
+            })
         })
         .collect::<Result<Vec<_>, _>>()?;
 
@@ -134,7 +131,13 @@ mod tests {
             k: 3,
             tree_height: 4,
             num_audience_limit: 5,
-            claims: vec!["aud".into(), "exp".into(), "iss".into(), "nonce".into(), "sub".into()],
+            claims: vec![
+                "aud".into(),
+                "exp".into(),
+                "iss".into(),
+                "nonce".into(),
+                "sub".into(),
+            ],
             forbidden_string: "forbidden".into(),
         };
         raw.into()

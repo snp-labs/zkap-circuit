@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 
-use circuit::constants::{F, CircuitConfig};
+use circuit::constants::{CircuitConfig, F};
 use gadget::anchor::poseidon::PoseidonAnchor;
 
-use crate::{jwt::builder::TokenBuilder, error::ApplicationError};
+use crate::{error::ApplicationError, jwt::builder::TokenBuilder};
 
 /// Raw, unvalidated proof request received from the outside world.
 ///
@@ -192,7 +192,9 @@ impl ProofRequest {
         use ark_utils::hex_decimal_to_field;
 
         // Create TokenBuilders
-        let claims: Vec<&str> = params.claims.iter()
+        let claims: Vec<&str> = params
+            .claims
+            .iter()
             .map(|c| std::str::from_utf8(c).unwrap())
             .collect();
 
@@ -212,7 +214,10 @@ impl ProofRequest {
             .enumerate()
             .map(|(i, tb)| {
                 let exp_str = tb.get_claim_by("exp").map_err(|e| {
-                    ApplicationError::InvalidFormat(format!("exp claim not found in token[{}]: {}", i, e))
+                    ApplicationError::InvalidFormat(format!(
+                        "exp claim not found in token[{}]: {}",
+                        i, e
+                    ))
                 })?;
                 hex_decimal_to_field::<F>(exp_str).map_err(Into::into)
             })
@@ -292,8 +297,8 @@ impl ProofRequest {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
     use circuit::constants::RawCircuitConfig;
+    use std::path::PathBuf;
 
     fn test_config() -> CircuitConfig {
         let raw = RawCircuitConfig {
@@ -308,7 +313,13 @@ mod tests {
             k: 3,
             tree_height: 4,
             num_audience_limit: 5,
-            claims: vec!["aud".into(), "exp".into(), "iss".into(), "nonce".into(), "sub".into()],
+            claims: vec![
+                "aud".into(),
+                "exp".into(),
+                "iss".into(),
+                "nonce".into(),
+                "sub".into(),
+            ],
             forbidden_string: "forbidden".into(),
         };
         raw.into()

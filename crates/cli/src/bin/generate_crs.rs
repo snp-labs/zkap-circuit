@@ -152,8 +152,7 @@ fn unix_timestamp() -> u64 {
 
 fn sha256_file(path: &str) -> String {
     use sha2::{Digest, Sha256};
-    let bytes =
-        std::fs::read(path).unwrap_or_else(|e| panic!("Failed to read {}: {}", path, e));
+    let bytes = std::fs::read(path).unwrap_or_else(|e| panic!("Failed to read {}: {}", path, e));
     let hash = Sha256::digest(&bytes);
     hex::encode(hash)
 }
@@ -162,7 +161,9 @@ fn to_file<T: CanonicalSerialize>(value: &T, file_path: &str) -> Result<(), Stri
     let mut cursor = Cursor::new(Vec::new());
 
     let dir_path = std::path::Path::new(file_path).parent().unwrap();
-    if !dir_path.exists() && let Err(err) = std::fs::create_dir_all(dir_path) {
+    if !dir_path.exists()
+        && let Err(err) = std::fs::create_dir_all(dir_path)
+    {
         return Err(format!("Failed to create folder: {}", err));
     }
 

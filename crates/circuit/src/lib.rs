@@ -15,8 +15,8 @@ pub mod constants;
 
 // Re-export circuit input types
 pub use input::{
-    AnchorWitness, AudienceWitness, ZkapCircuitInput, CircuitConstants,
-    CircuitPublicInputs, JwtWitness, MerkleWitness, MiscWitness,
+    AnchorWitness, AudienceWitness, CircuitConstants, CircuitPublicInputs, JwtWitness,
+    MerkleWitness, MiscWitness, ZkapCircuitInput,
 };
 
 pub trait ExposesPublicInputs<F: Field> {

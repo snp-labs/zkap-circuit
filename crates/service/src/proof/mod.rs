@@ -51,6 +51,7 @@ use circuit::constants::{BN254, BNP, CG, CircuitConfig, F};
 use circuit::zkap::ZkapCircuit;
 use rand::rngs::OsRng;
 
+use crate::crs::{CrsPaths, CrsPersistConfig, persist_crs};
 use crate::error::ApplicationError;
 
 use self::context::ProofContextBuilder;
@@ -79,6 +80,19 @@ pub fn groth16_setup(params: &CircuitConfig) -> Result<SetupOutput, ApplicationE
     let pvk = prepare_verifying_key(&vk);
 
     Ok(SetupOutput { pk, vk, pvk })
+}
+
+/// Perform a Groth16 trusted setup **and** persist all CRS files to disk in one call.
+///
+/// Equivalent to calling [`groth16_setup`] followed by [`crate::crs::persist_crs`].
+/// Returns both the in-memory [`SetupOutput`] and the [`CrsPaths`] of the written files.
+pub fn groth16_setup_and_save(
+    params: &CircuitConfig,
+    persist: &CrsPersistConfig,
+) -> Result<(SetupOutput, CrsPaths), ApplicationError> {
+    let setup = groth16_setup(params)?;
+    let paths = persist_crs(&setup, params, persist)?;
+    Ok((setup, paths))
 }
 
 /// Generate Groth16 proofs from raw user inputs via a 4-step pipeline:

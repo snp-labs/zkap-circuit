@@ -11,6 +11,8 @@ pub mod error;
 pub mod hash;
 
 #[cfg(feature = "proof")]
+pub mod crs;
+#[cfg(feature = "proof")]
 pub mod jwt;
 #[cfg(feature = "proof")]
 pub mod manifest;
@@ -46,6 +48,8 @@ pub use hash::{generate_aud_hash, generate_hash, generate_leaf_hash};
 
 // Public API (proof feature only)
 #[cfg(feature = "proof")]
+pub use crs::{CrsPaths, CrsPersistConfig, persist_crs};
+#[cfg(feature = "proof")]
 pub use proof::RawProofRequest;
 #[cfg(feature = "proof")]
-pub use proof::{groth16_setup, prove, verify};
+pub use proof::{groth16_setup, groth16_setup_and_save, prove, verify};

@@ -1,12 +1,10 @@
-#![allow(dead_code)]
-
 use std::path::PathBuf;
 
 use ark_crypto_primitives::snark::SNARK;
 use ark_groth16::{Groth16, Proof, ProvingKey};
 use ark_utils::io::load_key_uncompressed;
 use circuit::ZkapCircuitInput;
-use circuit::constants::{BN254, BNP, CG, CircuitConfig, F};
+use circuit::constants::{BN254, BNP, CG, F};
 use circuit::zkap::ZkapCircuit;
 use rand::rngs::OsRng;
 
@@ -37,16 +35,12 @@ impl ProofGenerator {
     /// Generates proofs for all ZkapCircuitInputs
     pub fn generate(
         &self,
-        params: &CircuitConfig,
         inputs: &[ZkapCircuitInput<F>],
     ) -> Result<ProofOutput, ApplicationError> {
         log::info!(
             "[ProofGenerator] Starting proof generation for {} inputs...",
             inputs.len()
         );
-
-        // Validate CRS manifest before loading the key
-        crate::manifest::validate_crs_manifest(params, &self.pk_path)?;
 
         let pk = self.load_proving_key()?;
         let mut rng = OsRng;
@@ -65,7 +59,7 @@ impl ProofGenerator {
             public_inputs.push(input.extract_public_inputs());
 
             let proof = Groth16::<BN254>::prove(&pk, circuit, &mut rng).map_err(|e| {
-                ApplicationError::InvalidFormat(format!("Proof generation failed: {}", e))
+                ApplicationError::ProofGenerationFailed(format!("Proof generation failed: {}", e))
             })?;
 
             proofs.push(proof);

@@ -91,7 +91,7 @@ zkap-circuit/
 │   ├── gadget/     # Reusable circuit gadgets (anchors, signatures, matrix ops)
 │   └── service/    # Proof generation service (prove, verify, generate_anchor)
 │       ├── src/
-│       │   ├── proof/    # Proof orchestration (prove, verify, groth16_setup)
+│       │   ├── proof/    # Proof orchestration (prove, verify, setup)
 │       │   ├── anchor/   # Anchor generation (Poseidon anchor scheme)
 │       │   ├── hash/     # Hash utilities (Poseidon hash, audience hash, leaf hash)
 │       │   ├── jwt/      # JWT parsing and witness construction

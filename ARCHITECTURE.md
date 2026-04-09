@@ -27,7 +27,7 @@ zkap-service ─────────→ circuit ─────────�
 
 **circuit** defines the main ZkapCircuit struct, CircuitConfig (runtime parameters like n/k/max_jwt_b64_len/tree_height), and witness types (JwtWitness, AnchorWitness, MerkleWitness, AudienceWitness). It orchestrates all gadgets into a single R1CS constraint system that proves JWT validity, threshold membership, issuer membership, and audience membership without exposing the JWT itself.
 
-**zkap-service** is the public API layer that orchestrates proof generation end-to-end. It parses JWTs, validates requests, builds circuit witness, invokes Groth16 proving/verification, and provides utilities for anchor generation, hash computation, and CRS manifest validation. All request/response types (RawProofRequest, ProofRequest) are defined here and serializable for platform bindings.
+**zkap-service** is the public API layer that orchestrates proof generation end-to-end. It parses JWTs, validates requests, builds circuit witness, invokes Groth16 proving/verification, and provides utilities for anchor generation and hash computation. All request/response types (RawProofRequest, ProofRequest) are defined here and serializable for platform bindings.
 
 The crate is split into two build profiles via the `proof` Cargo feature (enabled by default):
 - **With `proof`** (default): full Groth16 proving stack, including `ark-groth16`, `ark-serialize`, `memmap2`, `jsonwebtoken`, and hash crates. Use for native server-side proof generation.
@@ -61,7 +61,7 @@ A proof is generated end-to-end as follows:
 
 ```
 service/src/
-├── proof/         Prove, verify, groth16_setup orchestration
+├── proof/         Prove, verify, setup orchestration
 │   ├── request.rs     RawProofRequest validation
 │   ├── types.rs       CircuitContext, AnchorContext, AudienceContext
 │   ├── context.rs     Circuit input construction from witness
@@ -78,7 +78,7 @@ service/src/
 │   ├── proof.rs       Serializable proof/verify request/response
 │   ├── anchor.rs      Serializable anchor request/response
 │   └── hash.rs        Serializable hash request/response
+├── crs.rs         CRS persistence (writes pk.key, vk.key, pvk.key, Groth16Verifier.sol, config.json)
 ├── error.rs       ApplicationError enum (parse, validation, constraint failures)
-├── manifest.rs    CRS manifest validation (file path checks, keyset sync)
-└── lib.rs         Public API (prove, verify, groth16_setup, generate_anchor, generate_hash)
+└── lib.rs         Public API (prove, verify, setup, generate_anchor, generate_hash)
 ```

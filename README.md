@@ -25,7 +25,7 @@ A Rust library for generating Groth16 zero-knowledge proofs that verify JWT/OAut
 ```
 +----------------------------------------------------------+
 |                   crates/service                         |
-|   prove()  verify()  groth16_setup()  RawProofRequest    |
+|   prove()  verify()  setup()  RawProofRequest             |
 |   generate_anchor()  generate_hash()  generate_aud_hash()|
 +------------------------+---------------------------------+
                          |
@@ -90,19 +90,22 @@ gadget = { git = "https://github.com/snp-labs/zkap-circuit", features = ["full"]
 | `gadget::merkletree` | Poseidon Merkle tree | `MerkleTreeParams`, `MerkleTreeParamsVar` |
 | `circuit` | Main circuit implementation | `ZkapCircuit`, `ZkapCircuitInput`, `CircuitPublicInputs`, `CircuitConfig` |
 | `cli` | CRS generation and hash utilities | `generate_crs`, `generate_hash` (binaries) |
-| `service` | Proof generation service layer | `prove`, `verify`, `groth16_setup`, `generate_anchor`, `generate_hash` |
+| `service` | Proof generation service layer | `prove`, `verify`, `setup`, `generate_anchor`, `generate_hash` |
 
 ## Quick Start
 
 ```rust
-use zkap_service::{CircuitConfig, groth16_setup, prove, verify, RawProofRequest};
+use std::path::Path;
+use zkap_service::{CircuitConfig, load_circuit_config, setup, prove, verify, RawProofRequest};
 
 // 1. Load circuit parameters from a JSON config file
-let config = CircuitConfig::from_json_file("example.json".as_ref())
+let config = load_circuit_config(Path::new("example.json"))
     .expect("Failed to load config");
 
-// 2. Trusted setup — run once to produce proving/verifying keys
-let setup = groth16_setup(&config).expect("Setup failed");
+// 2. Trusted setup — writes pk.key, vk.key, pvk.key, Groth16Verifier.sol, config.json
+let output_dir = Path::new("/tmp/zkap-crs");
+let setup_out = setup(&config, output_dir).expect("Setup failed");
+let pk_path = output_dir.join("pk.key");
 
 // 3. Build a proof request (JWTs, RSA keys, Merkle paths, anchors)
 let request = RawProofRequest::new(
@@ -111,16 +114,18 @@ let request = RawProofRequest::new(
     pk_ops,         // K RSA public key moduli (Base64-encoded)
     merkle_paths,   // K Merkle authentication paths
     leaf_indices,   // K leaf indices
-    root,           // Merkle root (decimal field element string)
-    anchor,         // Anchor values + hanchor
-    h_sign_user_op, // UserOperation hash (decimal field element string)
-    random,         // Blinding factor (decimal field element string)
-    aud_list,       // Audience hashes (field element strings)
+    root,           // Merkle root (hex field element string)
+    anchor_evals,   // Anchor polynomial evaluations
+    hanchor,        // Combined anchor hash
+    user_op_hash,   // UserOperation hash (hex field element string)
+    random,         // Blinding factor (hex field element string)
+    aud_hash_list,  // Per-audience hashes (hex field element strings)
 );
-let (proofs, public_inputs) = prove(&config, request).expect("Proving failed");
+let result = prove(&config, request).expect("Proving failed");
 
 // 4. Verify
-let valid = verify(&setup.pvk, &proofs[0], &public_inputs[0])
+let ctx = setup_out.verifying_context();
+let valid = verify(&ctx, &result.proofs[0], &result.public_inputs_for(0))
     .expect("Verification failed");
 assert!(valid);
 ```
@@ -141,7 +146,7 @@ cargo run -p zkap-service --example groth16_proof --release
 
 The example performs the complete lifecycle:
 1. Circuit configuration from `example.json`
-2. Groth16 trusted setup (`groth16_setup`)
+2. Groth16 trusted setup (`setup`)
 3. RSA-2048 key generation and JWT signing
 4. Merkle tree construction (`generate_leaf_hash`)
 5. Threshold anchor generation (`generate_anchor`, `generate_aud_hash`)
@@ -168,7 +173,7 @@ cargo test
 cargo clippy -- -D warnings
 ```
 
-**Circuit parameters** are configured at runtime via `CircuitConfig` (or loaded from a JSON manifest):
+**Circuit parameters** are configured at runtime via `CircuitConfig` (loaded from a JSON config file via `load_circuit_config`, or from the `config.json` written by `setup`):
 
 | Parameter | Description |
 |---|---|

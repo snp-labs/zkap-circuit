@@ -164,7 +164,7 @@ pub fn prove(
 
 /// Verify a single Groth16 proof against an opaque verifying context.
 ///
-/// Accepts String-encoded public inputs (decimal field-element format) and a
+/// Accepts String-encoded public inputs (hex field-element format) and a
 /// [`ProofComponents`] produced by [`prove`]. Returns `Ok(true)` if the proof is valid,
 /// `Ok(false)` if it is not, or an error if inputs are malformed or the verifier fails.
 pub fn verify(

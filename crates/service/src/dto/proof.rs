@@ -7,7 +7,7 @@ use circuit::constants::{BN254, F};
 
 use crate::evm::solidity_types::Solidity;
 
-/// Groth16 proof components in Solidity-compatible decimal string format.
+/// Groth16 proof components in Solidity-compatible hex string format.
 ///
 /// - `a`, `c`: BN254 G1 affine points — `[x, y]` (2 strings each)
 /// - `b`: BN254 G2 affine point — `[bx_c1, bx_c0, by_c1, by_c0]` (4 strings)
@@ -119,12 +119,12 @@ impl From<(Vec<Proof<BN254>>, Vec<Vec<F>>)> for ZkapProofResult {
 
         let jwt_exp_list: Vec<String> = raw_inputs
             .iter()
-            .map(|inputs| inputs[JWT_EXP_INDEX].to_string())
+            .map(|inputs| crate::field_to_hex(inputs[JWT_EXP_INDEX]))
             .collect();
 
         let verification_rhs_list: Vec<String> = raw_inputs
             .iter()
-            .map(|inputs| inputs[VERIFICATION_RHS_INDEX].to_string())
+            .map(|inputs| crate::field_to_hex(inputs[VERIFICATION_RHS_INDEX]))
             .collect();
 
         // Shared inputs: all indices except per-proof ones, taken from first proof's inputs
@@ -132,7 +132,7 @@ impl From<(Vec<Proof<BN254>>, Vec<Vec<F>>)> for ZkapProofResult {
             .iter()
             .enumerate()
             .filter(|(i, _)| *i != JWT_EXP_INDEX && *i != VERIFICATION_RHS_INDEX)
-            .map(|(_, input)| input.to_string())
+            .map(|(_, input)| crate::field_to_hex(*input))
             .collect();
 
         Self {

@@ -48,7 +48,7 @@ pub fn generate_anchor(
     let anchor = PoseidonAnchorScheme::generate_anchor(&anchor_key, &anchor_secret, &ctx.matrix)?;
 
     Ok(GenerateAnchorResCore {
-        anchor: anchor.0.iter().map(|f| f.to_string()).collect(),
+        anchor: anchor.0.iter().map(|f| crate::field_to_hex(*f)).collect(),
     })
 }
 

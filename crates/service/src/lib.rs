@@ -22,8 +22,14 @@ pub mod evm;
 pub mod proof;
 
 use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;
+use ark_ff::{BigInteger, PrimeField};
 use circuit::constants::F;
 use std::sync::OnceLock;
+
+/// Serialize a field element as a 0x-prefixed big-endian hex string.
+pub(crate) fn field_to_hex<F: PrimeField>(f: F) -> String {
+    format!("0x{}", hex::encode(f.into_bigint().to_bytes_be()))
+}
 
 /// Cached Poseidon parameters — constructed once, shared across all modules.
 pub(crate) fn poseidon_params() -> &'static PoseidonConfig<F> {

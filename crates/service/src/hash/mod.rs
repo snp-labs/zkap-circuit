@@ -28,7 +28,7 @@ pub fn generate_hash(messages: Vec<String>) -> Result<String, ApplicationError> 
     let result = PoseidonHash::evaluate(poseidon_params, field)
         .map_err(|e| ApplicationError::Other(format!("Poseidon hash evaluation failed: {}", e)))?;
 
-    Ok(result.to_string())
+    Ok(crate::field_to_hex(result))
 }
 
 /// Compute per-audience Poseidon hashes and a combined audience-list hash.
@@ -74,8 +74,8 @@ pub fn generate_aud_hash(
         .map_err(|e| ApplicationError::Other(format!("Error computing h_aud_lists: {}", e)))?;
 
     Ok(AudHashResult {
-        individual: aud_fields.iter().map(|f| f.to_string()).collect(),
-        combined: h_aud_list.to_string(),
+        individual: aud_fields.iter().map(|f| crate::field_to_hex(*f)).collect(),
+        combined: crate::field_to_hex(h_aud_list),
     })
 }
 
@@ -115,7 +115,7 @@ pub fn generate_leaf_hash(
     let leaf = PoseidonHash::evaluate(poseidon_params, &*leaf_inputs)
         .map_err(|e| ApplicationError::Other(format!("Error computing leaf: {}", e)))?;
 
-    Ok(leaf.to_string())
+    Ok(crate::field_to_hex(leaf))
 }
 
 #[cfg(test)]
@@ -189,7 +189,7 @@ mod tests {
         let r = result.unwrap();
         // Should be padded to num_audience_limit (5)
         assert_eq!(r.individual.len(), 5);
-        assert_ne!(r.combined, "0");
+        assert!(r.combined.starts_with("0x"));
     }
 
     #[test]

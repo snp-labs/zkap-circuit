@@ -2,31 +2,24 @@ use ark_ec::{
     AffineRepr,
     short_weierstrass::{Affine, Projective, SWCurveConfig},
 };
-use ark_ff::{Fp, Fp2, Fp2Config, FpConfig};
-use ark_std::Zero;
-use std::fmt::Display;
+use ark_ff::{BigInteger, Fp, Fp2, Fp2Config, FpConfig, PrimeField};
 
 pub trait Solidity {
     fn to_solidity(&self) -> Vec<String>;
 }
 
-fn to_solidity<T: Display + Zero>(x: T) -> String {
-    if x.is_zero() {
-        "0".to_string()
-    } else {
-        x.to_string()
-    }
-}
-
 impl<P: FpConfig<N>, const N: usize> Solidity for Fp<P, N> {
     fn to_solidity(&self) -> Vec<String> {
-        vec![to_solidity(*self)]
+        vec![format!("0x{}", hex::encode((*self).into_bigint().to_bytes_be()))]
     }
 }
 
-impl<P: Fp2Config> Solidity for Fp2<P> {
+impl<P: Fp2Config> Solidity for Fp2<P>
+where
+    P::Fp: Solidity,
+{
     fn to_solidity(&self) -> Vec<String> {
-        vec![to_solidity(self.c1), to_solidity(self.c0)]
+        [self.c1.to_solidity(), self.c0.to_solidity()].concat()
     }
 }
 

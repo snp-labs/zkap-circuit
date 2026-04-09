@@ -101,7 +101,11 @@ pub fn persist_crs(
 fn write_key_file<T: CanonicalSerialize>(value: &T, path: &Path) -> Result<(), ApplicationError> {
     let mut cursor = Cursor::new(Vec::new());
     value.serialize_uncompressed(&mut cursor).map_err(|e| {
-        ApplicationError::Other(format!("Failed to serialize key to '{}': {}", path.display(), e))
+        ApplicationError::Other(format!(
+            "Failed to serialize key to '{}': {}",
+            path.display(),
+            e
+        ))
     })?;
     std::fs::write(path, cursor.get_ref()).map_err(|e| {
         ApplicationError::Other(format!("Failed to write '{}': {}", path.display(), e))
@@ -157,9 +161,8 @@ fn write_manifest_file(
         "files": file_hashes,
     });
 
-    let json = serde_json::to_string_pretty(&manifest).map_err(|e| {
-        ApplicationError::Other(format!("Failed to serialize manifest: {}", e))
-    })?;
+    let json = serde_json::to_string_pretty(&manifest)
+        .map_err(|e| ApplicationError::Other(format!("Failed to serialize manifest: {}", e)))?;
 
     std::fs::write(&paths.manifest, &json).map_err(|e| {
         ApplicationError::Other(format!(

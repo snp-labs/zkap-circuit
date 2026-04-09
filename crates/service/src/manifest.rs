@@ -9,6 +9,8 @@ use crate::error::ApplicationError;
 pub struct CrsManifest {
     pub profile: String,
     pub params: CrsParams,
+    pub claims: Option<Vec<String>>,
+    pub forbidden_string: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -127,6 +129,27 @@ pub fn load_params_from_manifest(manifest_path: &Path) -> Result<CircuitConfig, 
     })?;
 
     let p = &manifest.params;
+
+    let claims: Vec<Vec<u8>> = manifest
+        .claims
+        .unwrap_or_else(|| {
+            vec![
+                "aud".to_string(),
+                "exp".to_string(),
+                "iss".to_string(),
+                "nonce".to_string(),
+                "sub".to_string(),
+            ]
+        })
+        .into_iter()
+        .map(|s| s.into_bytes())
+        .collect();
+
+    let forbidden_string: Vec<u8> = manifest
+        .forbidden_string
+        .unwrap_or_else(|| "forbidden".to_string())
+        .into_bytes();
+
     let config = CircuitConfig {
         max_jwt_b64_len: p.MAX_JWT_B64_LEN,
         max_payload_b64_len: p.MAX_PAYLOAD_B64_LEN,
@@ -139,14 +162,8 @@ pub fn load_params_from_manifest(manifest_path: &Path) -> Result<CircuitConfig, 
         k: p.K,
         tree_height: p.TREE_HEIGHT,
         num_audience_limit: p.NUM_AUDIENCE_LIMIT,
-        claims: vec![
-            b"aud".to_vec(),
-            b"exp".to_vec(),
-            b"iss".to_vec(),
-            b"nonce".to_vec(),
-            b"sub".to_vec(),
-        ],
-        forbidden_string: b"forbidden".to_vec(),
+        claims,
+        forbidden_string,
     };
 
     config

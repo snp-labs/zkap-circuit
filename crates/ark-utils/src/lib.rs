@@ -12,8 +12,6 @@ extern crate alloc;
 pub mod comparison;
 
 #[cfg(feature = "r1cs")]
-pub mod jwt_field;
-#[cfg(feature = "r1cs")]
 pub mod packing;
 #[cfg(feature = "r1cs")]
 pub mod select;
@@ -21,10 +19,6 @@ pub mod select;
 pub mod slice;
 #[cfg(feature = "r1cs")]
 pub mod uint32;
-
-// EVM codegen (feature = "evm-codegen")
-#[cfg(feature = "evm-codegen")]
-pub mod evm;
 
 // Field serde (feature = "field-serde")
 #[cfg(feature = "field-serde")]

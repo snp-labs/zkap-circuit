@@ -1,13 +1,10 @@
 //! Hash generation DTOs
 
-/// Poseidon hash request (platform-agnostic core type)
-#[derive(Debug, Clone)]
-pub struct GeneratePoseidonHashReqCore {
-    pub inputs: Vec<String>,
-}
-
-/// Poseidon hash response (platform-agnostic core type)
-#[derive(Debug, Clone)]
-pub struct GeneratePoseidonHashResCore {
-    pub hash: String,
+/// Result of [`crate::generate_aud_hash`]: per-audience hashes and their combined hash.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct AudHashResult {
+    /// Per-audience Poseidon hash values (decimal field-element strings, one per audience)
+    pub individual: Vec<String>,
+    /// Combined Poseidon hash of all individual audience hashes
+    pub combined: String,
 }

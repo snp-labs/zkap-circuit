@@ -85,8 +85,8 @@ pub fn jwt_nonce_hex_to_field<F: PrimeField>(
 
     // 3 < last_quote_index < max_quote_index + 1
     // i.e. 4 <= last_quote_index <= max_quote_index
-    crate::comparison::enforce_less_than(&lower_exclusive_bits, &idx_bits)?;
-    crate::comparison::enforce_less_than(&idx_bits, &upper_exclusive_bits)?;
+    ark_utils::comparison::enforce_less_than(&lower_exclusive_bits, &idx_bits)?;
+    ark_utils::comparison::enforce_less_than(&idx_bits, &upper_exclusive_bits)?;
 
     let mut accumulated_value = FpVar::<F>::zero();
     let mut found_closing_quote = Boolean::FALSE;

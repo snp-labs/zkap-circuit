@@ -9,8 +9,10 @@ use crate::{error::ApplicationError, jwt::builder::TokenBuilder};
 ///
 /// All string fields are either hex/decimal field-element strings or Base64-encoded bytes.
 /// Pass this to [`ProofRequest::from_raw`] to validate and parse it into a domain object.
-/// All slice fields must have exactly `K` entries (matching [`CircuitConfig::k`]), except
-/// `anchor` which must have `(N - K + 1) + 1` entries (the last being `hanchor`).
+/// All slice fields must have exactly `K` entries (matching [`CircuitConfig::k`]).
+/// `anchor_evals` must have `N - K + 1` entries; `hanchor` is the separate chain hash value.
+/// `aud_hash_list` contains pre-computed Poseidon hashes of each audience value
+/// (obtain via [`crate::generate_aud_hash`] first).
 #[derive(Debug, Clone)]
 pub struct RawProofRequest {
     /// Path to the Groth16 proving key file on disk.
@@ -26,23 +28,26 @@ pub struct RawProofRequest {
     pub merkle_paths: Vec<Vec<String>>,
 
     /// Merkle tree leaf indices — one per JWT (must have exactly `K` entries).
-    pub leaf_indices: Vec<usize>,
+    pub leaf_indices: Vec<u64>,
 
     /// Merkle root as a hex or decimal field-element string.
     pub root: String,
 
-    /// Anchor polynomial evaluations plus `hanchor` as the last element.
-    /// Length must be `(N - K + 1) + 1`.
-    pub anchor: Vec<String>,
+    /// Anchor polynomial evaluations — must have exactly `N - K + 1` entries.
+    pub anchor_evals: Vec<String>,
+
+    /// Anchor chain hash (`hanchor`): the chained Poseidon hash of all `anchor_evals`.
+    pub hanchor: String,
 
     /// Signed UserOperation hash (hex/decimal field-element string).
-    pub h_sign_user_op: String,
+    pub user_op_hash: String,
 
     /// Random blinding value (hex/decimal field-element string).
     pub random: String,
 
-    /// Allowed audience values as hex/decimal field-element strings.
-    pub aud_list: Vec<String>,
+    /// Pre-computed audience hashes (hex/decimal field-element strings).
+    /// Obtain via [`crate::generate_aud_hash`] and use `AudHashResult::individual`.
+    pub aud_hash_list: Vec<String>,
 }
 
 impl RawProofRequest {
@@ -55,12 +60,13 @@ impl RawProofRequest {
         jwts: Vec<String>,
         pk_ops: Vec<String>,
         merkle_paths: Vec<Vec<String>>,
-        leaf_indices: Vec<usize>,
+        leaf_indices: Vec<u64>,
         root: String,
-        anchor: Vec<String>,
-        h_sign_user_op: String,
+        anchor_evals: Vec<String>,
+        hanchor: String,
+        user_op_hash: String,
         random: String,
-        aud_list: Vec<String>,
+        aud_hash_list: Vec<String>,
     ) -> Self {
         Self {
             pk_path,
@@ -69,10 +75,11 @@ impl RawProofRequest {
             merkle_paths,
             leaf_indices,
             root,
-            anchor,
-            h_sign_user_op,
+            anchor_evals,
+            hanchor,
+            user_op_hash,
             random,
-            aud_list,
+            aud_hash_list,
         }
     }
 
@@ -174,13 +181,13 @@ impl ProofRequest {
             )));
         }
 
-        // Validate anchor length: (N - K + 1) + 1 (last element is hanchor)
-        let expected_anchor_len = (n - k + 1) + 1;
-        if raw.anchor.len() != expected_anchor_len {
+        // Validate anchor_evals length: N - K + 1
+        let expected_anchor_evals_len = n - k + 1;
+        if raw.anchor_evals.len() != expected_anchor_evals_len {
             return Err(ApplicationError::InvalidFormat(format!(
-                "Invalid anchor length: expected {}, got {}",
-                expected_anchor_len,
-                raw.anchor.len()
+                "Invalid anchor_evals length: expected {}, got {}",
+                expected_anchor_evals_len,
+                raw.anchor_evals.len()
             )));
         }
 
@@ -225,15 +232,15 @@ impl ProofRequest {
 
         // Parse field elements
         let root = hex_decimal_to_field::<F>(&raw.root)?;
-        let h_sign_user_op = hex_decimal_to_field::<F>(&raw.h_sign_user_op)?;
+        let h_sign_user_op = hex_decimal_to_field::<F>(&raw.user_op_hash)?;
         let random = hex_decimal_to_field::<F>(&raw.random)?;
 
         // Parse Anchor
-        let anchor_data = Self::parse_anchor(&raw.anchor)?;
+        let anchor_data = Self::parse_anchor(&raw.anchor_evals, &raw.hanchor)?;
 
         // Parse Audience
         let aud_list = raw
-            .aud_list
+            .aud_hash_list
             .iter()
             .map(|s| hex_decimal_to_field::<F>(s).map_err(Into::into))
             .collect::<Result<Vec<F>, ApplicationError>>()?;
@@ -245,7 +252,7 @@ impl ProofRequest {
             merkle: MerkleData {
                 root,
                 paths: raw.merkle_paths,
-                leaf_indices: raw.leaf_indices,
+                leaf_indices: raw.leaf_indices.into_iter().map(|i| i as usize).collect(),
             },
             anchor: anchor_data,
             execution: ExecutionBindingData {
@@ -257,29 +264,18 @@ impl ProofRequest {
         })
     }
 
-    /// Parses the anchor string array
-    fn parse_anchor(raw_anchor: &[String]) -> Result<AnchorData, ApplicationError> {
+    /// Parses the anchor evaluations and hanchor into typed domain objects.
+    fn parse_anchor(
+        anchor_evals: &[String],
+        hanchor: &str,
+    ) -> Result<AnchorData, ApplicationError> {
         use ark_utils::hex_decimal_to_field;
 
-        if raw_anchor.is_empty() {
-            return Err(ApplicationError::InvalidFormat(
-                "Anchor parts cannot be empty".to_string(),
-            ));
-        }
-
-        // Last element is hanchor
-        let (raw_hanchor, raw_anchor_values) = raw_anchor.split_last().ok_or_else(|| {
-            ApplicationError::InvalidFormat("Failed to split anchor parts".to_string())
+        let hanchor = hex_decimal_to_field::<F>(hanchor).map_err(|e| {
+            ApplicationError::InvalidFormat(format!("Failed to parse hanchor '{}': {}", hanchor, e))
         })?;
 
-        let hanchor = hex_decimal_to_field::<F>(raw_hanchor).map_err(|e| {
-            ApplicationError::InvalidFormat(format!(
-                "Failed to parse hanchor '{}': {}",
-                raw_hanchor, e
-            ))
-        })?;
-
-        let anchor_fields: Vec<F> = raw_anchor_values
+        let anchor_fields: Vec<F> = anchor_evals
             .iter()
             .map(|f| {
                 hex_decimal_to_field::<F>(f)
@@ -332,12 +328,13 @@ mod tests {
             vec!["jwt1".into()],
             vec!["pk1".into()],
             vec![vec!["path1".into()]],
-            vec![0],
+            vec![0u64],
             "0".into(),
-            vec!["1".into(), "2".into()],
-            "0".into(),
-            "0".into(),
-            vec!["aud1".into()],
+            vec!["1".into(), "2".into()], // anchor_evals
+            "42".into(),                  // hanchor
+            "0".into(),                   // h_sign_user_op
+            "0".into(),                   // random
+            vec!["aud1".into()],          // aud_hash_list
         );
         assert_eq!(req.token_count(), 1);
         assert_eq!(req.pk_path, PathBuf::from("/tmp/pk"));
@@ -351,9 +348,10 @@ mod tests {
             vec!["jwt1".into(), "jwt2".into()], // only 2, need 3
             vec!["pk1".into(), "pk2".into(), "pk3".into()],
             vec![vec![], vec![], vec![]],
-            vec![0, 1, 2],
+            vec![0u64, 1, 2],
             "0".into(),
-            vec!["1".into(); 5], // n-k+1+1 = 6-3+1+1 = 5
+            vec!["1".into(); 4], // anchor_evals: n-k+1 = 6-3+1 = 4
+            "0".into(),          // hanchor
             "0".into(),
             "0".into(),
             vec![],
@@ -366,15 +364,16 @@ mod tests {
 
     #[test]
     fn test_validate_wrong_anchor_length() {
-        let params = test_config(); // n=6, k=3 → expected anchor len = 4+1 = 5
+        let params = test_config(); // n=6, k=3 → expected anchor_evals len = 4
         let raw = RawProofRequest::new(
             PathBuf::from("/tmp/pk"),
             vec!["jwt1".into(), "jwt2".into(), "jwt3".into()],
             vec!["pk1".into(), "pk2".into(), "pk3".into()],
             vec![vec![], vec![], vec![]],
-            vec![0, 1, 2],
+            vec![0u64, 1, 2],
             "0".into(),
-            vec!["1".into(); 3], // wrong: should be 5
+            vec!["1".into(); 3], // wrong: should be 4
+            "0".into(),          // hanchor
             "0".into(),
             "0".into(),
             vec![],
@@ -382,7 +381,7 @@ mod tests {
         let result = ProofRequest::from_raw(&params, raw);
         assert!(result.is_err());
         let err = format!("{}", result.err().unwrap());
-        assert!(err.contains("Invalid anchor length"));
+        assert!(err.contains("Invalid anchor_evals length"));
     }
 
     #[test]
@@ -393,9 +392,10 @@ mod tests {
             vec!["jwt1".into(), "jwt2".into(), "jwt3".into()],
             vec!["pk1".into()], // only 1, need 3
             vec![vec![], vec![], vec![]],
-            vec![0, 1, 2],
+            vec![0u64, 1, 2],
             "0".into(),
-            vec!["1".into(); 5],
+            vec!["1".into(); 4], // anchor_evals
+            "0".into(),          // hanchor
             "0".into(),
             "0".into(),
             vec![],
@@ -414,9 +414,10 @@ mod tests {
             vec!["jwt1".into(), "jwt2".into(), "jwt3".into()],
             vec!["pk1".into(), "pk2".into(), "pk3".into()],
             vec![vec![], vec![], vec![]],
-            vec![0], // only 1, need 3
+            vec![0u64], // only 1, need 3
             "0".into(),
-            vec!["1".into(); 5],
+            vec!["1".into(); 4], // anchor_evals
+            "0".into(),          // hanchor
             "0".into(),
             "0".into(),
             vec![],
@@ -426,20 +427,19 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_anchor_empty() {
-        let result = ProofRequest::parse_anchor(&[]);
-        assert!(result.is_err());
-        let err = format!("{}", result.err().unwrap());
-        assert!(err.contains("cannot be empty"));
-    }
-
-    #[test]
     fn test_parse_anchor_valid() {
-        // 3 anchor values + 1 hanchor
-        let raw_anchor: Vec<String> = vec!["1".into(), "2".into(), "3".into(), "42".into()];
-        let result = ProofRequest::parse_anchor(&raw_anchor);
+        // 3 anchor evals + hanchor as separate arg
+        let anchor_evals: Vec<String> = vec!["1".into(), "2".into(), "3".into()];
+        let result = ProofRequest::parse_anchor(&anchor_evals, "42");
         assert!(result.is_ok());
         let data = result.unwrap();
         assert_eq!(data.anchor.0.len(), 3);
+    }
+
+    #[test]
+    fn test_parse_anchor_invalid_hanchor() {
+        let anchor_evals: Vec<String> = vec!["1".into(), "2".into()];
+        let result = ProofRequest::parse_anchor(&anchor_evals, "not_a_number");
+        assert!(result.is_err());
     }
 }

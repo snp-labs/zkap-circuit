@@ -3,13 +3,15 @@ use ark_utils::hex_decimal_to_field;
 use circuit::constants::{CircuitConfig, F, PAD_CHAR, PoseidonHash};
 use gadget::{base64::decode_any_base64, signature::rsa::PublicKey, utils::str_to_limbs};
 
+use crate::dto::AudHashResult;
 use crate::error::ApplicationError;
 
 /// Compute a Poseidon hash of one or more field-element strings.
 ///
 /// Each string in `messages` is parsed as a hex or decimal field element, then the collection
-/// is hashed with the cached Poseidon parameters. Returns the resulting field element `F`.
-pub fn generate_hash(messages: Vec<String>) -> Result<F, ApplicationError> {
+/// is hashed with the cached Poseidon parameters. Returns the resulting field element as a
+/// decimal string.
+pub fn generate_hash(messages: Vec<String>) -> Result<String, ApplicationError> {
     let poseidon_params = crate::poseidon_params();
 
     let field = messages
@@ -26,7 +28,7 @@ pub fn generate_hash(messages: Vec<String>) -> Result<F, ApplicationError> {
     let result = PoseidonHash::evaluate(poseidon_params, field)
         .map_err(|e| ApplicationError::Other(format!("Poseidon hash evaluation failed: {}", e)))?;
 
-    Ok(result)
+    Ok(crate::field_to_hex(result))
 }
 
 /// Compute per-audience Poseidon hashes and a combined audience-list hash.
@@ -38,7 +40,7 @@ pub fn generate_hash(messages: Vec<String>) -> Result<F, ApplicationError> {
 pub fn generate_aud_hash(
     params: &CircuitConfig,
     aud_list: Vec<String>,
-) -> Result<(Vec<F>, F), ApplicationError> {
+) -> Result<AudHashResult, ApplicationError> {
     let poseidon_params = crate::poseidon_params();
 
     let forbidden_str = crate::forbidden_str(params)?;
@@ -71,7 +73,10 @@ pub fn generate_aud_hash(
     let h_aud_list = PoseidonHash::evaluate(poseidon_params, &*aud_fields)
         .map_err(|e| ApplicationError::Other(format!("Error computing h_aud_lists: {}", e)))?;
 
-    Ok((aud_fields, h_aud_list))
+    Ok(AudHashResult {
+        individual: aud_fields.iter().map(|f| crate::field_to_hex(*f)).collect(),
+        combined: crate::field_to_hex(h_aud_list),
+    })
 }
 
 /// Compute the Merkle leaf hash for an issuer + RSA public-key pair.
@@ -83,7 +88,7 @@ pub fn generate_leaf_hash(
     params: &CircuitConfig,
     iss: &str,
     pk_b64: &str,
-) -> Result<F, ApplicationError> {
+) -> Result<String, ApplicationError> {
     use circuit::constants::BNP;
     use circuit::constants::CG;
 
@@ -110,7 +115,7 @@ pub fn generate_leaf_hash(
     let leaf = PoseidonHash::evaluate(poseidon_params, &*leaf_inputs)
         .map_err(|e| ApplicationError::Other(format!("Error computing leaf: {}", e)))?;
 
-    Ok(leaf)
+    Ok(crate::field_to_hex(leaf))
 }
 
 #[cfg(test)]
@@ -181,10 +186,10 @@ mod tests {
         let aud_list = vec!["aud1".to_string(), "aud2".to_string()];
         let result = generate_aud_hash(&params, aud_list);
         assert!(result.is_ok());
-        let (fields, h) = result.unwrap();
+        let r = result.unwrap();
         // Should be padded to num_audience_limit (5)
-        assert_eq!(fields.len(), 5);
-        assert_ne!(h, F::from(0u64));
+        assert_eq!(r.individual.len(), 5);
+        assert!(r.combined.starts_with("0x"));
     }
 
     #[test]
@@ -193,8 +198,7 @@ mod tests {
         let aud_list: Vec<String> = (0..5).map(|i| format!("aud{}", i)).collect();
         let result = generate_aud_hash(&params, aud_list);
         assert!(result.is_ok());
-        let (fields, _) = result.unwrap();
-        assert_eq!(fields.len(), 5);
+        assert_eq!(result.unwrap().individual.len(), 5);
     }
 
     #[test]
@@ -211,9 +215,9 @@ mod tests {
     fn test_generate_aud_hash_deterministic() {
         let params = test_config();
         let aud = vec!["test".to_string()];
-        let (_, h1) = generate_aud_hash(&params, aud.clone()).unwrap();
-        let (_, h2) = generate_aud_hash(&params, aud).unwrap();
-        assert_eq!(h1, h2);
+        let r1 = generate_aud_hash(&params, aud.clone()).unwrap();
+        let r2 = generate_aud_hash(&params, aud).unwrap();
+        assert_eq!(r1.combined, r2.combined);
     }
 
     #[test]

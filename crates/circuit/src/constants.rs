@@ -32,7 +32,7 @@ pub struct RawCircuitConfig {
 ///
 /// Unlike [`RawCircuitConfig`], all byte-string fields are stored as `Vec<u8>` for compatibility
 /// with `CanonicalSerialize`.  Obtain an instance from [`RawCircuitConfig`] via `Into`, or load
-/// one from a JSON file with [`CircuitConfig::from_json_file`].  Call [`CircuitConfig::validate`]
+/// one from a JSON file with `zkap_service::load_circuit_config`.  Call [`CircuitConfig::validate`]
 /// to enforce parameter constraints before use.
 #[derive(Clone, Debug, PartialEq, Eq, CanonicalSerialize, CanonicalDeserialize)]
 pub struct CircuitConfig {
@@ -109,17 +109,6 @@ impl CircuitConfig {
             return Err("claims must not be empty".into());
         }
         Ok(())
-    }
-
-    /// Load from a JSON config file (RawCircuitConfig → CircuitConfig conversion).
-    pub fn from_json_file(path: &std::path::Path) -> Result<Self, String> {
-        let content =
-            std::fs::read_to_string(path).map_err(|e| format!("Failed to read config: {}", e))?;
-        let raw: RawCircuitConfig =
-            serde_json::from_str(&content).map_err(|e| format!("Failed to parse config: {}", e))?;
-        let config: Self = raw.into();
-        config.validate()?;
-        Ok(config)
     }
 }
 

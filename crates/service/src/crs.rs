@@ -19,8 +19,8 @@ use std::collections::HashMap;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
+use crate::evm::groth16_verifier_solidity::SolidityContractGenerator;
 use ark_serialize::CanonicalSerialize;
-use ark_utils::evm::groth16_verifier_solidity::SolidityContractGenerator;
 use circuit::constants::CircuitConfig;
 use sha2::{Digest, Sha256};
 
@@ -158,6 +158,10 @@ fn write_manifest_file(
             "TREE_HEIGHT":        config.tree_height,
             "NUM_AUDIENCE_LIMIT": config.num_audience_limit,
         },
+        "claims": config.claims.iter()
+            .map(|c| String::from_utf8_lossy(c).to_string())
+            .collect::<Vec<_>>(),
+        "forbidden_string": String::from_utf8_lossy(&config.forbidden_string).to_string(),
         "files": file_hashes,
     });
 

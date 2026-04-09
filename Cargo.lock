@@ -1380,14 +1380,10 @@ name = "zkap-cli"
 version = "0.1.0"
 dependencies = [
  "ark-ff",
- "ark-serialize",
- "ark-utils",
  "circuit",
  "clap",
- "hex",
  "serde",
  "serde_json",
- "sha2",
  "zkap-service",
 ]
 

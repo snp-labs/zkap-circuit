@@ -1,6 +1,6 @@
 use clap::Parser;
 use std::path::PathBuf;
-use zkap_service::{CrsPersistConfig, groth16_setup_and_save};
+use zkap_service::setup;
 
 #[derive(Parser)]
 #[command(about = "Generate Groth16 CRS (proving key, verifying key, and Solidity verifier)")]
@@ -12,10 +12,6 @@ struct Cli {
     /// Path to the JSON config file
     #[arg(long)]
     config: String,
-
-    /// Profile name for manifest.json (e.g. "dev", "prod")
-    #[arg(long, default_value = "dev")]
-    profile: String,
 }
 
 fn main() {
@@ -27,7 +23,8 @@ fn main() {
         std::process::exit(1);
     });
 
-    println!("Generate CRS files at path: {}", cli.output);
+    let output_dir = PathBuf::from(&cli.output);
+    println!("Generate CRS files at path: {}", output_dir.display());
     println!("==================================================");
     println!(
         "  [JWT] Max Len: {}, Payload: {}",
@@ -47,12 +44,7 @@ fn main() {
     );
     println!("==================================================");
 
-    let persist_config = CrsPersistConfig {
-        output_dir: PathBuf::from(&cli.output),
-        profile: cli.profile.clone(),
-    };
-
-    groth16_setup_and_save(&params, &persist_config).unwrap_or_else(|e| {
+    setup(&params, &output_dir).unwrap_or_else(|e| {
         eprintln!("CRS generation failed: {}", e);
         std::process::exit(1);
     });

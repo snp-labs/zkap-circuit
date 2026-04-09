@@ -4,7 +4,7 @@ use ark_groth16::data_structures::VerifyingKey;
 use ark_std::{ops::Neg, path::Path};
 
 pub trait SolidityContractGenerator {
-    fn generate_solidity<P: AsRef<Path>>(&self, path: P);
+    fn generate_solidity<P: AsRef<Path>>(&self, path: P) -> Result<(), std::io::Error>;
 }
 
 fn g1_constant<E: Pairing>(g1: &E::G1Affine, tag: &str) -> String {
@@ -38,7 +38,7 @@ fn g2_constant<E: Pairing>(g2: E::G2Affine, tag: &str) -> String {
 }
 
 impl<E: Pairing> SolidityContractGenerator for VerifyingKey<E> {
-    fn generate_solidity<P: AsRef<Path>>(&self, path: P) {
+    fn generate_solidity<P: AsRef<Path>>(&self, path: P) -> Result<(), std::io::Error> {
         let header = [
             "// SPDX-License-Identifier: GPL-3.0".to_string(),
             "pragma solidity ^0.8.0;".to_string(),
@@ -174,8 +174,9 @@ impl<E: Pairing> SolidityContractGenerator for VerifyingKey<E> {
         .join("\n");
 
         if let Some(parent) = path.as_ref().parent() {
-            std::fs::create_dir_all(parent).expect("Failed to create parent directories");
+            std::fs::create_dir_all(parent)?;
         }
-        std::fs::write(&path, solidity.as_bytes()).expect("Failed to write file");
+        std::fs::write(&path, solidity.as_bytes())?;
+        Ok(())
     }
 }

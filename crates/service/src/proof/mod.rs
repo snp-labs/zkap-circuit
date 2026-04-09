@@ -48,8 +48,8 @@ use ark_groth16::{Groth16, PreparedVerifyingKey, ProvingKey, VerifyingKey, prepa
 use circuit::constants::{BN254, BNP, CG, CircuitConfig, F};
 use circuit::zkap::ZkapCircuit;
 use rand::rngs::OsRng;
+use std::path::Path;
 
-use crate::crs::{CrsPaths, CrsPersistConfig, persist_crs};
 use crate::dto::{ProofComponents, ZkapProofResult};
 use crate::error::ApplicationError;
 use ark_utils::hex_decimal_to_field;
@@ -63,7 +63,7 @@ use self::request::ProofRequest;
 /// Obtained from [`SetupOutput::verifying_context`]. Hides arkworks internals from callers.
 pub struct VerifyingContext(pub(crate) PreparedVerifyingKey<BN254>);
 
-/// Output of [`groth16_setup`]: the proving key, verifying key, and pre-processed verifying key
+/// Output of [`setup`]: the proving key, verifying key, and pre-processed verifying key
 /// needed to generate and verify Groth16 proofs for the ZKAP circuit.
 pub struct SetupOutput {
     pub(crate) pk: ProvingKey<BN254>,
@@ -83,11 +83,18 @@ impl SetupOutput {
     }
 }
 
-/// Perform a Groth16 trusted setup for the ZKAP circuit parameterised by `params`.
+/// Perform a Groth16 trusted setup and persist all artifacts to `output_dir`.
 ///
-/// Generates a random proving key (`pk`), verifying key (`vk`), and prepared verifying key
-/// (`pvk`). The resulting [`SetupOutput`] must be saved for later use by [`prove`] and [`verify`].
-pub fn groth16_setup(params: &CircuitConfig) -> Result<SetupOutput, ApplicationError> {
+/// Writes five files to `output_dir`:
+///   - `pk.key`              — proving key (uncompressed binary)
+///   - `vk.key`              — verifying key (uncompressed binary)
+///   - `pvk.key`             — prepared verifying key (uncompressed binary)
+///   - `Groth16Verifier.sol` — Solidity on-chain verifier
+///   - `config.json`         — the input `params` in JSON (loadable via [`crate::load_circuit_config`])
+///
+/// Returns the in-memory [`SetupOutput`] for immediate use with [`prove`] and [`verify`].
+/// The proving key path for [`RawProofRequest`] is `output_dir.join("pk.key")`.
+pub fn setup(params: &CircuitConfig, output_dir: &Path) -> Result<SetupOutput, ApplicationError> {
     let mut rng = OsRng;
     let circuit = ZkapCircuit::<CG, BNP>::generate_mock_circuit(params);
 
@@ -95,21 +102,11 @@ pub fn groth16_setup(params: &CircuitConfig) -> Result<SetupOutput, ApplicationE
         .map_err(|e| ApplicationError::InvalidFormat(format!("Groth16 setup failed: {}", e)))?;
 
     let pvk = prepare_verifying_key(&vk);
+    let output = SetupOutput { pk, vk, pvk };
 
-    Ok(SetupOutput { pk, vk, pvk })
-}
+    crate::crs::persist_setup_output(&output, params, output_dir)?;
 
-/// Perform a Groth16 trusted setup **and** persist all CRS files to disk in one call.
-///
-/// Equivalent to calling [`groth16_setup`] followed by [`crate::crs::persist_crs`].
-/// Returns both the in-memory [`SetupOutput`] and the [`CrsPaths`] of the written files.
-pub fn groth16_setup_and_save(
-    params: &CircuitConfig,
-    persist: &CrsPersistConfig,
-) -> Result<(SetupOutput, CrsPaths), ApplicationError> {
-    let setup = groth16_setup(params)?;
-    let paths = persist_crs(&setup, params, persist)?;
-    Ok((setup, paths))
+    Ok(output)
 }
 
 /// Generate Groth16 proofs from raw user inputs via a 4-step pipeline:
@@ -121,7 +118,7 @@ pub fn groth16_setup_and_save(
 /// 4. **Generate proofs** — runs `Groth16::prove` for each circuit input using the proving key
 ///    at `raw.pk_path`.
 ///
-/// Returns a pair `(proofs, public_inputs)` where each entry corresponds to one JWT token.
+/// Returns a [`ZkapProofResult`] containing proofs and hex-encoded public inputs.
 pub fn prove(
     params: &CircuitConfig,
     raw: RawProofRequest,
@@ -149,9 +146,7 @@ pub fn prove(
     // 4. Generate proofs
     log::info!("[ZKAP-v2] Step 4: Generating proofs...");
     let generator = ProofGenerator::new(request.pk_path.clone());
-
-    let output = generator.generate(params, &circuit_inputs)?;
-
+    let output = generator.generate(&circuit_inputs)?;
     log::info!(
         "[ZKAP-v2] Step 4 completed: {} proofs generated",
         output.proofs.len()

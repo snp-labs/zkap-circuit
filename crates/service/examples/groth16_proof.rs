@@ -1,13 +1,13 @@
 //! Full Groth16 proof lifecycle example for the ZKAP protocol.
 //!
-//! Demonstrates all 7 public API functions of `zkap-service`:
-//!   - `groth16_setup`    — Step 2: Trusted setup (CRS generation)
-//!   - `generate_hash`    — Step 3: General-purpose Poseidon hash (nonce computation)
+//! Demonstrates the public API functions of `zkap-service`:
+//!   - `setup`              — Step 2: Trusted setup (writes pk/vk/pvk/Verifier.sol/config.json)
+//!   - `generate_hash`      — Step 3: General-purpose Poseidon hash (nonce computation)
 //!   - `generate_leaf_hash` — Step 4: Merkle leaf hash
-//!   - `generate_anchor`  — Step 5: Threshold anchor generation
-//!   - `generate_aud_hash` — Step 6: Audience hash
-//!   - `prove`            — Step 6: Zero-knowledge proof generation
-//!   - `verify`           — Step 7: Proof verification
+//!   - `generate_anchor`    — Step 5: Threshold anchor generation
+//!   - `generate_aud_hash`  — Step 6: Audience hash
+//!   - `prove`              — Step 6: Zero-knowledge proof generation
+//!   - `verify`             — Step 7: Proof verification
 //!
 //! Run with:
 //!   cargo run -p zkap-service --example groth16_proof --release
@@ -28,8 +28,8 @@ use signature::{SignatureEncoding, Signer};
 use ark_utils::hex_decimal_to_field;
 use zkap_service::constants::{F, PoseidonHash, RawCircuitConfig};
 use zkap_service::{
-    CircuitConfig, CrsPersistConfig, RawProofRequest, Secret, generate_anchor, generate_aud_hash,
-    generate_hash, generate_leaf_hash, groth16_setup_and_save, prove, verify,
+    CircuitConfig, RawProofRequest, Secret, generate_anchor, generate_aud_hash, generate_hash,
+    generate_leaf_hash, prove, setup, verify,
 };
 
 use gadget::hashes::poseidon::get_poseidon_params;
@@ -69,16 +69,11 @@ fn main() {
     // ============================================================
     println!("\n[Step 2] Running Groth16 trusted setup (CRS generation)...");
 
-    // groth16_setup_and_save handles PK/VK serialisation and manifest.json in one call
+    // setup() performs trusted setup and writes pk.key, vk.key, pvk.key,
+    // Groth16Verifier.sol, and config.json to the output directory.
     let pk_dir = std::env::temp_dir().join("zkap-example");
-    std::fs::create_dir_all(&pk_dir).expect("Failed to create temp dir");
-    let persist_config = CrsPersistConfig {
-        output_dir: pk_dir.clone(),
-        profile: "example".to_string(),
-    };
-    let (setup_output, crs_paths) =
-        groth16_setup_and_save(&config, &persist_config).expect("Groth16 setup and save failed");
-    let pk_path = crs_paths.pk.clone();
+    let setup_output = setup(&config, &pk_dir).expect("Groth16 setup failed");
+    let pk_path = pk_dir.join("pk.key");
     println!(
         "  Setup complete: {} public inputs, CRS written to {}",
         setup_output.public_input_count(),

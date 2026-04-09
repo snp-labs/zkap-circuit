@@ -265,14 +265,14 @@ impl ProofRequest {
     }
 
     /// Parses the anchor evaluations and hanchor into typed domain objects.
-    fn parse_anchor(anchor_evals: &[String], hanchor: &str) -> Result<AnchorData, ApplicationError> {
+    fn parse_anchor(
+        anchor_evals: &[String],
+        hanchor: &str,
+    ) -> Result<AnchorData, ApplicationError> {
         use ark_utils::hex_decimal_to_field;
 
         let hanchor = hex_decimal_to_field::<F>(hanchor).map_err(|e| {
-            ApplicationError::InvalidFormat(format!(
-                "Failed to parse hanchor '{}': {}",
-                hanchor, e
-            ))
+            ApplicationError::InvalidFormat(format!("Failed to parse hanchor '{}': {}", hanchor, e))
         })?;
 
         let anchor_fields: Vec<F> = anchor_evals

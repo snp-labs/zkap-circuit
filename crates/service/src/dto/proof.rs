@@ -38,7 +38,8 @@ impl ProofComponents {
     /// without requiring callers to depend on `ark_groth16` directly.
     pub(crate) fn to_ark_proof(&self) -> Result<Proof<BN254>, crate::error::ApplicationError> {
         let parse = |s: &str| -> Result<Fq, crate::error::ApplicationError> {
-            hex_decimal_to_field::<Fq>(s).map_err(|e| crate::error::ApplicationError::ParseError(e.to_string()))
+            hex_decimal_to_field::<Fq>(s)
+                .map_err(|e| crate::error::ApplicationError::ParseError(e.to_string()))
         };
 
         // Parse a (G1Affine): [ax, ay]
@@ -143,4 +144,3 @@ impl From<(Vec<Proof<BN254>>, Vec<Vec<F>>)> for ZkapProofResult {
         }
     }
 }
-

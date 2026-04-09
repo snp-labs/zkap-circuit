@@ -19,8 +19,8 @@ use std::collections::HashMap;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
-use ark_serialize::CanonicalSerialize;
 use crate::evm::groth16_verifier_solidity::SolidityContractGenerator;
+use ark_serialize::CanonicalSerialize;
 use circuit::constants::CircuitConfig;
 use sha2::{Digest, Sha256};
 

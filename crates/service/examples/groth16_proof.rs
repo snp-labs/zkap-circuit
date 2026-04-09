@@ -76,8 +76,8 @@ fn main() {
         output_dir: pk_dir.clone(),
         profile: "example".to_string(),
     };
-    let (setup_output, crs_paths) = groth16_setup_and_save(&config, &persist_config)
-        .expect("Groth16 setup and save failed");
+    let (setup_output, crs_paths) =
+        groth16_setup_and_save(&config, &persist_config).expect("Groth16 setup and save failed");
     let pk_path = crs_paths.pk.clone();
     println!(
         "  Setup complete: {} public inputs, CRS written to {}",
@@ -203,8 +203,7 @@ fn main() {
     let anchor_result = generate_anchor(&config, all_secrets).expect("Anchor generation failed");
 
     // Compute hanchor via chain hash using generate_hash()
-    let mut hanchor =
-        generate_hash(vec![anchor_result.anchor[0].clone()]).expect("Hash failed");
+    let mut hanchor = generate_hash(vec![anchor_result.anchor[0].clone()]).expect("Hash failed");
     for v in &anchor_result.anchor[1..] {
         hanchor = generate_hash(vec![hanchor.clone(), v.clone()]).expect("Hash failed");
     }
@@ -227,8 +226,7 @@ fn main() {
 
     // Audience list (quoted form, matching circuit extraction)
     let quoted_aud = format!("\"{}\"", AUD);
-    let aud_result =
-        generate_aud_hash(&config, vec![quoted_aud]).expect("Audience hash failed");
+    let aud_result = generate_aud_hash(&config, vec![quoted_aud]).expect("Audience hash failed");
     let aud_hash_list: Vec<String> = aud_result.individual;
 
     // Construct RawProofRequest with all prepared data

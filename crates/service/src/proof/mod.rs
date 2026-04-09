@@ -44,17 +44,15 @@ pub use request::RawProofRequest;
 use ark_crypto_primitives::snark::CircuitSpecificSetupSNARK;
 #[allow(unused_imports)]
 use ark_crypto_primitives::snark::SNARK;
-use ark_groth16::{
-    Groth16, PreparedVerifyingKey, ProvingKey, VerifyingKey, prepare_verifying_key,
-};
+use ark_groth16::{Groth16, PreparedVerifyingKey, ProvingKey, VerifyingKey, prepare_verifying_key};
 use circuit::constants::{BN254, BNP, CG, CircuitConfig, F};
 use circuit::zkap::ZkapCircuit;
 use rand::rngs::OsRng;
 
-use ark_utils::hex_decimal_to_field;
 use crate::crs::{CrsPaths, CrsPersistConfig, persist_crs};
 use crate::dto::{ProofComponents, ZkapProofResult};
 use crate::error::ApplicationError;
+use ark_utils::hex_decimal_to_field;
 
 use self::context::ProofContextBuilder;
 use self::generator::ProofGenerator;
@@ -175,7 +173,9 @@ pub fn verify(
     let ark_proof = proof.to_ark_proof()?;
     let ark_inputs: Vec<F> = public_inputs
         .iter()
-        .map(|s| hex_decimal_to_field::<F>(s).map_err(|e| ApplicationError::ParseError(e.to_string())))
+        .map(|s| {
+            hex_decimal_to_field::<F>(s).map_err(|e| ApplicationError::ParseError(e.to_string()))
+        })
         .collect::<Result<_, _>>()?;
     Groth16::<BN254>::verify_proof(&ctx.0, &ark_proof, &ark_inputs)
         .map_err(|e| ApplicationError::InvalidFormat(format!("Proof verification failed: {}", e)))

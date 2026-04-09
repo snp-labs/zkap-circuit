@@ -110,7 +110,6 @@ impl CircuitConfig {
         }
         Ok(())
     }
-
 }
 
 const LAMBDA: usize = 2048; // 2048 bits

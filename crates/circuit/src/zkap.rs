@@ -24,6 +24,7 @@ use ark_serialize::*;
 use std::marker::PhantomData;
 
 use crate::constants::CircuitConfig;
+use crate::token::jwt_field::{jwt_exp_to_field, jwt_nonce_hex_to_field};
 use crate::{
     ExposesPublicInputs, input,
     token::{
@@ -60,12 +61,10 @@ use gadget::{
         constraints::{PublicKeyVar, SignatureVar},
     },
     utils::{
-        comparison::enforce_less_than,
-        packing::pack_decompose_bytes_unchecked,
-        single_multiplexer, slice_efficient,
+        comparison::enforce_less_than, packing::pack_decompose_bytes_unchecked, single_multiplexer,
+        slice_efficient,
     },
 };
-use crate::token::jwt_field::{jwt_exp_to_field, jwt_nonce_hex_to_field};
 
 /// The main Groth16 R1CS circuit for the ZKAP protocol.
 ///

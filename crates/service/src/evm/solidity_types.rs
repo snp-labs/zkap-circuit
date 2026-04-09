@@ -10,7 +10,10 @@ pub trait Solidity {
 
 impl<P: FpConfig<N>, const N: usize> Solidity for Fp<P, N> {
     fn to_solidity(&self) -> Vec<String> {
-        vec![format!("0x{}", hex::encode((*self).into_bigint().to_bytes_be()))]
+        vec![format!(
+            "0x{}",
+            hex::encode((*self).into_bigint().to_bytes_be())
+        )]
     }
 }
 

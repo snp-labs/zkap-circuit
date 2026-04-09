@@ -13,11 +13,11 @@ pub(crate) mod hash;
 #[cfg(feature = "proof")]
 pub mod crs;
 #[cfg(feature = "proof")]
+pub mod evm;
+#[cfg(feature = "proof")]
 pub mod jwt;
 #[cfg(feature = "proof")]
 pub mod manifest;
-#[cfg(feature = "proof")]
-pub mod evm;
 #[cfg(feature = "proof")]
 pub mod proof;
 
@@ -45,13 +45,16 @@ pub(crate) fn forbidden_str(params: &CircuitConfig) -> Result<&str, error::Appli
 }
 
 /// Load a [`CircuitConfig`] from a JSON config file.
-pub fn load_circuit_config(path: &std::path::Path) -> Result<CircuitConfig, error::ApplicationError> {
+pub fn load_circuit_config(
+    path: &std::path::Path,
+) -> Result<CircuitConfig, error::ApplicationError> {
     let content = std::fs::read_to_string(path).map_err(|e| {
         error::ApplicationError::InvalidFormat(format!("Failed to read config: {}", e))
     })?;
-    let raw: circuit::constants::RawCircuitConfig = serde_json::from_str(&content).map_err(|e| {
-        error::ApplicationError::InvalidFormat(format!("Failed to parse config: {}", e))
-    })?;
+    let raw: circuit::constants::RawCircuitConfig =
+        serde_json::from_str(&content).map_err(|e| {
+            error::ApplicationError::InvalidFormat(format!("Failed to parse config: {}", e))
+        })?;
     let config = CircuitConfig::from(raw);
     config
         .validate()

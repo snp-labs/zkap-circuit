@@ -76,11 +76,10 @@ fn main() {
     let cli = Cli::parse();
 
     let config_path = std::path::Path::new(&cli.config);
-    let params =
-        zkap_service::load_circuit_config(config_path).unwrap_or_else(|e| {
-            eprintln!("Failed to load config: {}", e);
-            std::process::exit(1);
-        });
+    let params = zkap_service::load_circuit_config(config_path).unwrap_or_else(|e| {
+        eprintln!("Failed to load config: {}", e);
+        std::process::exit(1);
+    });
 
     match &cli.command {
         Commands::Aud(args) => generate_aud_hash(args, &params),
@@ -95,11 +94,10 @@ fn generate_aud_hash(args: &AudArgs, params: &circuit::constants::CircuitConfig)
         .map(|s| s.trim().to_string())
         .collect();
 
-    let aud_result = zkap_service::generate_aud_hash(params, aud_vec.clone())
-        .unwrap_or_else(|e| {
-            eprintln!("Error generating audience hash: {}", e);
-            std::process::exit(1);
-        });
+    let aud_result = zkap_service::generate_aud_hash(params, aud_vec.clone()).unwrap_or_else(|e| {
+        eprintln!("Error generating audience hash: {}", e);
+        std::process::exit(1);
+    });
 
     let output = AudOutput {
         input: aud_vec,
@@ -137,11 +135,10 @@ fn generate_pk_leaf(args: &LeafArgs, params: &circuit::constants::CircuitConfig)
                 pk: pk.to_string(),
             };
 
-            let leaf_hex = zkap_service::generate_leaf_hash(params, iss, pk)
-                .unwrap_or_else(|e| {
-                    eprintln!("Error computing leaf for iss '{}': {}", iss, e);
-                    std::process::exit(1);
-                });
+            let leaf_hex = zkap_service::generate_leaf_hash(params, iss, pk).unwrap_or_else(|e| {
+                eprintln!("Error computing leaf for iss '{}': {}", iss, e);
+                std::process::exit(1);
+            });
 
             (input_data, leaf_hex)
         })

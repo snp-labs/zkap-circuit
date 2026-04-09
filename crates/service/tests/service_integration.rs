@@ -75,7 +75,10 @@ fn test_aud_hash_and_leaf_hash_consistency() {
     assert_eq!(aud_result.combined, aud_result2.combined);
 
     // Fields length should equal num_audience_limit
-    assert_eq!(aud_result.individual.len(), params.num_audience_limit as usize);
+    assert_eq!(
+        aud_result.individual.len(),
+        params.num_audience_limit as usize
+    );
 
     // Generate leaf hash with a minimal PK
     let pk_b64 = "AQAB";
@@ -145,7 +148,12 @@ fn test_groth16_setup_and_verify() {
     let ctx = setup.verifying_context();
     let dummy_proof = ProofComponents {
         a: ["0".to_string(), "0".to_string()],
-        b: ["0".to_string(), "0".to_string(), "0".to_string(), "0".to_string()],
+        b: [
+            "0".to_string(),
+            "0".to_string(),
+            "0".to_string(),
+            "0".to_string(),
+        ],
         c: ["0".to_string(), "0".to_string()],
     };
     let dummy_inputs = vec!["0".to_string(); 8];

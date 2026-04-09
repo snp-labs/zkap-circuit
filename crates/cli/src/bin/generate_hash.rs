@@ -1,6 +1,5 @@
 use std::fs::File;
 
-use ark_ff::PrimeField;
 use clap::{Args, Parser, Subcommand};
 use serde::Serialize;
 
@@ -96,7 +95,7 @@ fn generate_aud_hash(args: &AudArgs, params: &circuit::constants::CircuitConfig)
         .map(|s| s.trim().to_string())
         .collect();
 
-    let (aud_fields, h_aud_lists) = zkap_service::generate_aud_hash(params, aud_vec.clone())
+    let aud_result = zkap_service::generate_aud_hash(params, aud_vec.clone())
         .unwrap_or_else(|e| {
             eprintln!("Error generating audience hash: {}", e);
             std::process::exit(1);
@@ -105,11 +104,8 @@ fn generate_aud_hash(args: &AudArgs, params: &circuit::constants::CircuitConfig)
     let output = AudOutput {
         input: aud_vec,
         output: AudItem {
-            aud_to_field: aud_fields
-                .iter()
-                .map(|f| format!("0x{:X}", f.into_bigint()))
-                .collect(),
-            h_aud_lists: format!("0x{:X}", h_aud_lists.into_bigint()),
+            aud_to_field: aud_result.individual,
+            h_aud_lists: aud_result.combined,
         },
     };
 
@@ -141,12 +137,12 @@ fn generate_pk_leaf(args: &LeafArgs, params: &circuit::constants::CircuitConfig)
                 pk: pk.to_string(),
             };
 
-            let leaf = zkap_service::generate_leaf_hash(params, iss, pk).unwrap_or_else(|e| {
-                eprintln!("Error computing leaf for iss '{}': {}", iss, e);
-                std::process::exit(1);
-            });
+            let leaf_hex = zkap_service::generate_leaf_hash(params, iss, pk)
+                .unwrap_or_else(|e| {
+                    eprintln!("Error computing leaf for iss '{}': {}", iss, e);
+                    std::process::exit(1);
+                });
 
-            let leaf_hex = format!("0x{:X}", leaf.into_bigint());
             (input_data, leaf_hex)
         })
         .unzip();

@@ -8,7 +8,7 @@ use ark_utils::try_str_to_fields;
 use circuit::constants::{CircuitConfig, F, PoseidonHash};
 
 use super::AnchorConfig;
-use crate::{Secret, error::ApplicationError};
+use crate::{Secret, dto::GenerateAnchorResCore, error::ApplicationError};
 
 use gadget::{
     anchor::{
@@ -31,7 +31,7 @@ use gadget::{
 pub fn generate_anchor(
     params: &CircuitConfig,
     secrets: Vec<Secret>,
-) -> Result<PoseidonAnchor<F>, ApplicationError> {
+) -> Result<GenerateAnchorResCore, ApplicationError> {
     let ctx = AnchorConfig::from_params(params);
 
     let anchor_key = PoseidonAnchorPublicKey {
@@ -47,7 +47,9 @@ pub fn generate_anchor(
 
     let anchor = PoseidonAnchorScheme::generate_anchor(&anchor_key, &anchor_secret, &ctx.matrix)?;
 
-    Ok(anchor)
+    Ok(GenerateAnchorResCore {
+        anchor: anchor.0.iter().map(|f| f.to_string()).collect(),
+    })
 }
 
 pub(crate) fn derive_x_from_secret(

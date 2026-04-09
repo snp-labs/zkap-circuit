@@ -45,25 +45,44 @@ use ark_crypto_primitives::snark::CircuitSpecificSetupSNARK;
 #[allow(unused_imports)]
 use ark_crypto_primitives::snark::SNARK;
 use ark_groth16::{
-    Groth16, PreparedVerifyingKey, Proof, ProvingKey, VerifyingKey, prepare_verifying_key,
+    Groth16, PreparedVerifyingKey, ProvingKey, VerifyingKey, prepare_verifying_key,
 };
 use circuit::constants::{BN254, BNP, CG, CircuitConfig, F};
 use circuit::zkap::ZkapCircuit;
 use rand::rngs::OsRng;
 
+use ark_utils::hex_decimal_to_field;
 use crate::crs::{CrsPaths, CrsPersistConfig, persist_crs};
+use crate::dto::{ProofComponents, ZkapProofResult};
 use crate::error::ApplicationError;
 
 use self::context::ProofContextBuilder;
 use self::generator::ProofGenerator;
 use self::request::ProofRequest;
 
+/// Opaque handle to a Groth16 prepared verifying key.
+///
+/// Obtained from [`SetupOutput::verifying_context`]. Hides arkworks internals from callers.
+pub struct VerifyingContext(pub(crate) PreparedVerifyingKey<BN254>);
+
 /// Output of [`groth16_setup`]: the proving key, verifying key, and pre-processed verifying key
 /// needed to generate and verify Groth16 proofs for the ZKAP circuit.
 pub struct SetupOutput {
-    pub pk: ProvingKey<BN254>,
-    pub vk: VerifyingKey<BN254>,
-    pub pvk: PreparedVerifyingKey<BN254>,
+    pub(crate) pk: ProvingKey<BN254>,
+    pub(crate) vk: VerifyingKey<BN254>,
+    pub(crate) pvk: PreparedVerifyingKey<BN254>,
+}
+
+impl SetupOutput {
+    /// Return an opaque [`VerifyingContext`] for use with [`verify`].
+    pub fn verifying_context(&self) -> VerifyingContext {
+        VerifyingContext(self.pvk.clone())
+    }
+
+    /// Number of public inputs in the verifying key (includes the constant "1" element).
+    pub fn public_input_count(&self) -> usize {
+        self.pvk.vk.gamma_abc_g1.len()
+    }
 }
 
 /// Perform a Groth16 trusted setup for the ZKAP circuit parameterised by `params`.
@@ -105,11 +124,10 @@ pub fn groth16_setup_and_save(
 ///    at `raw.pk_path`.
 ///
 /// Returns a pair `(proofs, public_inputs)` where each entry corresponds to one JWT token.
-#[allow(clippy::type_complexity)]
 pub fn prove(
     params: &CircuitConfig,
     raw: RawProofRequest,
-) -> Result<(Vec<Proof<BN254>>, Vec<Vec<F>>), ApplicationError> {
+) -> Result<ZkapProofResult, ApplicationError> {
     // 1. Validate and parse inputs
     log::info!("[ZKAP-v2] Step 1: Validating and parsing inputs...");
     let request = ProofRequest::from_raw(params, raw)?;
@@ -141,18 +159,24 @@ pub fn prove(
         output.proofs.len()
     );
 
-    Ok((output.proofs, output.public_inputs))
+    Ok((output.proofs, output.public_inputs).into())
 }
 
-/// Verify a single Groth16 proof against the prepared verifying key and public inputs.
+/// Verify a single Groth16 proof against an opaque verifying context.
 ///
-/// Returns `Ok(true)` if the proof is valid, `Ok(false)` if it is not, or an error if the
-/// verifier itself fails (e.g. malformed inputs).
+/// Accepts String-encoded public inputs (decimal field-element format) and a
+/// [`ProofComponents`] produced by [`prove`]. Returns `Ok(true)` if the proof is valid,
+/// `Ok(false)` if it is not, or an error if inputs are malformed or the verifier fails.
 pub fn verify(
-    pvk: &PreparedVerifyingKey<BN254>,
-    proof: &Proof<BN254>,
-    public_inputs: &[F],
+    ctx: &VerifyingContext,
+    proof: &ProofComponents,
+    public_inputs: &[String],
 ) -> Result<bool, ApplicationError> {
-    Groth16::<BN254>::verify_proof(pvk, proof, public_inputs)
+    let ark_proof = proof.to_ark_proof()?;
+    let ark_inputs: Vec<F> = public_inputs
+        .iter()
+        .map(|s| hex_decimal_to_field::<F>(s).map_err(|e| ApplicationError::ParseError(e.to_string())))
+        .collect::<Result<_, _>>()?;
+    Groth16::<BN254>::verify_proof(&ctx.0, &ark_proof, &ark_inputs)
         .map_err(|e| ApplicationError::InvalidFormat(format!("Proof verification failed: {}", e)))
 }

@@ -18,7 +18,6 @@
 use ark_crypto_primitives::crh::CRHScheme;
 use ark_crypto_primitives::merkle_tree::MerkleTree;
 use ark_ff::{BigInteger, PrimeField, Zero};
-use ark_serialize::CanonicalSerialize;
 use ark_std::rand::SeedableRng;
 use base64::Engine;
 use rsa::pkcs1v15::SigningKey;
@@ -26,10 +25,11 @@ use rsa::traits::PublicKeyParts;
 use sha2::Sha256;
 use signature::{SignatureEncoding, Signer};
 
+use ark_utils::hex_decimal_to_field;
 use zkap_service::constants::{F, PoseidonHash, RawCircuitConfig};
 use zkap_service::{
-    CircuitConfig, RawProofRequest, Secret, generate_anchor, generate_aud_hash, generate_hash,
-    generate_leaf_hash, groth16_setup, prove, verify,
+    CircuitConfig, CrsPersistConfig, RawProofRequest, Secret, generate_anchor, generate_aud_hash,
+    generate_hash, generate_leaf_hash, groth16_setup_and_save, prove, verify,
 };
 
 use gadget::hashes::poseidon::get_poseidon_params;
@@ -69,42 +69,21 @@ fn main() {
     // ============================================================
     println!("\n[Step 2] Running Groth16 trusted setup (CRS generation)...");
 
-    let setup_output = groth16_setup(&config).expect("Groth16 setup failed");
-    println!(
-        "  Setup complete: VK has {} public input elements",
-        setup_output.vk.gamma_abc_g1.len()
-    );
-
-    // Serialize proving key to temp directory (prove() loads pk from disk)
+    // groth16_setup_and_save handles PK/VK serialisation and manifest.json in one call
     let pk_dir = std::env::temp_dir().join("zkap-example");
     std::fs::create_dir_all(&pk_dir).expect("Failed to create temp dir");
-    let pk_path = pk_dir.join("pk.key");
-
-    let mut pk_file = std::fs::File::create(&pk_path).expect("Failed to create pk file");
-    setup_output
-        .pk
-        .serialize_uncompressed(&mut pk_file)
-        .expect("Failed to serialize pk");
-    drop(pk_file);
-
-    // Write manifest.json (required by prove() for parameter validation)
-    let manifest_path = pk_dir.join("manifest.json");
-    let manifest = format!(
-        r#"{{"profile":"example","params":{{"MAX_JWT_B64_LEN":{},"MAX_PAYLOAD_B64_LEN":{},"MAX_AUD_LEN":{},"MAX_EXP_LEN":{},"MAX_ISS_LEN":{},"MAX_NONCE_LEN":{},"MAX_SUB_LEN":{},"N":{},"K":{},"TREE_HEIGHT":{},"NUM_AUDIENCE_LIMIT":{}}}}}"#,
-        config.max_jwt_b64_len,
-        config.max_payload_b64_len,
-        config.max_aud_len,
-        config.max_exp_len,
-        config.max_iss_len,
-        config.max_nonce_len,
-        config.max_sub_len,
-        config.n,
-        config.k,
-        config.tree_height,
-        config.num_audience_limit,
+    let persist_config = CrsPersistConfig {
+        output_dir: pk_dir.clone(),
+        profile: "example".to_string(),
+    };
+    let (setup_output, crs_paths) = groth16_setup_and_save(&config, &persist_config)
+        .expect("Groth16 setup and save failed");
+    let pk_path = crs_paths.pk.clone();
+    println!(
+        "  Setup complete: {} public inputs, CRS written to {}",
+        setup_output.public_input_count(),
+        pk_dir.display()
     );
-    std::fs::write(&manifest_path, &manifest).expect("Failed to write manifest.json");
-    println!("  PK serialized to {}", pk_path.display());
 
     // ============================================================
     // Step 3: RSA Key Generation + JWT Construction
@@ -117,11 +96,12 @@ fn main() {
 
     let random = F::from(12345u64);
     let h_sign_user_op = F::from(67890u64);
-    let nonce = generate_hash(vec![
+    let nonce_str = generate_hash(vec![
         field_to_decimal(&h_sign_user_op),
         field_to_decimal(&random),
     ])
     .expect("Nonce hash failed");
+    let nonce: F = hex_decimal_to_field(&nonce_str).expect("Parse nonce");
     let nonce_hex = format!("0x{}", hex::encode(nonce.into_bigint().to_bytes_be()));
 
     let mut jwts = Vec::new();
@@ -160,7 +140,8 @@ fn main() {
     for i in 0..K {
         let n_bytes = rsa_keys[i].to_public_key().n().to_bytes_be();
         let pk_b64 = b64_engine.encode(&n_bytes);
-        let leaf = generate_leaf_hash(&config, &quoted_iss, &pk_b64).expect("Leaf hash failed");
+        let leaf_str = generate_leaf_hash(&config, &quoted_iss, &pk_b64).expect("Leaf hash failed");
+        let leaf: F = hex_decimal_to_field(&leaf_str).expect("Parse leaf");
         // Merkle tree needs the inner-hash of the leaf (Poseidon(leaf))
         let leaf_digest = PoseidonHash::evaluate(&poseidon_params, [leaf]).unwrap();
         leaf_digests[i] = leaf_digest;
@@ -179,7 +160,7 @@ fn main() {
     // Extract merkle paths as string vectors for RawProofRequest
     // Format: [leaf_sibling_hash, auth_path_nodes...] (auth path in reverse order)
     let mut merkle_paths: Vec<Vec<String>> = Vec::new();
-    let leaf_indices: Vec<usize> = (0..K).collect();
+    let leaf_indices: Vec<u64> = (0..K as u64).collect();
 
     for i in 0..K {
         let proof = tree.generate_proof(i).unwrap();
@@ -219,21 +200,19 @@ fn main() {
         });
     }
 
-    let anchor = generate_anchor(&config, all_secrets).expect("Anchor generation failed");
+    let anchor_result = generate_anchor(&config, all_secrets).expect("Anchor generation failed");
 
     // Compute hanchor via chain hash using generate_hash()
-    let mut hanchor = generate_hash(vec![field_to_decimal(&anchor.0[0])]).expect("Hash failed");
-    for v in &anchor.0[1..] {
-        hanchor = generate_hash(vec![field_to_decimal(&hanchor), field_to_decimal(v)])
-            .expect("Hash failed");
+    let mut hanchor =
+        generate_hash(vec![anchor_result.anchor[0].clone()]).expect("Hash failed");
+    for v in &anchor_result.anchor[1..] {
+        hanchor = generate_hash(vec![hanchor.clone(), v.clone()]).expect("Hash failed");
     }
 
-    // Build anchor string array: [anchor_values..., hanchor]
-    let mut anchor_strings: Vec<String> = anchor.0.iter().map(field_to_decimal).collect();
-    anchor_strings.push(field_to_decimal(&hanchor));
+    let anchor_evals = anchor_result.anchor.clone();
     println!(
-        "  Anchor: {} values, hanchor computed via generate_hash()",
-        anchor.0.len()
+        "  Anchor: {} evals, hanchor computed via generate_hash()",
+        anchor_evals.len()
     );
 
     // ============================================================
@@ -248,9 +227,9 @@ fn main() {
 
     // Audience list (quoted form, matching circuit extraction)
     let quoted_aud = format!("\"{}\"", AUD);
-    let (aud_fields, _h_aud_list) =
+    let aud_result =
         generate_aud_hash(&config, vec![quoted_aud]).expect("Audience hash failed");
-    let aud_list: Vec<String> = aud_fields.iter().map(field_to_decimal).collect();
+    let aud_hash_list: Vec<String> = aud_result.individual;
 
     // Construct RawProofRequest with all prepared data
     let raw_request = RawProofRequest::new(
@@ -260,26 +239,28 @@ fn main() {
         merkle_paths,
         leaf_indices,
         field_to_decimal(&root),
-        anchor_strings,
+        anchor_evals,
+        hanchor,
         field_to_decimal(&h_sign_user_op),
         field_to_decimal(&random),
-        aud_list,
+        aud_hash_list,
     );
 
-    let (proofs, all_public_inputs) = prove(&config, raw_request).expect("Proof generation failed");
+    let proof_result = prove(&config, raw_request).expect("Proof generation failed");
     for i in 0..K {
         println!("  Proof {}/{} generated", i + 1, K);
     }
 
     // ============================================================
     // Step 7: Proof Verification
-    //   API: verify() — for proof verification
+    //   API: verify() — accepts VerifyingContext + ProofComponents + String inputs
     // ============================================================
     println!("\n[Step 7] Verifying proofs...");
 
-    let pvk = setup_output.pvk;
-    for (i, (proof, pub_input)) in proofs.iter().zip(all_public_inputs.iter()).enumerate() {
-        let valid = verify(&pvk, proof, pub_input).expect("Verification call failed");
+    let ctx = setup_output.verifying_context();
+    for (i, proof_comp) in proof_result.proofs.iter().enumerate() {
+        let pub_inputs = proof_result.public_inputs_for(i);
+        let valid = verify(&ctx, proof_comp, &pub_inputs).expect("Verification call failed");
         println!(
             "  Proof {}/{}: {}",
             i + 1,
@@ -290,9 +271,10 @@ fn main() {
     }
 
     // Demonstrate: tampered public input fails verification
-    let mut tampered = all_public_inputs[0].clone();
-    tampered[0] += F::from(1u64);
-    let invalid = verify(&pvk, &proofs[0], &tampered).expect("Verification call failed");
+    let mut tampered_inputs = proof_result.public_inputs_for(0);
+    tampered_inputs[0] = "0".to_string(); // corrupt hanchor
+    let invalid =
+        verify(&ctx, &proof_result.proofs[0], &tampered_inputs).expect("Verification call failed");
     println!(
         "  Tampered proof: {}",
         if invalid {

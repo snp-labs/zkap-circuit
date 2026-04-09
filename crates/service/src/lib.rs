@@ -5,10 +5,10 @@
 //! supporting types (`Secret`, `RawProofRequest`, `CircuitConfig`) that callers need to produce
 //! and verify Groth16 zero-knowledge proofs for the ZKAP protocol.
 
-pub mod anchor;
-pub mod dto;
+pub(crate) mod anchor;
+pub(crate) mod dto;
 pub mod error;
-pub mod hash;
+pub(crate) mod hash;
 
 #[cfg(feature = "proof")]
 pub mod crs;
@@ -58,13 +58,16 @@ pub use circuit::constants;
 // Public API (always available)
 pub use anchor::poseidon::generate_anchor;
 pub use anchor::types::Secret;
-pub use circuit::constants::{CircuitConfig, PAD_CHAR};
+pub use circuit::constants::CircuitConfig;
+pub use dto::{AudHashResult, GenerateAnchorResCore};
 pub use hash::{generate_aud_hash, generate_hash, generate_leaf_hash};
 
 // Public API (proof feature only)
 #[cfg(feature = "proof")]
 pub use crs::{CrsPaths, CrsPersistConfig, persist_crs};
 #[cfg(feature = "proof")]
-pub use proof::RawProofRequest;
+pub use dto::{ProofComponents, ZkapProofResult};
+#[cfg(feature = "proof")]
+pub use proof::{RawProofRequest, VerifyingContext};
 #[cfg(feature = "proof")]
 pub use proof::{groth16_setup, groth16_setup_and_save, prove, verify};

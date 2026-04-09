@@ -2,6 +2,7 @@ use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 
 pub mod claimverifier;
 pub mod constraints;
+pub mod jwt_field;
 
 #[derive(Clone, Debug, Default, CanonicalSerialize, CanonicalDeserialize)]
 pub struct ClaimIndices {

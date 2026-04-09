@@ -12,7 +12,7 @@ categories = ["cryptography"]
 # --- Always required (lightweight, WASM-compatible) ---
 gadget = { workspace = true, default-features = false, features = ["crypto", "base64", "rsa"] }
 circuit = { workspace = true }
-ark-utils = { workspace = true, features = ["field-serde", "io", "evm-codegen"] }
+ark-utils = { workspace = true, features = ["field-serde", "io"] }
 
 thiserror = { workspace = true }
 serde      = { workspace = true }
@@ -26,6 +26,7 @@ log = { workspace = true }
 hex = { workspace = true }
 
 # --- Proof-only dependencies (optional, heavy) ---
+ark-ec                = { workspace = true, optional = true }
 ark-groth16           = { workspace = true, optional = true }
 ark-poly              = { workspace = true, optional = true }
 ark-r1cs-std          = { workspace = true, optional = true }
@@ -50,6 +51,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [features]
 default = ["proof"]
 proof = [
+    "dep:ark-ec",
     "dep:ark-groth16",
     "dep:ark-poly",
     "dep:ark-r1cs-std",

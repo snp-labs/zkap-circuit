@@ -22,7 +22,7 @@ fn main() {
     let cli = Cli::parse();
 
     let config_path = std::path::Path::new(&cli.config);
-    let params = zkap_service::CircuitConfig::from_json_file(config_path).unwrap_or_else(|e| {
+    let params = zkap_service::load_circuit_config(config_path).unwrap_or_else(|e| {
         eprintln!("Failed to load config: {}", e);
         std::process::exit(1);
     });

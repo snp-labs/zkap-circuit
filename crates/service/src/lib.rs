@@ -17,6 +17,8 @@ pub mod jwt;
 #[cfg(feature = "proof")]
 pub mod manifest;
 #[cfg(feature = "proof")]
+pub mod evm;
+#[cfg(feature = "proof")]
 pub mod proof;
 
 use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;
@@ -36,8 +38,21 @@ pub(crate) fn forbidden_str(params: &CircuitConfig) -> Result<&str, error::Appli
     })
 }
 
-pub use ark_utils::evm;
-pub use ark_utils::io;
+/// Load a [`CircuitConfig`] from a JSON config file.
+pub fn load_circuit_config(path: &std::path::Path) -> Result<CircuitConfig, error::ApplicationError> {
+    let content = std::fs::read_to_string(path).map_err(|e| {
+        error::ApplicationError::InvalidFormat(format!("Failed to read config: {}", e))
+    })?;
+    let raw: circuit::constants::RawCircuitConfig = serde_json::from_str(&content).map_err(|e| {
+        error::ApplicationError::InvalidFormat(format!("Failed to parse config: {}", e))
+    })?;
+    let config = CircuitConfig::from(raw);
+    config
+        .validate()
+        .map_err(error::ApplicationError::InvalidFormat)?;
+    Ok(config)
+}
+
 pub use circuit::constants;
 
 // Public API (always available)

@@ -1,7 +1,7 @@
 //! Proof generation DTOs
 
 use ark_groth16::Proof;
-use ark_utils::evm::solidity_types::Solidity;
+use crate::evm::solidity_types::Solidity;
 use circuit::constants::{BN254, F};
 
 /// Proof generation request (platform-agnostic core type)

@@ -12,4 +12,9 @@ ignore = [
     # No known exploit. Awaiting upstream migration by arkworks project.
     # Documented in SECURITY.md. Review date: 2026-07-06.
     "RUSTSEC-2024-0388",
+    # rand 0.8: unsound with custom logger using rand::rng() (RUSTSEC-2026-0097).
+    # Cannot upgrade to rand 0.9+ as ark-* workspace dependencies require rand 0.8.
+    # This crate does not use custom loggers that access rand::rng(), so the
+    # specific conditions for UB are not met. Review date: 2026-07-14.
+    "RUSTSEC-2026-0097",
 ]

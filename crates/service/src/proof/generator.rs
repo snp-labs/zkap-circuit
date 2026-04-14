@@ -10,6 +10,21 @@ use rand::rngs::OsRng;
 
 use crate::error::ApplicationError;
 
+#[cfg(any(target_os = "android", target_os = "ios"))]
+unsafe extern "C" {
+    fn mi_collect(force: bool);
+}
+
+/// Force freed mimalloc pages back to OS after each proof.
+#[inline(always)]
+fn gc() {
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    // SAFETY: mi_collect is a mimalloc internal linked into this .so
+    unsafe {
+        mi_collect(true);
+    }
+}
+
 /// Proof generation result
 pub struct ProofOutput {
     /// Generated proofs
@@ -61,6 +76,9 @@ impl ProofGenerator {
             let proof = Groth16::<BN254>::prove(&pk, circuit, &mut rng).map_err(|e| {
                 ApplicationError::ProofGenerationFailed(format!("Proof generation failed: {}", e))
             })?;
+
+            // Return freed CS/matrices pages to OS before next proof's allocation.
+            gc();
 
             proofs.push(proof);
         }

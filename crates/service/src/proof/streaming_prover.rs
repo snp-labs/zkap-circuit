@@ -24,7 +24,7 @@ use circuit::constants::F;
 // mi_collect is compiled into libzkap_uniffi_bindings.so via the mimalloc
 // dependency in zkap-uniffi-bindings.  The linker resolves it at final link
 // time within the same .so, so no external symbol lookup is needed.
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 unsafe extern "C" {
     fn mi_collect(force: bool);
 }
@@ -36,7 +36,7 @@ unsafe extern "C" {
 /// is present in the final `.so` and does not require an external libc lookup.
 #[inline(always)]
 pub fn gc() {
-    #[cfg(target_os = "android")]
+    #[cfg(any(target_os = "android", target_os = "ios"))]
     // SAFETY: mi_collect is a mimalloc internal function linked into this .so
     unsafe {
         mi_collect(true);

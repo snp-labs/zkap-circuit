@@ -62,6 +62,7 @@ proof = [
     "dep:sha2",
     "dep:rand",
 ]
+use-optimized = ["proof"]
 
 [[example]]
 name = "groth16_proof"

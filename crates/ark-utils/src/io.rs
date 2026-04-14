@@ -14,6 +14,7 @@ pub fn load_key_uncompressed<T: CanonicalDeserialize + Send + Sync + 'static>(
 ) -> Result<T, IoError> {
     let file = File::open(path).map_err(|_| IoError::LoadKeyFailed)?;
     let mut reader = BufReader::new(file);
-    let key = T::deserialize_uncompressed(&mut reader).map_err(|_| IoError::DeserializeFailed)?;
+    let key = T::deserialize_uncompressed_unchecked(&mut reader)
+        .map_err(|_| IoError::DeserializeFailed)?;
     Ok(key)
 }

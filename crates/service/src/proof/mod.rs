@@ -37,6 +37,8 @@
 pub mod context;
 pub mod generator;
 pub mod request;
+#[cfg(feature = "use-optimized")]
+mod streaming_prover;
 pub mod types;
 
 pub use request::RawProofRequest;
@@ -146,6 +148,11 @@ pub fn prove(
     // 4. Generate proofs
     log::info!("[ZKAP-v2] Step 4: Generating proofs...");
     let generator = ProofGenerator::new(request.pk_path.clone());
+
+    #[cfg(feature = "use-optimized")]
+    let output = generator.generate_streaming(&circuit_inputs)?;
+
+    #[cfg(not(feature = "use-optimized"))]
     let output = generator.generate(&circuit_inputs)?;
     log::info!(
         "[ZKAP-v2] Step 4 completed: {} proofs generated",

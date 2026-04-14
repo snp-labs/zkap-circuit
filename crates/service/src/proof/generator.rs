@@ -72,6 +72,84 @@ impl ProofGenerator {
         })
     }
 
+    /// Generates proofs using streaming mode (memory-optimised).
+    ///
+    /// Separates proof generation into two phases to avoid the ~1000 MB peak
+    /// of `Groth16::prove` (PK + CS + matrices simultaneously):
+    ///
+    ///   Phase A — `witness_and_h`:    witness + h WITHOUT PK in memory (~666 MB peak)
+    ///   Phase B — `compute_proof_msm`: load PK → MSM → proof              (~410 MB peak)
+    ///
+    /// PK is dropped before the next proof's Phase A begins.
+    #[cfg(feature = "use-optimized")]
+    pub fn generate_streaming(
+        &self,
+        inputs: &[ZkapCircuitInput<F>],
+    ) -> Result<ProofOutput, ApplicationError> {
+        use crate::proof::streaming_prover::{compute_proof_msm, gc, witness_and_h};
+        use ark_ff::UniformRand;
+
+        log::info!(
+            "[ProofGenerator] Starting streaming proof generation for {} inputs...",
+            inputs.len()
+        );
+
+        let mut rng = OsRng;
+        let mut proofs = Vec::with_capacity(inputs.len());
+        let mut public_inputs = Vec::with_capacity(inputs.len());
+
+        for (i, input) in inputs.iter().enumerate() {
+            log::info!(
+                "[ProofGenerator] Streaming proof {}/{}...",
+                i + 1,
+                inputs.len()
+            );
+
+            // Phase A: witness + h — PK is NOT loaded yet
+            let inp = input.clone();
+            let (h, instance, w) =
+                witness_and_h(move || ZkapCircuit::<CG, BNP>::from_input(inp.clone())).map_err(
+                    |e| {
+                        ApplicationError::ProofGenerationFailed(format!(
+                            "Part 1 (witness_and_h) failed: {}",
+                            e
+                        ))
+                    },
+                )?;
+
+            public_inputs.push(instance[1..].to_vec());
+
+            // Return Phase A freed pages to OS before loading the 347 MB PK.
+            gc();
+
+            // Phase B: load PK → MSM — scoped so PK is freed before next iteration.
+            {
+                let pk = self.load_proving_key()?;
+                let r = F::rand(&mut rng);
+                let s = F::rand(&mut rng);
+                let proof = compute_proof_msm(&pk, r, s, &h, &instance, &w).map_err(|e| {
+                    ApplicationError::ProofGenerationFailed(format!(
+                        "Part 2 (compute_proof_msm) failed: {}",
+                        e
+                    ))
+                })?;
+                proofs.push(proof);
+            } // pk, h, instance, w dropped here before next proof's Phase A
+
+            log::info!(
+                "[ProofGenerator] Proof {}/{} completed",
+                i + 1,
+                inputs.len()
+            );
+        }
+
+        log::info!("[ProofGenerator] Streaming generation completed");
+        Ok(ProofOutput {
+            proofs,
+            public_inputs,
+        })
+    }
+
     /// Loads the ProvingKey
     fn load_proving_key(&self) -> Result<ProvingKey<BN254>, ApplicationError> {
         load_key_uncompressed::<ProvingKey<BN254>>(&self.pk_path).map_err(|e| {

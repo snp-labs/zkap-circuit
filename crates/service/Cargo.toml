@@ -63,6 +63,7 @@ proof = [
     "dep:rand",
 ]
 use-optimized = ["proof"]
+print-trace = ["circuit/print-trace"]
 
 [[example]]
 name = "groth16_proof"

@@ -132,6 +132,7 @@ assert!(valid);
 
 > All field-element parameters are decimal or `0x`-prefixed hex strings.
 > For a fully runnable example, see [Running the Full Example](#running-the-full-example).
+> For detailed function signatures and type specs, see the [API Reference](docs/API_REFERENCE.md).
 
 ## Running the Full Example
 
@@ -154,6 +155,39 @@ The example performs the complete lifecycle:
 7. Proof verification (`verify`)
 
 Source: [`crates/service/examples/groth16_proof.rs`](crates/service/examples/groth16_proof.rs)
+
+Expected output (abbreviated):
+
+```
+=== ZKAP Groth16 Proof Lifecycle Example ===
+
+[Step 1] Creating circuit configuration (N=6, K=3)...
+[Step 2] Running Groth16 trusted setup (CRS generation)...
+  Setup complete: 9 public inputs, CRS written to /tmp/zkap-example
+[Step 3] Generating 3 RSA-2048 keys and signing JWTs...
+[Step 4] Building issuer Merkle tree (height=4)...
+[Step 5] Generating threshold anchor (N=6, K=3)...
+[Step 6] Generating 3 Groth16 proofs via prove() API...
+[Step 7] Verifying proofs...
+  Proof 1/3: VALID
+  Proof 2/3: VALID
+  Proof 3/3: VALID
+  Tampered proof: INVALID (expected)
+
+=== All steps completed successfully! ===
+```
+
+For a step-by-step walkthrough of the example, see the [Example Guide](docs/EXAMPLE_GUIDE.md).
+
+## Pre-built CRS Artifacts
+
+Pre-built proving keys for common configurations are available in `dist/`:
+
+- `dist/1of1/` — single-signer configuration (N=1, K=1)
+- `dist/3of3/` — three-of-three configuration (N=3, K=3)
+
+These skip the trusted setup step and allow immediate proof generation.
+For custom configurations, run `setup()` or the `generate_crs` CLI binary.
 
 ## Building from Source
 
@@ -209,7 +243,12 @@ Additional defense-in-depth constraints enforced by the circuit:
 
 ## Documentation
 
+- [Example Guide](docs/EXAMPLE_GUIDE.md) — step-by-step proof lifecycle walkthrough with expected output
+- [API Reference](docs/API_REFERENCE.md) — public function and type specifications
 - [ARCHITECTURE.md](ARCHITECTURE.md) — crate dependencies, data flow, design decisions
+- [Circuit Design](docs/CIRCUIT_DESIGN.md) — R1CS constraint structure and security properties
+- [Performance](docs/PERFORMANCE.md) — benchmarks and resource requirements
+- [Troubleshooting](docs/TROUBLESHOOTING.md) — common error diagnosis
 - [CONTRIBUTING.md](CONTRIBUTING.md) — build instructions, PR process, commit conventions
 - [SECURITY.md](SECURITY.md) — vulnerability reporting, known advisories, security design
 - [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) — community guidelines

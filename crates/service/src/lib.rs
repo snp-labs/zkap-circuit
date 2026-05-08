@@ -79,15 +79,6 @@ pub fn load_circuit_config(
 
 pub use circuit::types;
 
-/// Deprecated alias for [`types`] (re-exported from `circuit::types`).
-///
-/// Renamed in Phase 2 C4 — use `zkap_service::types` instead. This alias will
-/// be removed in the next release.
-#[deprecated(
-    note = "renamed to `zkap_service::types` in Phase 2 C4; this alias will be removed in the next release"
-)]
-pub use circuit::types as constants;
-
 // Public API (always available)
 pub use anchor_host::poseidon::generate_anchor;
 pub use anchor_host::types::Secret;

@@ -14,24 +14,6 @@ pub mod zkap;
 
 pub mod types;
 
-/// Deprecated alias for [`types`].
-///
-/// Renamed in Phase 2 C4 — use `circuit::types` instead.  This alias will be
-/// removed in the next release.
-#[deprecated(
-    note = "renamed to `circuit::types` in Phase 2 C4; this alias will be removed in the next release"
-)]
-pub use types as constants;
-
-/// Deprecated alias for [`witness`].
-///
-/// Renamed in Phase 2 C5 — use `circuit::witness` instead.  This alias will
-/// be removed in the next release.
-#[deprecated(
-    note = "renamed to `circuit::witness` in Phase 2 C5; this alias will be removed in the next release"
-)]
-pub use witness as input;
-
 // Re-export circuit witness types
 pub use witness::{
     AnchorWitness, AudienceWitness, CircuitConstants, CircuitPublicInputs, JwtWitness,

@@ -2,7 +2,7 @@
 //!
 //! [`SolidityContractGenerator`] is implemented for [`ark_groth16::VerifyingKey<E>`]
 //! and writes a self-contained `Groth16Verifier.sol` that embeds the verifying-key
-//! constants. Called by [`crate::crs::persist_setup_output`] during trusted setup.
+//! constants. Called by `zkap_service::crs::persist_setup_output` during trusted setup.
 
 use ark_ec::{AffineRepr, pairing::Pairing};
 use ark_ff::Field;

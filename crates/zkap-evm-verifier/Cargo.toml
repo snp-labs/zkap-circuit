@@ -1,0 +1,19 @@
+[package]
+name = "zkap-evm-verifier"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "Solidity on-chain Groth16 verifier codegen for ZKAP"
+repository = "https://github.com/snp-labs/zkap-circuit"
+keywords = ["zk", "groth16", "solidity", "evm", "verifier"]
+categories = ["cryptography"]
+
+[dependencies]
+ark-ec      = { workspace = true }
+ark-ff      = { workspace = true }
+ark-groth16 = { workspace = true }
+ark-std     = { workspace = true }
+hex         = { workspace = true }
+
+[lints]
+workspace = true

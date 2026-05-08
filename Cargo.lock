@@ -2350,6 +2350,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "zkap-evm-verifier"
+version = "0.1.0"
+dependencies = [
+ "ark-ec",
+ "ark-ff",
+ "ark-groth16",
+ "ark-std",
+ "hex",
+]
+
+[[package]]
 name = "zkap-service"
 version = "0.1.0"
 dependencies = [
@@ -2385,6 +2396,7 @@ dependencies = [
  "signature",
  "thiserror",
  "wasmi",
+ "zkap-evm-verifier",
 ]
 
 [[package]]

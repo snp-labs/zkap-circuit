@@ -11,8 +11,13 @@
 //! - [`setup`] — trusted setup: generates proving/verifying keys and writes them to disk
 //! - [`prove`] — generate Groth16 zero-knowledge proofs (takes [`RawProofRequest`])
 //! - [`verify`] — verify Groth16 proofs (takes [`VerifyingContext`])
-//! - [`evm`] — Solidity on-chain verifier codegen ([`evm::groth16_verifier_solidity::SolidityContractGenerator`])
 //! - [`jwt`] — JWT payload claim parsing ([`jwt::parser::parse_claim_from_str`])
+//!
+//! Solidity on-chain verifier codegen lives in the sibling crate
+//! [`zkap-evm-verifier`](../zkap_evm_verifier/index.html); call
+//! `<VerifyingKey<E> as zkap_evm_verifier::SolidityContractGenerator>::generate_solidity`
+//! directly. The bundled `Groth16Verifier.sol` produced by [`setup`] uses it
+//! internally.
 //! - DTOs: [`ProofComponents`], [`SharedPublicInputs`], [`PerProofPublicInputs`], [`ZkapProofResult`]
 //! - Keys: [`SetupOutput`], [`VerifyingContext`], [`ZkapSharedFields`], [`ZkapPerJwtFields`]
 //!
@@ -36,8 +41,6 @@ pub(crate) mod hash;
 
 #[cfg(feature = "proof")]
 pub(crate) mod crs;
-#[cfg(feature = "proof")]
-pub mod evm;
 #[cfg(feature = "proof")]
 pub mod jwt;
 #[cfg(feature = "proof")]

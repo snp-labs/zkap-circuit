@@ -5,7 +5,7 @@ use ark_groth16::Proof;
 use ark_utils::hex_decimal_to_field;
 use circuit::types::{BN254, F};
 
-use crate::evm::solidity_types::Solidity;
+use zkap_evm_verifier::Solidity;
 
 /// Groth16 proof components in Solidity-compatible hex string format.
 ///

@@ -1,3 +1,10 @@
+//! Solidity ABI encoding for arkworks field and curve elements.
+//!
+//! [`Solidity`] converts `Fp`, `Fp2`, `G1Affine`, and `G2Affine` elements to the
+//! `["0x...", ...]` hex-string vectors expected by the on-chain Groth16 verifier.
+//! Used by [`crate::dto::proof::ProofComponents`] and the Solidity codegen in
+//! [`crate::evm::groth16_verifier_solidity`].
+
 use ark_ec::{
     AffineRepr,
     short_weierstrass::{Affine, Projective, SWCurveConfig},

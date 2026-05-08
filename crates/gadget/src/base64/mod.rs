@@ -1,3 +1,10 @@
+//! Base64 URL-safe alphabet decoding — native types and table.
+//!
+//! Exposes [`Base64Table`] (the URL-safe alphabet `A-Z a-z 0-9 - _`) and [`get_base64_table`]
+//! for constructing it. The circuit-level gadget lives in [`constraints`]; native decoding
+//! helpers are in [`decoder`]. NULL-padding characters are normalised to index 0 (`'A'`)
+//! so that padded JWT segments round-trip correctly through the gadget.
+
 pub mod constraints;
 pub mod decoder;
 pub mod error;

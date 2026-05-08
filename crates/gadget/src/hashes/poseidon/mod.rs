@@ -1,3 +1,10 @@
+//! Poseidon hash scheme — native evaluation and circuit gadgets.
+//!
+//! Re-exports [`get_poseidon_params`] from [`parameters`] for constructing the
+//! `PoseidonConfig` used throughout the codebase (full_rounds=8, partial_rounds=57,
+//! width t=3, alpha=5, over BN254-Fr). Circuit-level helpers (`enforce_curve_hanchor`,
+//! `chain_hash_gadget`) live in [`constraints`].
+
 pub mod constraints;
 pub mod parameters;
 pub use parameters::*;

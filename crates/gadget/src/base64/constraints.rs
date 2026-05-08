@@ -1,3 +1,10 @@
+//! R1CS gadgets for URL-safe Base64 decoding.
+//!
+//! [`Base64DecoderGadget`] enforces that a sequence of Base64 characters maps to the
+//! correct raw bytes in-circuit. [`Base64TableVar`] allocates the alphabet as field
+//! constants, and [`Base64CharBitsVar`] / [`IndexBitsVar`] handle per-character bit
+//! decomposition. NULL-padding (index 0) is hard-enforced so padded inputs are valid.
+
 use ark_ff::PrimeField;
 use ark_r1cs_std::{
     alloc::AllocVar, eq::EqGadget, fields::fp::FpVar, prelude::Boolean, select::CondSelectGadget,

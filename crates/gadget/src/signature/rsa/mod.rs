@@ -1,3 +1,11 @@
+//! Native RSA-2048 / PKCS#1 v1.5 key generation, signing, and verification.
+//!
+//! Provides [`PublicKey`], [`SecretKey`], [`Signature`], and [`Parameter`] types, plus
+//! the [`Rsa`] struct implementing [`crate::signature::SignatureScheme`]. Keys are
+//! represented as big-integer limbs (see [`crate::bigint`]). The `setup`, `keygen`,
+//! `sign`, and `verify` methods use the `rsa` crate internally. The corresponding
+//! R1CS gadget that enforces PKCS#1 v1.5 verification in-circuit is in [`constraints`].
+
 pub mod constraints;
 
 use std::marker::PhantomData;

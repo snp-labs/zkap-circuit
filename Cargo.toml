@@ -11,6 +11,7 @@ members = [
 
 [workspace.package]
 repository = "https://github.com/snp-labs/zkap-circuit"
+rust-version = "1.85"
 
 [workspace.dependencies]
 ark-utils                 = { path = "crates/ark-utils" }

@@ -24,5 +24,5 @@
 pub mod circuit_config;
 pub mod v1;
 
-pub use circuit_config::CircuitConfig;
+pub use circuit_config::{CircuitConfig, CircuitConfigError};
 pub use v1::{RSA_2048_BYTES, ZkapInputV1};

@@ -1,18 +1,25 @@
+//! SHA-256 R1CS gadget — `SHA256Gadget` and `DigestVar`.
+//!
+//! [`SHA256Gadget`] is a streaming SHA-256 constraint system that mirrors the standard
+//! Merkle-Damgård compression loop. Use `digest_with_pad` / `digest_with_pad_checked`
+//! for midstate-seeded hashing (partial JWT payloads with externally supplied initial H),
+//! and `digest_full_with_pad_checked` when the full padded message is provided with an
+//! explicit block-count witness. [`DigestVar`] is the canonical 32-byte output type,
+//! defined in [`crate::hashes::sha256::digest`] and re-exported via `mod.rs`.
+
 use std::{borrow::Borrow, ops::BitXor};
 
 use ark_ff::PrimeField;
 use ark_r1cs_std::{
-    R1CSVar,
     alloc::{AllocVar, AllocationMode},
     eq::EqGadget,
     fields::{FieldVar, fp::FpVar},
-    prelude::{Boolean, ToBitsGadget, ToBytesGadget},
-    select::CondSelectGadget,
+    prelude::{Boolean, ToBitsGadget},
     uint8::UInt8,
     uint16::UInt16,
     uint32::UInt32,
 };
-use ark_relations::r1cs::{ConstraintSystemRef, Namespace, SynthesisError};
+use ark_relations::r1cs::{Namespace, SynthesisError};
 
 use ark_utils::{
     UInt32Ext,
@@ -21,6 +28,7 @@ use ark_utils::{
 };
 
 use crate::hashes::sha256::{H, K, utils::conditionally_select_vec};
+use super::digest::DigestVar;
 
 #[derive(Clone)]
 pub struct SHA256Gadget<F: PrimeField> {
@@ -29,9 +37,6 @@ pub struct SHA256Gadget<F: PrimeField> {
     pub pending: Vec<UInt8<F>>,
     pub num_pending: usize,
 }
-
-#[derive(Clone, Debug)]
-pub struct DigestVar<F: PrimeField>(pub Vec<UInt8<F>>);
 
 impl<F: PrimeField> SHA256Gadget<F> {
     /// Consumes the given data and updates the internal state
@@ -722,100 +727,11 @@ impl<F: PrimeField> AllocVar<Vec<u32>, F> for SHA256Gadget<F> {
     }
 }
 
-impl<ConstraintF> EqGadget<ConstraintF> for DigestVar<ConstraintF>
-where
-    ConstraintF: PrimeField,
-{
-    fn is_eq(&self, other: &Self) -> Result<Boolean<ConstraintF>, SynthesisError> {
-        self.0.is_eq(&other.0)
-    }
-}
-
-impl<ConstraintF: PrimeField> ToBytesGadget<ConstraintF> for DigestVar<ConstraintF> {
-    fn to_bytes_le(&self) -> Result<Vec<UInt8<ConstraintF>>, SynthesisError> {
-        Ok(self.0.clone())
-    }
-}
-
-impl<ConstraintF: PrimeField> CondSelectGadget<ConstraintF> for DigestVar<ConstraintF>
-where
-    Self: Sized,
-    Self: Clone,
-{
-    fn conditionally_select(
-        cond: &Boolean<ConstraintF>,
-        true_value: &Self,
-        false_value: &Self,
-    ) -> Result<Self, SynthesisError> {
-        let bytes: Result<Vec<_>, _> = true_value
-            .0
-            .iter()
-            .zip(false_value.0.iter())
-            .map(|(t, f)| UInt8::conditionally_select(cond, t, f))
-            .collect();
-        bytes.map(DigestVar)
-    }
-}
-
-impl<ConstraintF: PrimeField> AllocVar<Vec<u8>, ConstraintF> for DigestVar<ConstraintF> {
-    // Allocates 32 UInt8s
-    fn new_variable<T: Borrow<Vec<u8>>>(
-        cs: impl Into<Namespace<ConstraintF>>,
-        f: impl FnOnce() -> Result<T, SynthesisError>,
-        mode: AllocationMode,
-    ) -> Result<Self, SynthesisError> {
-        let cs = cs.into().cs();
-        let native_bytes = f();
-
-        if native_bytes
-            .as_ref()
-            .map(|b| b.borrow().len())
-            .unwrap_or(32)
-            != 32
-        {
-            panic!("DigestVar must be allocated with precisely 32 bytes");
-        }
-
-        // For each i, allocate the i-th byte
-        let var_bytes: Result<Vec<_>, _> = (0..32)
-            .map(|i| {
-                UInt8::new_variable(
-                    cs.clone(),
-                    || native_bytes.as_ref().map(|v| v.borrow()[i]).map_err(|e| *e),
-                    mode,
-                )
-            })
-            .collect();
-
-        var_bytes.map(DigestVar)
-    }
-}
-
-impl<ConstraintF: PrimeField> R1CSVar<ConstraintF> for DigestVar<ConstraintF> {
-    type Value = [u8; 32];
-
-    fn cs(&self) -> ConstraintSystemRef<ConstraintF> {
-        let mut result = ConstraintSystemRef::None;
-        for var in &self.0 {
-            result = var.cs().or(result);
-        }
-        result
-    }
-
-    fn value(&self) -> Result<Self::Value, SynthesisError> {
-        let mut buf = [0u8; 32];
-        for (b, var) in buf.iter_mut().zip(self.0.iter()) {
-            *b = var.value()?;
-        }
-
-        Ok(buf)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use ark_bn254::Fr;
+    use ark_r1cs_std::R1CSVar;
     use ark_relations::r1cs::ConstraintSystem;
     use sha2::{Digest, Sha256};
 

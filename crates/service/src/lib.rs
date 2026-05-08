@@ -4,13 +4,30 @@
 //!
 //! **Always available:**
 //! - [`generate_hash`], [`generate_aud_hash`], [`generate_leaf_hash`] — Poseidon hashing
-//! - [`generate_anchor`] — threshold anchor generation
+//! - [`generate_anchor`] — threshold anchor generation (see [`Secret`])
 //! - [`load_circuit_config`] — load [`CircuitConfig`] from JSON
 //!
 //! **`proof` feature (default):**
 //! - [`setup`] — trusted setup: generates proving/verifying keys and writes them to disk
-//! - [`prove`] — generate Groth16 zero-knowledge proofs
-//! - [`verify`] — verify Groth16 proofs
+//! - [`prove`] — generate Groth16 zero-knowledge proofs (takes [`RawProofRequest`])
+//! - [`verify`] — verify Groth16 proofs (takes [`VerifyingContext`])
+//! - [`evm`] — Solidity on-chain verifier codegen ([`evm::groth16_verifier_solidity::SolidityContractGenerator`])
+//! - [`jwt`] — JWT payload claim parsing ([`jwt::parser::parse_claim_from_str`])
+//! - DTOs: [`ProofComponents`], [`SharedPublicInputs`], [`PerProofPublicInputs`], [`ZkapProofResult`]
+//! - Keys: [`SetupOutput`], [`VerifyingContext`], [`ZkapSharedFields`], [`ZkapPerJwtFields`]
+//!
+//! **Note on `use-optimized` feature**: an alias for `proof`, kept for source compatibility.
+
+// Feature-matrix guards — fail loudly on unsupported combinations.
+//
+// `runtime-wasmtime` is reserved but has zero implementation; activating it
+// silently would leave the wasmi backend running, which is misleading.
+#[cfg(feature = "runtime-wasmtime")]
+compile_error!("`runtime-wasmtime` is not yet implemented; use `runtime-wasmi` instead");
+
+// `proof` requires exactly one runtime backend.
+#[cfg(all(feature = "proof", not(feature = "runtime-wasmi")))]
+compile_error!("`proof` feature requires a runtime backend; enable `runtime-wasmi`");
 
 pub(crate) mod anchor;
 pub(crate) mod dto;
@@ -40,11 +57,6 @@ pub(crate) fn poseidon_params() -> &'static PoseidonConfig<F> {
     PARAMS.get_or_init(gadget::hashes::poseidon::get_poseidon_params::<F>)
 }
 
-/// Extract forbidden_string as &str from CircuitConfig.
-pub(crate) fn forbidden_str(params: &CircuitConfig) -> Result<&str, error::ApplicationError> {
-    Ok(params.forbidden_string.as_str())
-}
-
 /// Load a [`CircuitConfig`] from a JSON config file.
 ///
 /// Accepts both `config.json` produced by [`setup`] and stand-alone config files
@@ -61,7 +73,7 @@ pub fn load_circuit_config(
         })?;
     config
         .validate()
-        .map_err(error::ApplicationError::InvalidFormat)?;
+        .map_err(|e| error::ApplicationError::InvalidFormat(e.to_string()))?;
     Ok(config)
 }
 

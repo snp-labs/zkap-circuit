@@ -1,14 +1,13 @@
-//! V1 schema round-trip equivalence test (PR2 commit 1).
+//! V1 schema round-trip equivalence test.
 //!
-//! Builds the K satisfying `ZkapInputV1` payloads from the same source
-//! data the existing PR1 fixtures use, drives each through
-//! `ZkapInputV1::into_circuit_input` → `ZkapCircuit::from_input`, and
+//! Builds satisfying `ZkapInputV1` payloads from the test fixture bundle,
+//! drives each through `into_circuit_input` → `ZkapCircuit::from_input`, and
 //! asserts that the resulting constraint system is satisfied.
 //!
 //! This is the strongest "V1 → ZkapCircuitInput equivalence" check
-//! available without going through the wasm boundary itself; PR2 commit 3
-//! tightens it further by routing the same payload through the actual
-//! `wasm32` `witness_generator` export.
+//! available without going through the wasm boundary itself; the
+//! `tests/wasm_to_prove.rs` suite tightens it further by routing the same
+//! payload through the actual `wasm32` `witness_generator` export.
 
 mod common;
 
@@ -64,13 +63,11 @@ fn v1_round_trip_satisfies_constraints() {
     }
 }
 
-/// Acceptance (PR2 commit 2): the V1 generator drives the same
-/// `witness_generator_native` pipeline the wasm `witness_generator`
-/// export uses — with V1 already wired to `WitnessGeneratorV1`, the
-/// native helper produces an `.arwtns` blob whose blake3 binding,
-/// curve_id, and instance/witness counts line up with what the V1 code
-/// path is supposed to emit. Commit 3 reuses this evidence to swap the
-/// wasm export to `ZkapWitnessGenerator`.
+/// Acceptance: the V1 generator drives the `witness_generator_native`
+/// pipeline the wasm `witness_generator` export uses — the native helper
+/// produces an `.arwtns` blob whose blake3 binding, curve_id, and
+/// instance/witness counts line up with what the `ZkapWitnessGenerator`
+/// code path is supposed to emit.
 #[test]
 fn v1_native_witness_generator_pipeline() {
     let bundle = build_v1_fixture_bundle();
@@ -81,8 +78,8 @@ fn v1_native_witness_generator_pipeline() {
         .clone();
 
     // Stand-in for the wasm `embedded` constant: any 32-byte value will
-    // do because we pass `host == embedded`. Commit 4 / commit 3 wire
-    // this up to the real arzkey blake3.
+    // do because we pass `host == embedded`. The wasm_to_prove.rs suite
+    // wires this up to the real arzkey blake3.
     let blake3 = [0xCDu8; 32];
     let postcard_bytes = postcard::to_allocvec(&v1).expect("postcard encode V1");
     let arwtns_bytes = witness_generator_native::<ZkapWitnessGenerator>(

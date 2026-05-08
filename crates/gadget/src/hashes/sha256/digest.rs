@@ -1,3 +1,10 @@
+//! `DigestVar` — the canonical R1CS type for a 32-byte SHA-256 output.
+//!
+//! [`DigestVar`] wraps a `[UInt8<F>; 32]` array and implements `AllocVar`, `R1CSVar`,
+//! `EqGadget`, `ToBytesGadget`, and `CondSelectGadget` so it can be used as a
+//! standard constraint variable. It is the output type of [`crate::hashes::sha256::constraints::SHA256Gadget`]
+//! and is re-exported from [`crate::hashes::sha256`] as the primary import path.
+
 use std::borrow::Borrow;
 
 use ark_ff::PrimeField;

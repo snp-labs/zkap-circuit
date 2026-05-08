@@ -130,9 +130,7 @@ pub fn verify(
     let ark_proof = proof.to_ark_proof()?;
     let ark_inputs: Vec<F> = public_inputs
         .iter()
-        .map(|s| {
-            hex_decimal_to_field::<F>(s).map_err(|e| ApplicationError::ParseError(e.to_string()))
-        })
+        .map(|s| hex_decimal_to_field::<F>(s).map_err(ApplicationError::from))
         .collect::<Result<_, _>>()?;
     Groth16::<BN254>::verify_proof(&ctx.0, &ark_proof, &ark_inputs)
         .map_err(|e| ApplicationError::InvalidFormat(format!("Proof verification failed: {}", e)))

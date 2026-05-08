@@ -1,3 +1,10 @@
+//! R1CS gadgets for field-element comparison.
+//!
+//! Exports: [`lt_bit_vector`], [`is_less_than`], [`enforce_less_than`],
+//! [`compare_bits_raw`].  All functions operate over [`FpVar`] bit
+//! representations and generate R1CS constraints.  Requires the `r1cs`
+//! feature (default-on).
+
 use ark_ff::{BigInteger, PrimeField};
 use ark_r1cs_std::{
     R1CSVar,

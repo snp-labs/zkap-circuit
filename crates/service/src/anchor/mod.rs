@@ -1,3 +1,10 @@
+//! Host-side Poseidon anchor computation (out-of-circuit).
+//!
+//! Derives per-credential scalars `x` from [`types::Secret`] triples and combines
+//! them via the Vandermonde-based [`gadget::anchor::poseidon::PoseidonAnchorScheme`]
+//! into a threshold anchor. Contrast with `gadget::anchor` (the in-circuit R1CS
+//! gadget counterpart).
+
 pub mod poseidon;
 pub mod types;
 

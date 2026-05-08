@@ -36,13 +36,7 @@ pub(crate) fn persist_setup_output(
     output_dir: &Path,
     arcs: ArcsFile<F>,
 ) -> Result<(), ApplicationError> {
-    std::fs::create_dir_all(output_dir).map_err(|e| {
-        ApplicationError::Other(format!(
-            "Failed to create output directory '{}': {}",
-            output_dir.display(),
-            e
-        ))
-    })?;
+    std::fs::create_dir_all(output_dir)?;
 
     write_key_file(&setup.pk, &output_dir.join("pk.key"))?;
     write_key_file(&setup.vk, &output_dir.join("vk.key"))?;
@@ -52,13 +46,7 @@ pub(crate) fn persist_setup_output(
     // pk_path in RawProofRequest should now point to this file instead of pk.key.
     let arzkey = ArzkeyFile::from_setup_output(arcs, setup.pk.clone());
     let arzkey_path = output_dir.join("pk.arzkey");
-    let mut arzkey_file = std::fs::File::create(&arzkey_path).map_err(|e| {
-        ApplicationError::Other(format!(
-            "Failed to create '{}': {}",
-            arzkey_path.display(),
-            e
-        ))
-    })?;
+    let mut arzkey_file = std::fs::File::create(&arzkey_path)?;
     arzkey.write(&mut arzkey_file).map_err(|e| {
         ApplicationError::Other(format!("Failed to write pk.arzkey: {}", e))
     })?;
@@ -86,14 +74,13 @@ fn write_key_file<T: CanonicalSerialize>(value: &T, path: &Path) -> Result<(), A
             e
         ))
     })?;
-    std::fs::write(path, cursor.get_ref()).map_err(|e| {
-        ApplicationError::Other(format!("Failed to write '{}': {}", path.display(), e))
-    })
+    std::fs::write(path, cursor.get_ref())?;
+    Ok(())
 }
 
 fn write_config_json(config: &CircuitConfig, path: &Path) -> Result<(), ApplicationError> {
     let json = serde_json::to_string_pretty(config)
         .map_err(|e| ApplicationError::Other(format!("Failed to serialize config.json: {}", e)))?;
-    std::fs::write(path, json)
-        .map_err(|e| ApplicationError::Other(format!("Failed to write config.json: {}", e)))
+    std::fs::write(path, json)?;
+    Ok(())
 }

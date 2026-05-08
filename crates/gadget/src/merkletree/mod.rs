@@ -1,3 +1,10 @@
+//! Merkle tree circuit input types for ZKAP membership proofs.
+//!
+//! [`MerkleCircuitInput`] bundles a leaf value, its index, and the [`Path`] (sibling
+//! hashes) needed to reconstruct the root. The tree uses the Poseidon CRH via
+//! [`crate::merkletree::tree_config::MerkleTreeParams`]. The in-circuit membership
+//! enforcer is [`crate::merkletree::constraints::MerkleCircuitInputVar`].
+
 use ark_crypto_primitives::{merkle_tree::Path, sponge::Absorb};
 use ark_ff::PrimeField;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};

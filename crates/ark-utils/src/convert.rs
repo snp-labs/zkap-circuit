@@ -1,3 +1,10 @@
+//! String-to-field and padding conversion helpers.
+//!
+//! Exports: [`try_str_to_fields`], [`pad`], [`str_to_limbs`],
+//! [`hex_decimal_to_field`] (feature `field-serde`), [`ConvertError`],
+//! [`TextError`].  These are always available regardless of feature flags
+//! (except `hex_decimal_to_field` which requires `field-serde`).
+
 use ark_ff::PrimeField;
 
 /// Converts a string to field elements, returning an error if the length

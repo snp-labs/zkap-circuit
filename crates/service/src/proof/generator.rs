@@ -7,6 +7,11 @@
 //!    paired blake3,
 //! 4. parses the returned bytes as an [`ArwtnsFile`],
 //! 5. calls [`ark_ar1cs_prover::prove`].
+//!
+//! **Per-proof reset trade-off**: instantiating a fresh [`DefaultRuntime`] for
+//! each JWT costs `N+1` instantiations per batch (one for the up-front pair
+//! check, one per proof). This is intentional — per-proof allocator reset
+//! prevents fragmentation buildup across JWTs, and is preferred over reuse.
 
 use std::io::Cursor;
 use std::path::PathBuf;
@@ -26,6 +31,13 @@ unsafe extern "C" {
     fn mi_collect(force: bool);
 }
 
+/// Trigger a mimalloc GC cycle on mobile targets.
+///
+/// On Android/iOS the host link is expected to provide `mi_collect` (mimalloc).
+/// If the symbol is absent the linker will fail — this is intentional: it
+/// surfaces a missing-allocator misconfiguration at build time rather than
+/// silently leaking memory at runtime.  On non-mobile targets this is a no-op.
+/// If additional platforms need GC (e.g. Tizen), add their `target_os` here.
 #[inline(always)]
 fn gc() {
     #[cfg(any(target_os = "android", target_os = "ios"))]

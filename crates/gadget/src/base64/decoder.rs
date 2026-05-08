@@ -1,3 +1,11 @@
+//! Native Base64 URL-safe decoding helpers.
+//!
+//! [`decode_any_base64`] and [`decode_any_base64_to_string`] wrap the `base64` crate for
+//! URL-safe (no-pad) decoding used by the service layer. [`Base64CharBits`] and
+//! [`IndexBits::from_base64_url`] decompose a single character into bits for witness
+//! generation. NULL-padding convention: when `idx == 0` (the `'A'` character acts as
+//! padding), it is normalised to `'A'` (65) rather than rejected.
+
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use base64::Engine as _;
 use base64::engine::general_purpose::{self};

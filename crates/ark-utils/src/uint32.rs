@@ -1,3 +1,9 @@
+//! R1CS extension trait for 32-bit unsigned integers.
+//!
+//! Exports: [`UInt32Ext`].  Adds bitwise operations (`shr`, `not`, `bitand`)
+//! and big-endian byte construction (`from_bytes_be`) to the arkworks
+//! `UInt32` type.  Requires the `r1cs` feature (default-on).
+
 use core::iter;
 
 use ark_ff::PrimeField;

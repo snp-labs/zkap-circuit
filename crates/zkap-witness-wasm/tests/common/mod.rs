@@ -258,14 +258,12 @@ pub fn build_jwt_witness(
 }
 
 /// Pack bytes into field elements (31 bytes per chunk, big-endian) - same as circuit's
-/// pack_decompose_bytes_unchecked
+/// pack_decompose_bytes_unchecked.
+///
+/// Delegates to `zkap_witness_wasm::input::pack_bytes_to_field_native` to keep
+/// test fixtures in lock-step with the production conversion path.
 pub fn pack_bytes_to_field_native(bytes: &[u8]) -> Vec<F> {
-    let limb_width = 31; // (254 - 1) / 8 = 31 for BN254
-    assert!(bytes.len().is_multiple_of(limb_width));
-    bytes
-        .chunks(limb_width)
-        .map(F::from_be_bytes_mod_order)
-        .collect()
+    zkap_witness_wasm::input::pack_bytes_to_field_native(bytes)
 }
 
 /// Get the claim value bytes as the circuit would see them (with quotes for strings,
@@ -361,12 +359,12 @@ pub fn derive_selector(
 }
 
 /// Chain hash: H(v[0]), then H(h, v[1]), H(h, v[2]), ...
+///
+/// Delegates to `zkap_witness_wasm::input::chain_hash_native` to keep
+/// test fixtures in lock-step with the production conversion path.
 pub fn chain_hash_native(values: &[F], params: &PoseidonConfig<F>) -> F {
-    let mut h = CRH::<F>::evaluate(params, [values[0]]).unwrap();
-    for v in &values[1..] {
-        h = CRH::<F>::evaluate(params, [h, *v]).unwrap();
-    }
-    h
+    zkap_witness_wasm::input::chain_hash_native(values, params)
+        .expect("chain_hash_native in test fixture must not fail on non-empty input")
 }
 
 // ============================================================

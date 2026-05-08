@@ -40,42 +40,55 @@ pub struct CircuitConfig {
     pub forbidden_string: String,
 }
 
+/// Validation error returned by [`CircuitConfig::validate`].
+#[derive(Debug, thiserror::Error)]
+pub enum CircuitConfigError {
+    #[error("k must be >= 1, got: {0}")]
+    InvalidK(u64),
+    #[error("k ({k}) must be <= n ({n})")]
+    KExceedsN { k: u64, n: u64 },
+    #[error("n must be >= 1, got: {0}")]
+    InvalidN(u64),
+    #[error("tree_height must be >= 1, got: {0}")]
+    InvalidTreeHeight(u64),
+    #[error("max_payload_b64_len ({payload}) must be <= max_jwt_b64_len ({jwt})")]
+    PayloadExceedsJwt { payload: u64, jwt: u64 },
+    #[error("num_audience_limit must be >= 1, got: {0}")]
+    InvalidNumAudienceLimit(u64),
+    #[error("claims must not be empty")]
+    EmptyClaims,
+}
+
 impl CircuitConfig {
     /// Validate the parameter constraints required by the ZKAP circuit.
     ///
-    /// Checks that `k >= 1`, `k <= n`, `tree_height >= 1`, `max_payload_b64_len <= max_jwt_b64_len`,
-    /// `num_audience_limit >= 1`, and that `claims` is non-empty.  Returns an error string
-    /// describing the first violation found.
-    pub fn validate(&self) -> Result<(), String> {
+    /// Checks that `k >= 1`, `k <= n`, `n >= 1`, `tree_height >= 1`,
+    /// `max_payload_b64_len <= max_jwt_b64_len`, `num_audience_limit >= 1`,
+    /// and that `claims` is non-empty.  Returns the first violation found.
+    pub fn validate(&self) -> Result<(), CircuitConfigError> {
         if self.k < 1 {
-            return Err(format!("k must be >= 1, got: {}", self.k));
+            return Err(CircuitConfigError::InvalidK(self.k));
         }
         if self.k > self.n {
-            return Err(format!("k ({}) must be <= n ({})", self.k, self.n));
+            return Err(CircuitConfigError::KExceedsN { k: self.k, n: self.n });
         }
         if self.n < 1 {
-            return Err(format!("n must be >= 1, got: {}", self.n));
+            return Err(CircuitConfigError::InvalidN(self.n));
         }
         if self.tree_height < 1 {
-            return Err(format!(
-                "tree_height must be >= 1, got: {}",
-                self.tree_height
-            ));
+            return Err(CircuitConfigError::InvalidTreeHeight(self.tree_height));
         }
         if self.max_payload_b64_len > self.max_jwt_b64_len {
-            return Err(format!(
-                "max_payload_b64_len ({}) must be <= max_jwt_b64_len ({})",
-                self.max_payload_b64_len, self.max_jwt_b64_len
-            ));
+            return Err(CircuitConfigError::PayloadExceedsJwt {
+                payload: self.max_payload_b64_len,
+                jwt: self.max_jwt_b64_len,
+            });
         }
         if self.num_audience_limit < 1 {
-            return Err(format!(
-                "num_audience_limit must be >= 1, got: {}",
-                self.num_audience_limit
-            ));
+            return Err(CircuitConfigError::InvalidNumAudienceLimit(self.num_audience_limit));
         }
         if self.claims.is_empty() {
-            return Err("claims must not be empty".into());
+            return Err(CircuitConfigError::EmptyClaims);
         }
         Ok(())
     }

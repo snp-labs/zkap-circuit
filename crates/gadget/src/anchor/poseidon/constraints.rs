@@ -1,3 +1,11 @@
+//! R1CS gadgets for the Poseidon anchor scheme.
+//!
+//! Provides allocator impls for all Poseidon anchor witness types and
+//! [`PoseidonAnchorSchemeGadget`], which enforces the anchor equation in-circuit.
+//! Key entry points: `inner_product` (dot-product constraint), `enforce_a_nonzero`
+//! (at least one selector is active), `enforce_b_sparsity` / `is_b_sparsity`
+//! (exactly `k` selectors are set), and `enforce_boolean_selectors`.
+
 use core::{borrow::Borrow, marker::PhantomData};
 
 use ark_crypto_primitives::{crh::poseidon::constraints::CRHParametersVar, sponge::Absorb};

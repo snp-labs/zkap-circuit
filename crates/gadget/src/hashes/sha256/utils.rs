@@ -1,3 +1,11 @@
+//! Native and in-circuit SHA-256 utility functions.
+//!
+//! [`sha256_pad_with_len`] produces a padded message buffer (standard SHA-256 Merkle-Damgård
+//! padding) for use in both native and circuit contexts. [`conditionally_select_vec`] is
+//! an in-circuit conditional select over `UInt32` word vectors. [`to_units`] splits a
+//! byte slice into 32-bit words, and `update` / `finalize_with_state` drive the native
+//! SHA-256 compression round used in witness generation.
+
 use ark_ff::PrimeField;
 use ark_r1cs_std::{prelude::Boolean, select::CondSelectGadget, uint32::UInt32};
 use ark_relations::r1cs::SynthesisError;

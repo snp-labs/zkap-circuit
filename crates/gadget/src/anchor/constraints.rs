@@ -1,3 +1,10 @@
+//! R1CS gadget trait for the threshold anchor scheme.
+//!
+//! [`AnchorSchemeGadget`] mirrors [`crate::anchor::AnchorScheme`] at the constraint level.
+//! Implementors must provide `verify_b_consistency` (that `b = a · A` holds in-circuit)
+//! and `verify_binding` (that the inner products match the public anchor). The Poseidon
+//! instantiation lives in [`crate::anchor::poseidon::constraints`].
+
 use ark_ff::Field;
 use ark_r1cs_std::{alloc::AllocVar, prelude::Boolean};
 use ark_relations::r1cs::SynthesisError;

@@ -1,3 +1,20 @@
+//! Protocol type aliases and constants for the ZKAP circuit.
+//!
+//! Despite the module name, this file is primarily a collection of type aliases
+//! that wire up the concrete curve/field/hash choices used throughout the crate:
+//!
+//! | Alias          | Concrete type                              |
+//! |----------------|--------------------------------------------|
+//! | `F`            | BN254 base field (`ark_ed_on_bn254`)       |
+//! | `CG`           | `ark_ed_on_bn254::EdwardsProjective`       |
+//! | `BNP`          | `BigNat2048Params` (2048-bit, 64-bit limbs)|
+//! | `PoseidonHash` | `CRH<F>`                                   |
+//! | `BN254`        | `ark_bn254::Bn254` (pairing engine)        |
+//! | `PAD_CHAR`     | `'\0'` — SHA-256 padding sentinel          |
+//!
+//! `CircuitConfig` is re-exported from `ark_utils::wire` — it is the single
+//! canonical runtime-parameter type shared across all crates.
+
 use std::fmt::Debug;
 
 use ark_crypto_primitives::crh::poseidon::CRH;
@@ -28,7 +45,5 @@ impl BigNatCircuitParams for BigNat2048Params {
 pub type CG = ark_ed_on_bn254::EdwardsProjective;
 pub type F = <CG as ark_ec::CurveGroup>::BaseField;
 pub type PoseidonHash = CRH<F>;
-pub type BigNatTestParams = BigNat2048Params;
 pub type BN254 = ark_bn254::Bn254;
-pub type CV = ark_ed_on_bn254::constraints::EdwardsVar;
 pub type BNP = BigNat2048Params;

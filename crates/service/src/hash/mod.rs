@@ -1,3 +1,10 @@
+//! Host-side Poseidon hashing utilities.
+//!
+//! Provides [`generate_hash`] (generic field-element hash), [`generate_aud_hash`]
+//! (per-audience hash + combined `h_aud_list`), and [`generate_leaf_hash`]
+//! (Merkle leaf for issuer + RSA public-key pairs). All functions use the
+//! shared [`crate::poseidon_params`] singleton.
+
 use ark_crypto_primitives::crh::CRHScheme;
 use ark_utils::{hex_decimal_to_field, str_to_limbs};
 use circuit::constants::{CircuitConfig, F, PAD_CHAR, PoseidonHash};
@@ -43,7 +50,7 @@ pub fn generate_aud_hash(
 ) -> Result<AudHashResult, ApplicationError> {
     let poseidon_params = crate::poseidon_params();
 
-    let forbidden_str = crate::forbidden_str(params)?;
+    let forbidden_str = params.forbidden_string.as_str();
 
     let mut aud_vec = aud_list;
     let num_audience_limit = params.num_audience_limit as usize;

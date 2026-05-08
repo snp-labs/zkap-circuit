@@ -130,35 +130,107 @@ mod tests {
         assert_eq!(bytes, bytes2);
     }
 
-    /// Acceptance: every field is encoded in declaration order. Freezing a
-    /// few byte positions surfaces accidental field re-orderings as a
+    /// Acceptance: every field is encoded in declaration order. Freezing
+    /// byte offsets for all fields surfaces accidental re-orderings as a
     /// failing test instead of a silent CIRCUIT_ID mismatch.
     #[test]
     fn v1_postcard_field_layout_is_stable() {
+        let cfg = sample_config_v1();
         let v1 = dummy_v1();
         let bytes = postcard::to_allocvec(&v1).expect("encode");
-        // jwt_bytes: varint(15) + "hdr.payload.sig"
-        assert_eq!(bytes[0], 15);
-        assert_eq!(&bytes[1..16], b"hdr.payload.sig");
-        // rsa_modulus_be: varint(256) = 0x80 0x02, then 256 bytes of 0x12
-        assert_eq!(bytes[16], 0x80);
-        assert_eq!(bytes[17], 0x02);
-        for &b in &bytes[18..18 + 256] {
-            assert_eq!(b, 0x12);
+
+        // --- jwt_bytes: varint(15) + 15 bytes ---
+        assert_eq!(bytes[0], 15, "jwt_bytes varint");
+        assert_eq!(&bytes[1..16], b"hdr.payload.sig", "jwt_bytes content");
+
+        // --- rsa_modulus_be: varint(256) = [0x80, 0x02] + 256 bytes of 0x12 ---
+        let mod_off = 16;
+        assert_eq!(bytes[mod_off], 0x80, "rsa_modulus_be varint lo");
+        assert_eq!(bytes[mod_off + 1], 0x02, "rsa_modulus_be varint hi");
+        for &b in &bytes[mod_off + 2..mod_off + 2 + 256] {
+            assert_eq!(b, 0x12, "rsa_modulus_be content");
         }
-        let sig_off = 18 + 256;
-        assert_eq!(bytes[sig_off], 0x80);
-        assert_eq!(bytes[sig_off + 1], 0x02);
+
+        // --- rsa_signature_be: varint(256) + 256 bytes of 0x34 ---
+        let sig_off = mod_off + 2 + 256;
+        assert_eq!(bytes[sig_off], 0x80, "rsa_signature_be varint lo");
+        assert_eq!(bytes[sig_off + 1], 0x02, "rsa_signature_be varint hi");
         for &b in &bytes[sig_off + 2..sig_off + 2 + 256] {
-            assert_eq!(b, 0x34);
+            assert_eq!(b, 0x34, "rsa_signature_be content");
         }
+
+        // --- random_be: 32 bytes of 0x11 (fixed-size, no varint) ---
         let random_off = sig_off + 2 + 256;
         for &b in &bytes[random_off..random_off + 32] {
-            assert_eq!(b, 0x11);
+            assert_eq!(b, 0x11, "random_be content");
         }
+
+        // --- h_sign_user_op_be: 32 bytes of 0x22 ---
         let h_sign_off = random_off + 32;
         for &b in &bytes[h_sign_off..h_sign_off + 32] {
-            assert_eq!(b, 0x22);
+            assert_eq!(b, 0x22, "h_sign_user_op_be content");
         }
+
+        // --- anchor_values_be: varint(n-k+1) + (n-k+1)*32 bytes of 0x33 ---
+        // n=6, k=3 → 4 elements; postcard varint(4) = 0x04
+        let n_minus_k_plus1 = (cfg.n - cfg.k + 1) as usize;
+        let av_off = h_sign_off + 32;
+        assert_eq!(bytes[av_off], n_minus_k_plus1 as u8, "anchor_values_be varint");
+        for elem_i in 0..n_minus_k_plus1 {
+            let elem_off = av_off + 1 + elem_i * 32;
+            for &b in &bytes[elem_off..elem_off + 32] {
+                assert_eq!(b, 0x33, "anchor_values_be[{elem_i}] content");
+            }
+        }
+
+        // --- anchor_known_x_be: varint(k) + k*32 bytes of 0x44 ---
+        // k=3; postcard varint(3) = 0x03
+        let k = cfg.k as usize;
+        let akx_off = av_off + 1 + n_minus_k_plus1 * 32;
+        assert_eq!(bytes[akx_off], k as u8, "anchor_known_x_be varint");
+        for elem_i in 0..k {
+            let elem_off = akx_off + 1 + elem_i * 32;
+            for &b in &bytes[elem_off..elem_off + 32] {
+                assert_eq!(b, 0x44, "anchor_known_x_be[{elem_i}] content");
+            }
+        }
+
+        // --- anchor_selector: varint(n) + n bytes of [1,1,1,0,0,0] ---
+        let n = cfg.n as usize;
+        let asel_off = akx_off + 1 + k * 32;
+        assert_eq!(bytes[asel_off], n as u8, "anchor_selector varint");
+        assert_eq!(&bytes[asel_off + 1..asel_off + 1 + n], &[1, 1, 1, 0, 0, 0], "anchor_selector content");
+
+        // --- anchor_current_idx: u64 varint(0) = 0x00 ---
+        let aci_off = asel_off + 1 + n;
+        assert_eq!(bytes[aci_off], 0x00, "anchor_current_idx varint(0)");
+
+        // --- merkle_root_be: 32 bytes of 0x55 ---
+        let mr_off = aci_off + 1;
+        for &b in &bytes[mr_off..mr_off + 32] {
+            assert_eq!(b, 0x55, "merkle_root_be content");
+        }
+
+        // --- merkle_leaf_sibling_hash_be: 32 bytes of 0x66 ---
+        let mlsh_off = mr_off + 32;
+        for &b in &bytes[mlsh_off..mlsh_off + 32] {
+            assert_eq!(b, 0x66, "merkle_leaf_sibling_hash_be content");
+        }
+
+        // --- merkle_auth_path_be: varint(tree_height-1) + (tree_height-1)*32 bytes of 0x77 ---
+        // tree_height=4 → 3 elements; postcard varint(3) = 0x03
+        let auth_len = (cfg.tree_height - 1) as usize;
+        let map_off = mlsh_off + 32;
+        assert_eq!(bytes[map_off], auth_len as u8, "merkle_auth_path_be varint");
+        for elem_i in 0..auth_len {
+            let elem_off = map_off + 1 + elem_i * 32;
+            for &b in &bytes[elem_off..elem_off + 32] {
+                assert_eq!(b, 0x77, "merkle_auth_path_be[{elem_i}] content");
+            }
+        }
+
+        // --- merkle_leaf_idx: u64 varint(0) = 0x00 ---
+        let mli_off = map_off + 1 + auth_len * 32;
+        assert_eq!(bytes[mli_off], 0x00, "merkle_leaf_idx varint(0)");
     }
 }

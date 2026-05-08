@@ -1,3 +1,10 @@
+//! Threshold anchor scheme traits and core data structures.
+//!
+//! The anchor scheme allows a prover to demonstrate knowledge of at least `k` out of `n`
+//! secrets without revealing which `k` were used. Two core traits are defined here:
+//! [`AnchorScheme`] for setup/anchor/witness generation and verification, and
+//! [`AnchorUtils`] for inner-product helpers used by the gadget layer.
+
 use ark_std::rand::Rng;
 
 use crate::anchor::error::AnchorError;

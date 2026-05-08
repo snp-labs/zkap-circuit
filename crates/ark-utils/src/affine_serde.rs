@@ -1,3 +1,10 @@
+//! Affine-point serialisation to/from coordinate strings.
+//!
+//! Exports: [`affine_to_hex_str`], [`affine_to_decimal_str`],
+//! [`coords_to_affine`], [`FromCoords`], [`FieldParseError`].  Supports
+//! short-Weierstrass (`G1Affine`, `G2Affine`) and twisted-Edwards curves.
+//! Requires the `field-serde` feature.
+
 use std::fmt::UpperHex;
 
 use ark_ec::{
@@ -53,6 +60,16 @@ where
         .collect()
 }
 
+impl From<crate::convert::ConvertError> for FieldParseError {
+    fn from(e: crate::convert::ConvertError) -> Self {
+        match e {
+            crate::convert::ConvertError::InvalidHex(_) => FieldParseError::InvalidHex,
+            crate::convert::ConvertError::InvalidDecimal(_) => FieldParseError::InvalidDecimal,
+            _ => FieldParseError::InvalidDecimal,
+        }
+    }
+}
+
 /// Converts (x, y) coordinate strings to an Affine point.
 /// - Each coordinate follows the `hex_decimal_to_field` rule (hex if 0x prefix, otherwise decimal).
 pub fn coords_to_affine<A>(x_str: &str, y_str: &str) -> Result<A, FieldParseError>
@@ -60,16 +77,8 @@ where
     A: FromCoords,
     A::BaseField: PrimeField,
 {
-    let x = crate::convert::hex_decimal_to_field::<A::BaseField>(x_str).map_err(|e| match e {
-        crate::convert::ConvertError::InvalidHex(_) => FieldParseError::InvalidHex,
-        crate::convert::ConvertError::InvalidDecimal(_) => FieldParseError::InvalidDecimal,
-        _ => unreachable!(),
-    })?;
-    let y = crate::convert::hex_decimal_to_field::<A::BaseField>(y_str).map_err(|e| match e {
-        crate::convert::ConvertError::InvalidHex(_) => FieldParseError::InvalidHex,
-        crate::convert::ConvertError::InvalidDecimal(_) => FieldParseError::InvalidDecimal,
-        _ => unreachable!(),
-    })?;
+    let x = crate::convert::hex_decimal_to_field::<A::BaseField>(x_str)?;
+    let y = crate::convert::hex_decimal_to_field::<A::BaseField>(y_str)?;
 
     let p = A::from_coords(x, y);
 

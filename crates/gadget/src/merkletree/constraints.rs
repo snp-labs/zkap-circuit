@@ -1,3 +1,11 @@
+//! R1CS gadget for Merkle tree membership proofs.
+//!
+//! [`MerkleCircuitInputVar`] allocates a leaf, its index, and a sibling-path as circuit
+//! variables. `enforce_equal_leaf` constrains the allocated leaf to equal a public leaf
+//! commitment. `enforce_membership` re-derives the root from the leaf and path in-circuit
+//! and enforces equality with the public root, proving membership without revealing the
+//! leaf index.
+
 use core::borrow::Borrow;
 
 use ark_crypto_primitives::{

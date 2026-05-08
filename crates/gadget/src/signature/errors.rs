@@ -1,3 +1,10 @@
+//! Error types for the signature scheme.
+//!
+//! [`SignatureError`] covers key generation failures (`GenerateLibKeyError`,
+//! `GenerateLibSignatureError`), verification failures (`LibSignatureVerifyError`,
+//! `VerificationFailed`), R1CS synthesis errors (`SynthesisError`), and serialization
+//! errors.
+
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -26,7 +33,7 @@ pub enum SignatureError {
     #[error("Generate lib key error")]
     GenerateLibKeyError,
 
-    #[error("Generatae lib signature error")]
+    #[error("Generate lib signature error")]
     GenerateLibSignatureError,
 
     #[error("Lib signature verify error: {0}")]
@@ -34,9 +41,6 @@ pub enum SignatureError {
 
     #[error("panic: {0}")]
     Panic(String),
-
-    #[error("Failed to Digest to Scalar Field")]
-    FailedToDigestToScalarField,
 
     #[error("CRHScheme error")]
     CRHSchemeError(#[from] ark_crypto_primitives::Error),

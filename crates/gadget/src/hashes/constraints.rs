@@ -1,3 +1,10 @@
+//! R1CS gadget traits for hash schemes.
+//!
+//! [`CRHSchemeGadget`] and [`TwoToOneCRHSchemeGadget`] are the circuit-level counterparts
+//! of [`crate::hashes::CRHScheme`] and [`crate::hashes::TwoToOneCRHScheme`]. Their
+//! associated `OutputVar` must satisfy the standard arkworks R1CS variable bounds
+//! (`EqGadget`, `ToBytesGadget`, `CondSelectGadget`, `AllocVar`, `R1CSVar`).
+
 use ark_ff::Field;
 
 use core::fmt::Debug;

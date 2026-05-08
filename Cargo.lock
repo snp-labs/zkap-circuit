@@ -1007,8 +1007,6 @@ dependencies = [
  "ark-std",
  "ark-utils",
  "base64",
- "blake2",
- "derivative",
  "hex",
  "num",
  "num-bigint",
@@ -2339,7 +2337,6 @@ dependencies = [
 name = "zkap-cli"
 version = "0.1.0"
 dependencies = [
- "ark-ff",
  "circuit",
  "clap",
  "serde",

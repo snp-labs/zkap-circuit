@@ -1,3 +1,11 @@
+//! Poseidon-based instantiation of the threshold anchor scheme.
+//!
+//! Provides [`PoseidonAnchorScheme`] and the [`build_anchor_witness`] function which
+//! constructs the Vandermonde witness from a set of `k`-of-`n` secrets. Invariants:
+//! the selector cardinality must equal `k`, and the secrets slice must have length `n`.
+//! [`HashedSecretsCache`] stores pre-hashed secrets to avoid redundant hash evaluations,
+//! and [`find_valid_indices`] locates which `k` secrets satisfy the anchor equation.
+
 pub mod constraints;
 
 use ark_crypto_primitives::{
@@ -296,7 +304,7 @@ impl<F: PrimeField + Absorb> AnchorScheme for PoseidonAnchorScheme<F> {
         if lhs == rhs {
             Ok(())
         } else {
-            Err(AnchorError::VerificationFailed2)
+            Err(AnchorError::VerificationFailed)
         }
     }
 }

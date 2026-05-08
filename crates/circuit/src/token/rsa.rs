@@ -20,7 +20,7 @@ use ark_r1cs_std::{
 use ark_relations::r1cs::SynthesisError;
 use gadget::{
     bigint::constraints::{BigNatCircuitParams, BigNatVar},
-    signature::rsa::constraints::{PublicKeyVar, SignatureVar, output_with_prifix},
+    signature::rsa::constraints::{PublicKeyVar, SignatureVar, output_with_prefix},
 };
 
 pub struct RSA2048VerifyGadget;
@@ -49,7 +49,7 @@ impl RSA2048VerifyGadget {
 
         message.reverse();
 
-        let output = output_with_prifix(message);
+        let output = output_with_prefix(message);
         let output_fp = output.to_constraint_field()?;
 
         let result = sig.sig.pow_mod(&pk.e, &pk.n, num_exp_bits)?.to_bytes_le()?;
@@ -83,7 +83,7 @@ impl RSA2048VerifyGadget {
 
         message.reverse();
 
-        let output = output_with_prifix(message);
+        let output = output_with_prefix(message);
         let output_fp = output.to_constraint_field()?;
 
         let mut acc = sig.sig.clone();

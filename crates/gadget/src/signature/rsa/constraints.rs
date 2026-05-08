@@ -1,11 +1,9 @@
 //! R1CS gadget for RSA-2048 PKCS#1 v1.5 signature verification.
 //!
 //! [`RSA2048VerifyGadget`] implements [`crate::signature::constraints::SigVerifyGadget`]
-//! for RSA-2048 over BN254. The `output_with_prifix` function hardcodes the PKCS#1 v1.5
+//! for RSA-2048 over BN254. The `output_with_prefix` function hardcodes the PKCS#1 v1.5
 //! DigestInfo prefix bytes (SHA-256 OID encoding: `0x30 0x31 0x30 0x0d …`) and enforces
-//! their equality with the recovered message bytes. Note: the function name contains a
-//! known typo (`prifix` → `prefix`) which is tracked separately as G3' and will be
-//! corrected in a dedicated cross-crate rename PR.
+//! their equality with the recovered message bytes.
 
 use std::marker::PhantomData;
 
@@ -132,23 +130,23 @@ impl<ConstraintF: PrimeField, BNP: BigNatCircuitParams> ToBytesGadget<Constraint
     }
 }
 
-pub fn output_with_prifix<F: PrimeField>(hashed: &[UInt8<F>]) -> Vec<UInt8<F>> {
+pub fn output_with_prefix<F: PrimeField>(hashed: &[UInt8<F>]) -> Vec<UInt8<F>> {
     let mut output = Vec::new();
-    let prifix1 = UInt8::<F>::constant_vec(&[32, 4, 0, 5, 1, 2, 4, 3]);
-    let prifix2 = UInt8::<F>::constant_vec(&[101, 1, 72, 134, 96, 9, 6, 13]);
-    let prifix3 = UInt8::<F>::constant_vec(&[48, 49, 48, 0, 255, 255, 255, 255]);
-    let prifix4 = UInt8::<F>::constant_vec(&[255, 255, 255, 255, 255, 255, 1, 0]);
-    let prifix5 = UInt8::<F>::constant_vec(&[255, 255, 255, 255, 255, 255, 255, 255]);
+    let prefix1 = UInt8::<F>::constant_vec(&[32, 4, 0, 5, 1, 2, 4, 3]);
+    let prefix2 = UInt8::<F>::constant_vec(&[101, 1, 72, 134, 96, 9, 6, 13]);
+    let prefix3 = UInt8::<F>::constant_vec(&[48, 49, 48, 0, 255, 255, 255, 255]);
+    let prefix4 = UInt8::<F>::constant_vec(&[255, 255, 255, 255, 255, 255, 1, 0]);
+    let prefix5 = UInt8::<F>::constant_vec(&[255, 255, 255, 255, 255, 255, 255, 255]);
     output.extend_from_slice(hashed);
-    output.extend_from_slice(&prifix1);
-    output.extend_from_slice(&prifix2);
-    output.extend_from_slice(&prifix3);
+    output.extend_from_slice(&prefix1);
+    output.extend_from_slice(&prefix2);
+    output.extend_from_slice(&prefix3);
 
     for _ in 0..24 {
-        output.extend_from_slice(&prifix5);
+        output.extend_from_slice(&prefix5);
     }
 
-    output.extend_from_slice(&prifix4);
+    output.extend_from_slice(&prefix4);
 
     output
 }

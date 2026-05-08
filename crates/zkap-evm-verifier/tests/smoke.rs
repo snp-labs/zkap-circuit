@@ -85,15 +85,24 @@ fn vec_to_solidity_concatenates_in_order() {
 /// structural anchors present.
 #[test]
 fn generate_solidity_round_trip_writes_expected_scaffold() {
+    use std::sync::atomic::{AtomicU64, Ordering};
+
     const PUBLIC_INPUTS: usize = 8; // matches ZKAP main circuit
     let vk = synthetic_vk(PUBLIC_INPUTS);
 
+    // Per-process monotonic counter: guarantees a fresh directory per
+    // call regardless of stack layout, ASLR, or `--test-threads=1`.
+    // (Earlier draft used `&vk as *const _ as usize` for uniqueness;
+    // that's unsound — co-located stack frames can repeat addresses
+    // across thread starts and the optimiser can reuse slots, so the
+    // suffix wasn't actually unique. `create_dir_all` made the bug
+    // benign in practice, but the counter form is correct by
+    // construction.)
+    static UNIQ: AtomicU64 = AtomicU64::new(0);
     let dir = std::env::temp_dir().join(format!(
         "zkap-evm-verifier-smoke-{}-{}",
         std::process::id(),
-        // Cheap unique suffix so concurrent test threads don't collide.
-        // Use the address of a stack local — avoids pulling in `rand`.
-        &vk as *const _ as usize,
+        UNIQ.fetch_add(1, Ordering::Relaxed),
     ));
     let path: PathBuf = dir.join("Groth16Verifier.sol");
 

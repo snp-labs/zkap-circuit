@@ -3,6 +3,7 @@ pub mod parameters;
 pub use parameters::*;
 
 #[cfg(test)]
+#[allow(clippy::needless_range_loop)]
 pub mod test {
     use ark_bn254::Fr;
     use ark_crypto_primitives::crh::{CRHScheme, poseidon::CRH as PoseidonCRH};

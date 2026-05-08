@@ -7,8 +7,9 @@ use ark_ff::{BigInteger, PrimeField};
 use num::BigUint;
 use num_integer::Integer;
 
-#[allow(deprecated)]
-use crate::{anchor::error::AnchorError, utils::str_to_fields};
+use ark_utils::try_str_to_fields;
+
+use crate::anchor::error::AnchorError;
 
 #[allow(clippy::type_complexity)]
 pub fn process_secrets_vec<C, CRH>(
@@ -43,7 +44,6 @@ where
     Ok((q_fields, r_fields))
 }
 
-#[allow(deprecated)]
 pub fn process_secret<C, CRH>(
     secret: &str,
     hash_param: &<CRH as CRHScheme>::Parameters,
@@ -57,7 +57,8 @@ where
             Parameters = PoseidonConfig<C::BaseField>,
         >,
 {
-    let secret = str_to_fields::<C::BaseField>(secret);
+    let secret = try_str_to_fields::<C::BaseField>(secret)
+        .map_err(|e| AnchorError::InvalidParameters(e.to_string()))?;
     let (q, r) = hash_and_divide_by_scalar_modulus::<C, CRH>(&secret, hash_param)?;
 
     let q_field = <C::BaseField as PrimeField>::from_le_bytes_mod_order(&q);
@@ -92,7 +93,6 @@ where
         .collect()
 }
 
-#[allow(deprecated)]
 pub fn process_no_tk_secret<C, CRH>(
     secret: &str,
     hash_param: &CRH::Parameters,
@@ -102,7 +102,8 @@ where
     C::BaseField: PrimeField + Absorb,
     CRH: CRHScheme<Input = [C::BaseField], Output = C::BaseField>,
 {
-    let secret = str_to_fields::<C::BaseField>(secret);
+    let secret = try_str_to_fields::<C::BaseField>(secret)
+        .map_err(|e| AnchorError::InvalidParameters(e.to_string()))?;
     let secret = CRH::evaluate(hash_param, &*secret)
         .map_err(|e| AnchorError::CryptoError(format!("Hash failed: {}", e)))?;
 

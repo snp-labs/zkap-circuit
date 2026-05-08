@@ -4,12 +4,11 @@ use ark_r1cs_std::{
 };
 use ark_relations::r1cs::SynthesisError;
 
-use crate::{
-    base64::{
-        Base64Table,
-        decoder::{Base64CharBits, IndexBits},
-    },
-    utils::select_array_element_be,
+use ark_utils::select_array_element_be;
+
+use crate::base64::{
+    Base64Table,
+    decoder::{Base64CharBits, IndexBits},
 };
 
 #[derive(Clone, Debug)]

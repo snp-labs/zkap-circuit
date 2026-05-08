@@ -7,7 +7,7 @@ use ark_r1cs_std::{
     uint16::UInt16,
 };
 use ark_relations::r1cs::SynthesisError;
-use gadget::utils::{is_less_than, single_multiplexer, slice_efficient, slice_from_start};
+use ark_utils::{is_less_than, single_multiplexer, slice_efficient, slice_from_start};
 
 use crate::token::constraints::ClaimIndicesVar;
 

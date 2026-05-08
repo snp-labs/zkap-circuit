@@ -1,7 +1,7 @@
 use ark_crypto_primitives::crh::CRHScheme;
-use ark_utils::hex_decimal_to_field;
+use ark_utils::{hex_decimal_to_field, str_to_limbs};
 use circuit::constants::{CircuitConfig, F, PAD_CHAR, PoseidonHash};
-use gadget::{base64::decode_any_base64, signature::rsa::PublicKey, utils::str_to_limbs};
+use gadget::{base64::decode_any_base64, signature::rsa::PublicKey};
 
 use crate::dto::AudHashResult;
 use crate::error::ApplicationError;

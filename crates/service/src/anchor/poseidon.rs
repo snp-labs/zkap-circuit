@@ -70,6 +70,7 @@ pub(crate) fn derive_x_from_secret(
     Ok(hashed)
 }
 
+#[allow(dead_code)]
 pub(crate) fn derive_selector_from_x_list_and_anchor<F: PrimeField + Absorb>(
     pk: &PoseidonAnchorPublicKey<F>,
     x_list: &[F],
@@ -121,6 +122,7 @@ pub(crate) fn derive_selector_from_x_list_and_anchor<F: PrimeField + Absorb>(
 }
 
 // nCk combination generator
+#[allow(dead_code)]
 fn combinations(n: usize, k: usize) -> Vec<Vec<usize>> {
     let mut result = Vec::new();
     if k == 0 || k > n {

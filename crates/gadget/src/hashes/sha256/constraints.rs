@@ -14,14 +14,13 @@ use ark_r1cs_std::{
 };
 use ark_relations::r1cs::{ConstraintSystemRef, Namespace, SynthesisError};
 
-use crate::{
-    hashes::sha256::{H, K, utils::conditionally_select_vec},
-    utils::{
-        UInt32Ext,
-        comparison::{enforce_less_than, is_greater_or_equal, is_less_than},
-        slice_efficient,
-    },
+use ark_utils::{
+    UInt32Ext,
+    comparison::{enforce_less_than, is_greater_or_equal, is_less_than},
+    slice_efficient,
 };
+
+use crate::hashes::sha256::{H, K, utils::conditionally_select_vec};
 
 #[derive(Clone)]
 pub struct SHA256Gadget<F: PrimeField> {

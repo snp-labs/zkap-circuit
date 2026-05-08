@@ -41,6 +41,13 @@ jobs:
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
       - run: cargo test --release --workspace
+      # Explicitly name the L1 golden gate so failures are easy to identify.
+      # `cargo test --release --workspace` above already covers this; the
+      # named step here provides a clear CI signal and runs only fast tiers
+      # (B/C/D/E). Tier A F2/F3 are #[ignore]-d (slow: ~120s each) and
+      # will NOT run here — invoke with `-- --include-ignored` explicitly.
+      - name: L1 byte-gate (P0-A goldens)
+        run: cargo test --release -p zkap-service --test l3_byte_gate
 
   build:
     name: Build (Release)
@@ -71,14 +78,77 @@ jobs:
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
       - run: cargo build --examples --workspace
 
-  features:
-    name: Feature flags
+  feature-matrix:
+    name: Feature matrix
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
-      - run: cargo check -p zkap-service --no-default-features
+      # ark-utils: 4 combos (H4)
+      - name: ark-utils | no-default-features
+        run: cargo check -p ark-utils --no-default-features
+      - name: ark-utils | wire
+        run: cargo check -p ark-utils --no-default-features --features wire
+      - name: ark-utils | r1cs
+        run: cargo check -p ark-utils --no-default-features --features r1cs
+      - name: ark-utils | r1cs,wire,field-serde,io (full)
+        run: cargo check -p ark-utils --no-default-features --features r1cs,wire,field-serde,io
+      # gadget: 3 combos (H4)
+      - name: gadget | crypto
+        run: cargo check -p gadget --no-default-features --features crypto
+      - name: gadget | crypto,base64
+        run: cargo check -p gadget --no-default-features --features crypto,base64
+      - name: gadget | crypto,base64,rsa (full)
+        run: cargo check -p gadget --no-default-features --features crypto,base64,rsa
+      # zkap-service: 2 combos — replaces former single-combo features job (H4)
+      - name: zkap-service | no-default-features
+        run: cargo check -p zkap-service --no-default-features
+      - name: zkap-service | default (proof)
+        run: cargo check -p zkap-service
+
+  wasm32-build:
+    name: wasm32 build (zkap-witness-wasm)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+      - name: Add wasm32 target
+        run: rustup target add wasm32-unknown-unknown
+      # build.rs requires AR1CS_WITNESS_ARZKEY_PATH for wasm32 target to embed
+      # the ar1cs_blake3 pair-identity constant. In CI we provide a synthetic
+      # 48-byte arzkey (magic + zero blake3) so the build compiles cleanly;
+      # the embedded constant is a CI-only placeholder — production wasm builds
+      # must supply the real paired .arzkey via this env var.
+      - name: Create synthetic CI arzkey
+        run: |
+          python3 -c "
+          magic = b'ARZKEY'
+          header = magic + b'\x01' + b'\x00' + b'\x00' * 8 + b'\x00' * 32
+          with open('/tmp/ci_dummy.arzkey', 'wb') as f:
+              f.write(header)
+          print('Created synthetic arzkey:', len(header), 'bytes')
+          "
+      - name: Build zkap-witness-wasm (wasm32-unknown-unknown)
+        run: cargo build -p zkap-witness-wasm --target wasm32-unknown-unknown --release
+        env:
+          AR1CS_WITNESS_ARZKEY_PATH: /tmp/ci_dummy.arzkey
+      - name: Report wasm artifact size
+        run: |
+          WASM=target/wasm32-unknown-unknown/release/zkap_witness_wasm.wasm
+          SIZE=$(wc -c < "$WASM" | tr -d ' ')
+          echo "wasm size: ${SIZE} bytes"
+          # Hard gate: must be under 8 MiB (matches build-wasm.sh)
+          python3 - <<EOF
+          size = ${SIZE}
+          limit = 8 * 1024 * 1024
+          mib = size / 1048576
+          print(f"wasm size: {size} bytes ({mib:.3f} MiB) / limit 8 MiB")
+          if size > limit:
+              raise SystemExit(f"wasm size {size} bytes exceeds 8 MiB gate ({limit} bytes)")
+          print(f"Size gate OK")
+          EOF
 
   audit:
     name: Security Audit

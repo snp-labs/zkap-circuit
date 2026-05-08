@@ -12,9 +12,6 @@ extern crate alloc;
 // Always available
 pub mod constants;
 
-// Re-export ark-utils as utils for backward compatibility
-pub use ark_utils as utils;
-
 // Feature-gated modules
 #[cfg(feature = "anchor")]
 pub mod anchor;

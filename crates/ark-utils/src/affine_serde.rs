@@ -53,42 +53,6 @@ where
         .collect()
 }
 
-/// Decodes a hex string to bytes.
-/// - Accepts "0x" prefix.
-/// - If the hex length is odd, prepends '0' to make it even before decoding.
-fn hex_to_bytes_even(s: &str) -> Result<Vec<u8>, FieldParseError> {
-    let mut hex_body = s.strip_prefix("0x").unwrap_or(s).to_owned();
-    if hex_body.len() % 2 == 1 {
-        hex_body.insert(0, '0');
-    }
-    hex::decode(&hex_body).map_err(|_| FieldParseError::InvalidHex)
-}
-
-/// Parses an input string as a field element.
-/// - If it starts with "0x..." or "0X...", treats it as hex and reduces `mod p`.
-/// - Otherwise, parses it as a decimal.
-#[deprecated(note = "moved to ark_utils::hex_decimal_to_field (via convert module)")]
-pub fn hex_decimal_to_field<F: PrimeField>(s: &str) -> Result<F, FieldParseError> {
-    if s.starts_with("0x") || s.starts_with("0X") {
-        let bytes = hex_to_bytes_even(s)?;
-        Ok(F::from_be_bytes_mod_order(&bytes))
-    } else {
-        Ok(F::from_str(s).map_err(|_| FieldParseError::InvalidDecimal)?)
-    }
-}
-
-/// Splits ASCII bytes into big-endian limbs and interprets each limb as a field element.
-#[deprecated(note = "use ark_utils::try_str_to_fields instead")]
-pub fn ascii_to_field_be<F: PrimeField>(s: &str) -> Result<Vec<F>, FieldParseError> {
-    crate::try_str_to_fields(s).map_err(|e| match e {
-        crate::convert::ConvertError::InvalidLength {
-            expected_multiple,
-            actual,
-        } => FieldParseError::InvalidLength(expected_multiple, actual),
-        _ => unreachable!("try_str_to_fields only returns InvalidLength"),
-    })
-}
-
 /// Converts (x, y) coordinate strings to an Affine point.
 /// - Each coordinate follows the `hex_decimal_to_field` rule (hex if 0x prefix, otherwise decimal).
 pub fn coords_to_affine<A>(x_str: &str, y_str: &str) -> Result<A, FieldParseError>

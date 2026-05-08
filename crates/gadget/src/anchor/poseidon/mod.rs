@@ -422,6 +422,7 @@ fn generate_permutations<F: Clone>(items: &[F]) -> Vec<Vec<F>> {
 }
 
 #[cfg(test)]
+#[allow(clippy::upper_case_acronyms)]
 mod tests {
     use crate::matrix::VandermondeMatrix;
 

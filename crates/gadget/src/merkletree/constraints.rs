@@ -85,6 +85,7 @@ where
 }
 
 #[cfg(test)]
+#[allow(dead_code, clippy::upper_case_acronyms, clippy::cloned_ref_to_slice_refs)]
 mod tests {
     use ark_crypto_primitives::{
         crh::{

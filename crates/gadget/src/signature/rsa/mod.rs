@@ -195,6 +195,7 @@ where
 }
 
 #[cfg(test)]
+#[allow(clippy::upper_case_acronyms)]
 mod tests {
     use rand::rngs::OsRng;
     use sha2::Sha256;

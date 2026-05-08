@@ -1190,6 +1190,7 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatTrait<ConstraintF, P
 }
 
 #[cfg(test)]
+#[allow(clippy::too_many_arguments)]
 mod test {
 
     use std::io::Write;

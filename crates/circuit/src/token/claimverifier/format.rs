@@ -12,6 +12,13 @@
 //! re-order, fold, or "simplify" any of the `enforce_*` calls without
 //! updating the trusted setup — see
 //! `.omc/plans/2026-05-08-per-crate-refactor/00-cross-cutting-locks.md § L1`.
+//!
+//! The `enforce_cmp(Ordering::Less, true)` workaround applied at check1
+//! and check2 is pinned by
+//! `crates/circuit/tests/r1cs_std_enforce_cmp_repro.rs` against
+//! ark-r1cs-std 0.5.0. That test is the trigger for revisiting the
+//! workaround when the `ark-r1cs-std` pin is bumped — until then the
+//! `is_less_than | is_eq` expression below stays as-is.
 
 use ark_ff::PrimeField;
 use ark_r1cs_std::{

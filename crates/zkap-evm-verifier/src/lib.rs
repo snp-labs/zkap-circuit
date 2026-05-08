@@ -3,7 +3,7 @@
 //! Extracted from `zkap-service::evm` (Phase 4 / S11) so the heavy
 //! `ark-ec` + `ark-groth16` codegen surface lives in its own crate and
 //! can be depended on independently of the prove/verify orchestration
-//! in [`zkap-service`](https://crates.io/crates/zkap-service).
+//! in `zkap-service`.
 //!
 //! # Public surface
 //!

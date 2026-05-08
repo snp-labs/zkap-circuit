@@ -15,5 +15,13 @@ ark-groth16 = { workspace = true }
 ark-std     = { workspace = true }
 hex         = { workspace = true }
 
+[dev-dependencies]
+# Concrete pairing engine used by every downstream caller of this crate
+# (`zkap-service::crs` instantiates `VerifyingKey<Bn254>` for trusted
+# setup output). Tests construct a synthetic `VerifyingKey<Bn254>` to
+# round-trip the Solidity codegen without paying the cost of a real
+# Groth16 setup.
+ark-bn254 = { workspace = true }
+
 [lints]
 workspace = true

@@ -76,7 +76,9 @@ jobs:
         # ZK_N and ZK_K are inherited from workflow-level env: block.
         # Removing those env vars causes build_common.rs to use dev defaults (N=6),
         # which may OOM on CI runners.
-        run: cargo run --release --features zkap-circuit --bin generate_crs -- output/keys
+        # `integration-tests` is the Phase 5 / C13 rename of the former
+        # `zkap-circuit` marker feature on the `circuit` crate.
+        run: cargo run --release --features circuit/integration-tests --bin generate_crs -- output/keys
 
       - name: Upload keys
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

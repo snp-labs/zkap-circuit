@@ -31,7 +31,10 @@ hex = { workspace = true }
 [features]
 default = []
 print-trace = ["gadget/print-trace"]
-zkap-circuit = []
+# Marker feature gating the heavy Groth16 integration test target.
+# Renamed from `zkap-circuit` (Phase 5 / C13) — old name collided with the
+# crate name itself and confused tooling like `clippy --all-features`.
+integration-tests = []
 
 [dev-dependencies]
 ark-utils = { workspace = true, features = ["field-serde"] }
@@ -43,7 +46,7 @@ regex = { workspace = true }
 
 [[test]]
 name = "groth16_integration"
-required-features = ["zkap-circuit"]
+required-features = ["integration-tests"]
 
 [lints]
 workspace = true

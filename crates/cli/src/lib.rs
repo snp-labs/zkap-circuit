@@ -2,7 +2,7 @@
 //!
 //! Both `generate_crs` and `generate_hash` need the same three operations:
 //!
-//! - [`load_config_or_exit`] — load a [`circuit::constants::CircuitConfig`]
+//! - [`load_config_or_exit`] — load a [`circuit::types::CircuitConfig`]
 //!   from a JSON file, printing a human-readable error and exiting with code 1
 //!   on failure.
 //! - [`die`] — print an error message to stderr and exit with code 1.
@@ -14,7 +14,7 @@
 
 use std::path::Path;
 
-use circuit::constants::CircuitConfig;
+use circuit::types::CircuitConfig;
 use serde::Serialize;
 
 /// Print `msg` to stderr and exit the process with code 1.

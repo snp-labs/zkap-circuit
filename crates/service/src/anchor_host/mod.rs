@@ -8,7 +8,7 @@
 pub mod poseidon;
 pub mod types;
 
-use circuit::constants::{CircuitConfig, F, PAD_CHAR};
+use circuit::types::{CircuitConfig, F, PAD_CHAR};
 use gadget::matrix::VandermondeMatrix;
 
 /// Anchor configuration derived from [`CircuitConfig`].

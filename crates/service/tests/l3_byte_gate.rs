@@ -56,7 +56,7 @@ use ark_relations::r1cs::{
 };
 use ark_serialize::CanonicalSerialize;
 use ark_utils::wire::ZkapInputV1;
-use circuit::constants::{BNP, CG, F};
+use circuit::types::{BNP, CG, F};
 use circuit::zkap::ZkapCircuit;
 use sha2::{Digest, Sha256};
 use zkap_service::{CircuitConfig, setup};

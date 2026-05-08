@@ -48,10 +48,10 @@ use ark_crypto_primitives::{
 };
 use ark_ff::{PrimeField, Zero};
 
+use circuit::types::{BNP, CG, F};
 #[cfg(test)]
-use circuit::constants::CircuitConfig;
-use circuit::constants::{BNP, CG, F};
-use circuit::input::{
+use circuit::types::CircuitConfig;
+use circuit::witness::{
     AnchorWitness, AudienceWitness, CircuitConstants, CircuitPublicInputs, JwtWitness,
     MerkleWitness, MiscWitness, ZkapCircuitInput,
 };

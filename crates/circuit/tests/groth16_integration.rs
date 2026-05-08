@@ -22,9 +22,9 @@ use sha2::Sha256;
 use ark_utils::pad;
 use ark_utils::try_str_to_fields;
 use circuit::{
-    constants::{BNP, CG, CircuitConfig, PAD_CHAR},
-    input::*,
     token::ClaimIndices,
+    types::{BNP, CG, CircuitConfig, PAD_CHAR},
+    witness::*,
     zkap::ZkapCircuit,
 };
 use gadget::{

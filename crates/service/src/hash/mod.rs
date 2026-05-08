@@ -7,7 +7,7 @@
 
 use ark_crypto_primitives::crh::CRHScheme;
 use ark_utils::{hex_decimal_to_field, str_to_limbs};
-use circuit::constants::{CircuitConfig, F, PAD_CHAR, PoseidonHash};
+use circuit::types::{CircuitConfig, F, PAD_CHAR, PoseidonHash};
 use gadget::{base64::decode_any_base64, signature::rsa::PublicKey};
 
 use crate::dto::AudHashResult;
@@ -96,8 +96,8 @@ pub fn generate_leaf_hash(
     iss: &str,
     pk_b64: &str,
 ) -> Result<String, ApplicationError> {
-    use circuit::constants::BNP;
-    use circuit::constants::CG;
+    use circuit::types::BNP;
+    use circuit::types::CG;
 
     let poseidon_params = crate::poseidon_params();
 

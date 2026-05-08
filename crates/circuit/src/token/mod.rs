@@ -5,7 +5,8 @@
 //!   (`claim_extractor_v2`, `claim_format_verifier_v2`)
 //! - [`claim_indices`] — [`ClaimIndicesVar`] R1CS variable + `AllocVar` impl
 //! - [`rsa`] — [`RSA2048VerifyGadget`] RSA-2048 PKCS#1 signature verification
-//! - [`jwt_field`] — byte-to-field converters for JWT nonce (hex) and expiry (decimal)
+//! - [`jwt_field`] — byte-to-field converters for JWT nonce (hex) and expiry
+//!   (decimal); split into `jwt_field/nonce.rs` and `jwt_field/exp.rs` siblings
 //! - [`constraints`] — backward-compatible re-export of `claim_indices` + `rsa`
 //!
 //! Host-side data:

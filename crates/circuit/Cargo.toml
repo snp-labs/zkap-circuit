@@ -44,3 +44,6 @@ regex = { workspace = true }
 [[test]]
 name = "groth16_integration"
 required-features = ["zkap-circuit"]
+
+[lints]
+workspace = true

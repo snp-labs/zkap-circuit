@@ -47,3 +47,6 @@ io = ["dep:ark-serialize"]
 # absorbed from former `zkap-input-types` crate. Implies `io` because
 # `CircuitConfig` derives `CanonicalSerialize`/`CanonicalDeserialize`.
 wire = ["io"]
+
+[lints]
+workspace = true

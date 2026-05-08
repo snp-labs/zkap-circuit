@@ -22,9 +22,7 @@ use ark_r1cs_std::{
 use ark_relations::r1cs::{Namespace, SynthesisError};
 
 use ark_utils::{
-    UInt32Ext,
-    comparison::{enforce_less_than, is_greater_or_equal, is_less_than},
-    slice_efficient,
+    UInt32Ext, enforce_less_than, is_greater_or_equal, is_less_than, slice_efficient,
 };
 
 use super::digest::DigestVar;

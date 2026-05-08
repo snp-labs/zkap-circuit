@@ -52,7 +52,7 @@ use std::sync::OnceLock;
 
 // Field-codec re-export — single source of truth lives in
 // `ark-utils::field_codec` (PR4 / Step 7 of the DTO consolidation plan).
-pub(crate) use ark_utils::field_codec::field_to_hex;
+pub(crate) use ark_utils::codec::field::field_to_hex;
 
 /// Cached Poseidon parameters — constructed once, shared across all modules.
 pub(crate) fn poseidon_params() -> &'static PoseidonConfig<F> {

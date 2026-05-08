@@ -97,6 +97,9 @@ use gadget::{
         constraints::{PublicKeyVar, SignatureVar},
     },
 };
+use ark_utils::{
+    enforce_less_than, pack_decompose_bytes_unchecked, single_multiplexer, slice_efficient,
+};
 
 /// The main Groth16 R1CS circuit for the ZKAP protocol.
 ///

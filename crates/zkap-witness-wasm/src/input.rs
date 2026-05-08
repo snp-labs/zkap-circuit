@@ -65,7 +65,7 @@ use gadget::{
     signature::rsa::{PublicKey, Signature},
 };
 
-use ark_utils::field_codec::fe_from_be32_canonical;
+use ark_utils::codec::field::fe_from_be32_canonical;
 use ark_utils::wire::{RSA_2048_BYTES, ZkapInputV1};
 
 use crate::error::ZkapWitnessError;
@@ -213,12 +213,10 @@ pub fn build_main_circuit(input: ZkapInputV1) -> Result<ZkapMainCircuit, ZkapWit
     Ok(ZkapMainCircuit::from_input(ci))
 }
 
-/// Map an [`ark_utils::field_codec::NonCanonicalFieldError`] into the
+/// Map an [`ark_utils::codec::field::NonCanonicalFieldError`] into the
 /// local error variant, prefixing with the field name so failures stay
 /// actionable when a host sends a `>= p` encoding.
-fn nc_field<S: Into<String>>(
-    field: S,
-) -> impl FnOnce(ark_utils::field_codec::NonCanonicalFieldError) -> ZkapWitnessError {
+fn nc_field<S: Into<String>>(field: S) -> impl FnOnce(ark_utils::codec::field::NonCanonicalFieldError) -> ZkapWitnessError {
     let field = field.into();
     move |e| ZkapWitnessError::NonCanonicalField(format!("{}: {}", field, e))
 }

@@ -1,14 +1,17 @@
-//! Error re-exports for backward compatibility.
+//! Error re-exports for callers that prefer a single `ark_utils::error::*`
+//! import root.
 //!
-//! Error types are defined in their respective modules:
-//! - `FieldParseError` → `affine_serde`
+//! Errors are defined in their owning modules:
+//! - `FieldParseError` → `codec::affine`
 //! - `IoError` → `io`
-//! - `TextError` → `convert`
-//! - `ConvertError` → `convert`
+//! - `TextError` → `codec::string`
+//! - `ConvertError` → `codec::string`
+//! - `NonCanonicalFieldError` → `codec::field`
+
+pub use crate::codec::field::NonCanonicalFieldError;
+pub use crate::codec::string::{ConvertError, TextError};
 
 #[cfg(feature = "field-serde")]
-pub use crate::affine_serde::FieldParseError;
-pub use crate::convert::ConvertError;
-pub use crate::convert::TextError;
+pub use crate::codec::affine::FieldParseError;
 #[cfg(feature = "io")]
 pub use crate::io::IoError;

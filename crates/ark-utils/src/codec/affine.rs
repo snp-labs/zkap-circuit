@@ -60,11 +60,11 @@ where
         .collect()
 }
 
-impl From<crate::convert::ConvertError> for FieldParseError {
-    fn from(e: crate::convert::ConvertError) -> Self {
+impl From<super::string::ConvertError> for FieldParseError {
+    fn from(e: super::string::ConvertError) -> Self {
         match e {
-            crate::convert::ConvertError::InvalidHex(_) => FieldParseError::InvalidHex,
-            crate::convert::ConvertError::InvalidDecimal(_) => FieldParseError::InvalidDecimal,
+            super::string::ConvertError::InvalidHex(_) => FieldParseError::InvalidHex,
+            super::string::ConvertError::InvalidDecimal(_) => FieldParseError::InvalidDecimal,
             _ => FieldParseError::InvalidDecimal,
         }
     }
@@ -77,8 +77,8 @@ where
     A: FromCoords,
     A::BaseField: PrimeField,
 {
-    let x = crate::convert::hex_decimal_to_field::<A::BaseField>(x_str)?;
-    let y = crate::convert::hex_decimal_to_field::<A::BaseField>(y_str)?;
+    let x = super::string::hex_decimal_to_field::<A::BaseField>(x_str)?;
+    let y = super::string::hex_decimal_to_field::<A::BaseField>(y_str)?;
 
     let p = A::from_coords(x, y);
 

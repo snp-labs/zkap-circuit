@@ -14,6 +14,15 @@ use super::CircuitConfig;
 /// host bug or a malformed payload.
 pub const RSA_2048_BYTES: usize = 256;
 
+// Compile-time assertion that the V1 wire payload can cross thread
+// boundaries: the host hands a `ZkapInputV1` to a wasm runtime that may
+// run on a separate thread (e.g. `tokio::task::spawn_blocking` in
+// `zkap-service`). Plan: ark-utils.md A17.
+const _: fn() = || {
+    fn assert_send_sync<T: Send + Sync + ?Sized>() {}
+    assert_send_sync::<ZkapInputV1>();
+};
+
 /// Semantic V1 wire format. See `zkap-witness-wasm::input` module docs for
 /// the full encoding contract — every change to field order, BE/LE, or
 /// variable-vs-fixed length requires a `WitnessGenerator::CIRCUIT_ID` bump.

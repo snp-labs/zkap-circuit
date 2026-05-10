@@ -1,3 +1,34 @@
+//! The main ZKAP Groth16 R1CS circuit ([`ZkapCircuit`]).
+//!
+//! # L1 lock — do not edit constraint logic without a new trusted setup
+//!
+//! Every change to this file that touches constraint synthesis (variable allocation order,
+//! `enforce_*` calls, phase sequencing) will alter the R1CS matrices and invalidate the
+//! `ar1cs_blake3` 32-byte gate.  Before merging any such change, verify all six L1 layers:
+//!
+//! See `.omc/plans/2026-05-08-per-crate-refactor/00-cross-cutting-locks.md § L1` for the
+//! full gate checklist (ar1cs_blake3, cs.num_constraints golden, R1CS matrix sha256, …).
+//!
+//! # Five-phase structure
+//!
+//! The single `generate_constraints` function encodes five sequential phases:
+//! 1. **JWT authenticity & claim extraction** — SHA-256 + RSA-2048 + Base64 + claim indices
+//! 2. **Issuer validation & execution binding** — Merkle membership + expiry equality
+//! 3. **Threshold membership & anchor binding** — Poseidon hashes + product trick
+//! 4. **Vandermonde + indices constraints** — selector boolean/cardinality/sparsity
+//! 5. **Output binding** — h_id, partial_rhs, lhs commitments
+//!
+//! # Mock circuit for trusted setup
+//!
+//! [`ZkapCircuit::generate_mock_circuit`] produces a circuit with zeroed public inputs and
+//! placeholder witnesses suitable for `Groth16::setup`.  The R1CS matrix structure is
+//! identical to the real proving circuit — only the concrete field values differ, which is
+//! fine because Groth16 setup depends only on the matrix structure, not the values.
+//!
+//! `assert!(self.anchor.selector.len() == self.params.n as usize)` inside
+//! `generate_constraints` is an intentional panic-on-host-bug guard — do **not** replace it
+//! with `SynthesisError`; the panic path preserves R1CS variable allocation ordering.
+
 #![allow(unused_variables)]
 #![allow(unused_mut)]
 
@@ -33,6 +64,10 @@ use crate::{
         constraints::{ClaimIndicesVar, RSA2048VerifyGadget},
     },
 };
+use ark_utils::{
+    comparison::enforce_less_than, packing::pack_decompose_bytes_unchecked, single_multiplexer,
+    slice_efficient,
+};
 use gadget::{
     anchor::poseidon::{
         PoseidonAnchor,
@@ -59,10 +94,6 @@ use gadget::{
     signature::rsa::{
         PublicKey, Signature,
         constraints::{PublicKeyVar, SignatureVar},
-    },
-    utils::{
-        comparison::enforce_less_than, packing::pack_decompose_bytes_unchecked, single_multiplexer,
-        slice_efficient,
     },
 };
 

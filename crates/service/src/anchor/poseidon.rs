@@ -8,7 +8,7 @@ use ark_utils::try_str_to_fields;
 use circuit::constants::{CircuitConfig, F, PoseidonHash};
 
 use super::AnchorConfig;
-use crate::{Secret, dto::GenerateAnchorResCore, error::ApplicationError};
+use crate::{Secret, error::ApplicationError};
 
 use gadget::{
     anchor::{
@@ -31,7 +31,7 @@ use gadget::{
 pub fn generate_anchor(
     params: &CircuitConfig,
     secrets: Vec<Secret>,
-) -> Result<GenerateAnchorResCore, ApplicationError> {
+) -> Result<Vec<String>, ApplicationError> {
     let ctx = AnchorConfig::from_params(params);
 
     let anchor_key = PoseidonAnchorPublicKey {
@@ -47,9 +47,7 @@ pub fn generate_anchor(
 
     let anchor = PoseidonAnchorScheme::generate_anchor(&anchor_key, &anchor_secret, &ctx.matrix)?;
 
-    Ok(GenerateAnchorResCore {
-        anchor: anchor.0.iter().map(|f| crate::field_to_hex(*f)).collect(),
-    })
+    Ok(anchor.0.iter().map(|f| crate::field_to_hex(*f)).collect())
 }
 
 pub(crate) fn derive_x_from_secret(
@@ -72,6 +70,7 @@ pub(crate) fn derive_x_from_secret(
     Ok(hashed)
 }
 
+#[allow(dead_code)]
 pub(crate) fn derive_selector_from_x_list_and_anchor<F: PrimeField + Absorb>(
     pk: &PoseidonAnchorPublicKey<F>,
     x_list: &[F],
@@ -123,6 +122,7 @@ pub(crate) fn derive_selector_from_x_list_and_anchor<F: PrimeField + Absorb>(
 }
 
 // nCk combination generator
+#[allow(dead_code)]
 fn combinations(n: usize, k: usize) -> Vec<Vec<usize>> {
     let mut result = Vec::new();
     if k == 0 || k > n {

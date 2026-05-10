@@ -1,3 +1,10 @@
+//! Signature scheme traits and re-exports for RSA-based JWT verification.
+//!
+//! [`SignatureScheme`] is the abstract interface for key generation, signing, and
+//! verification. The RSA-2048 / PKCS#1 v1.5 instantiation lives in [`rsa`]. The
+//! R1CS gadget trait [`constraints::SigVerifyGadget`] is re-exported at this level
+//! so that circuit code can import it as `gadget::signature::SigVerifyGadget`.
+
 use ark_serialize::CanonicalSerialize;
 use ark_std::hash::Hash;
 use errors::SignatureError;
@@ -7,7 +14,7 @@ pub mod constraints;
 pub mod errors;
 pub mod rsa;
 
-pub use constraints::*;
+pub use constraints::SigVerifyGadget;
 pub trait SignatureScheme {
     type Parameters: Clone + Send + Sync;
     type PublicKey: CanonicalSerialize + Hash + Eq + Clone + Default + Send + Sync;

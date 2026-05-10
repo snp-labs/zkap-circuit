@@ -1,3 +1,12 @@
+//! R1CS gadget for RSA-2048 PKCS#1 v1.5 signature verification.
+//!
+//! [`RSA2048VerifyGadget`] implements [`crate::signature::constraints::SigVerifyGadget`]
+//! for RSA-2048 over BN254. The `output_with_prifix` function hardcodes the PKCS#1 v1.5
+//! DigestInfo prefix bytes (SHA-256 OID encoding: `0x30 0x31 0x30 0x0d …`) and enforces
+//! their equality with the recovered message bytes. Note: the function name contains a
+//! known typo (`prifix` → `prefix`) which is tracked separately as G3' and will be
+//! corrected in a dedicated cross-crate rename PR.
+
 use std::marker::PhantomData;
 
 use ark_ec::CurveGroup;

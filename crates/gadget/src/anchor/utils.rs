@@ -1,3 +1,13 @@
+//! Native helper functions for secret processing and scalar-modulus arithmetic.
+//!
+//! Available only under the `rsa` feature. Contains helpers for converting string secrets
+//! to field elements (`process_secret*`), dividing BaseField values by the ScalarField
+//! modulus (`divide_by_scalar_modulus`), and combinatorial utilities (`combinations`,
+//! `permute`). These are native (non-circuit) functions and have no R1CS impact.
+//!
+//! **Deprecation notice**: all public functions in this module have no internal callers
+//! and are slated for removal in the next release after external-grep confirmation.
+
 use ark_crypto_primitives::{
     crh::{CRHScheme, poseidon::CRH},
     sponge::{Absorb, poseidon::PoseidonConfig},
@@ -7,10 +17,13 @@ use ark_ff::{BigInteger, PrimeField};
 use num::BigUint;
 use num_integer::Integer;
 
-#[allow(deprecated)]
-use crate::{anchor::error::AnchorError, utils::str_to_fields};
+use ark_utils::try_str_to_fields;
 
+use crate::anchor::error::AnchorError;
+
+#[deprecated(note = "no internal callers — slated for removal next release after external grep")]
 #[allow(clippy::type_complexity)]
+#[allow(deprecated)]
 pub fn process_secrets_vec<C, CRH>(
     secrets: &[String],
     hash_param: &<CRH as CRHScheme>::Parameters,
@@ -43,6 +56,7 @@ where
     Ok((q_fields, r_fields))
 }
 
+#[deprecated(note = "no internal callers — slated for removal next release after external grep")]
 #[allow(deprecated)]
 pub fn process_secret<C, CRH>(
     secret: &str,
@@ -57,7 +71,8 @@ where
             Parameters = PoseidonConfig<C::BaseField>,
         >,
 {
-    let secret = str_to_fields::<C::BaseField>(secret);
+    let secret = try_str_to_fields::<C::BaseField>(secret)
+        .map_err(|e| AnchorError::InvalidParameters(e.to_string()))?;
     let (q, r) = hash_and_divide_by_scalar_modulus::<C, CRH>(&secret, hash_param)?;
 
     let q_field = <C::BaseField as PrimeField>::from_le_bytes_mod_order(&q);
@@ -66,6 +81,8 @@ where
     Ok((q_field, r_field))
 }
 
+#[deprecated(note = "no internal callers — slated for removal next release after external grep")]
+#[allow(deprecated)]
 pub fn process_secrets_poseidon<C>(
     secrets: &[String],
     poseidon_param: &PoseidonConfig<C::BaseField>,
@@ -77,6 +94,8 @@ where
     process_no_tk_secrets::<C, CRH<C::BaseField>>(secrets, poseidon_param)
 }
 
+#[deprecated(note = "no internal callers — slated for removal next release after external grep")]
+#[allow(deprecated)]
 pub fn process_no_tk_secrets<C, CRH>(
     secrets: &[String],
     hash_param: &CRH::Parameters,
@@ -92,7 +111,7 @@ where
         .collect()
 }
 
-#[allow(deprecated)]
+#[deprecated(note = "no internal callers — slated for removal next release after external grep")]
 pub fn process_no_tk_secret<C, CRH>(
     secret: &str,
     hash_param: &CRH::Parameters,
@@ -102,13 +121,15 @@ where
     C::BaseField: PrimeField + Absorb,
     CRH: CRHScheme<Input = [C::BaseField], Output = C::BaseField>,
 {
-    let secret = str_to_fields::<C::BaseField>(secret);
+    let secret = try_str_to_fields::<C::BaseField>(secret)
+        .map_err(|e| AnchorError::InvalidParameters(e.to_string()))?;
     let secret = CRH::evaluate(hash_param, &*secret)
         .map_err(|e| AnchorError::CryptoError(format!("Hash failed: {}", e)))?;
 
     Ok(secret)
 }
 
+#[deprecated(note = "no internal callers — slated for removal next release after external grep")]
 pub fn divide_by_scalar_modulus<C: CurveGroup>(a: C::BaseField) -> (Vec<u8>, Vec<u8>)
 where
     C::BaseField: PrimeField,
@@ -123,6 +144,8 @@ where
     (q.to_bytes_le(), r.to_bytes_le())
 }
 
+#[deprecated(note = "no internal callers — slated for removal next release after external grep")]
+#[allow(deprecated)]
 pub fn hash_and_divide_by_scalar_modulus<C, CRH>(
     elements_to_hash: &[C::BaseField],
     crh_parameters: &CRH::Parameters,
@@ -143,6 +166,7 @@ where
     Ok((q, r))
 }
 
+#[deprecated(note = "no internal callers — slated for removal next release after external grep")]
 pub fn mul_and_divide_by_scalar_modulus<C: CurveGroup>(
     a: C::ScalarField,
     b: C::ScalarField,
@@ -162,6 +186,8 @@ where
     (product.to_bytes_le(), q.to_bytes_le(), r.to_bytes_le())
 }
 
+#[deprecated(note = "no internal callers — slated for removal next release after external grep")]
+#[allow(deprecated)]
 pub fn mul_and_divide_by_scalar_modulus_bytes<C: CurveGroup>(
     a: &[u8],
     b: &[u8],
@@ -175,6 +201,7 @@ where
 }
 
 // nCk combination generator
+#[deprecated(note = "no internal callers — slated for removal next release after external grep")]
 pub fn combinations(n: usize, k: usize) -> Vec<Vec<usize>> {
     let mut result = Vec::new();
     if k == 0 || k > n {
@@ -202,6 +229,7 @@ pub fn combinations(n: usize, k: usize) -> Vec<Vec<usize>> {
 }
 
 /// Helper function to generate all permutations of k elements
+#[deprecated(note = "no internal callers — slated for removal next release after external grep")]
 pub fn permute<T: Clone>(items: &[T]) -> Vec<Vec<T>> {
     if items.is_empty() {
         return vec![vec![]];

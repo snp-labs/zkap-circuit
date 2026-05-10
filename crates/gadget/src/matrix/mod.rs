@@ -1,3 +1,12 @@
+//! Vandermonde matrix operations used by the threshold anchor scheme.
+//!
+//! [`VandermondeMatrix`] supports construction (`new`), dimension queries, submatrix
+//! extraction (`create_submatrix`), vector multiplication (`multiply_vector`,
+//! `vector_multiply`), and the `calculate_vector_a` helper used in anchor generation.
+//! [`solve_linear_system`] solves `Ax = b` over a prime field via Gaussian elimination
+//! with partial pivoting. The R1CS gadget for in-circuit matrix-vector products is in
+//! [`constraints`].
+
 pub mod constraints;
 pub mod error;
 

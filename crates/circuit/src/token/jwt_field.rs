@@ -1,3 +1,16 @@
+//! R1CS gadgets for converting JWT field byte strings to field elements.
+//!
+//! Two domains are covered:
+//!
+//! - **Hex (nonce)**: [`jwt_nonce_hex_to_field`] + [`hex_char_to_value`]
+//!   Parse a `"0x…"` hex string (up to 64 digits) into a single field element.
+//!
+//! - **Decimal (expiry)**: [`jwt_exp_to_field`] + [`decimal_byte_to_digit`]
+//!   Parse a 10-digit decimal timestamp byte array into a single field element.
+//!
+//! All functions enforce their parsing constraints in-circuit.  See the individual
+//! function doc-comments for the precise soundness/completeness statements.
+
 use ark_ff::PrimeField;
 use ark_r1cs_std::{
     eq::EqGadget,

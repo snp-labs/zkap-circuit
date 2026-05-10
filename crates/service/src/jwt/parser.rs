@@ -1,3 +1,10 @@
+//! JWT claim parser: extracts named fields from JSON payloads.
+//!
+//! [`parse_claim_from_str`] locates a key in a flat JSON object using pure-std
+//! string operations (no JSON deserializer dependency). Returns [`TokenError`]
+//! on malformed input or missing keys. [`TokenError`] converts automatically
+//! into [`crate::error::ApplicationError`] via [`From`].
+
 use circuit::token::{Claim, ClaimIndices};
 use gadget::base64::Base64Error;
 use thiserror::Error;
@@ -12,10 +19,6 @@ pub enum TokenError {
 
     #[error("Key not found: {0}")]
     NotFoundKeyError(String),
-
-    #[error("Invalid length: {0}")]
-    #[allow(dead_code)]
-    InvalidLengthError(String),
 }
 
 /// Parses a JSON claim from a string and extracts its metadata.

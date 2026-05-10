@@ -1,7 +1,14 @@
+//! Host-side Poseidon hashing utilities.
+//!
+//! Provides [`generate_hash`] (generic field-element hash), [`generate_aud_hash`]
+//! (per-audience hash + combined `h_aud_list`), and [`generate_leaf_hash`]
+//! (Merkle leaf for issuer + RSA public-key pairs). All functions use the
+//! shared [`crate::poseidon_params`] singleton.
+
 use ark_crypto_primitives::crh::CRHScheme;
-use ark_utils::hex_decimal_to_field;
+use ark_utils::{hex_decimal_to_field, str_to_limbs};
 use circuit::constants::{CircuitConfig, F, PAD_CHAR, PoseidonHash};
-use gadget::{base64::decode_any_base64, signature::rsa::PublicKey, utils::str_to_limbs};
+use gadget::{base64::decode_any_base64, signature::rsa::PublicKey};
 
 use crate::dto::AudHashResult;
 use crate::error::ApplicationError;
@@ -43,7 +50,7 @@ pub fn generate_aud_hash(
 ) -> Result<AudHashResult, ApplicationError> {
     let poseidon_params = crate::poseidon_params();
 
-    let forbidden_str = crate::forbidden_str(params)?;
+    let forbidden_str = params.forbidden_string.as_str();
 
     let mut aud_vec = aud_list;
     let num_audience_limit = params.num_audience_limit as usize;
@@ -121,10 +128,8 @@ pub fn generate_leaf_hash(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use circuit::constants::RawCircuitConfig;
-
     fn test_config() -> CircuitConfig {
-        let raw = RawCircuitConfig {
+        CircuitConfig {
             max_jwt_b64_len: 1024,
             max_payload_b64_len: 640,
             max_aud_len: 155,
@@ -144,8 +149,7 @@ mod tests {
                 "sub".into(),
             ],
             forbidden_string: "forbidden".into(),
-        };
-        raw.into()
+        }
     }
 
     #[test]

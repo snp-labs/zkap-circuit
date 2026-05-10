@@ -13,20 +13,37 @@ thiserror = { workspace = true }
 ark-ff = { workspace = true }
 ark-std = { workspace = true }
 
+# Wire-format types absorbed from former `zkap-input-types` crate
+# (PR1 of L4 absorption plan). These two are pulled unconditionally so
+# the default `wire` feature compiles without per-caller feature
+# wiring; gating `wire` off via `default-features = false` still skips
+# only the heavier `ark-serialize` (re-routed through `io` below).
+serde = { workspace = true }
+postcard = { workspace = true }
+
 # R1CS constraint gadgets (optional)
 ark-r1cs-std = { workspace = true, optional = true }
 ark-relations = { workspace = true, optional = true }
 
 # Field serde (optional)
 ark-ec = { workspace = true, optional = true }
-ark-serialize = { workspace = true, optional = true }
+# `derive` feature is required by `wire::circuit_config::CircuitConfig`'s
+# `CanonicalSerialize`/`CanonicalDeserialize` derives. Workspace-wide
+# feature unification masks this in normal builds; the explicit feature
+# here keeps `cargo build -p ark-utils --no-default-features --features wire`
+# (AC8) green.
+ark-serialize = { workspace = true, optional = true, features = ["derive"] }
 hex = { workspace = true, optional = true }
 
 [dev-dependencies]
 ark-bn254 = { workspace = true }
 
 [features]
-default = ["r1cs"]
+default = ["r1cs", "wire"]
 r1cs = ["dep:ark-r1cs-std", "dep:ark-relations"]
 field-serde = ["dep:ark-ec", "dep:hex"]
 io = ["dep:ark-serialize"]
+# V1 wire schema (`CircuitConfig`, `ZkapInputV1`, `RSA_2048_BYTES`)
+# absorbed from former `zkap-input-types` crate. Implies `io` because
+# `CircuitConfig` derives `CanonicalSerialize`/`CanonicalDeserialize`.
+wire = ["io"]

@@ -1,35 +1,45 @@
-use std::borrow::Borrow;
+//! RSA-2048 PKCS#1 signature verification gadget.
+//!
+//! [`RSA2048VerifyGadget`] provides two verification paths:
+//!
+//! - [`RSA2048VerifyGadget::verify_opt`] — canonical circuit path; computes `sig^65537 mod n`
+//!   via 16 squarings + 1 multiply (65537 = 2^16 + 1).  This is the only path invoked by
+//!   [`crate::zkap::ZkapCircuit`].
+//!
+//! - [`RSA2048VerifyGadget::verify`] — deprecated general path using `pow_mod` with a full
+//!   17-bit exponent loop.  Retained for reference; do not call in production circuits.
 
 use ark_ff::PrimeField;
 use ark_r1cs_std::{
     R1CSVar,
-    alloc::AllocVar,
     convert::{ToBytesGadget, ToConstraintFieldGadget},
     eq::EqGadget,
     prelude::Boolean,
     uint8::UInt8,
-    uint16::UInt16,
 };
-use ark_relations::r1cs::{Namespace, SynthesisError};
+use ark_relations::r1cs::SynthesisError;
 use gadget::{
     bigint::constraints::{BigNatCircuitParams, BigNatVar},
     signature::rsa::constraints::{PublicKeyVar, SignatureVar, output_with_prifix},
 };
 
-use crate::token::ClaimIndices;
-
-#[derive(Clone)]
-pub struct ClaimIndicesVar<F: PrimeField> {
-    pub offset: UInt16<F>,    // Claim start position
-    pub claim_len: UInt16<F>, // Total claim length
-    pub colon_idx: UInt16<F>, // Position of ':' separator
-    pub value_idx: UInt16<F>, // Value start position
-    pub value_len: UInt16<F>, // Value length
-}
-
 pub struct RSA2048VerifyGadget;
 
 impl RSA2048VerifyGadget {
+    /// General RSA-2048 verification using `pow_mod` with a full 17-bit exponent loop.
+    ///
+    /// # Deprecated
+    ///
+    /// Use [`RSA2048VerifyGadget::verify_opt`] instead.  This path applies the generic
+    /// square-and-multiply algorithm which is non-canonical for e = 65537 and substantially
+    /// more expensive in constraints.  It is retained only as a reference implementation.
+    ///
+    /// The circuit calls only `verify_opt`; if you call this function by mistake, the proof
+    /// will still be sound but will produce a different (non-optimised) R1CS and break the
+    /// `ar1cs_blake3` gate.
+    #[deprecated(
+        note = "use verify_opt — 65537-specific square-and-multiply, the non-opt path is non-canonical"
+    )]
     pub fn verify<F: PrimeField, BNP: BigNatCircuitParams>(
         message: &mut [UInt8<F>],
         sig: &SignatureVar<F, BNP>,
@@ -51,6 +61,14 @@ impl RSA2048VerifyGadget {
         Ok(is_valid)
     }
 
+    /// 65537-specific RSA-2048 verification (canonical circuit path).
+    ///
+    /// Computes `sig^65537 mod n` using 16 squarings followed by one multiply, then
+    /// compares the result with the PKCS#1-prefixed message digest.  This is the only
+    /// path called by [`crate::zkap::ZkapCircuit`].
+    ///
+    /// Do **not** generalise this to arbitrary exponents without a new trusted setup —
+    /// the optimisation is valid only because 65537 = 2^16 + 1.
     pub fn verify_opt<F: PrimeField, BNP: BigNatCircuitParams>(
         message: &mut [UInt8<F>],
         sig: &SignatureVar<F, BNP>,
@@ -82,38 +100,5 @@ impl RSA2048VerifyGadget {
         let is_valid = result_fp.is_eq(&output_fp)?;
 
         Ok(is_valid)
-    }
-}
-
-impl<F> AllocVar<ClaimIndices, F> for ClaimIndicesVar<F>
-where
-    F: PrimeField,
-{
-    fn new_variable<T: Borrow<ClaimIndices>>(
-        cs: impl Into<Namespace<F>>,
-        f: impl FnOnce() -> Result<T, SynthesisError>,
-        mode: ark_r1cs_std::alloc::AllocationMode,
-    ) -> Result<Self, SynthesisError> {
-        let cs = cs.into();
-        let claim_indices = f()?.borrow().clone();
-
-        let offset = UInt16::new_variable(cs.clone(), || Ok(claim_indices.offset as u16), mode)?;
-        let claim_len =
-            UInt16::new_variable(cs.clone(), || Ok(claim_indices.claim_len as u16), mode)?;
-        let colon_idx =
-            UInt16::new_variable(cs.clone(), || Ok(claim_indices.colon_idx as u16), mode)?;
-
-        let value_idx =
-            UInt16::new_variable(cs.clone(), || Ok(claim_indices.value_idx as u16), mode)?;
-        let value_len =
-            UInt16::new_variable(cs.clone(), || Ok(claim_indices.value_len as u16), mode)?;
-
-        Ok(Self {
-            offset,
-            claim_len,
-            colon_idx,
-            value_idx,
-            value_len,
-        })
     }
 }

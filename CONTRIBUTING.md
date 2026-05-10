@@ -37,6 +37,12 @@ cargo build
 cargo build --release
 ```
 
+`Cargo.lock` is committed to the repository so that CI and contributors
+reproduce the exact same dependency versions. Do not add `Cargo.lock` to
+`.gitignore`. Update it intentionally with `cargo update` when upgrading
+dependencies, and include the lock-file change in the same commit as the
+`Cargo.toml` change.
+
 ### Testing
 
 ```sh

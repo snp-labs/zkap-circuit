@@ -1,3 +1,11 @@
+//! Native big-integer conversion helpers for RSA limb arithmetic.
+//!
+//! Provides `fe_to_nat` / `nat_to_fe` (field element ↔ `BigUint` round-trips),
+//! `nat_to_limbs` / `limbs_to_nat` (split/join a `BigUint` into fixed-width limbs),
+//! `fit_nat_to_limbs` (zero-extend or truncate), and `field_characteristic_to_nat`
+//! (extract the prime modulus as a `BigUint`). Used by both witness generation and
+//! the R1CS gadget in [`crate::bigint::constraints`].
+
 use ark_ff::BigInteger;
 use ark_ff::fields::PrimeField;
 use num_bigint::BigUint;

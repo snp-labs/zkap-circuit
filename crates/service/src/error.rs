@@ -1,3 +1,11 @@
+//! Top-level error types for the zkap-service layer.
+//!
+//! [`ApplicationError`] is the single error type returned by all public APIs.
+//! IO failures use `Other(String)` (or the `Io` variant after S7), cryptographic
+//! failures use `CryptographicError`/`PoseidonHashError`, proof failures use
+//! `ProofGenerationFailed`/`VerifyFailed`, and parse failures use
+//! `InvalidFormat`/`ParseError`.
+
 use ark_utils::ConvertError;
 use ark_utils::error::{FieldParseError, TextError};
 use gadget::anchor::error::AnchorError;
@@ -11,8 +19,12 @@ pub enum ApplicationError {
     #[error("{0}")]
     InvalidFormat(String),
 
+    #[deprecated(note = "use Other(String) or a specific variant instead")]
     #[error("Internal error")]
     InternalError,
+
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
 
     #[error("{0}")]
     Other(String),
@@ -32,11 +44,9 @@ pub enum ApplicationError {
     #[error("Parse error: {0}")]
     ParseError(String),
 
-    /// Error code: 300
     #[error("Proof generation failed: {0}")]
     ProofGenerationFailed(String),
 
-    /// Error code: 301
     #[error("Proof verification failed")]
     VerifyFailed,
 }
@@ -55,6 +65,13 @@ impl From<TextError> for ApplicationError {
 
 impl From<ConvertError> for ApplicationError {
     fn from(e: ConvertError) -> Self {
+        ApplicationError::ParseError(e.to_string())
+    }
+}
+
+#[cfg(feature = "proof")]
+impl From<crate::jwt::parser::TokenError> for ApplicationError {
+    fn from(e: crate::jwt::parser::TokenError) -> Self {
         ApplicationError::ParseError(e.to_string())
     }
 }

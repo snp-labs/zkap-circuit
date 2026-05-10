@@ -96,98 +96,78 @@ gadget = { git = "https://github.com/snp-labs/zkap-circuit", features = ["full"]
 
 ```rust
 use std::path::Path;
-use zkap_service::{CircuitConfig, load_circuit_config, setup, prove, verify, RawProofRequest};
+use zkap_service::{
+    generate_anchor, generate_aud_hash, generate_hash, generate_leaf_hash,
+    load_circuit_config, Secret,
+};
 
-// 1. Load circuit parameters from a JSON config file
+// Load circuit parameters from a JSON config file.
 let config = load_circuit_config(Path::new("example.json"))
     .expect("Failed to load config");
 
-// 2. Trusted setup — writes pk.key, vk.key, pvk.key, Groth16Verifier.sol, config.json
-let output_dir = Path::new("/tmp/zkap-crs");
-let setup_out = setup(&config, output_dir).expect("Setup failed");
-let pk_path = output_dir.join("pk.key");
-
-// 3. Build a proof request (JWTs, RSA keys, Merkle paths, anchors)
-let request = RawProofRequest::new(
-    pk_path,        // Path to the proving key
-    jwts,           // K JWT token strings
-    pk_ops,         // K RSA public key moduli (Base64-encoded)
-    merkle_paths,   // K Merkle authentication paths
-    leaf_indices,   // K leaf indices
-    root,           // Merkle root (hex field element string)
-    anchor_evals,   // Anchor polynomial evaluations
-    hanchor,        // Combined anchor hash
-    user_op_hash,   // UserOperation hash (hex field element string)
-    random,         // Blinding factor (hex field element string)
-    aud_hash_list,  // Per-audience hashes (hex field element strings)
-);
-let result = prove(&config, request).expect("Proving failed");
-
-// 4. Verify
-let ctx = setup_out.verifying_context();
-let valid = verify(&ctx, &result.proofs[0], &result.public_inputs_for(0))
-    .expect("Verification failed");
-assert!(valid);
+// Always-available helpers (no proving artifacts required).
+let h = generate_hash(vec!["0x1".into(), "0x2".into()]).unwrap();
+let aud = generate_aud_hash(&config, vec!["my-audience".into()]).unwrap();
+let leaf = generate_leaf_hash(&config, "https://issuer.example", "<base64 RSA N>").unwrap();
 ```
 
-> All field-element parameters are decimal or `0x`-prefixed hex strings.
-> For a fully runnable example, see [Running the Full Example](#running-the-full-example).
-> For detailed function signatures and type specs, see the [API Reference](docs/API_REFERENCE.md).
+> The V1 prove path (`zkap_service::prove`) takes a `RawProofRequest`
+> populated with raw bytes (BE-encoded field elements, full JWT bytes,
+> RSA modulus / signature byte strings) plus a paired
+> (`.arzkey`, witness-generator `.wasm`) bundle on disk. The
+> stand-alone `groth16_proof` example is **temporarily disabled** while
+> the V1 byte API rewrite lands (see [Examples and tests](#examples-and-tests)).
+> For full type signatures and field semantics, see the
+> [API Reference](docs/API_REFERENCE.md).
 
-## Running the Full Example
+## Examples and tests
 
-A self-contained example exercising all 7 public API functions is included:
+The `crates/service/examples/groth16_proof.rs` example targets the
+legacy V0 hex/Base64 `RawProofRequest::new` shape and is currently
+parked as `groth16_proof.rs.bak` while we rewrite it against the V1
+byte API. Restoring a runnable end-to-end example (using a checked-in
+small fixture `.arzkey` + `.wasm` pair) is a planned follow-up.
+
+In the meantime, the canonical end-to-end exercise of the wasm
+witness-generator + ark-ar1cs prove path is the integration test
+`crates/zkap-witness-wasm/tests/wasm_to_prove.rs`. It freshly
+generates a test `.arzkey`, rebuilds `zkap-witness-wasm` for
+`wasm32-unknown-unknown` against that `.arzkey`, drives the four
+ABI exports, and runs `prove` + `verify_proof` end-to-end:
 
 ```bash
-cargo run -p zkap-service --example groth16_proof --release
+# Builds the wasm32 artifact internally, takes ~1 minute on a clean tree.
+cargo test -p zkap-witness-wasm --test wasm_to_prove --release
 ```
 
-> **Note:** The trusted setup step is computationally expensive.
-> Use `--release` for reasonable performance (approximately 2–5 minutes on modern hardware).
-
-The example performs the complete lifecycle:
-1. Circuit configuration from `example.json`
-2. Groth16 trusted setup (`setup`)
-3. RSA-2048 key generation and JWT signing
-4. Merkle tree construction (`generate_leaf_hash`)
-5. Threshold anchor generation (`generate_anchor`, `generate_aud_hash`)
-6. Proof generation (`prove`)
-7. Proof verification (`verify`)
-
-Source: [`crates/service/examples/groth16_proof.rs`](crates/service/examples/groth16_proof.rs)
-
-Expected output (abbreviated):
-
-```
-=== ZKAP Groth16 Proof Lifecycle Example ===
-
-[Step 1] Creating circuit configuration (N=6, K=3)...
-[Step 2] Running Groth16 trusted setup (CRS generation)...
-  Setup complete: 9 public inputs, CRS written to /tmp/zkap-example
-[Step 3] Generating 3 RSA-2048 keys and signing JWTs...
-[Step 4] Building issuer Merkle tree (height=4)...
-[Step 5] Generating threshold anchor (N=6, K=3)...
-[Step 6] Generating 3 Groth16 proofs via prove() API...
-[Step 7] Verifying proofs...
-  Proof 1/3: VALID
-  Proof 2/3: VALID
-  Proof 3/3: VALID
-  Tampered proof: INVALID (expected)
-
-=== All steps completed successfully! ===
-```
-
-For a step-by-step walkthrough of the example, see the [Example Guide](docs/EXAMPLE_GUIDE.md).
+The same test suite also covers the host-side
+`ar1cs_blake3` mismatch fail-fast path
+(`host_rejects_wasm_with_mismatched_ar1cs_blake3`).
 
 ## Pre-built CRS Artifacts
 
-Pre-built proving keys for common configurations are available in `dist/`:
+The `dist/` directory ships two layouts at the moment; consumers
+should pick the layout that matches the API they are using:
 
-- `dist/1of1/` — single-signer configuration (N=1, K=1)
-- `dist/3of3/` — three-of-three configuration (N=3, K=3)
+- **V1 layout** (current prove path):
+  - `dist/1-of-1/` — single-signer (N=1, K=1)
+  - `dist/3-of-3/` — three-of-three (N=3, K=3)
+  - Files: `circuit.arzkey` (proving key + ARCS/R1CS identity envelope,
+    `RawProofRequest::pk_path` points at this), `circuit.wasm`
+    (the ZKAP-specific witness-generator artifact paired with
+    `circuit.arzkey` via `ar1cs_blake3`), `config.json`.
+- **Legacy layout** (V0 prove path, kept for the on-chain Solidity
+  verifier consumers):
+  - `dist/1of1/` — single-signer (N=1, K=1)
+  - `dist/3of3/` — three-of-three (N=3, K=3)
+  - Files: `pk.key` (uncompressed `ProvingKey<E>`, **not** consumed by
+    the V1 `prove`), `Groth16Verifier.sol`, `config.json`.
 
-These skip the trusted setup step and allow immediate proof generation.
-For custom configurations, run `setup()` or the `generate_crs` CLI binary.
+Custom configurations can be generated via `setup()` or the
+`generate_crs` CLI binary; both write a paired
+(`pk.arzkey`, `pk.key`, `vk.key`, `pvk.key`, `Groth16Verifier.sol`,
+`config.json`) bundle today. Cleaning the dist tree to a single
+canonical layout is a planned follow-up.
 
 ## Building from Source
 

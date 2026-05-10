@@ -2,8 +2,9 @@
 //!
 //! Provides [`ZkapCircuit`], the main constraint synthesizer, along with all input types
 //! ([`ZkapCircuitInput`], [`CircuitPublicInputs`], witness structs) and the shared
-//! [`CircuitConfig`] / [`RawCircuitConfig`] parameter types.  This crate is a dependency of
-//! `zkap-service` and is not usually consumed directly by application code.
+//! [`CircuitConfig`](crate::constants::CircuitConfig) parameter type (re-exported from
+//! `ark-utils::wire`).  This crate is a dependency of `zkap-service` and is not usually
+//! consumed directly by application code.
 
 use ark_ff::Field;
 

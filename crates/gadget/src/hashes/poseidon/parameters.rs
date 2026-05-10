@@ -1,3 +1,11 @@
+//! Poseidon configuration parameters for BN254-Fr.
+//!
+//! [`get_poseidon_params`] returns a `PoseidonConfig` with the fixed parameters used
+//! throughout the ZKAP circuit: full_rounds=8, partial_rounds=57, alpha=5, width t=3
+//! (rate=2, capacity=1). The MDS matrix and round constants are generated via the
+//! standard Grain LFSR procedure. Call this once and cache the result — construction
+//! is deterministic but involves allocation.
+
 use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;
 use ark_ff::PrimeField;
 

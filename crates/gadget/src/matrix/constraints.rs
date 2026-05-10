@@ -1,3 +1,10 @@
+//! R1CS gadget for Vandermonde matrix-vector multiplication.
+//!
+//! [`VandermondeMatrixVar`] allocates a Vandermonde matrix as a 2D array of `FpVar`
+//! field elements and exposes `vector_mul_matrix` for in-circuit dot-product computation.
+//! Used by [`crate::anchor::poseidon::constraints`] to enforce the consistency check
+//! `b = a · A` as part of the threshold anchor binding proof.
+
 use ark_ff::PrimeField;
 use ark_r1cs_std::{
     alloc::AllocVar,

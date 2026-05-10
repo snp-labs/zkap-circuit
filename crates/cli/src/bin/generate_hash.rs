@@ -1,7 +1,24 @@
-use std::fs::File;
+//! `generate_hash` — Poseidon hash utilities for audience lists and Merkle leaves.
+//!
+//! Reads a [`circuit::constants::CircuitConfig`] from a JSON file and provides
+//! two subcommands:
+//!
+//! - `aud` — compute the Poseidon hash of one or more audience strings and
+//!   emit the individual field-element representations plus the combined
+//!   `h_aud_list` hash as a JSON file.
+//! - `leaf` — compute the Merkle leaf hash for each `(iss, pk)` pair and emit
+//!   the results as a JSON file.
+//!
+//! # Usage
+//!
+//! ```text
+//! generate_hash --config path/to/config.json aud --values "google.com,facebook.com"
+//! generate_hash --config path/to/config.json leaf --iss "iss1,iss2" --pk "pk1,pk2"
+//! ```
 
 use clap::{Args, Parser, Subcommand};
 use serde::Serialize;
+use zkap_cli::{die, load_config_or_exit, write_json_or_exit};
 
 #[derive(Parser)]
 struct Cli {
@@ -76,10 +93,7 @@ fn main() {
     let cli = Cli::parse();
 
     let config_path = std::path::Path::new(&cli.config);
-    let params = zkap_service::load_circuit_config(config_path).unwrap_or_else(|e| {
-        eprintln!("Failed to load config: {}", e);
-        std::process::exit(1);
-    });
+    let params = load_config_or_exit(config_path);
 
     match &cli.command {
         Commands::Aud(args) => generate_aud_hash(args, &params),
@@ -94,10 +108,8 @@ fn generate_aud_hash(args: &AudArgs, params: &circuit::constants::CircuitConfig)
         .map(|s| s.trim().to_string())
         .collect();
 
-    let aud_result = zkap_service::generate_aud_hash(params, aud_vec.clone()).unwrap_or_else(|e| {
-        eprintln!("Error generating audience hash: {}", e);
-        std::process::exit(1);
-    });
+    let aud_result = zkap_service::generate_aud_hash(params, aud_vec.clone())
+        .unwrap_or_else(|e| die(format!("Error generating audience hash: {}", e)));
 
     let output = AudOutput {
         input: aud_vec,
@@ -107,7 +119,7 @@ fn generate_aud_hash(args: &AudArgs, params: &circuit::constants::CircuitConfig)
         },
     };
 
-    write_json(&args.out, &output);
+    write_json_or_exit(&args.out, &output);
     println!("Successfully generated aud hashes to {}", &args.out);
 }
 
@@ -116,12 +128,11 @@ fn generate_pk_leaf(args: &LeafArgs, params: &circuit::constants::CircuitConfig)
     let pk_list: Vec<&str> = args.pk.split(',').map(|s| s.trim()).collect();
 
     if iss_list.len() != pk_list.len() {
-        eprintln!(
+        die(format!(
             "Error: Mismatch in input counts. iss count: {}, pk count: {}",
             iss_list.len(),
             pk_list.len()
-        );
-        std::process::exit(1);
+        ));
     }
 
     println!("Processing {} items...", iss_list.len());
@@ -135,10 +146,8 @@ fn generate_pk_leaf(args: &LeafArgs, params: &circuit::constants::CircuitConfig)
                 pk: pk.to_string(),
             };
 
-            let leaf_hex = zkap_service::generate_leaf_hash(params, iss, pk).unwrap_or_else(|e| {
-                eprintln!("Error computing leaf for iss '{}': {}", iss, e);
-                std::process::exit(1);
-            });
+            let leaf_hex = zkap_service::generate_leaf_hash(params, iss, pk)
+                .unwrap_or_else(|e| die(format!("Error computing leaf for iss '{}': {}", iss, e)));
 
             (input_data, leaf_hex)
         })
@@ -149,15 +158,10 @@ fn generate_pk_leaf(args: &LeafArgs, params: &circuit::constants::CircuitConfig)
         output: outputs,
     };
 
-    write_json(&args.out, &output_struct);
+    write_json_or_exit(&args.out, &output_struct);
     println!(
         "Successfully generated {} leaves to {}",
         output_struct.output.len(),
         args.out
     );
-}
-
-fn write_json<T: Serialize>(path: &str, data: &T) {
-    let file = File::create(path).expect("Failed to create output file");
-    serde_json::to_writer_pretty(file, data).expect("Failed to write JSON");
 }

@@ -1,3 +1,10 @@
+//! R1CS gadget for multi-limb big-integer arithmetic used in RSA-2048.
+//!
+//! [`BigNatVar`] represents a large natural number as a vector of `FpVar` limbs, with
+//! [`BigNatCircuitParams`] fixing the limb width and count for RSA-2048 over BN254.
+//! Provides in-circuit multiplication (`mul`) and equality (`assert_equals`) operations
+//! that reduce to R1CS constraints. Native conversion utilities live in [`crate::bigint::utils`].
+
 use core::{borrow::Borrow, cmp::max, marker::PhantomData};
 
 use ark_ff::{BitIteratorBE, PrimeField};
@@ -1190,6 +1197,7 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatTrait<ConstraintF, P
 }
 
 #[cfg(test)]
+#[allow(clippy::too_many_arguments)]
 mod test {
 
     use std::io::Write;

@@ -1,3 +1,11 @@
+//! Merkle tree configuration and the `Empty` trait for default path construction.
+//!
+//! [`MerkleTreeParams`] configures a Poseidon-based sparse Merkle tree over BN254-Fr
+//! as used throughout the ZKAP anchor and membership proofs. [`MerkleTreeParamsVar`] is
+//! the corresponding R1CS parameter type. The [`Empty`] trait extends `ark-crypto-primitives`'
+//! [`Path`] (an external type, so inherent impl is not possible) with an `empty` constructor
+//! that builds a default all-zero sibling path of the given height.
+
 use ark_crypto_primitives::sponge::Absorb;
 use ark_ff::PrimeField;
 use ark_r1cs_std::fields::fp::FpVar;

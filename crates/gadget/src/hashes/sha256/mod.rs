@@ -1,3 +1,11 @@
+//! SHA-256 native evaluation and circuit gadgets (`hashes-sha256` feature).
+//!
+//! [`SHA256`] implements [`crate::hashes::CRHScheme`] and [`crate::hashes::TwoToOneCRHScheme`]
+//! using the `sha2` crate. [`DigestVar`] (re-exported from [`digest`]) is the canonical
+//! R1CS type for a 32-byte SHA-256 output. The circuit gadget in [`constraints`] provides
+//! `digest_with_pad` (midstate-based, partial input) and `digest_full_with_pad_checked`
+//! (full padded input with explicit block index enforcement).
+
 pub mod constraints;
 pub mod digest;
 pub mod utils;
@@ -46,10 +54,6 @@ where
     fn evaluate<T: Borrow<Self::Input>>(input: T) -> Result<Self::Output, HashError> {
         Ok(Sha256::digest(input.borrow()).to_vec())
     }
-}
-
-pub struct TwoToOneSHA256<F: Field> {
-    _field: PhantomData<F>,
 }
 
 impl<F, P> TwoToOneCRHScheme for SHA256<F, P>

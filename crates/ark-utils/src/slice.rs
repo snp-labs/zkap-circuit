@@ -1,3 +1,10 @@
+//! R1CS gadgets for array slicing and segment encoding.
+//!
+//! Exports: [`slice_efficient`], [`slice_grouped`], [`slice_from_start`],
+//! [`segments_to_num_be`], [`num_to_segments_be`].  These gadgets implement
+//! range-checked sub-array extraction and big-endian segment encoding over
+//! `FpVar` arrays.  Requires the `r1cs` feature (default-on).
+
 use ark_ff::PrimeField;
 use ark_r1cs_std::{
     fields::{FieldVar, fp::FpVar},
@@ -11,7 +18,7 @@ use crate::{is_less_than, lt_bit_vector, multi_mux, select_array_element};
 
 /// Computes the quotient and remainder of dividing an input integer (UInt16) by 2^p
 /// within an Arkworks circuit.
-pub(crate) fn divide_mod_power_of_2_circuit<F: PrimeField>(
+fn divide_mod_power_of_2_circuit<F: PrimeField>(
     input: &UInt16<F>,
     p: u32,
 ) -> Result<(UInt16<F>, UInt16<F>), SynthesisError> {
@@ -35,7 +42,7 @@ pub(crate) fn divide_mod_power_of_2_circuit<F: PrimeField>(
     Ok((quotient, remainder))
 }
 
-pub fn slice_in_binary_tree<F: PrimeField>(
+fn slice_in_binary_tree<F: PrimeField>(
     input: &[FpVar<F>],
     offset: &UInt16<F>,
     len: &FpVar<F>,
@@ -98,7 +105,7 @@ pub fn slice_in_binary_tree<F: PrimeField>(
 
 /// Performs ceiling division.
 /// Computes ceil(n / q).
-pub(crate) fn ceil(n: u64, q: u64) -> u64 {
+fn ceil(n: u64, q: u64) -> u64 {
     assert!(q != 0, "Divisor q cannot be zero");
 
     let quotient = n / q;
@@ -165,7 +172,7 @@ fn pad_input<F: PrimeField>(input: &[FpVar<F>]) -> Vec<FpVar<F>> {
 ///
 /// # Returns
 /// * Some(log2(x)) if x is a power of 2, otherwise None
-pub(crate) fn log_base_2(x: usize) -> Option<u32> {
+fn log_base_2(x: usize) -> Option<u32> {
     if x == 0 {
         return None;
     }
@@ -353,8 +360,8 @@ pub fn slice_grouped<F: PrimeField>(
         out_final.extend(bytes);
     }
 
-    // Verify: (outLen - 1) + (numsPerGroup - 1) <= X - 1
-    assert!((max_len - 1) + (nums_per_group - 1) <= x - 1);
+    // Verify: (outLen - 1) + (numsPerGroup - 1) < X
+    assert!((max_len - 1) + (nums_per_group - 1) < x);
 
     // --- Generate rotation options (MultiMux role) ---
     // outOptions[i][j] = outFinal[i + j]

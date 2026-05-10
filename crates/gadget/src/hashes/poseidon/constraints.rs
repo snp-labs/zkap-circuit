@@ -1,3 +1,11 @@
+//! R1CS gadgets for Poseidon-based hash chaining and curve anchor verification.
+//!
+//! [`chain_hash_gadget`] evaluates a sequential Poseidon hash chain over a slice of
+//! `FpVar` values, matching the native evaluation in `get_poseidon_params`. It is the
+//! circuit equivalent used by the anchor binding check. [`enforce_curve_hanchor`] wraps
+//! elliptic-curve point serialisation and the chain hash for anchor re-derivation inside
+//! the circuit.
+
 use ark_crypto_primitives::{
     crh::{
         CRHSchemeGadget,

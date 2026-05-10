@@ -1,3 +1,13 @@
+//! Circuit input schema — plain host-side data structures that feed `ZkapCircuit`.
+//!
+//! All types here are pure data (no R1CS variables).  They carry the witnesses and public inputs
+//! that [`crate::zkap::ZkapCircuit`] consumes during constraint synthesis.  Build a
+//! [`ZkapCircuitInput`] via `ProofContextBuilder` in `zkap-service`, then convert it into a
+//! `ZkapCircuit` with [`crate::zkap::ZkapCircuit::from_input`].
+//!
+//! The `zeroed ClaimIndices` placeholder used in [`crate::zkap::ZkapCircuit::generate_mock_circuit`]
+//! is the expected value for trusted setup; real proving paths must supply actual indices.
+
 use ark_crypto_primitives::{merkle_tree::Path, sponge::Absorb, sponge::poseidon::PoseidonConfig};
 use ark_ff::PrimeField;
 use ark_serialize::*;

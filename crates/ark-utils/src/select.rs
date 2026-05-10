@@ -1,3 +1,10 @@
+//! R1CS gadgets for array selection and multiplexing.
+//!
+//! Exports: [`multi_mux`], [`single_multiplexer`], [`one_bit_vector`],
+//! [`select_array_element`], [`select_array_element_be`].  These gadgets
+//! implement mux / one-hot selection over `FpVar` arrays and generate R1CS
+//! constraints.  Requires the `r1cs` feature (default-on).
+
 use ark_ff::PrimeField;
 use ark_r1cs_std::{
     R1CSVar,

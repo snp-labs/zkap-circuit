@@ -11,9 +11,12 @@ circuit = { workspace = true }
 zkap-service = { workspace = true }
 
 clap = { workspace = true, features = ["derive"] }
-ark-ff = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+
+[lib]
+name = "zkap_cli"
+path = "src/lib.rs"
 
 [[bin]]
 name = "generate_crs"

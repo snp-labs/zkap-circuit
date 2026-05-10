@@ -1,3 +1,11 @@
+//! R1CS gadgets for packing/unpacking byte arrays into field elements.
+//!
+//! Exports: [`pack_bytes_to_field_unchecked`],
+//! [`pack_decompose_bytes_checked`], [`pack_decompose_bytes_unchecked`].
+//! Checked variants enforce byte-range constraints; unchecked variants
+//! assume trusted inputs and omit those constraints.  Requires the `r1cs`
+//! feature (default-on).
+
 use ark_ff::PrimeField;
 use ark_r1cs_std::eq::EqGadget;
 use ark_r1cs_std::fields::{FieldVar, fp::FpVar};

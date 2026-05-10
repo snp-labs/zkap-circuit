@@ -6,16 +6,26 @@ members = [
     "crates/cli",
     "crates/gadget",
     "crates/service",
+    "crates/zkap-witness-wasm",
 ]
 
 [workspace.package]
 repository = "https://github.com/snp-labs/zkap-circuit"
+rust-version = "1.85"
 
 [workspace.dependencies]
 ark-utils                 = { path = "crates/ark-utils" }
 gadget                    = { path = "crates/gadget", default-features = false }
 circuit                   = { path = "crates/circuit" }
 zkap-service              = { path = "crates/service" }
+ark-ar1cs-format       = { git = "https://github.com/baerae-zkap/ark-ar1cs", rev = "7c8916467716467594345dd2f50cbb818e61f36e" }
+ark-ar1cs-prover       = { git = "https://github.com/baerae-zkap/ark-ar1cs", rev = "7c8916467716467594345dd2f50cbb818e61f36e" }
+ark-ar1cs-wasm-witness = { git = "https://github.com/baerae-zkap/ark-ar1cs", rev = "7c8916467716467594345dd2f50cbb818e61f36e" }
+ark-ar1cs-wtns         = { git = "https://github.com/baerae-zkap/ark-ar1cs", rev = "7c8916467716467594345dd2f50cbb818e61f36e" }
+ark-ar1cs-zkey         = { git = "https://github.com/baerae-zkap/ark-ar1cs", rev = "7c8916467716467594345dd2f50cbb818e61f36e" }
+
+wasmi    = { version = "0.38", default-features = false, features = ["std"] }
+postcard = { version = "1", default-features = false, features = ["alloc"] }
 
 thiserror = { version = "2.0.12" }
 serde = { version = "1.0.227", features = ["derive"] }

@@ -13,8 +13,8 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 # Generic ConstraintSynthesizer-to-.arwtns layer + wasm export macro.
-ark-ar1cs-wasm-witness = { path = "../../../ark-ar1cs/crates/ark-ar1cs-wasm-witness" }
-ark-ar1cs-format       = { path = "../../../ark-ar1cs/crates/ark-ar1cs-format" }
+ark-ar1cs-wasm-witness = { workspace = true }
+ark-ar1cs-format       = { workspace = true }
 
 # V1 wire types (`ark_utils::wire`) are pulled transitively via
 # `circuit` and `ark-utils`; no direct dep needed after PR1 of L4 absorption.
@@ -46,10 +46,10 @@ postcard  = { version = "1", default-features = false, features = ["alloc"] }
 getrandom = { version = "0.2", features = ["js"] }
 
 [dev-dependencies]
-ark-ar1cs-wtns   = { path = "../../../ark-ar1cs/crates/ark-ar1cs-wtns" }
-ark-ar1cs-zkey   = { path = "../../../ark-ar1cs/crates/ark-ar1cs-zkey" }
-ark-ar1cs-prover = { path = "../../../ark-ar1cs/crates/ark-ar1cs-prover" }
-ark-ar1cs-format = { path = "../../../ark-ar1cs/crates/ark-ar1cs-format" }
+ark-ar1cs-wtns   = { workspace = true }
+ark-ar1cs-zkey   = { workspace = true }
+ark-ar1cs-prover = { workspace = true }
+ark-ar1cs-format = { workspace = true }
 # Pulled into dev-deps so wasm_to_prove integration tests can drive
 # zkap_service::prove (the host-side ar1cs_blake3 fail-fast check
 # lives there). dev-only, no impact on the wasm artifact.

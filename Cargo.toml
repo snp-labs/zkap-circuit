@@ -18,11 +18,11 @@ ark-utils                 = { path = "crates/ark-utils" }
 gadget                    = { path = "crates/gadget", default-features = false }
 circuit                   = { path = "crates/circuit" }
 zkap-service              = { path = "crates/service" }
-ark-ar1cs-format       = { path = "../ark-ar1cs/crates/ark-ar1cs-format" }
-ark-ar1cs-prover       = { path = "../ark-ar1cs/crates/ark-ar1cs-prover" }
-ark-ar1cs-wasm-witness = { path = "../ark-ar1cs/crates/ark-ar1cs-wasm-witness" }
-ark-ar1cs-wtns         = { path = "../ark-ar1cs/crates/ark-ar1cs-wtns" }
-ark-ar1cs-zkey         = { path = "../ark-ar1cs/crates/ark-ar1cs-zkey" }
+ark-ar1cs-format       = { git = "https://github.com/baerae-zkap/ark-ar1cs", rev = "7c8916467716467594345dd2f50cbb818e61f36e" }
+ark-ar1cs-prover       = { git = "https://github.com/baerae-zkap/ark-ar1cs", rev = "7c8916467716467594345dd2f50cbb818e61f36e" }
+ark-ar1cs-wasm-witness = { git = "https://github.com/baerae-zkap/ark-ar1cs", rev = "7c8916467716467594345dd2f50cbb818e61f36e" }
+ark-ar1cs-wtns         = { git = "https://github.com/baerae-zkap/ark-ar1cs", rev = "7c8916467716467594345dd2f50cbb818e61f36e" }
+ark-ar1cs-zkey         = { git = "https://github.com/baerae-zkap/ark-ar1cs", rev = "7c8916467716467594345dd2f50cbb818e61f36e" }
 
 wasmi    = { version = "0.38", default-features = false, features = ["std"] }
 postcard = { version = "1", default-features = false, features = ["alloc"] }

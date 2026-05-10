@@ -40,8 +40,7 @@ fn v1_round_trip_satisfies_constraints() {
     assert!(!v1_inputs.is_empty(), "fixture bundle is empty");
 
     for (i, v1) in v1_inputs.iter().cloned().enumerate() {
-        let circuit_input = v1
-            .into_circuit_input()
+        let circuit_input = zkap_witness_wasm::into_circuit_input(v1)
             .unwrap_or_else(|e| panic!("V1[{}] → ZkapCircuitInput failed: {:?}", i, e));
 
         let circuit = TestCircuit::from_input(circuit_input);
@@ -135,7 +134,7 @@ fn v1_into_circuit_input_rejects_signature_mismatch() {
     // `base64_decode(jwt_bytes' sig_b64)`.
     v1.rsa_signature_be[0] ^= 0x01;
 
-    match v1.into_circuit_input() {
+    match zkap_witness_wasm::into_circuit_input(v1) {
         Err(zkap_witness_wasm::ZkapWitnessError::SignatureMismatch(_)) => {}
         Err(other) => panic!("expected SignatureMismatch, got {:?}", other),
         Ok(_) => panic!("expected SignatureMismatch, got Ok"),

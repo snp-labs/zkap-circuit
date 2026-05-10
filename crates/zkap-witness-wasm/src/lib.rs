@@ -10,7 +10,17 @@ pub mod error;
 pub mod input;
 
 pub use error::ZkapWitnessError;
-pub use input::{ZkapCircuitConfigV1, ZkapInputV1, ZkapMainCircuit};
+pub use input::{
+    build_main_circuit, circuit_config_from_v1, config_v1_from_circuit, into_circuit_input,
+    ZkapMainCircuit,
+};
+
+// Re-export V1 wire types from the dedicated crate so existing call sites
+// (`zkap_witness_wasm::ZkapInputV1`, etc.) keep working.
+pub use zkap_input_types::{
+    fe_from_be32_canonical, fe_to_be32, NonCanonicalFieldError, ZkapCircuitConfigV1, ZkapInputV1,
+    RSA_2048_BYTES,
+};
 
 include!(concat!(env!("OUT_DIR"), "/embedded.rs"));
 
@@ -54,7 +64,7 @@ impl WitnessGenerator for ZkapWitnessGenerator {
     }
 
     fn build_circuit(input: ZkapInputV1) -> Result<Self::Circuit, ZkapWitnessError> {
-        input.build_main_circuit()
+        build_main_circuit(input)
     }
 }
 

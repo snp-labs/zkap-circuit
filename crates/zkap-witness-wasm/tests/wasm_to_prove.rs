@@ -465,3 +465,193 @@ fn wasm_to_prove_full_pipeline() {
 
     eprintln!("[done] wasm_to_prove_full_pipeline OK");
 }
+
+/// This is intentionally a cross-layer integration test.
+///
+/// It verifies that a ZKAP witness-generator wasm and an unrelated but
+/// otherwise valid `ArzkeyFile` are rejected by `zkap_service` *before*
+/// witness generation or proving begins (the host-side `ar1cs_blake3`
+/// fail-fast check in `ProofGenerator::generate`).
+///
+/// The test lives in this crate (rather than `zkap-service`) because
+/// `zkap-witness-wasm` already owns the wasm rebuild fixture
+/// (`generate_test_arzkey` + `rebuild_wasm`). `zkap-service` is pulled
+/// in only as a `[dev-dependencies]` entry — it does NOT appear in the
+/// production wasm32 build of `zkap-witness-wasm`.
+///
+/// Strategy A: build a *valid* second arzkey for a totally different
+/// circuit (toy `x*y=z`), pair it with the zkap-witness-wasm artifact
+/// rebuilt for the ZKAP main circuit, and call `zkap_service::prove`.
+///
+/// The toy arzkey's `header.ar1cs_blake3` necessarily differs from the
+/// wasm's `embedded_ar1cs_blake3` (different matrices), so the new host-
+/// side fail-fast check in `ProofGenerator::generate` must reject the
+/// pair with `ApplicationError::InvalidFormat` whose Display contains
+/// `"ar1cs_blake3 mismatch"`.
+///
+/// Strategy B (mutate `header.ar1cs_blake3` byte then re-write/re-read)
+/// was rejected: `ArzkeyFile::read` enforces self-consistency
+/// (`arzkey.arcs().body_blake3() == header.ar1cs_blake3`), so a
+/// header-only mutation would fail at `load_arzkey()` *before* the new
+/// host-side check ever runs.
+#[test]
+fn host_rejects_wasm_with_mismatched_ar1cs_blake3() {
+    use ark_relations::r1cs::{ConstraintSystemRef, LinearCombination, SynthesisError};
+    use std::path::PathBuf;
+    use zkap_service::constants::RawCircuitConfig;
+    use zkap_service::{CircuitConfig, RawProofRequest};
+
+    let workspace = workspace_root();
+
+    // ── Step 0a: ensure the canonical fixture arzkey + matching wasm exist ──
+    //
+    // We reuse the same on-disk fixture path the happy-path test uses, so
+    // running `cargo test -p zkap-witness-wasm --test wasm_to_prove`
+    // against a clean target/ directory still produces a valid wasm.
+    let arzkey_path_main = workspace.join("target/test_fixtures/wasm_to_prove.arzkey");
+    eprintln!(
+        "[mismatch test] ensuring fixture arzkey at {}",
+        arzkey_path_main.display()
+    );
+    let _ = generate_test_arzkey(&arzkey_path_main);
+    eprintln!("[mismatch test] (re)building zkap-witness-wasm against the fixture arzkey");
+    let wasm_path = rebuild_wasm(&arzkey_path_main);
+
+    // ── Step 0b: build a toy arzkey for a different circuit ──
+    //
+    // `x * y = z` over BN254 — entirely different matrices from the ZKAP
+    // main circuit, so its `ar1cs_blake3` cannot collide with the wasm's
+    // embedded value.
+    #[derive(Clone)]
+    struct ToyCircuit;
+    impl ConstraintSynthesizer<Fr> for ToyCircuit {
+        fn generate_constraints(
+            self,
+            cs: ConstraintSystemRef<Fr>,
+        ) -> Result<(), SynthesisError> {
+            let z = cs.new_input_variable(|| Ok(Fr::from(15u64)))?;
+            let x = cs.new_witness_variable(|| Ok(Fr::from(3u64)))?;
+            let y = cs.new_witness_variable(|| Ok(Fr::from(5u64)))?;
+            cs.enforce_constraint(
+                LinearCombination::from(x),
+                LinearCombination::from(y),
+                LinearCombination::from(z),
+            )?;
+            Ok(())
+        }
+    }
+
+    let toy_arzkey_path: PathBuf =
+        workspace.join("target/test_fixtures/wasm_to_prove_toy_mismatched.arzkey");
+
+    eprintln!(
+        "[mismatch test] generating toy arzkey at {}",
+        toy_arzkey_path.display()
+    );
+    {
+        let mut rng = ark_std::rand::rngs::StdRng::seed_from_u64(99);
+        let (toy_pk, _toy_vk) =
+            Groth16::<Bn254>::setup(ToyCircuit, &mut rng).expect("toy Groth16 setup");
+
+        let cs = ConstraintSystem::<Fr>::new_ref();
+        cs.set_optimization_goal(OptimizationGoal::Constraints);
+        cs.set_mode(SynthesisMode::Setup);
+        ToyCircuit
+            .generate_constraints(cs.clone())
+            .expect("toy generate_constraints");
+        cs.finalize();
+        let toy_matrices = cs.to_matrices().expect("toy to_matrices");
+        let toy_arcs = ArcsFile::<Fr>::from_matrices(CurveId::Bn254, &toy_matrices);
+        let toy_arzkey = ArzkeyFile::<Bn254>::from_setup_output(toy_arcs, toy_pk);
+
+        if let Some(parent) = toy_arzkey_path.parent() {
+            std::fs::create_dir_all(parent).expect("create test_fixtures dir");
+        }
+        let mut f = std::fs::File::create(&toy_arzkey_path).expect("create toy arzkey file");
+        toy_arzkey.write(&mut f).expect("write toy arzkey");
+    }
+
+    // Sanity: the on-disk toy arzkey must be readable (i.e., the file
+    // we just wrote passes `ArzkeyFile::read`'s self-consistency check
+    // on its own — it just disagrees with the wasm's embedded blake3).
+    {
+        let mut f = std::fs::File::open(&toy_arzkey_path).expect("open toy arzkey");
+        let parsed: ArzkeyFile<Bn254> =
+            ArzkeyFile::<Bn254>::read(&mut f).expect("toy arzkey self-consistency must pass");
+        // Sanity assert: toy's body must NOT collide with the main
+        // fixture's, otherwise the mismatch test is vacuous.
+        let main_arzkey_for_diff = {
+            let mut f2 =
+                std::fs::File::open(&arzkey_path_main).expect("open main fixture arzkey");
+            ArzkeyFile::<Bn254>::read(&mut f2).expect("main arzkey read")
+        };
+        assert_ne!(
+            parsed.header.ar1cs_blake3, main_arzkey_for_diff.header.ar1cs_blake3,
+            "toy and main arzkey must have different ar1cs_blake3, otherwise the \
+             mismatch test cannot exercise the new host-side check",
+        );
+    }
+
+    // ── Step 1: minimal valid CircuitConfig + RawProofRequest (n=k=1) ──
+    //
+    // The shape only has to satisfy `RawProofRequest::validate(k=1, n=1)`
+    // and reach `ProofGenerator::generate`. Field byte contents are
+    // intentionally zero — the host pair-check fires *before* per-input
+    // postcard encoding and witness generation, so semantic validity of
+    // the JWT/anchor/Merkle data is irrelevant for this test.
+    let raw_cfg = RawCircuitConfig {
+        max_jwt_b64_len: 256,
+        max_payload_b64_len: 192,
+        max_aud_len: 32,
+        max_exp_len: 20,
+        max_iss_len: 32,
+        max_nonce_len: 32,
+        max_sub_len: 32,
+        n: 1,
+        k: 1,
+        tree_height: 1,
+        num_audience_limit: 1,
+        claims: vec![
+            "aud".into(),
+            "exp".into(),
+            "iss".into(),
+            "nonce".into(),
+            "sub".into(),
+        ],
+        forbidden_string: "forbidden".into(),
+    };
+    let cfg = CircuitConfig::from(raw_cfg);
+
+    let raw = RawProofRequest {
+        pk_path: toy_arzkey_path.clone(),
+        wasm_path: wasm_path.clone(),
+        random_be: [0u8; 32],
+        h_sign_user_op_be: [0u8; 32],
+        anchor_values_be: vec![[0u8; 32]; 1],
+        anchor_known_x_be: vec![[0u8; 32]; 1],
+        anchor_selector: vec![1u8],
+        merkle_root_be: [0u8; 32],
+        jwt_bytes: vec![Vec::new()],
+        rsa_modulus_be: vec![vec![0u8; 256]],
+        rsa_signature_be: vec![vec![0u8; 256]],
+        anchor_current_idx: vec![0u64],
+        merkle_leaf_sibling_hash_be: vec![[0u8; 32]],
+        merkle_auth_path_be: vec![Vec::new()],
+        merkle_leaf_idx: vec![0u64],
+    };
+
+    // ── Step 2: invoke zkap_service::prove and assert host-side rejection ──
+    eprintln!("[mismatch test] zkap_service::prove(toy_arzkey, main_wasm)");
+    let result = zkap_service::prove(&cfg, raw);
+    let err = result.expect_err(
+        "mismatched (wasm, arzkey) pair must be rejected by the host-side fail-fast check",
+    );
+    let msg = format!("{}", err);
+    eprintln!("[mismatch test] error message: {}", msg);
+    assert!(
+        msg.contains("ar1cs_blake3 mismatch"),
+        "expected error message to contain 'ar1cs_blake3 mismatch', got: {}",
+        msg
+    );
+    eprintln!("[done] host_rejects_wasm_with_mismatched_ar1cs_blake3 OK");
+}

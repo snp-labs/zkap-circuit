@@ -16,8 +16,10 @@ use std::io::Cursor;
 use std::path::Path;
 
 use crate::evm::groth16_verifier_solidity::SolidityContractGenerator;
+use ark_ar1cs_format::ArcsFile;
+use ark_ar1cs_zkey::ArzkeyFile;
 use ark_serialize::CanonicalSerialize;
-use circuit::constants::{CircuitConfig, RawCircuitConfig};
+use circuit::constants::{CircuitConfig, F, RawCircuitConfig};
 
 use crate::error::ApplicationError;
 use crate::proof::SetupOutput;
@@ -32,6 +34,7 @@ pub(crate) fn persist_setup_output(
     setup: &SetupOutput,
     config: &CircuitConfig,
     output_dir: &Path,
+    arcs: ArcsFile<F>,
 ) -> Result<(), ApplicationError> {
     std::fs::create_dir_all(output_dir).map_err(|e| {
         ApplicationError::Other(format!(
@@ -44,6 +47,21 @@ pub(crate) fn persist_setup_output(
     write_key_file(&setup.pk, &output_dir.join("pk.key"))?;
     write_key_file(&setup.vk, &output_dir.join("vk.key"))?;
     write_key_file(&setup.pvk, &output_dir.join("pvk.key"))?;
+
+    // Write the .arzkey file (proving key + R1CS matrices in ark-ar1cs format).
+    // pk_path in RawProofRequest should now point to this file instead of pk.key.
+    let arzkey = ArzkeyFile::from_setup_output(arcs, setup.pk.clone());
+    let arzkey_path = output_dir.join("pk.arzkey");
+    let mut arzkey_file = std::fs::File::create(&arzkey_path).map_err(|e| {
+        ApplicationError::Other(format!(
+            "Failed to create '{}': {}",
+            arzkey_path.display(),
+            e
+        ))
+    })?;
+    arzkey.write(&mut arzkey_file).map_err(|e| {
+        ApplicationError::Other(format!("Failed to write pk.arzkey: {}", e))
+    })?;
 
     setup
         .vk

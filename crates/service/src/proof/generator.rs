@@ -1,85 +1,142 @@
+//! Per-proof Groth16 generator backed by the wasm witness runtime.
+//!
+//! Each proof:
+//! 1. spins up a fresh [`DefaultRuntime`] (per-proof reset — plan §2 / §8),
+//! 2. postcard-encodes the [`ZkapInputV1`] payload,
+//! 3. drives `witness_generator` with `arzkey.header.ar1cs_blake3` as the
+//!    paired blake3,
+//! 4. parses the returned bytes as an [`ArwtnsFile`],
+//! 5. calls [`ark_ar1cs_prover::prove`].
+
+use std::io::Cursor;
 use std::path::PathBuf;
 
-use ark_crypto_primitives::snark::SNARK;
-use ark_groth16::{Groth16, Proof, ProvingKey};
-use ark_utils::io::load_key_uncompressed;
-use circuit::ZkapCircuitInput;
-use circuit::constants::{BN254, BNP, CG, F};
-use circuit::zkap::ZkapCircuit;
+use ark_ar1cs_wtns::ArwtnsFile;
+use ark_ar1cs_zkey::ArzkeyFile;
+use ark_groth16::Proof;
+use circuit::constants::{BN254, F};
 use rand::rngs::OsRng;
+use zkap_input_types::ZkapInputV1;
 
 use crate::error::ApplicationError;
+use crate::proof::runtime::{DefaultRuntime, RuntimeError, WasmWitnessRuntime};
 
 #[cfg(any(target_os = "android", target_os = "ios"))]
 unsafe extern "C" {
     fn mi_collect(force: bool);
 }
 
-/// Force freed mimalloc pages back to OS after each proof.
 #[inline(always)]
 fn gc() {
     #[cfg(any(target_os = "android", target_os = "ios"))]
-    // SAFETY: mi_collect is a mimalloc internal linked into this .so
     unsafe {
         mi_collect(true);
     }
 }
 
-/// Proof generation result
 pub struct ProofOutput {
-    /// Generated proofs
     pub proofs: Vec<Proof<BN254>>,
-
-    /// Public inputs for each proof
     pub public_inputs: Vec<Vec<F>>,
 }
 
-/// Proof generator
-///
-/// Receives ZkapCircuitInputs and generates Groth16 proofs.
 pub struct ProofGenerator {
     pk_path: PathBuf,
+    wasm_path: PathBuf,
 }
 
 impl ProofGenerator {
-    /// Creates a new ProofGenerator
-    pub fn new(pk_path: PathBuf) -> Self {
-        Self { pk_path }
+    pub fn new(pk_path: PathBuf, wasm_path: PathBuf) -> Self {
+        Self { pk_path, wasm_path }
     }
 
-    /// Generates proofs for all ZkapCircuitInputs
-    pub fn generate(
-        &self,
-        inputs: &[ZkapCircuitInput<F>],
-    ) -> Result<ProofOutput, ApplicationError> {
+    /// Generate one Groth16 proof per [`ZkapInputV1`]. The wasm artifact
+    /// at `wasm_path` is loaded once into memory but instantiated per
+    /// proof so allocator state is reset between JWTs.
+    pub fn generate(&self, inputs: &[ZkapInputV1]) -> Result<ProofOutput, ApplicationError> {
         log::info!(
             "[ProofGenerator] Starting proof generation for {} inputs...",
             inputs.len()
         );
 
-        let pk = self.load_proving_key()?;
-        let mut rng = OsRng;
+        let arzkey = self.load_arzkey()?;
+        let wasm_bytes = std::fs::read(&self.wasm_path).map_err(|e| {
+            ApplicationError::InvalidFormat(format!(
+                "Failed to read wasm `{}`: {}",
+                self.wasm_path.display(),
+                e
+            ))
+        })?;
 
+        // Host-side fail-fast pair check.
+        //
+        // Confirm the witness-generator wasm's `embedded_ar1cs_blake3`
+        // matches the loaded arzkey's `header.ar1cs_blake3` *before* we
+        // enter the per-proof loop. This catches stale caches, wrong
+        // dist paths, and other accidental mis-pairings with a clear
+        // up-front error instead of waiting for the per-proof witness
+        // generation or `bind_check` to fail later.
+        //
+        // The wasm-side `witness_generator` still enforces the same
+        // equality check internally (defense in depth). This host-side
+        // check is NOT a supply-chain defense against a malicious wasm —
+        // a hostile wasm can lie about its embedded blake3.
+        //
+        // Per-proof allocator-reset semantics are preserved: this
+        // runtime is dropped immediately, and the per-input loop below
+        // still spins up a fresh `DefaultRuntime` for each proof.
+        {
+            let mut pair_check_runtime =
+                DefaultRuntime::instantiate(&wasm_bytes).map_err(map_runtime_err)?;
+            let embedded = pair_check_runtime
+                .embedded_ar1cs_blake3()
+                .map_err(map_runtime_err)?;
+            if embedded != arzkey.header.ar1cs_blake3 {
+                return Err(ApplicationError::InvalidFormat(format!(
+                    "ar1cs_blake3 mismatch: wasm=0x{}, arzkey=0x{}",
+                    hex::encode(embedded),
+                    hex::encode(arzkey.header.ar1cs_blake3),
+                )));
+            }
+        }
+
+        let mut rng = OsRng;
         let mut proofs = Vec::with_capacity(inputs.len());
         let mut public_inputs = Vec::with_capacity(inputs.len());
 
-        for (i, input) in inputs.iter().enumerate() {
+        for (i, input_v1) in inputs.iter().enumerate() {
             log::info!(
                 "[ProofGenerator] Generating proof {}/{}...",
                 i + 1,
                 inputs.len()
             );
 
-            let circuit = ZkapCircuit::<CG, BNP>::from_input(input.clone());
-            public_inputs.push(input.extract_public_inputs());
+            let mut runtime = DefaultRuntime::instantiate(&wasm_bytes).map_err(map_runtime_err)?;
+            let postcard_bytes = postcard::to_allocvec(input_v1).map_err(|e| {
+                ApplicationError::ProofGenerationFailed(format!("postcard encode: {}", e))
+            })?;
+            let arwtns_bytes = runtime
+                .generate_witness(&postcard_bytes, &arzkey.header.ar1cs_blake3)
+                .map_err(map_runtime_err)?;
 
-            let proof = Groth16::<BN254>::prove(&pk, circuit, &mut rng).map_err(|e| {
+            let arwtns: ArwtnsFile<F> =
+                ArwtnsFile::<F>::read(&mut Cursor::new(&arwtns_bytes)).map_err(|e| {
+                    ApplicationError::ProofGenerationFailed(format!(
+                        "ArwtnsFile::read on wasm output: {}",
+                        e
+                    ))
+                })?;
+
+            public_inputs.push(arwtns.instance.clone());
+
+            let proof = ark_ar1cs_prover::prove(&arzkey, &arwtns, &mut rng).map_err(|e| {
                 ApplicationError::ProofGenerationFailed(format!("Proof generation failed: {}", e))
             })?;
 
-            // Return freed CS/matrices pages to OS before next proof's allocation.
+            // Drop wasm runtime + postcard buffer + arwtns before next iteration
+            // so the host allocator reclaims them (especially load-bearing on
+            // mobile — see plan §2).
+            drop(runtime);
             gc();
-
             proofs.push(proof);
         }
 
@@ -90,88 +147,20 @@ impl ProofGenerator {
         })
     }
 
-    /// Generates proofs using streaming mode (memory-optimised).
-    ///
-    /// Separates proof generation into two phases to avoid the ~1000 MB peak
-    /// of `Groth16::prove` (PK + CS + matrices simultaneously):
-    ///
-    ///   Phase A — `witness_and_h`:    witness + h WITHOUT PK in memory (~666 MB peak)
-    ///   Phase B — `compute_proof_msm`: load PK → MSM → proof              (~410 MB peak)
-    ///
-    /// PK is dropped before the next proof's Phase A begins.
-    #[cfg(feature = "use-optimized")]
-    pub fn generate_streaming(
-        &self,
-        inputs: &[ZkapCircuitInput<F>],
-    ) -> Result<ProofOutput, ApplicationError> {
-        use crate::proof::streaming_prover::{compute_proof_msm, gc, witness_and_h};
-        use ark_ff::UniformRand;
-
-        log::info!(
-            "[ProofGenerator] Starting streaming proof generation for {} inputs...",
-            inputs.len()
-        );
-
-        let mut rng = OsRng;
-        let mut proofs = Vec::with_capacity(inputs.len());
-        let mut public_inputs = Vec::with_capacity(inputs.len());
-
-        for (i, input) in inputs.iter().enumerate() {
-            log::info!(
-                "[ProofGenerator] Streaming proof {}/{}...",
-                i + 1,
-                inputs.len()
-            );
-
-            // Phase A: witness + h — PK is NOT loaded yet
-            let inp = input.clone();
-            let (h, instance, w) =
-                witness_and_h(move || ZkapCircuit::<CG, BNP>::from_input(inp.clone())).map_err(
-                    |e| {
-                        ApplicationError::ProofGenerationFailed(format!(
-                            "Part 1 (witness_and_h) failed: {}",
-                            e
-                        ))
-                    },
-                )?;
-
-            public_inputs.push(instance[1..].to_vec());
-
-            // Return Phase A freed pages to OS before loading the 347 MB PK.
-            gc();
-
-            // Phase B: load PK → MSM — scoped so PK is freed before next iteration.
-            {
-                let pk = self.load_proving_key()?;
-                let r = F::rand(&mut rng);
-                let s = F::rand(&mut rng);
-                let proof = compute_proof_msm(&pk, r, s, &h, &instance, &w).map_err(|e| {
-                    ApplicationError::ProofGenerationFailed(format!(
-                        "Part 2 (compute_proof_msm) failed: {}",
-                        e
-                    ))
-                })?;
-                proofs.push(proof);
-            } // pk, h, instance, w dropped here before next proof's Phase A
-
-            log::info!(
-                "[ProofGenerator] Proof {}/{} completed",
-                i + 1,
-                inputs.len()
-            );
-        }
-
-        log::info!("[ProofGenerator] Streaming generation completed");
-        Ok(ProofOutput {
-            proofs,
-            public_inputs,
+    fn load_arzkey(&self) -> Result<ArzkeyFile<BN254>, ApplicationError> {
+        let f = std::fs::File::open(&self.pk_path).map_err(|e| {
+            ApplicationError::InvalidFormat(format!(
+                "Failed to open arzkey '{}': {}",
+                self.pk_path.display(),
+                e
+            ))
+        })?;
+        ArzkeyFile::read(&mut std::io::BufReader::new(f)).map_err(|e| {
+            ApplicationError::InvalidFormat(format!("Failed to load arzkey: {}", e))
         })
     }
+}
 
-    /// Loads the ProvingKey
-    fn load_proving_key(&self) -> Result<ProvingKey<BN254>, ApplicationError> {
-        load_key_uncompressed::<ProvingKey<BN254>>(&self.pk_path).map_err(|e| {
-            ApplicationError::InvalidFormat(format!("Failed to load proving key: {}", e))
-        })
-    }
+fn map_runtime_err(e: RuntimeError) -> ApplicationError {
+    ApplicationError::ProofGenerationFailed(format!("wasm runtime: {}", e))
 }

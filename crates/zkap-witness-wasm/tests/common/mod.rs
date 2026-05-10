@@ -549,7 +549,7 @@ pub fn fe_to_be32_bytes(value: &F) -> [u8; 32] {
 /// system is satisfied.
 pub fn build_v1_fixture_bundle() -> V1FixtureBundle {
     let cfg = test_params();
-    let cfg_v1 = zkap_witness_wasm::ZkapCircuitConfigV1::from(&cfg);
+    let cfg_v1 = zkap_witness_wasm::config_v1_from_circuit(&cfg);
     let params = get_poseidon_params::<F>();
     let random = F::from(12345u64);
     let h_sign_user_op = F::from(67890u64);

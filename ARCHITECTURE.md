@@ -7,17 +7,35 @@ zkap-circuit is a Rust library for generating Groth16 zero-knowledge proofs that
 ## Crate Dependency Graph
 
 ```
-zkap-service ─────────→ circuit ─────────→ gadget ─────────→ ark-utils
-     ↑                       ↑                   ↑
-     │                       │                   └─→ arkworks
-     └─── cli ───────────────┘
+                       zkap-service ─────────────→ circuit ──→ gadget ──→ ark-utils
+                            │                          ↑          ↑
+                            │                          │          └─→ arkworks
+                            ├──→ zkap-input-types      │
+                            │       (V1 wire types)    │
+                            ├──→ ark-ar1cs-format      │
+                            ├──→ ark-ar1cs-zkey        │
+                            ├──→ ark-ar1cs-wtns        │
+                            └──→ ark-ar1cs-prover      │
+                                                       │
+        zkap-witness-wasm ─────────────────────────────┤
+        (wasm32 witness-generator binary)              │
+            │                                          │
+            ├──→ ark-ar1cs-wasm-witness                │
+            ├──→ ark-ar1cs-format                      │
+            ├──→ zkap-input-types                      │
+            └──→ circuit + gadget ──────────────────── ┘
+
+             cli ──→ zkap-service
 ```
 
 - **ark-utils**: Base layer (R1CS helpers, field arithmetic, EVM codegen)
 - **gadget**: Circuit gadgets (feature-gated): SHA256, Poseidon, RSA, base64, Merkle tree, anchor, matrix
 - **circuit**: Main ZkapCircuit, CircuitConfig, witness types, R1CS constraints
-- **zkap-service**: Proof generation orchestration, public API
+- **zkap-input-types**: V1 wire-format types (`ZkapInputV1`, `ZkapCircuitConfigV1`, canonical 32-byte BE field codec). Carries no `circuit`/`gadget` dependency so hosts can construct V1 payloads without the full circuit compile graph.
+- **zkap-witness-wasm**: ZKAP-specific witness-generator artifact (compiled to `wasm32-unknown-unknown`). Consumes a postcard-encoded `ZkapInputV1`, reconstructs `ZkapCircuit::from_input` on the wasm side, and emits an `.arwtns` blob. Pairs with a `.arzkey` via the embedded `ar1cs_blake3`.
+- **zkap-service**: Proof generation orchestration, public API. Loads the host-side `.arzkey`, reads the witness-generator wasm bytes, runs a host-side `ar1cs_blake3` fail-fast pair check, then drives the `ark-ar1cs` prover (`prove(.arzkey, .arwtns) → Groth16 Proof`).
 - **cli**: Binary utilities (CRS generation, hash utilities)
+- **ark-ar1cs-** crates: Circuit-agnostic byte interface (matrices `.ar1cs`, setup output `.arzkey`, witness `.arwtns`, prover, generic wasm-witness substrate). Imported as path dependencies from `../ark-ar1cs/crates/...` and bound to this repo's circuit identity by `ar1cs_blake3`.
 
 ## Crate Responsibilities
 
@@ -37,15 +55,71 @@ The crate is split into two build profiles via the `proof` Cargo feature (enable
 
 ## Data Flow
 
-A proof is generated end-to-end as follows:
+A proof is generated end-to-end as follows (V1 byte API + wasm
+witness-generator runtime):
 
-1. **RawProofRequest** (JSON): User provides JWT, issuer Merkle root, audience list, and circuit config path.
-2. **Validation**: Request is validated and loaded. CircuitConfig is deserialized and validated (k ≤ n, tree_height ≥ 1, etc.).
-3. **ProofRequest**: Raw request is converted to ProofRequest, JWT is parsed, and witness is extracted (header, payload, signature bytes).
-4. **Context Building** (jwt/builder.rs): JWT claims are decoded, payload boundaries are identified, RSA signature is prepared, and Merkle tree paths are retrieved.
-5. **Circuit Input Construction** (proof/context.rs): All witness and constants are assembled into ZkapCircuitInput (CircuitConstants, CircuitPublicInputs, JwtWitness, AnchorWitness, MerkleWitness, AudienceWitness, MiscWitness).
-6. **Groth16 Proving** (proof/generator.rs): Circuit is synthesized, witness is loaded into constraint variables, all R1CS constraints are checked, and a Groth16 proof is generated.
-7. **Proof Output**: Proof is serialized and returned to caller. Verifier can check it against public inputs without the JWT.
+1. **`RawProofRequest`** (raw bytes): The host (binding crates in
+   `zkap-zkp`, the `cli` binary, etc.) supplies a `RawProofRequest`
+   populated with raw byte buffers — BE-encoded 32-byte field
+   elements, full JWT byte buffers, RSA-2048 modulus / signature byte
+   strings — plus a `pk_path` pointing at a `.arzkey` and a
+   `wasm_path` pointing at the paired witness-generator `.wasm`.
+2. **Validation** (`proof/request.rs`): `RawProofRequest::validate(k, n)`
+   cross-checks per-JWT vector lengths, anchor cardinality
+   (`n - k + 1`), and selector length (`n`). Bad shapes are rejected
+   here, before any artifact is touched.
+3. **V1 payload assembly** (`proof/mod.rs`): `CircuitConfig` is
+   projected to wire-format `ZkapCircuitConfigV1`, and one
+   `ZkapInputV1` is built per JWT. `zkap-input-types` is the single
+   source of truth for the wire layout.
+4. **`ProofGenerator::generate`**:
+   1. `ArzkeyFile::read(pk_path)` (verifies the `.arzkey` envelope
+      Blake3 trailer + self-consistency
+      `arzkey.arcs().body_blake3() == header.ar1cs_blake3`).
+   2. `std::fs::read(wasm_path)` (reads the witness-generator wasm
+      bytes once into memory).
+   3. **Host-side `ar1cs_blake3` fail-fast pair check**: instantiate
+      the wasm runtime once, call `embedded_ar1cs_blake3()`, compare
+      to `arzkey.header.ar1cs_blake3`. Mismatch returns
+      `ApplicationError::InvalidFormat("ar1cs_blake3 mismatch: ...")`
+      *before* the per-proof loop runs. The wasm-side
+      `witness_generator` still enforces the same equality check
+      internally as defense in depth. This is **not** a complete
+      supply-chain defense against a malicious wasm — a hostile wasm
+      can lie about its embedded blake3.
+   4. For each input (per-proof allocator reset):
+      1. Instantiate a fresh `DefaultRuntime` over the wasm bytes.
+      2. `postcard::to_allocvec(&ZkapInputV1)`.
+      3. Drive the wasm `witness_generator` ABI export, passing
+         `arzkey.header.ar1cs_blake3` as the `host_blake3` parameter.
+         The wasm side runs `ZkapInputV1::into_circuit_input →
+         ZkapCircuit::from_input → generate_constraints` and emits
+         a serialized `ArwtnsFile` over linear memory.
+      4. `ArwtnsFile::read(wasm_output_bytes)` (envelope check).
+      5. `ark_ar1cs_prover::prove(&arzkey, &arwtns, &mut rng)`.
+         The prover runs `bind_check` (curve_id / `ar1cs_blake3` /
+         instance+witness count / arzkey self-consistency) +
+         `preflight::check_r1cs_satisfaction` before calling
+         `Groth16::create_proof_with_reduction_and_matrices`.
+5. **Output**: Solidity-compatible proof component strings and split
+   public-input lists per JWT (`ZkapProofResult` →
+   `ProofComponents`). Verifier can check against public inputs
+   without the JWT.
+
+### Artifact identity binding
+
+| Artifact         | Producer                                                | Consumer                                | Identity field                                                                  |
+|------------------|---------------------------------------------------------|-----------------------------------------|---------------------------------------------------------------------------------|
+| `.ar1cs`         | `setup()` → `cs.to_matrices()` → `ArcsFile::from_matrices` | embedded inside `.arzkey`               | Blake3 of canonical body                                                        |
+| `.arzkey`        | `setup()` → `crs.rs` → `ArzkeyFile::from_setup_output`     | `ProofGenerator::load_arzkey`           | `header.ar1cs_blake3`                                                           |
+| `circuit.wasm`   | `crates/zkap-witness-wasm` `build-wasm.sh` (build.rs reads `AR1CS_WITNESS_ARZKEY_PATH` and bakes `EMBEDDED_AR1CS_BLAKE3`) | `ProofGenerator::generate` (loaded as bytes, instantiated by `DefaultRuntime`) | `EMBEDDED_AR1CS_BLAKE3`                                                         |
+| `.arwtns`        | wasm `witness_generator` export                            | `ark_ar1cs_prover::prove`               | `header.ar1cs_blake3` (set from the host-supplied `host_blake3` parameter)      |
+
+`ar1cs_blake3` is the single sanctioned cross-binding mechanism: the
+same 32-byte hash appears as `arzkey.header.ar1cs_blake3`,
+`EMBEDDED_AR1CS_BLAKE3` baked into the `.wasm`, and
+`arwtns.header.ar1cs_blake3`. Any pairwise drift is rejected
+structurally before the SNARK runs.
 
 ## Key Design Decisions
 
@@ -78,7 +152,8 @@ service/src/
 │   ├── proof.rs       Serializable proof/verify request/response
 │   ├── anchor.rs      Serializable anchor request/response
 │   └── hash.rs        Serializable hash request/response
-├── crs.rs         CRS persistence (writes pk.key, vk.key, pvk.key, Groth16Verifier.sol, config.json)
+├── crs.rs         CRS persistence (writes pk.arzkey [V1 prove path],
+│                  pk.key/vk.key/pvk.key [legacy], Groth16Verifier.sol, config.json)
 ├── error.rs       ApplicationError enum (parse, validation, constraint failures)
 └── lib.rs         Public API (prove, verify, setup, generate_anchor, generate_hash)
 ```

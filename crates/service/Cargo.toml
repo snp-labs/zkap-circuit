@@ -13,6 +13,7 @@ categories = ["cryptography"]
 gadget = { workspace = true, default-features = false, features = ["crypto", "base64", "rsa"] }
 circuit = { workspace = true }
 ark-utils = { workspace = true, features = ["field-serde", "io"] }
+zkap-input-types = { workspace = true }
 
 thiserror = { workspace = true }
 serde      = { workspace = true }
@@ -36,6 +37,14 @@ memmap2               = { workspace = true, optional = true }
 blake2                = { workspace = true, optional = true }
 sha2                  = { workspace = true, optional = true }
 rand                  = { workspace = true, optional = true }
+ark-ar1cs-format       = { workspace = true, optional = true }
+ark-ar1cs-prover       = { workspace = true, optional = true }
+ark-ar1cs-wasm-witness = { workspace = true, optional = true }
+ark-ar1cs-wtns         = { workspace = true, optional = true }
+ark-ar1cs-zkey         = { workspace = true, optional = true }
+
+wasmi    = { workspace = true, optional = true }
+postcard = { workspace = true, optional = true }
 
 [dev-dependencies]
 signature = "2"
@@ -47,6 +56,12 @@ hex = { workspace = true }
 [lib]
 name = "zkap_service"
 crate-type = ["staticlib", "cdylib", "rlib"]
+
+# NB: the `groth16_proof` example targets the legacy hex/Base64
+# `RawProofRequest::new` shape and predates the wasm-witness runtime.
+# Rewriting it for the V1-byte API requires bundling a paired
+# `.wasm` artifact at example-run time; tracked as a follow-up. The
+# example file is preserved as a reference until that rewrite lands.
 
 [features]
 default = ["proof"]
@@ -61,9 +76,22 @@ proof = [
     "dep:blake2",
     "dep:sha2",
     "dep:rand",
+    "dep:ark-ar1cs-format",
+    "dep:ark-ar1cs-prover",
+    "dep:ark-ar1cs-wasm-witness",
+    "dep:ark-ar1cs-wtns",
+    "dep:ark-ar1cs-zkey",
+    "dep:postcard",
+    "runtime-wasmi",
 ]
+runtime-wasmi    = ["dep:wasmi"]
+runtime-wasmtime = []  # reserved, unimplemented (see plan §10.2)
+# `use-optimized` previously gated the streaming Groth16 prover; the
+# wasm-witness runtime path obsoletes streaming so the feature is now a
+# no-op alias kept for source-compat with downstream Cargo invocations.
 use-optimized = ["proof"]
 print-trace = ["circuit/print-trace"]
 
-[[example]]
-name = "groth16_proof"
+# Example temporarily disabled — see comment above the [features] block.
+# [[example]]
+# name = "groth16_proof"

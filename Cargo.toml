@@ -6,6 +6,7 @@ members = [
     "crates/cli",
     "crates/gadget",
     "crates/service",
+    "crates/zkap-input-types",
     "crates/zkap-witness-wasm",
 ]
 
@@ -17,6 +18,15 @@ ark-utils                 = { path = "crates/ark-utils" }
 gadget                    = { path = "crates/gadget", default-features = false }
 circuit                   = { path = "crates/circuit" }
 zkap-service              = { path = "crates/service" }
+zkap-input-types          = { path = "crates/zkap-input-types" }
+ark-ar1cs-format       = { path = "../ark-ar1cs/crates/ark-ar1cs-format" }
+ark-ar1cs-prover       = { path = "../ark-ar1cs/crates/ark-ar1cs-prover" }
+ark-ar1cs-wasm-witness = { path = "../ark-ar1cs/crates/ark-ar1cs-wasm-witness" }
+ark-ar1cs-wtns         = { path = "../ark-ar1cs/crates/ark-ar1cs-wtns" }
+ark-ar1cs-zkey         = { path = "../ark-ar1cs/crates/ark-ar1cs-zkey" }
+
+wasmi    = { version = "0.38", default-features = false, features = ["std"] }
+postcard = { version = "1", default-features = false, features = ["alloc"] }
 
 thiserror = { version = "2.0.12" }
 serde = { version = "1.0.227", features = ["derive"] }

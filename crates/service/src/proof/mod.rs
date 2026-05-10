@@ -1,72 +1,42 @@
-//! ZKAP proof generation service
+//! ZKAP proof generation service — wasm-witness-runtime variant.
 //!
-//! ## Architecture
+//! The host-facing entry point is [`prove`], which:
+//! 1. validates [`RawProofRequest`] against the circuit shape,
+//! 2. assembles one [`ZkapInputV1`] per JWT,
+//! 3. dispatches each input through the wasm witness-generator runtime,
+//! 4. runs `ark_ar1cs_prover::prove` against the matching `.arzkey`.
 //!
-//! ```text
-//! ┌─────────────────────────────────────────────────────────────────┐
-//! │                           prove                                 │
-//! │                          (entry point)                          │
-//! └───────────────────────────────┬─────────────────────────────────┘
-//!                                 │
-//!                 ┌───────────────┼───────────────┐
-//!                 ▼               ▼               ▼
-//! ┌───────────────────┐ ┌─────────────────┐ ┌─────────────────────┐
-//! │  RawProofRequest  │ │  ProofRequest   │ │ ProofContextBuilder │
-//! │  (input collect)  │→│ (validate/parse)│→│  (context build)    │
-//! └───────────────────┘ └─────────────────┘ └──────────┬──────────┘
-//!                                                      │
-//!                                                      ▼
-//!                                          ┌──────────────────────┐
-//!                                          │    CircuitInput[]    │
-//!                                          │  (circuit input structs) │
-//!                                          └──────────┬───────────┘
-//!                                                     │
-//!                                                     ▼
-//!                                          ┌──────────────────────┐
-//!                                          │   ProofGenerator     │
-//!                                          │  (proof generation)  │
-//!                                          └──────────┬───────────┘
-//!                                                     │
-//!                                                     ▼
-//!                                          ┌──────────────────────┐
-//!                                          │    ProofOutput       │
-//!                                          │ (proof + pub inputs) │
-//!                                          └──────────────────────┘
-//! ```
+//! Witness construction is fully delegated to the `.wasm` artifact —
+//! `service` no longer pulls `circuit::ZkapCircuit` into the prove path.
 
-pub mod context;
 pub mod generator;
 pub mod request;
-#[cfg(feature = "use-optimized")]
-mod streaming_prover;
-pub mod types;
+pub mod runtime;
 
 pub use request::RawProofRequest;
 
+use ark_ar1cs_format::{ArcsFile, CurveId};
 use ark_crypto_primitives::snark::CircuitSpecificSetupSNARK;
 #[allow(unused_imports)]
 use ark_crypto_primitives::snark::SNARK;
-use ark_groth16::{Groth16, PreparedVerifyingKey, ProvingKey, VerifyingKey, prepare_verifying_key};
-use circuit::constants::{BN254, BNP, CG, CircuitConfig, F};
+use ark_groth16::{prepare_verifying_key, Groth16, PreparedVerifyingKey, ProvingKey, VerifyingKey};
+use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystem, OptimizationGoal, SynthesisMode};
+use circuit::constants::{CircuitConfig, BN254, BNP, CG, F};
 use circuit::zkap::ZkapCircuit;
 use rand::rngs::OsRng;
 use std::path::Path;
+use zkap_input_types::{ZkapCircuitConfigV1, ZkapInputV1};
 
 use crate::dto::{ProofComponents, ZkapProofResult};
 use crate::error::ApplicationError;
 use ark_utils::hex_decimal_to_field;
 
-use self::context::ProofContextBuilder;
 use self::generator::ProofGenerator;
-use self::request::ProofRequest;
 
 /// Opaque handle to a Groth16 prepared verifying key.
-///
-/// Obtained from [`SetupOutput::verifying_context`]. Hides arkworks internals from callers.
 pub struct VerifyingContext(pub(crate) PreparedVerifyingKey<BN254>);
 
-/// Output of [`setup`]: the proving key, verifying key, and pre-processed verifying key
-/// needed to generate and verify Groth16 proofs for the ZKAP circuit.
+/// Output of [`setup`].
 pub struct SetupOutput {
     pub(crate) pk: ProvingKey<BN254>,
     pub(crate) vk: VerifyingKey<BN254>,
@@ -74,28 +44,18 @@ pub struct SetupOutput {
 }
 
 impl SetupOutput {
-    /// Return an opaque [`VerifyingContext`] for use with [`verify`].
     pub fn verifying_context(&self) -> VerifyingContext {
         VerifyingContext(self.pvk.clone())
     }
 
-    /// Number of public inputs in the verifying key (includes the constant "1" element).
     pub fn public_input_count(&self) -> usize {
         self.pvk.vk.gamma_abc_g1.len()
     }
 }
 
-/// Perform a Groth16 trusted setup and persist all artifacts to `output_dir`.
-///
-/// Writes five files to `output_dir`:
-///   - `pk.key`              — proving key (uncompressed binary)
-///   - `vk.key`              — verifying key (uncompressed binary)
-///   - `pvk.key`             — prepared verifying key (uncompressed binary)
-///   - `Groth16Verifier.sol` — Solidity on-chain verifier
-///   - `config.json`         — the input `params` in JSON (loadable via [`crate::load_circuit_config`])
-///
-/// Returns the in-memory [`SetupOutput`] for immediate use with [`prove`] and [`verify`].
-/// The proving key path for [`RawProofRequest`] is `output_dir.join("pk.key")`.
+/// Trusted setup. Persists pk/vk/pvk + Solidity verifier + config to
+/// `output_dir`. Setup still synthesizes a circuit natively — removing
+/// the `circuit` dep here is plan §16 follow-up.
 pub fn setup(params: &CircuitConfig, output_dir: &Path) -> Result<SetupOutput, ApplicationError> {
     let mut rng = OsRng;
     let circuit = ZkapCircuit::<CG, BNP>::generate_mock_circuit(params);
@@ -106,56 +66,118 @@ pub fn setup(params: &CircuitConfig, output_dir: &Path) -> Result<SetupOutput, A
     let pvk = prepare_verifying_key(&vk);
     let output = SetupOutput { pk, vk, pvk };
 
-    crate::crs::persist_setup_output(&output, params, output_dir)?;
+    let circuit_for_arcs = ZkapCircuit::<CG, BNP>::generate_mock_circuit(params);
+    let cs_setup = ConstraintSystem::<F>::new_ref();
+    cs_setup.set_mode(SynthesisMode::Setup);
+    cs_setup.set_optimization_goal(OptimizationGoal::Constraints);
+    circuit_for_arcs
+        .generate_constraints(cs_setup.clone())
+        .map_err(|e| ApplicationError::InvalidFormat(format!("Arcs synthesis failed: {}", e)))?;
+    cs_setup.finalize();
+    let matrices = cs_setup
+        .to_matrices()
+        .ok_or_else(|| ApplicationError::InvalidFormat("Failed to extract R1CS matrices".into()))?;
+    let arcs = ArcsFile::from_matrices(CurveId::Bn254, &matrices);
+
+    crate::crs::persist_setup_output(&output, params, output_dir, arcs)?;
 
     Ok(output)
 }
 
-/// Generate Groth16 proofs from raw user inputs via a 4-step pipeline:
-///
-/// 1. **Validate & parse** — [`RawProofRequest`] → [`ProofRequest`]: checks vector lengths and
-///    parses field elements, JWT tokens, and the anchor array.
-/// 2. **Build context** — constructs anchor and audience contexts from the parsed request.
-/// 3. **Build circuit inputs** — assembles one [`ZkapCircuitInput`] per JWT token.
-/// 4. **Generate proofs** — runs `Groth16::prove` for each circuit input using the proving key
-///    at `raw.pk_path`.
-///
-/// Returns a [`ZkapProofResult`] containing proofs and hex-encoded public inputs.
+/// Build a wire-format [`ZkapCircuitConfigV1`] from the circuit-side
+/// [`CircuitConfig`]. Lives here (in service) rather than zkap-input-types
+/// so the new crate stays free of `circuit` deps.
+fn config_v1_from_circuit(c: &CircuitConfig) -> ZkapCircuitConfigV1 {
+    ZkapCircuitConfigV1 {
+        max_jwt_b64_len: c.max_jwt_b64_len,
+        max_payload_b64_len: c.max_payload_b64_len,
+        max_aud_len: c.max_aud_len,
+        max_exp_len: c.max_exp_len,
+        max_iss_len: c.max_iss_len,
+        max_nonce_len: c.max_nonce_len,
+        max_sub_len: c.max_sub_len,
+        n: c.n,
+        k: c.k,
+        tree_height: c.tree_height,
+        num_audience_limit: c.num_audience_limit,
+        claims: c
+            .claims
+            .iter()
+            .map(|b| {
+                core::str::from_utf8(b)
+                    .expect("CircuitConfig::claims entries are valid UTF-8")
+                    .to_owned()
+            })
+            .collect(),
+        forbidden_string: core::str::from_utf8(&c.forbidden_string)
+            .expect("CircuitConfig::forbidden_string is valid UTF-8")
+            .to_owned(),
+    }
+}
+
+/// Generate Groth16 proofs from raw user inputs via the wasm
+/// witness-generator runtime.
 pub fn prove(
     params: &CircuitConfig,
     raw: RawProofRequest,
 ) -> Result<ZkapProofResult, ApplicationError> {
-    // 1. Validate and parse inputs
-    log::info!("[ZKAP-v2] Step 1: Validating and parsing inputs...");
-    let request = ProofRequest::from_raw(params, raw)?;
-    log::info!("[ZKAP-v2] Step 1 completed: Input validation passed");
+    log::info!("[ZKAP-v3] Step 1: Validating RawProofRequest...");
+    let k = params.k as usize;
+    let n = params.n as usize;
+    raw.validate(k, n)?;
+    if raw.token_count() != k {
+        return Err(ApplicationError::InvalidFormat(format!(
+            "expected {} JWTs (k), got {}",
+            k,
+            raw.token_count()
+        )));
+    }
 
-    // 2. Build context
-    log::info!("[ZKAP-v2] Step 2: Building proof context...");
-    let builder = ProofContextBuilder::new(params, request.clone())
-        .build_anchor_context()?
-        .build_audience_context()?;
-    log::info!("[ZKAP-v2] Step 2 completed: Context built");
+    log::info!("[ZKAP-v3] Step 2: Building {} ZkapInputV1 payloads...", k);
+    let cfg_v1 = config_v1_from_circuit(params);
 
-    // 3. Build circuit inputs
-    log::info!("[ZKAP-v2] Step 3: Building circuit inputs...");
-    let circuit_inputs = builder.build_all_circuit_inputs()?;
+    let RawProofRequest {
+        pk_path,
+        wasm_path,
+        random_be,
+        h_sign_user_op_be,
+        anchor_values_be,
+        anchor_known_x_be,
+        anchor_selector,
+        merkle_root_be,
+        jwt_bytes,
+        rsa_modulus_be,
+        rsa_signature_be,
+        anchor_current_idx,
+        merkle_leaf_sibling_hash_be,
+        merkle_auth_path_be,
+        merkle_leaf_idx,
+    } = raw;
+
+    let inputs: Vec<ZkapInputV1> = (0..k)
+        .map(|i| ZkapInputV1 {
+            jwt_bytes: jwt_bytes[i].clone(),
+            rsa_modulus_be: rsa_modulus_be[i].clone(),
+            rsa_signature_be: rsa_signature_be[i].clone(),
+            random_be,
+            h_sign_user_op_be,
+            anchor_values_be: anchor_values_be.clone(),
+            anchor_known_x_be: anchor_known_x_be.clone(),
+            anchor_selector: anchor_selector.clone(),
+            anchor_current_idx: anchor_current_idx[i],
+            merkle_root_be,
+            merkle_leaf_sibling_hash_be: merkle_leaf_sibling_hash_be[i],
+            merkle_auth_path_be: merkle_auth_path_be[i].clone(),
+            merkle_leaf_idx: merkle_leaf_idx[i],
+            circuit_config: cfg_v1.clone(),
+        })
+        .collect();
+
+    log::info!("[ZKAP-v3] Step 3: Generating proofs via wasm runtime...");
+    let generator = ProofGenerator::new(pk_path, wasm_path);
+    let output = generator.generate(&inputs)?;
     log::info!(
-        "[ZKAP-v2] Step 3 completed: {} circuit inputs created",
-        circuit_inputs.len()
-    );
-
-    // 4. Generate proofs
-    log::info!("[ZKAP-v2] Step 4: Generating proofs...");
-    let generator = ProofGenerator::new(request.pk_path.clone());
-
-    #[cfg(feature = "use-optimized")]
-    let output = generator.generate_streaming(&circuit_inputs)?;
-
-    #[cfg(not(feature = "use-optimized"))]
-    let output = generator.generate(&circuit_inputs)?;
-    log::info!(
-        "[ZKAP-v2] Step 4 completed: {} proofs generated",
+        "[ZKAP-v3] Step 3 completed: {} proofs generated",
         output.proofs.len()
     );
 
@@ -163,10 +185,6 @@ pub fn prove(
 }
 
 /// Verify a single Groth16 proof against an opaque verifying context.
-///
-/// Accepts String-encoded public inputs (hex field-element format) and a
-/// [`ProofComponents`] produced by [`prove`]. Returns `Ok(true)` if the proof is valid,
-/// `Ok(false)` if it is not, or an error if inputs are malformed or the verifier fails.
 pub fn verify(
     ctx: &VerifyingContext,
     proof: &ProofComponents,

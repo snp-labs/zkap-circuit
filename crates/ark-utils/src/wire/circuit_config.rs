@@ -25,36 +25,68 @@ use serde::{Deserialize, Serialize};
     Clone, Debug, PartialEq, Eq, Serialize, Deserialize, CanonicalSerialize, CanonicalDeserialize,
 )]
 pub struct CircuitConfig {
+    /// Maximum length, in bytes, of the base64-encoded JWT input.
     pub max_jwt_b64_len: u64,
+    /// Maximum length, in bytes, of the base64-encoded JWT payload section.
     pub max_payload_b64_len: u64,
+    /// Maximum length, in bytes, of the JWT `aud` claim value.
     pub max_aud_len: u64,
+    /// Maximum length, in bytes, of the JWT `exp` claim value.
     pub max_exp_len: u64,
+    /// Maximum length, in bytes, of the JWT `iss` claim value.
     pub max_iss_len: u64,
+    /// Maximum length, in bytes, of the JWT `nonce` claim value.
     pub max_nonce_len: u64,
+    /// Maximum length, in bytes, of the JWT `sub` claim value.
     pub max_sub_len: u64,
+    /// Total number of secret shares in the threshold setup.
     pub n: u64,
+    /// Threshold (recovery quorum size); must satisfy `1 <= k <= n`.
     pub k: u64,
+    /// Depth of the audience Merkle tree.
     pub tree_height: u64,
+    /// Maximum number of audience entries permitted in a single proof.
     pub num_audience_limit: u64,
+    /// Required JWT claim names, in the order the circuit expects to
+    /// extract them.
     pub claims: Vec<String>,
+    /// Reserved string that must not appear inside any extracted claim
+    /// (forbidden-substring guard).
     pub forbidden_string: String,
 }
 
 /// Validation error returned by [`CircuitConfig::validate`].
 #[derive(Debug, thiserror::Error)]
 pub enum CircuitConfigError {
+    /// `k` must be at least 1.
     #[error("k must be >= 1, got: {0}")]
     InvalidK(u64),
+    /// `k` must not exceed `n`.
     #[error("k ({k}) must be <= n ({n})")]
-    KExceedsN { k: u64, n: u64 },
+    KExceedsN {
+        /// Observed `k`.
+        k: u64,
+        /// Observed `n`.
+        n: u64,
+    },
+    /// `n` must be at least 1.
     #[error("n must be >= 1, got: {0}")]
     InvalidN(u64),
+    /// `tree_height` must be at least 1.
     #[error("tree_height must be >= 1, got: {0}")]
     InvalidTreeHeight(u64),
+    /// `max_payload_b64_len` must not exceed `max_jwt_b64_len`.
     #[error("max_payload_b64_len ({payload}) must be <= max_jwt_b64_len ({jwt})")]
-    PayloadExceedsJwt { payload: u64, jwt: u64 },
+    PayloadExceedsJwt {
+        /// Observed payload length.
+        payload: u64,
+        /// Observed JWT length.
+        jwt: u64,
+    },
+    /// `num_audience_limit` must be at least 1.
     #[error("num_audience_limit must be >= 1, got: {0}")]
     InvalidNumAudienceLimit(u64),
+    /// `claims` must not be empty.
     #[error("claims must not be empty")]
     EmptyClaims,
 }

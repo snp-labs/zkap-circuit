@@ -18,6 +18,12 @@ use ark_r1cs_std::{
 };
 use ark_relations::r1cs::{ConstraintSystemRef, Namespace, SynthesisError};
 
+/// In-circuit representation of a 32-byte SHA-256 digest.
+///
+/// Wraps exactly 32 `UInt8<F>` variables and implements the standard arkworks R1CS traits
+/// (`AllocVar`, `R1CSVar`, `EqGadget`, `ToBytesGadget`, `CondSelectGadget`) so it can be
+/// used as a circuit output type in SHA-256 gadget compositions. Panics at allocation time
+/// if fewer or more than 32 bytes are provided.
 #[derive(Clone, Debug)]
 pub struct DigestVar<F: PrimeField>(pub Vec<UInt8<F>>);
 

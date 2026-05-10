@@ -29,13 +29,22 @@ use rsa::{
 };
 use sha2::Digest;
 
+/// RSA-2048 public key in raw big-endian byte form.
+///
+/// `n` holds the 256-byte modulus and `e` the (typically 3-byte) public exponent,
+/// both big-endian. [`to_limbs`](PublicKey::to_limbs) converts them to the limb
+/// representation consumed by [`PublicKeyVar`](constraints::PublicKeyVar).
 #[derive(Debug, Clone, Default, CanonicalSerialize, PartialEq, Eq, Hash, CanonicalDeserialize)]
 pub struct PublicKey {
+    /// RSA modulus `n` as a big-endian byte vector (256 bytes for RSA-2048).
     pub n: Vec<u8>,
+    /// RSA public exponent `e` as a big-endian byte vector (typically `[0x01, 0x00, 0x01]`).
     pub e: Vec<u8>,
 }
 
 impl PublicKey {
+    /// Returns a placeholder `PublicKey` with all-ones bytes, safe to use as a
+    /// dummy witness when the actual key is not yet known (e.g., in `empty` circuit inputs).
     pub fn empty() -> Self {
         PublicKey {
             n: vec![1; 256],
@@ -43,6 +52,8 @@ impl PublicKey {
         }
     }
 
+    /// Decomposes `n` and `e` into `BNP::N_LIMBS` little-endian limbs of `BNP::LIMB_WIDTH` bits
+    /// each, expressed as `C::BaseField` elements for use in the R1CS gadget.
     pub fn to_limbs<BNP, C>(&self) -> (Vec<C::BaseField>, Vec<C::BaseField>)
     where
         BNP: BigNatCircuitParams,
@@ -59,17 +70,34 @@ impl PublicKey {
     }
 }
 
+/// RSA-2048 private key bundle.
+///
+/// Holds all components needed by the `rsa` crate for PKCS#1 v1.5 signing.
+/// Never serialized to disk or committed to a circuit; only used by the native prover.
 #[derive(Debug, Clone, Default)]
 pub struct SecretKey {
-    pub pk: PublicKey,        // Public key part
-    pub n: BigUint,           // RSA modulus
-    pub d: BigUint,           // RSA private exponent
-    pub primes: Vec<BigUint>, // RSA primes
+    /// Corresponding public key, cached to avoid recomputation.
+    pub pk: PublicKey,
+    /// RSA modulus `n = p * q`.
+    pub n: BigUint,
+    /// RSA private exponent `d ≡ e⁻¹ (mod λ(n))`.
+    pub d: BigUint,
+    /// Prime factors `[p, q]` used for CRT-accelerated signing.
+    pub primes: Vec<BigUint>,
 }
 
+/// Public parameters for the RSA scheme.
+///
+/// RSA-2048 / PKCS#1 v1.5 has no per-instance public parameters beyond the key itself,
+/// so this struct is empty.  It exists to satisfy the [`SignatureScheme`] interface
+/// which requires a `Parameters` associated type.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Parameter {}
 
+/// A raw PKCS#1 v1.5 RSA-2048 signature (256 big-endian bytes).
+///
+/// Wraps the signature byte vector produced by the `rsa` crate.  The default value
+/// is 256 zero bytes, used as a dummy witness in empty circuit inputs.
 #[derive(Debug, Clone, CanonicalSerialize, CanonicalDeserialize)]
 pub struct Signature(pub Vec<u8>);
 
@@ -79,6 +107,11 @@ impl Default for Signature {
     }
 }
 
+/// RSA-2048 / PKCS#1 v1.5 signature scheme parameterised by limb layout and digest.
+///
+/// `BNP` controls how the 2048-bit modulus is split into field-element limbs (e.g. 32 limbs of
+/// 64 bits each).  `D` is the digest algorithm (typically `sha2::Sha256`).  Instantiate as
+/// `Rsa::<MyBNP, Sha256>` and call the trait methods via [`SignatureScheme`].
 pub struct Rsa<BNP: BigNatCircuitParams, D> {
     _params: PhantomData<(BNP, D)>,
 }

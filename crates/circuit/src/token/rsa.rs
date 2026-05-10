@@ -23,6 +23,9 @@ use gadget::{
     signature::rsa::constraints::{PublicKeyVar, SignatureVar, output_with_prefix},
 };
 
+/// Zero-state marker carrying the RSA-2048 PKCS#1 verification gadgets
+/// as associated functions. See [`RSA2048VerifyGadget::verify_opt`] for
+/// the canonical circuit path.
 pub struct RSA2048VerifyGadget;
 
 impl RSA2048VerifyGadget {

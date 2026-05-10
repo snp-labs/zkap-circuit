@@ -28,15 +28,26 @@ use crate::{
     matrix::constraints::VandermondeMatrixVar,
 };
 
+/// In-circuit representation of [`PoseidonAnchorPublicKey`]: holds the Poseidon
+/// parameter constants allocated into the constraint system.
 #[derive(Clone)]
 pub struct PoseidonAnchorPublicKeyVar<F: PrimeField + Absorb> {
+    /// Poseidon round constants and MDS matrix allocated as circuit constants.
     pub params: CRHParametersVar<F>,
 }
 
+/// In-circuit representation of [`PoseidonAnchorWitness`]: the three vectors
+/// `a`, `b`, and `h_known` allocated as `FpVar` witnesses.
 #[derive(Clone)]
 pub struct PoseidonAnchorWitnessVar<F: PrimeField + Absorb> {
+    /// Auxiliary vector `a` of length `m = n − k + 1`; encodes which linear
+    /// combination of the Vandermonde rows collapses to the anchor.
     pub a: Vec<FpVar<F>>,
+    /// Product `b = a · Matrix` of length `n`; non-zero only at the `k` selected
+    /// positions, enforced by `enforce_b_sparsity`.
     pub b: Vec<FpVar<F>>,
+    /// Poseidon hashes of the known secrets at each selected position (`H(i, secret[i])`);
+    /// zero at unselected positions.
     pub h_known: Vec<FpVar<F>>,
 }
 
@@ -44,8 +55,8 @@ impl<F> PoseidonAnchorWitnessVar<F>
 where
     F: PrimeField + Absorb,
 {
-    /// Verifies Sparsity Consistency between vector b and vector h_known.
-    /// For every index i, if b[i] == 0 then h_known[i] must also be 0.
+    /// Verifies Sparsity Consistency between vector `b` and vector `h_known`.
+    /// For every index `i`, if `b[i] == 0` then `h_known[i]` must also be 0.
     pub fn verify_sparsity_consistency(&self) -> Result<Boolean<F>, SynthesisError> {
         if self.b.len() != self.h_known.len() {
             return Err(SynthesisError::Unsatisfiable);
@@ -96,17 +107,46 @@ where
     }
 }
 
+/// In-circuit representation of [`PoseidonAnchor`]: the committed anchor vector
+/// of length `m = n − k + 1` allocated as `FpVar` public inputs.
 #[derive(Clone)]
 pub struct PoseidonAnchorVar<F: PrimeField + Absorb> {
+    /// The `m` field-element anchor values, typically allocated as public inputs
+    /// so the verifier can check them against the on-chain commitment.
     pub anchor: Vec<FpVar<F>>,
 }
 
+/// Concrete gadget implementing [`AnchorSchemeGadget`] for the Poseidon-based scheme.
+///
+/// Stateless — all methods are associated functions parameterised on `F`. The phantom
+/// field ensures the correct `PrimeField + Absorb` bound is carried at the type level.
 #[derive(Clone)]
 pub struct PoseidonAnchorSchemeGadget<F: PrimeField + Absorb> {
+    /// Phantom data binding the field type; no runtime storage.
     pub _phantom: PhantomData<F>,
 }
 
 impl<F: PrimeField + Absorb> PoseidonAnchorSchemeGadget<F> {
+    /// Computes the dot product `Σ v1[i] · v2[i]` as a single `FpVar` constraint.
+    ///
+    /// # Precondition
+    ///
+    /// `v1.len() == v2.len()`. The caller is responsible for enforcing this —
+    /// production callers (`circuit::zkap::ZkapCircuit::generate_constraints`
+    /// and the same-file [`PoseidonAnchorSchemeGadget::verify_binding`])
+    /// derive both slices from the same matrix dimensions before invocation.
+    ///
+    /// On precondition violation (length mismatch) the function returns
+    /// `Err(SynthesisError::Unsatisfiable)`. The `Unsatisfiable` variant is
+    /// reused here as a reporting channel because arkworks'
+    /// `ark_relations::r1cs::SynthesisError` is the foreign error type
+    /// returned by every constraint method in the gadget surface and does
+    /// not carry a `LengthMismatch` variant; replacing the return type with
+    /// a custom error would cascade through every R1CS-synthesising call
+    /// site in `circuit::zkap` (L1 lock — see
+    /// `00-cross-cutting-locks.md`). Callers should treat `Unsatisfiable`
+    /// from this function as a caller-side precondition bug, not as
+    /// evidence that the circuit witness violates a constraint.
     pub fn inner_product(v1: &[FpVar<F>], v2: &[FpVar<F>]) -> Result<FpVar<F>, SynthesisError> {
         if v1.len() != v2.len() {
             return Err(SynthesisError::Unsatisfiable);
@@ -174,13 +214,13 @@ impl<F: PrimeField + Absorb> PoseidonAnchorSchemeGadget<F> {
         Ok(is_all_valid)
     }
 
-    /// Enforces that b[j] == 0 for every j where selector[j] == 0.
+    /// Enforces that `b[j] == 0` for every `j` where `selector[j] == 0`.
     ///
-    /// Uses: (1 - selector[j]) * b[j] == 0, which is 1 constraint per element.
-    /// Cost: N constraints vs is_b_sparsity + enforce_true: ~8N+1 constraints.
+    /// Uses: `(1 - selector[j]) * b[j] == 0`, which is 1 constraint per element.
+    /// Cost: N constraints vs `is_b_sparsity` + `enforce_true`: ~8N+1 constraints.
     ///
-    /// Precondition: selector[j] ∈ {0,1} must be enforced separately (via enforce_boolean_selectors).
-    /// Soundness: selector[j]=0 → 1*b[j]=0 → b[j]=0. selector[j]=1 → 0*b[j]=0 → always holds.
+    /// Precondition: `selector[j] ∈ {0,1}` must be enforced separately (via `enforce_boolean_selectors`).
+    /// Soundness: `selector[j]=0 → 1*b[j]=0 → b[j]=0`. `selector[j]=1 → 0*b[j]=0` → always holds.
     pub fn enforce_b_sparsity(b: &[FpVar<F>], selector: &[FpVar<F>]) -> Result<(), SynthesisError> {
         if b.is_empty() || selector.is_empty() {
             return Err(SynthesisError::Unsatisfiable);
@@ -202,7 +242,7 @@ impl<F: PrimeField + Absorb> PoseidonAnchorSchemeGadget<F> {
     }
 }
 
-/// indices[j] ∈ {0,1}  (boolean)
+/// `indices[j] ∈ {0,1}`  (boolean)
 pub fn enforce_boolean_selectors<F: PrimeField>(
     indices: &[FpVar<F>],
 ) -> Result<(), SynthesisError> {
@@ -217,7 +257,7 @@ pub fn enforce_boolean_selectors<F: PrimeField>(
     Ok(())
 }
 
-/// Σ indices[j] == k  (cardinality)
+/// `Σ indices[j] == k`  (cardinality)
 pub fn enforce_selector_cardinality<F: PrimeField>(
     indices: &[FpVar<F>],
     k: &FpVar<F>,

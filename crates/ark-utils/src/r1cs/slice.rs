@@ -257,7 +257,7 @@ pub fn num_to_segments_be<F: PrimeField>(
 /// Groups the input array before slicing to improve efficiency.
 ///
 /// # Arguments
-/// * `data` - input byte array (each FpVar<F> is 1 byte)
+/// * `data` - input byte array (each `FpVar<F>` is 1 byte)
 /// * `index` - slice start index
 /// * `length` - slice length
 /// * `max_len` - maximum output length
@@ -393,7 +393,7 @@ pub fn slice_grouped<F: PrimeField>(
 /// that can be used as a drop-in replacement for the existing slice function.
 ///
 /// # Arguments
-/// * `data` - input byte array (each FpVar<F> is 1 byte)
+/// * `data` - input byte array (each `FpVar<F>` is 1 byte)
 /// * `index` - slice start index
 /// * `length` - slice length
 /// * `max_len` - maximum output length

@@ -8,6 +8,24 @@
 //! `zkap-service` rather than directly. Enable modules via `[features = "..."]`
 //! from your workspace member's `Cargo.toml`.
 
+// Crate-internal `missing_docs` warning, matching the pattern locked in
+// by Phase 6 H5-staged-1 (ark-utils), H5-staged-2 (circuit), and Phase 7
+// H5-staged-3 (zkap-service). CI's
+// `cargo clippy --workspace --all-targets -- -D warnings` promotes this
+// to a deny so a regression is caught at PR-time. The workspace-wide
+// `[workspace.lints.rust] missing_docs = "warn"` flip (H5-finalize)
+// becomes safe once every lib crate hits this gate at zero warnings —
+// gadget was the last one (213 sites at the start of Phase 8).
+#![warn(missing_docs)]
+// rustdoc lock floor — Phase 9 P9-gadget-rustdoc-audit. Mirrors the pattern
+// locked in by Phase 8 P8-arkutils-doc-link-audit (ark-utils crate root):
+// any new `///`/`//!` doc string with a broken intra-doc link or invalid HTML
+// tag fails the `Rustdoc (gadget)` CI job. The H5-staged-4 cycle (Phase 8
+// `c630dd78`) added 213 fresh doc strings without `cargo doc` validation;
+// this PR retroactively closes that gap (Phase 8 critic MINOR #3).
+#![deny(rustdoc::broken_intra_doc_links)]
+#![deny(rustdoc::invalid_html_tags)]
+
 extern crate alloc;
 
 // Always available

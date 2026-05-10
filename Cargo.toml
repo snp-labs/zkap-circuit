@@ -22,6 +22,17 @@ rust-version = "1.85"
 # `unsafe extern "C"` FFI binding for mobile mi_collect (allowlisted at
 # its module). New unsafe must be justified and locally allowed.
 unsafe_code = "deny"
+# Phase 8 H5-finalize: every lib crate (`ark-utils`, `circuit`,
+# `gadget`, `zkap-service`) hit zero `missing_docs` warnings as of
+# Phase 7 (H5-staged-1/2/3) and Phase 8 H5-staged-4. Promote the
+# workspace-wide warn so future PRs surface a regression at the same
+# CI gate (`cargo clippy --workspace --all-targets -- -D warnings`)
+# instead of accumulating silently. Per-crate `#![warn(missing_docs)]`
+# attributes (already in each lib crate's `lib.rs`) are now
+# redundant but harmless — they remain as a defence-in-depth so
+# `cargo build -p <crate>` still surfaces the warning even without
+# the workspace lint inheritance.
+missing_docs = "warn"
 # `missing_debug_implementations = "warn"` is intentionally not enabled
 # here: gadget's constraint-system variable types (e.g. `BigNatVar`,
 # `Base64DecoderGadget`) hit it broadly without a clean derive path, so

@@ -26,13 +26,19 @@ use crate::merkletree::{
     tree_config::{MerkleTreeParams, MerkleTreeParamsVar},
 };
 
+/// In-circuit representation of [`MerkleCircuitInput`]: the leaf, its index, and authentication
+/// path allocated as constraint-system variables.
 #[derive(Clone)]
 pub struct MerkleCircuitInputVar<F>
 where
     F: PrimeField + Absorb,
 {
+    /// The allocated leaf field element; constrained against the public leaf commitment
+    /// by `enforce_equal_leaf`.
     pub leaf: FpVar<F>,
+    /// Leaf index as a 16-bit unsigned integer variable; determines the path direction bits.
     pub leaf_idx: UInt16<F>,
+    /// The sibling-hash path from this leaf to the root; used by `enforce_membership`.
     pub path: PathVar<MerkleTreeParams<F>, F, MerkleTreeParamsVar<F>>,
 }
 
@@ -40,10 +46,19 @@ impl<F> MerkleCircuitInputVar<F>
 where
     F: PrimeField + Absorb,
 {
+    /// Enforces `self.leaf == other` as an R1CS equality constraint.
+    ///
+    /// Called to bind the witness leaf to the publicly committed leaf value before
+    /// calling `enforce_membership`.
     pub fn enforce_equal_leaf(&self, other: &FpVar<F>) -> Result<(), SynthesisError> {
         self.leaf.enforce_equal(other)
     }
 
+    /// Re-derives the Merkle root from `self.leaf`, `self.leaf_idx`, and `self.path` in-circuit,
+    /// then enforces equality with the public `root`.
+    ///
+    /// Sets the leaf position on `self.path` using `leaf_idx.to_bits_be()` before calling
+    /// `verify_membership`; the Boolean result is constrained to `TRUE`.
     pub fn enforce_membership(
         &mut self,
         hash_param: &CRHParametersVar<F>,

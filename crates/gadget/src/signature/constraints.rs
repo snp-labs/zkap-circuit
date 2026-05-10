@@ -13,13 +13,26 @@ use ark_relations::r1cs::SynthesisError;
 use crate::signature::SignatureScheme;
 
 /// R1CS gadget for signature verification inside ZKP circuits.
+///
+/// Mirrors [`crate::signature::SignatureScheme`] at the circuit level. Call [`verify`](Self::verify)
+/// inside a constraint system to obtain a `Boolean` that is `true` iff the PKCS#1 v1.5
+/// signature check passes; enforce it with `Boolean::enforce_equal(&Boolean::TRUE)`.
 pub trait SigVerifyGadget<S: SignatureScheme, ConstraintF: Field> {
+    /// In-circuit representation of the scheme's public parameters.
     type ParametersVar: AllocVar<S::Parameters, ConstraintF> + Clone;
 
+    /// In-circuit representation of the public key; must support byte serialisation
+    /// so that it can be hashed or compared inside other gadgets.
     type PublicKeyVar: ToBytesGadget<ConstraintF> + AllocVar<S::PublicKey, ConstraintF> + Clone;
 
+    /// In-circuit representation of the signature; must support byte serialisation
+    /// for the modular exponentiation step in RSA verification.
     type SignatureVar: ToBytesGadget<ConstraintF> + AllocVar<S::Signature, ConstraintF> + Clone;
 
+    /// Enforces that `signature` on `message` verifies under `public_key`.
+    ///
+    /// Returns a `Boolean` constraint (not a panic); callers must enforce it equal to
+    /// `Boolean::TRUE` to make the circuit unsatisfiable on an invalid signature.
     fn verify(
         parameters: &Self::ParametersVar,
         public_key: &Self::PublicKeyVar,

@@ -13,8 +13,13 @@ use zkap_evm_verifier::Solidity;
 /// - `b`: BN254 G2 affine point — `[bx_c1, bx_c0, by_c1, by_c0]` (4 strings)
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ProofComponents {
+    /// `[a.x, a.y]` — first G1 component of the Groth16 proof, in
+    /// hex strings matching the Solidity verifier's word ordering.
     pub a: [String; 2],
+    /// `[b.x.c1, b.x.c0, b.y.c1, b.y.c0]` — G2 component with each
+    /// Fp2 coordinate emitted in Solidity's reversed `(c1, c0)` order.
     pub b: [String; 4],
+    /// `[c.x, c.y]` — third G1 component of the Groth16 proof.
     pub c: [String; 2],
 }
 
@@ -58,20 +63,43 @@ impl ProofComponents {
 }
 
 /// Public inputs that are shared across all proofs in a batch.
+///
+/// Field names mirror the canonical 8-element instance vector emitted by
+/// [`ZkapProofResult::public_inputs_for`]; see that method for the exact
+/// index-to-name mapping the on-chain verifier consumes.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct SharedPublicInputs {
+    /// `H(anchor)` — Poseidon hash of the threshold anchor, instance index 0.
+    /// Pins the proof to a specific anchor without revealing it.
     pub hanchor: String,
+    /// `H(a)` — Poseidon hash of the per-batch `a` value, instance index 1.
+    /// Common to all proofs because `a` is fixed per batch.
     pub h_a: String,
+    /// Merkle root of the per-batch identity tree, instance index 2.
     pub root: String,
+    /// `H(sign_user_op)` — Poseidon hash of the user-operation signature
+    /// digest, instance index 3. Pins the proof to a specific tx without
+    /// exposing its contents.
     pub h_sign_user_op: String,
+    /// Pairing-equation LHS commitment, instance index 6. Decoupled from
+    /// the per-proof `verification_rhs` so a single LHS verifies the full
+    /// batch.
     pub lhs: String,
+    /// `H(aud_list)` — Poseidon hash of the audience allow-list, instance
+    /// index 7. Pins the proof to a specific aud-list shape without
+    /// disclosing the contents.
     pub h_aud_list: String,
 }
 
 /// Per-proof public inputs (one per credential in the batch).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PerProofPublicInputs {
+    /// JWT `exp` (expiry, seconds-since-epoch) bound to this proof,
+    /// instance index 4. Per-proof so each credential's expiry is checked
+    /// independently.
     pub jwt_exp: String,
+    /// Pairing-equation RHS commitment for this proof, instance index 5.
+    /// Per-proof counterpart to the batch-level [`SharedPublicInputs::lhs`].
     pub verification_rhs: String,
 }
 
@@ -81,8 +109,15 @@ pub struct PerProofPublicInputs {
 /// vector required for on-chain verification of the proof at a given index.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ZkapProofResult {
+    /// One Groth16 proof per JWT in the batch. Indexed in the same order
+    /// as [`Self::per_proof`].
     pub proofs: Vec<ProofComponents>,
+    /// Public inputs that are constant across the batch (anchor, root,
+    /// audience hash, etc.) — split out so they don't need to be repeated
+    /// per proof in transit.
     pub shared: SharedPublicInputs,
+    /// Per-proof public inputs (jwt_exp + RHS commitment). Length matches
+    /// [`Self::proofs`]; entry `i` pairs with `proofs[i]`.
     pub per_proof: Vec<PerProofPublicInputs>,
 }
 

@@ -11,10 +11,20 @@ use ark_relations::r1cs::SynthesisError;
 
 use crate::anchor::AnchorScheme;
 
+/// R1CS gadget trait that mirrors [`AnchorScheme`] at the constraint level.
+///
+/// Implementors enforce the two key equations in-circuit:
+/// `b = a · A` (`verify_b_consistency`) and `⟨a, anchor⟩ = ⟨b, h_known⟩`
+/// (`verify_binding`). The Poseidon instantiation is in
+/// [`crate::anchor::poseidon::constraints::PoseidonAnchorSchemeGadget`].
 pub trait AnchorSchemeGadget<A: AnchorScheme, ConstraintF: Field> {
+    /// In-circuit representation of the public key (Poseidon parameters).
     type PublicKeyVar: AllocVar<A::PublicKey, ConstraintF>;
+    /// In-circuit representation of the committed anchor vector (length m).
     type AnchorVar: AllocVar<A::Anchor, ConstraintF>;
+    /// In-circuit representation of the witness `(a, b, h_known)`.
     type WitnessVar: AllocVar<A::Witness, ConstraintF>;
+    /// In-circuit representation of the Vandermonde matrix.
     type MatrixVar: AllocVar<A::Matrix, ConstraintF>;
 
     /// Verify: b = a * A

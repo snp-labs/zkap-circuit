@@ -1,10 +1,13 @@
 //! SHA-256 native evaluation and circuit gadgets (`hashes-sha256` feature).
 //!
-//! [`SHA256`] implements [`crate::hashes::CRHScheme`] and [`crate::hashes::TwoToOneCRHScheme`]
-//! using the `sha2` crate. [`DigestVar`] (re-exported from [`digest`]) is the canonical
-//! R1CS type for a 32-byte SHA-256 output. The circuit gadget in [`constraints`] provides
-//! `digest_with_pad` (midstate-based, partial input) and `digest_full_with_pad_checked`
-//! (full padded input with explicit block index enforcement).
+//! [`SHA256`](crate::hashes::sha256::SHA256) implements [`crate::hashes::CRHScheme`]
+//! and [`crate::hashes::TwoToOneCRHScheme`] using the `sha2` crate.
+//! [`DigestVar`](crate::hashes::sha256::DigestVar) (re-exported from the
+//! [`digest`](crate::hashes::sha256::digest) submodule) is the canonical R1CS type
+//! for a 32-byte SHA-256 output. The circuit gadget in [`constraints`] provides
+//! `digest_with_pad` (midstate-based, partial input) and
+//! `digest_full_with_pad_checked` (full padded input with explicit block index
+//! enforcement).
 
 pub mod constraints;
 pub mod digest;
@@ -21,8 +24,11 @@ use crate::hashes::{CRHScheme, Parameter, TwoToOneCRHScheme, error::HashError};
 
 const STATE_LEN: usize = 8;
 
+/// SHA-256 working state: eight 32-bit words (the `a–h` registers).
 pub type State = [u32; STATE_LEN];
 
+/// SHA-256 round constants (first 32 bits of the fractional parts of the cube roots of
+/// the first 64 primes). Indexed by round number `i ∈ [0, 64)`.
 pub const K: [u32; 64] = [
     0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
     0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
@@ -34,10 +40,18 @@ pub const K: [u32; 64] = [
     0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
 ];
 
+/// SHA-256 initial hash value (first 32 bits of the fractional parts of the square roots
+/// of the first 8 primes). This is the `H0` constant used to seed each new hash computation.
 pub const H: State = [
     0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
 ];
 
+/// Native SHA-256 implementation parameterised over a field `F` and parameter set `P`.
+///
+/// Implements both [`crate::hashes::CRHScheme`] (single-input) and
+/// [`crate::hashes::TwoToOneCRHScheme`] (left || right concatenation) by delegating to
+/// the `sha2` crate. `F` and `P` are phantom — they exist only to satisfy the trait
+/// bounds required when embedding this type in generic Merkle tree configurations.
 pub struct SHA256<F: Field, P> {
     _field: PhantomData<F>,
     _params: PhantomData<P>,

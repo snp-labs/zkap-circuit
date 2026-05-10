@@ -3,9 +3,9 @@
 //! [`VandermondeMatrix`] supports construction (`new`), dimension queries, submatrix
 //! extraction (`create_submatrix`), vector multiplication (`multiply_vector`,
 //! `vector_multiply`), and the `calculate_vector_a` helper used in anchor generation.
-//! [`solve_linear_system`] solves `Ax = b` over a prime field via Gaussian elimination
-//! with partial pivoting. The R1CS gadget for in-circuit matrix-vector products is in
-//! [`constraints`].
+//! `solve_linear_system` (private helper) solves `Ax = b` over a prime field via
+//! Gaussian elimination with partial pivoting. The R1CS gadget for in-circuit
+//! matrix-vector products is in [`constraints`].
 
 pub mod constraints;
 pub mod error;
@@ -26,7 +26,12 @@ pub struct VandermondeMatrix<F: PrimeField> {
     /// m = n - k + 1 (number of rows)
     /// n = total number of secrets (number of columns)
     pub matrix: Vec<Vec<F>>,
+    /// Total number of secrets (column count). Mirrors the threshold
+    /// scheme's `n` parameter; held alongside `matrix` so callers can
+    /// query without re-deriving from `matrix[0].len()`.
     pub n: usize,
+    /// Reconstruction threshold (known-secret count). Mirrors the
+    /// threshold scheme's `k`; row count is `m = n - k + 1`.
     pub k: usize,
 }
 

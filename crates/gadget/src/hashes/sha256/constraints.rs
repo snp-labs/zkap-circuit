@@ -26,11 +26,22 @@ use ark_utils::{UInt32Ext, enforce_less_than, is_greater_or_equal, is_less_than,
 use super::digest::DigestVar;
 use crate::hashes::sha256::{H, K, utils::conditionally_select_vec};
 
+/// Streaming SHA-256 constraint system that mirrors the standard Merkle-Damgård compression loop.
+///
+/// Maintains in-circuit state across `update` calls; call `finalize` once to produce a
+/// [`DigestVar`]. For JWT use-cases prefer `digest_with_pad` (midstate seeded) or
+/// `digest_full_with_pad_checked` (full message with explicit block-count enforcement).
 #[derive(Clone)]
 pub struct SHA256Gadget<F: PrimeField> {
+    /// Current eight-word SHA-256 working state (`a–h` registers), initialised from `H`
+    /// or from a provided midstate.
     pub state: Vec<UInt32<F>>,
+    /// Number of full 64-byte blocks already fed into `update_state`; used to encode the
+    /// message bit-length in the finalization padding.
     pub completed_data_blocks: u64,
+    /// Partial input buffer for bytes that did not yet fill a complete 64-byte block.
     pub pending: Vec<UInt8<F>>,
+    /// Number of valid bytes currently in `pending`; invariant: `num_pending < 64`.
     pub num_pending: usize,
 }
 
@@ -184,6 +195,12 @@ impl<F: PrimeField> SHA256Gadget<F> {
         sha256_var.finalize()
     }
 
+    /// Processes a fully-padded message (64-byte aligned) and selects the hash output at
+    /// block index `nblocks` using a one-hot constraint.
+    ///
+    /// Called when the SHA-256 computation starts from a supplied midstate (`self.state`);
+    /// the caller must have already applied standard SHA-256 Merkle-Damgård padding.
+    /// `nblocks` must equal one of `0..len/64 - 1` — the one-hot constraint enforces this.
     // Input data must be padded according to the SHA256 standard.
     pub fn digest_with_pad(
         &mut self,
@@ -229,6 +246,14 @@ impl<F: PrimeField> SHA256Gadget<F> {
         Ok(DigestVar(bytes))
     }
 
+    /// Verifies all SHA-256 padding invariants in-circuit for the suffix portion of a JWT payload.
+    ///
+    /// Checks: (1) the encoded bit-length field matches `total_len_wo_pad_bytes * 8`;
+    /// (2) `pad_start_in_suffix` falls in a valid position within the selected final block;
+    /// (3) `total_len = prefix_blocks * 64 + pad_start_in_suffix`;
+    /// (4) padding bytes are `0x80` followed by zeros;
+    /// (5) all bytes after the final block are zero.
+    /// Called by `digest_with_pad_checked` and `digest_full_with_pad_checked` before hashing.
     pub fn enforce_sha2_pad_verifier(
         sha_pad_payload_b64: &[UInt8<F>],
         nblocks_idx: &FpVar<F>,
@@ -417,6 +442,11 @@ impl<F: PrimeField> SHA256Gadget<F> {
         Ok(())
     }
 
+    /// Verifies SHA-256 padding then hashes the suffix starting from the current midstate.
+    ///
+    /// Combines `enforce_sha2_pad_verifier` (padding soundness checks) with `digest_with_pad`
+    /// (actual compression). Used in Step 3 of the JWT circuit where the prefix blocks are
+    /// already consumed by a prior `update` call and only the suffix needs to be verified.
     pub fn digest_with_pad_checked(
         &mut self,
         data: &[UInt8<F>],

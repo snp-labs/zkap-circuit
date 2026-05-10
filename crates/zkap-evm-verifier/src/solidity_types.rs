@@ -11,7 +11,17 @@ use ark_ec::{
 };
 use ark_ff::{BigInteger, Fp, Fp2, Fp2Config, FpConfig, PrimeField};
 
+/// Converts an arkworks field or curve element to the
+/// `["0x...", ...]` hex-string vector form expected by the on-chain
+/// Groth16 verifier ABI. Implementors flatten in the byte order the
+/// Solidity verifier reads (e.g., `Fp2` emits `c1` before `c0` to
+/// match the Solidity convention; `G2Affine` concatenates `x` then
+/// `y`, each in `c1, c0` order).
 pub trait Solidity {
+    /// Returns the ABI-encoded field/curve element as a vector of
+    /// `0x`-prefixed hex strings. Length is type-specific: `Fp` → 1,
+    /// `Fp2` → 2, `G1Affine` → 2, `G2Affine` → 4. `Vec<T>` flattens
+    /// per-element.
     fn to_solidity(&self) -> Vec<String>;
 }
 

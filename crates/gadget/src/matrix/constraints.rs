@@ -13,8 +13,14 @@ use ark_r1cs_std::{
 
 use crate::matrix::VandermondeMatrix;
 
+/// In-circuit witness for a [`VandermondeMatrix`]. Allocated once per
+/// proof so the prover can enforce `b = a · A` without re-emitting the
+/// (constant) matrix entries on every multiplication.
 #[derive(Clone)]
 pub struct VandermondeMatrixVar<F: PrimeField> {
+    /// Field-element form of the matrix rows; outer `Vec` indexes rows
+    /// (length `m`), inner indexes columns (length `n`). Each entry is
+    /// a circuit variable, so allocation cost is `m * n` `FpVar`s.
     pub matrix: Vec<Vec<FpVar<F>>>,
 }
 

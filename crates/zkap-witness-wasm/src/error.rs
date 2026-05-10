@@ -7,6 +7,13 @@
 
 use ark_ar1cs_wasm_witness::WitnessAbiCode;
 
+/// Failure modes raised by the V1 ZKAP witness builder. Every variant
+/// converts to [`WitnessAbiCode::CircuitBuildError`] (status 7) at the
+/// wasm ABI boundary; the variant differentiation exists for native
+/// callers (host-side wasm runtime, integration tests) that need
+/// finer-grained diagnostics. See [`crate::input::to_zkap_input_v1`]
+/// and [`crate::main::build_main_circuit`] for the call sites that
+/// produce each variant.
 #[non_exhaustive]
 #[derive(Debug, thiserror::Error)]
 pub enum ZkapWitnessError {

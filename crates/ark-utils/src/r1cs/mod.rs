@@ -10,7 +10,7 @@
 //!   field-to-byte decomposition.
 //! - [`select`] — multi-mux, multiplexer-tree, and array-element selection
 //!   helpers.
-//! - [`slice`] — sliding-window slice extractors used by the JWT claim
+//! - [`mod@slice`] — sliding-window slice extractors used by the JWT claim
 //!   gadgets (`slice_efficient`, `slice_grouped`, `slice_from_start`).
 //! - [`uint32`] — [`uint32::UInt32Ext`] convenience trait.
 //!

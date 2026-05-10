@@ -1,7 +1,8 @@
 //! Canonical field-element codecs.
 //!
 //! Centralizes the byte-level encodings of `PrimeField` values used by
-//! the V1 wire format ([`super::wire`]) and by service-level DTOs:
+//! the V1 wire format (`crate::wire`, gated on the `wire` feature) and by
+//! service-level DTOs:
 //!
 //! - [`fe_to_be32`] / [`fe_from_be32_canonical`] — strict 32-byte
 //!   big-endian round-trip used by the V1 wire format.

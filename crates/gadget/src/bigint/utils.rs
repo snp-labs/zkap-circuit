@@ -12,18 +12,27 @@ use num_bigint::BigUint;
 use num_traits::One;
 use std::borrow::Borrow;
 
+/// Canonical alias for `BigUint` used throughout the bigint gadget.
+///
+/// Keeping the alias avoids scattering `BigUint` references; all arithmetic
+/// helpers in this module and `constraints.rs` use `BigNat` for consistency.
 pub type BigNat = BigUint;
 
-// Convert field element to BigNat
+/// Converts a prime-field element to a `BigNat` by reading its little-endian byte representation.
 pub fn fe_to_nat<F: PrimeField>(fe: &F) -> BigNat {
     BigUint::from_bytes_le(&fe.into_bigint().to_bytes_le())
 }
 
-// Convert BigNat to field element
+/// Converts a `BigNat` to a prime-field element via little-endian byte encoding with modular reduction.
 pub fn nat_to_fe<F: PrimeField>(nat: &BigNat) -> F {
     F::from_le_bytes_mod_order(&nat.to_bytes_le())
 }
 
+/// Decomposes `nat` into `limbs_num` little-endian chunks of `limb_width` bits each,
+/// returning them as field elements.
+///
+/// Higher limbs are zero if `nat` fits in fewer than `limbs_num * limb_width` bits.
+/// This is the canonical decomposition used when allocating RSA keys and signatures.
 pub fn nat_to_limbs<F: PrimeField>(nat: &BigNat, limb_width: usize, limbs_num: usize) -> Vec<F> {
     let mask = (BigNat::one() << limb_width) - BigNat::one();
     let mut nat = nat.clone();
@@ -37,6 +46,9 @@ pub fn nat_to_limbs<F: PrimeField>(nat: &BigNat, limb_width: usize, limbs_num: u
     limbs
 }
 
+/// Reconstructs a `BigNat` from little-endian `limb_width`-bit field-element limbs.
+///
+/// Inverse of [`nat_to_limbs`]; used in equality checks and carry verification.
 pub fn limbs_to_nat<F: PrimeField>(limbs: &[F], limb_width: usize) -> BigNat {
     limbs.iter().rev().fold(BigNat::ZERO, |mut acc, limb| {
         acc <<= limb_width as u32;
@@ -45,10 +57,19 @@ pub fn limbs_to_nat<F: PrimeField>(limbs: &[F], limb_width: usize) -> BigNat {
     })
 }
 
+/// Decomposes `n` into exactly as many `limb_width`-bit limbs as needed to hold all bits
+/// (`ceil(n.bits() / limb_width) + 1`), without padding to a fixed `N_LIMBS`.
+///
+/// Used where the number of limbs is variable (e.g. intermediate carry values).
 pub fn fit_nat_to_limbs<F: PrimeField>(n: &BigNat, limb_width: usize) -> Vec<F> {
     nat_to_limbs(n, limb_width, n.bits() as usize / limb_width + 1)
 }
 
+/// Returns the prime modulus of field `F` as a `BigNat`.
+///
+/// Reads `F::characteristic()` (a little-endian `u64` array), converts to bytes,
+/// and wraps in `BigUint`. Used in carry and range computations where the field
+/// modulus is needed as a plain integer (e.g. verifying that limb sums don't wrap).
 #[inline]
 pub fn field_characteristic_to_nat<F: PrimeField>() -> BigNat {
     // F::characteristic() is a little-endian array of u64 limbs.

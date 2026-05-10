@@ -26,8 +26,11 @@ use crate::types::CircuitConfig;
 /// Circuit constants (determined at setup time)
 #[derive(Clone, CanonicalSerialize, CanonicalDeserialize)]
 pub struct CircuitConstants<F: PrimeField> {
+    /// Vandermonde matrix used by the threshold partial-sum check.
     pub vandermonde_matrix: VandermondeMatrix<F>,
+    /// Poseidon hash configuration shared across in-circuit Poseidon calls.
     pub poseidon_param: PoseidonConfig<F>,
+    /// Base64 lookup table used by the JWT decode gadget.
     pub base64_table: Base64Table,
 }
 
@@ -38,21 +41,41 @@ pub struct CircuitConstants<F: PrimeField> {
 /// or [`CircuitPublicInputs::to_vec`].
 #[derive(Clone, CanonicalSerialize, CanonicalDeserialize)]
 pub struct CircuitPublicInputs<F: PrimeField> {
-    /// H(anchor)
+    /// Poseidon commitment to the threshold anchor — instance index 0.
+    /// Pins the proof to a specific anchor without revealing it on chain.
     pub hanchor: F,
-    /// H(a, random)
+    /// Poseidon commitment `H(a, random)` — instance index 1. Decouples the
+    /// per-batch `a` value from the on-chain log so the verifier can match
+    /// it against [`crate::token::Claim`]-derived material without seeing
+    /// `a` in clear.
     pub h_a: F,
-    /// Merkle root
+    /// Merkle root of the per-batch identity tree — instance index 2.
+    /// Pins the proof to a specific snapshot of the eligibility set.
     pub root: F,
-    /// H(sign_user_op)
+    /// Poseidon commitment `H(sign_user_op)` — instance index 3. Binds the
+    /// proof to a specific user-operation signature digest without
+    /// disclosing the digest pre-image on chain.
     pub h_sign_user_op: F,
-    /// JWT expiration time
+    /// JWT `exp` claim (seconds-since-epoch) — instance index 4. Lets the
+    /// on-chain verifier reject proofs whose underlying credential is past
+    /// expiry without re-parsing the JWT.
     pub jwt_exp: F,
-    /// partial_rhs at current_idx
+    /// Pairing-equation partial RHS at the current credential index —
+    /// instance index 5. Per-proof; pairs with [`Self::lhs`] to verify the
+    /// dot-product opening incrementally across the batch.
     pub partial_rhs: F,
-    /// <a, anchor> * random
+    /// Inner-product `<a, anchor> * random` — instance index 6. Per-proof
+    /// at this layer (every `CircuitPublicInputs` instance carries its own
+    /// `lhs` field), but identical across all proofs in a batch by
+    /// construction — `zkap-witness-wasm`'s `to_zkap_input_v1` populates
+    /// each proof's `lhs` from the same shared `random` and `<a, anchor>`,
+    /// so the on-chain verifier observes a single batch-shared value that
+    /// closes the dot-product against the union of per-proof
+    /// [`Self::partial_rhs`] values.
     pub lhs: F,
-    /// H(aud_list)
+    /// Poseidon commitment to the audience allow-list — instance index 7.
+    /// Pins the proof to a specific aud-list shape without disclosing the
+    /// individual audiences.
     pub h_aud_list: F,
 }
 
@@ -135,9 +158,10 @@ pub struct MiscWitness<F: PrimeField> {
 
 /// Complete input bundle for one ZKAP proof.
 ///
-/// Aggregates all sub-witnesses and public inputs required by [`ZkapCircuit`].  Build this
-/// struct via the `ProofContextBuilder` in `zkap-service`, then pass it to
-/// [`ZkapCircuit::from_input`].
+/// Aggregates all sub-witnesses and public inputs required by
+/// [`ZkapCircuit`](crate::zkap::ZkapCircuit).  Build this struct via the
+/// `ProofContextBuilder` in `zkap-service`, then pass it to
+/// [`ZkapCircuit::from_input`](crate::zkap::ZkapCircuit::from_input).
 #[derive(Clone)]
 pub struct ZkapCircuitInput<F: PrimeField + Absorb> {
     /// Circuit configuration (runtime parameters)

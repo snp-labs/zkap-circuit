@@ -5,6 +5,18 @@
 //! [`input`] (V1 semantic schema) and the build-time blake3 emit
 //! (`build.rs`); everything else is one trait impl plus the macro
 //! invocation.
+
+// Phase 8 H5-finalize: `[workspace.lints.rust] missing_docs = "warn"` is
+// active workspace-wide, but on `target_arch = "wasm32"` the
+// `ark_ar1cs_wasm_witness::export_witness_generator!` macro at the
+// bottom of this file emits two undocumented `extern "C" fn` items
+// (`witness_generate` / `witness_pair_check`) that the macro definition
+// (in an external crate) does not let us doc-annotate. Allow
+// `missing_docs` crate-wide on wasm32 only so the wasm artifact stays
+// emit-able without forking the macro. Host builds keep the warn — the
+// hand-written items in this crate (`ZkapWitnessGenerator`, helper
+// functions in `input.rs`, errors) are all documented.
+#![cfg_attr(target_arch = "wasm32", allow(missing_docs))]
 //!
 //! ## Curve and field
 //!

@@ -13,13 +13,22 @@ use ark_relations::r1cs::{Namespace, SynthesisError};
 
 use crate::token::ClaimIndices;
 
+/// In-circuit counterpart of [`crate::token::ClaimIndices`] — five
+/// `UInt16` allocations describing the location of one named JWT claim
+/// inside the decoded payload.
 #[derive(Clone)]
 pub struct ClaimIndicesVar<F: PrimeField> {
-    pub offset: UInt16<F>,    // Claim start position
-    pub claim_len: UInt16<F>, // Total claim length
-    pub colon_idx: UInt16<F>, // Position of ':' separator
-    pub value_idx: UInt16<F>, // Value start position
-    pub value_len: UInt16<F>, // Value length
+    /// Claim start position (offset of the opening `"` of the claim key).
+    pub offset: UInt16<F>,
+    /// Total claim length (key + colon + value, including surrounding quotes).
+    pub claim_len: UInt16<F>,
+    /// Position of the `:` separator between key and value, relative to
+    /// the start of the JWT payload.
+    pub colon_idx: UInt16<F>,
+    /// Value start position (offset of the first byte of the claim value).
+    pub value_idx: UInt16<F>,
+    /// Value length in bytes, excluding any surrounding quotes.
+    pub value_len: UInt16<F>,
 }
 
 impl<F> AllocVar<ClaimIndices, F> for ClaimIndicesVar<F>

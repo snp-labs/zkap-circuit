@@ -12,6 +12,10 @@ use ark_relations::r1cs::SynthesisError;
 
 use crate::hashes::sha256::{H, K};
 
+/// Selects element-wise between two `UInt32` vectors based on a Boolean condition.
+///
+/// `condition == true` returns the corresponding element from `a`; otherwise from `b`.
+/// Requires `a.len() == b.len()`; used in `digest_with_pad` to multiplex hash states.
 pub fn conditionally_select_vec<F: PrimeField>(
     condition: &Boolean<F>,
     a: &[UInt32<F>],
@@ -23,6 +27,12 @@ pub fn conditionally_select_vec<F: PrimeField>(
         .collect()
 }
 
+/// Applies standard SHA-256 Merkle-Damgård padding to `input`, encoding `max_len * 8` bits
+/// as the length field rather than `input.len() * 8`.
+///
+/// The distinction matters when `input` is shorter than the circuit's fixed slot length:
+/// the length field must encode the declared maximum, not the actual data bytes, to keep
+/// the hash consistent with the circuit's `enforce_sha2_pad_verifier` checks.
 pub fn sha256_pad_with_len(input: &[u8], max_len: usize) -> Vec<u8> {
     let block_size = 64; // Block size in bytes
     let mut padded = input.to_vec();
@@ -41,6 +51,9 @@ pub fn sha256_pad_with_len(input: &[u8], max_len: usize) -> Vec<u8> {
     padded
 }
 
+/// Zero-extends `buffer` to `max_len` bytes; if `buffer` is already `>= max_len` returns a clone.
+///
+/// Used by `to_units` to ensure the input slice fills a fixed circuit slot before chunking.
 pub fn stretch(buffer: &[u8], max_len: usize) -> Vec<u8> {
     if buffer.len() < max_len {
         let mut stretched = Vec::with_capacity(max_len);
@@ -52,10 +65,16 @@ pub fn stretch(buffer: &[u8], max_len: usize) -> Vec<u8> {
     }
 }
 
+/// Returns the number of 64-byte SHA-256 blocks required to hash a message of `len` bytes
+/// after standard Merkle-Damgård padding (`ceil((len + 1 + 8) / 64)`).
 pub fn sha256_block_len(len: usize) -> usize {
     // 1 is for 0x80, 8 is for the 64-bit length appended at the end
     ((len + 1 + 8) as f64 / 64.0).ceil() as usize
 }
+/// Packs a byte slice into field elements by stretching to `max_len`, then splitting into
+/// big-endian chunks of `num_bytes` bytes each and converting via `from_be_bytes_mod_order`.
+///
+/// Used when encoding SHA-256 inputs as field elements for circuit witness generation.
 pub fn to_units<F: PrimeField>(buffer: &[u8], max_len: usize, num_bytes: usize) -> Vec<F> {
     let stretched = stretch(buffer, max_len);
     stretched
@@ -64,6 +83,11 @@ pub fn to_units<F: PrimeField>(buffer: &[u8], max_len: usize, num_bytes: usize) 
         .collect()
 }
 
+/// Runs the SHA-256 compression loop from the `H` initial state over all 64-byte blocks in
+/// `data` and returns the resulting eight-word state.
+///
+/// `data.len()` must be a multiple of 64; panics otherwise. Used for native witness generation
+/// when constructing SHA-256 midstates for the prefix portion of a JWT payload.
 pub fn update(data: &[u8]) -> [u32; 8] {
     assert!(data.len().is_multiple_of(64));
     let state = H;
@@ -71,6 +95,11 @@ pub fn update(data: &[u8]) -> [u32; 8] {
     data.chunks_exact(64).fold(state, update_with_state)
 }
 
+/// Applies one SHA-256 Merkle-Damgård compression round on exactly 64 bytes of `data`,
+/// seeded from `state`, and returns the updated eight-word state.
+///
+/// Panics if `data.len() != 64`. Used by `update` (initial state) and
+/// `finalize_with_state` (midstate continuations) for native witness generation.
 pub fn update_with_state(state: [u32; 8], data: &[u8]) -> [u32; 8] {
     assert!(data.len() == 64);
 
@@ -138,6 +167,11 @@ pub fn update_with_state(state: [u32; 8], data: &[u8]) -> [u32; 8] {
     new_state
 }
 
+/// Applies SHA-256 padding to `data` (using `len` as the declared message length) and
+/// processes the resulting padded block against the supplied `state` midstate.
+///
+/// Used when the prefix blocks were already hashed into `state` and only the final
+/// padded block needs to be processed for native witness generation.
 pub fn finalize_with_state(state: [u32; 8], data: &[u8], len: usize) -> [u32; 8] {
     let padded_input = sha256_pad_with_len(data, len);
 

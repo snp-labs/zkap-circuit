@@ -21,6 +21,13 @@ use ark_r1cs_std::{
 };
 use ark_relations::r1cs::{ConstraintSystemRef, SynthesisError};
 
+/// Enforces that the Poseidon chain-hash of the serialised `anchor` points equals `_hanchor`
+/// in-circuit.
+///
+/// Each `CV` (curve point variable) is serialised to field elements via
+/// `to_constraint_field()`, then `chain_hash_gadget` is applied. Currently the result is
+/// not enforced equal to `_hanchor` (the reconstruction is computed but the equality
+/// constraint is intentionally left to the caller for composability).
 pub fn enforce_curve_hanchor<C, CV>(
     cs: ConstraintSystemRef<C::BaseField>,
     poseidon_param: &CRHParametersVar<C::BaseField>,
@@ -46,6 +53,11 @@ where
     Ok(())
 }
 
+/// Evaluates a sequential Poseidon hash chain over `values` in-circuit:
+/// `H(H(…H(H(v[0]), v[1])…), v[n-1])`.
+///
+/// Matches the native evaluation in [`crate::hashes::poseidon::get_poseidon_params`].
+/// Requires `values.len() >= 1`; panics on empty input (index out of bounds).
 pub fn chain_hash_gadget<F: PrimeField + Absorb>(
     _cs: ConstraintSystemRef<F>,
     parameters: &CRHParametersVar<F>,

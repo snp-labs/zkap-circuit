@@ -29,7 +29,7 @@ compile_error!("`runtime-wasmtime` is not yet implemented; use `runtime-wasmi` i
 #[cfg(all(feature = "proof", not(feature = "runtime-wasmi")))]
 compile_error!("`proof` feature requires a runtime backend; enable `runtime-wasmi`");
 
-pub(crate) mod anchor;
+pub(crate) mod anchor_host;
 pub(crate) mod dto;
 pub mod error;
 pub(crate) mod hash;
@@ -44,7 +44,7 @@ pub mod jwt;
 pub mod proof;
 
 use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;
-use circuit::constants::F;
+use circuit::types::F;
 use std::sync::OnceLock;
 
 // Field-codec re-export — single source of truth lives in
@@ -67,22 +67,21 @@ pub fn load_circuit_config(
     let content = std::fs::read_to_string(path).map_err(|e| {
         error::ApplicationError::InvalidFormat(format!("Failed to read config: {}", e))
     })?;
-    let config: circuit::constants::CircuitConfig =
-        serde_json::from_str(&content).map_err(|e| {
-            error::ApplicationError::InvalidFormat(format!("Failed to parse config: {}", e))
-        })?;
+    let config: circuit::types::CircuitConfig = serde_json::from_str(&content).map_err(|e| {
+        error::ApplicationError::InvalidFormat(format!("Failed to parse config: {}", e))
+    })?;
     config
         .validate()
         .map_err(|e| error::ApplicationError::InvalidFormat(e.to_string()))?;
     Ok(config)
 }
 
-pub use circuit::constants;
+pub use circuit::types;
 
 // Public API (always available)
-pub use anchor::poseidon::generate_anchor;
-pub use anchor::types::Secret;
-pub use circuit::constants::CircuitConfig;
+pub use anchor_host::poseidon::generate_anchor;
+pub use anchor_host::types::Secret;
+pub use circuit::types::CircuitConfig;
 pub use dto::AudHashResult;
 pub use hash::{generate_aud_hash, generate_hash, generate_leaf_hash};
 

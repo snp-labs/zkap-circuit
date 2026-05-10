@@ -1,4 +1,4 @@
-//! Circuit input schema — plain host-side data structures that feed `ZkapCircuit`.
+//! Circuit witness schema — plain host-side data structures that feed `ZkapCircuit`.
 //!
 //! All types here are pure data (no R1CS variables).  They carry the witnesses and public inputs
 //! that [`crate::zkap::ZkapCircuit`] consumes during constraint synthesis.  Build a
@@ -20,8 +20,8 @@ use gadget::{
     signature::rsa::{PublicKey, Signature},
 };
 
-use crate::constants::CircuitConfig;
 use crate::token::ClaimIndices;
+use crate::types::CircuitConfig;
 
 /// Circuit constants (determined at setup time)
 #[derive(Clone, CanonicalSerialize, CanonicalDeserialize)]

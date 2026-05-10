@@ -5,7 +5,7 @@ use ark_crypto_primitives::{
 use ark_ff::PrimeField;
 use ark_utils::pad;
 use ark_utils::try_str_to_fields;
-use circuit::constants::{CircuitConfig, F, PoseidonHash};
+use circuit::types::{CircuitConfig, F, PoseidonHash};
 
 use super::AnchorConfig;
 use crate::{Secret, error::ApplicationError};

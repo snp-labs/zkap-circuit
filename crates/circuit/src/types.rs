@@ -1,7 +1,7 @@
-//! Protocol type aliases and constants for the ZKAP circuit.
+//! Protocol type aliases for the ZKAP circuit.
 //!
-//! Despite the module name, this file is primarily a collection of type aliases
-//! that wire up the concrete curve/field/hash choices used throughout the crate:
+//! This module collects the concrete curve/field/hash choices used throughout
+//! the crate as a single set of type aliases:
 //!
 //! | Alias          | Concrete type                              |
 //! |----------------|--------------------------------------------|

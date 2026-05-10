@@ -23,11 +23,12 @@ use ark_groth16::{Groth16, PreparedVerifyingKey, ProvingKey, VerifyingKey, prepa
 use ark_relations::r1cs::{
     ConstraintSynthesizer, ConstraintSystem, OptimizationGoal, SynthesisMode,
 };
-use ark_utils::wire::ZkapInputV1;
-use circuit::constants::{BN254, BNP, CG, CircuitConfig, F};
+use circuit::types::{BN254, BNP, CG, CircuitConfig, F};
 use circuit::zkap::ZkapCircuit;
 use rand::rngs::OsRng;
 use std::path::Path;
+
+use ark_utils::wire::ZkapInputV1;
 
 use crate::dto::{ProofComponents, ZkapProofResult};
 use crate::error::ApplicationError;

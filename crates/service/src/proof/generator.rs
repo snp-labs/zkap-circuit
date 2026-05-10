@@ -20,7 +20,7 @@ use ark_ar1cs_wtns::ArwtnsFile;
 use ark_ar1cs_zkey::ArzkeyFile;
 use ark_groth16::Proof;
 use ark_utils::wire::ZkapInputV1;
-use circuit::constants::{BN254, F};
+use circuit::types::{BN254, F};
 use rand::rngs::OsRng;
 
 use crate::error::ApplicationError;

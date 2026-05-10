@@ -54,15 +54,16 @@ use ark_relations::r1cs::ConstraintSynthesizer;
 use ark_serialize::*;
 use std::marker::PhantomData;
 
-use crate::constants::CircuitConfig;
 use crate::token::jwt_field::{jwt_exp_to_field, jwt_nonce_hex_to_field};
+use crate::types::CircuitConfig;
 use crate::{
-    ExposesPublicInputs, input,
+    ExposesPublicInputs,
     token::{
         ClaimIndices,
         claimverifier::claim_extractor_v2,
         constraints::{ClaimIndicesVar, RSA2048VerifyGadget},
     },
+    witness,
 };
 use ark_utils::{
     comparison::enforce_less_than, packing::pack_decompose_bytes_unchecked, single_multiplexer,
@@ -124,19 +125,19 @@ where
     /// Circuit configuration (runtime parameters)
     pub params: CircuitConfig,
     /// Circuit constants (determined at setup time)
-    pub constants: input::CircuitConstants<C::BaseField>,
+    pub constants: witness::CircuitConstants<C::BaseField>,
     /// Public inputs (exposed to the verifier)
-    pub public_inputs: input::CircuitPublicInputs<C::BaseField>,
+    pub public_inputs: witness::CircuitPublicInputs<C::BaseField>,
     /// JWT-related witness
-    pub jwt: input::JwtWitness,
+    pub jwt: witness::JwtWitness,
     /// Anchor/Threshold witness
-    pub anchor: input::AnchorWitness<C::BaseField>,
+    pub anchor: witness::AnchorWitness<C::BaseField>,
     /// Merkle tree witness
-    pub merkle: input::MerkleWitness<C::BaseField>,
+    pub merkle: witness::MerkleWitness<C::BaseField>,
     /// Audience witness
-    pub audience: input::AudienceWitness<C::BaseField>,
+    pub audience: witness::AudienceWitness<C::BaseField>,
     /// Miscellaneous witness
-    pub misc: input::MiscWitness<C::BaseField>,
+    pub misc: witness::MiscWitness<C::BaseField>,
     /// Phantom data for type parameters
     _phantom: PhantomData<BNP>,
 }
@@ -502,12 +503,12 @@ where
         let k = params.k as usize;
         Self {
             params: params.clone(),
-            constants: input::CircuitConstants {
+            constants: witness::CircuitConstants {
                 vandermonde_matrix: VandermondeMatrix::new(n, k),
                 poseidon_param: get_poseidon_params(),
                 base64_table: get_base64_table(),
             },
-            public_inputs: input::CircuitPublicInputs {
+            public_inputs: witness::CircuitPublicInputs {
                 hanchor: C::BaseField::default(),
                 h_a: C::BaseField::default(),
                 root: C::BaseField::default(),
@@ -517,7 +518,7 @@ where
                 lhs: C::BaseField::default(),
                 h_aud_list: C::BaseField::default(),
             },
-            jwt: input::JwtWitness {
+            jwt: witness::JwtWitness {
                 nblocks: 0,
                 claim_indices: vec![ClaimIndices::default(); params.claims.len()],
                 pay_offset_b64: 0,
@@ -529,20 +530,20 @@ where
                 total_len: 0,
                 pad_start_byte_idx: 0,
             },
-            anchor: input::AnchorWitness {
+            anchor: witness::AnchorWitness {
                 anchor: PoseidonAnchor::empty(n - k + 1),
                 a: vec![C::BaseField::default(); n - k + 1],
                 selector: vec![0; n],
                 current_idx: 0,
             },
-            merkle: input::MerkleWitness {
+            merkle: witness::MerkleWitness {
                 path: Path::empty(params.tree_height as usize),
                 leaf_idx: 0,
             },
-            audience: input::AudienceWitness {
+            audience: witness::AudienceWitness {
                 aud_list: vec![C::BaseField::default(); params.num_audience_limit as usize],
             },
-            misc: input::MiscWitness {
+            misc: witness::MiscWitness {
                 random: C::BaseField::default(),
             },
             _phantom: PhantomData,
@@ -550,7 +551,7 @@ where
     }
 
     /// Create circuit from structured input (recommended)
-    pub fn from_input(input: input::ZkapCircuitInput<C::BaseField>) -> Self {
+    pub fn from_input(input: witness::ZkapCircuitInput<C::BaseField>) -> Self {
         Self {
             params: input.params,
             constants: input.constants,

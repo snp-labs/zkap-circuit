@@ -3,7 +3,7 @@
 use ark_bn254::{Fq, Fq2, G1Affine, G2Affine};
 use ark_groth16::Proof;
 use ark_utils::hex_decimal_to_field;
-use circuit::constants::{BN254, F};
+use circuit::types::{BN254, F};
 
 use crate::evm::solidity_types::Solidity;
 

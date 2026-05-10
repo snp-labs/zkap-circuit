@@ -1,6 +1,6 @@
 //! `generate_hash` — Poseidon hash utilities for audience lists and Merkle leaves.
 //!
-//! Reads a [`circuit::constants::CircuitConfig`] from a JSON file and provides
+//! Reads a [`circuit::types::CircuitConfig`] from a JSON file and provides
 //! two subcommands:
 //!
 //! - `aud` — compute the Poseidon hash of one or more audience strings and
@@ -101,7 +101,7 @@ fn main() {
     }
 }
 
-fn generate_aud_hash(args: &AudArgs, params: &circuit::constants::CircuitConfig) {
+fn generate_aud_hash(args: &AudArgs, params: &circuit::types::CircuitConfig) {
     let aud_vec: Vec<String> = args
         .values
         .split(',')
@@ -123,7 +123,7 @@ fn generate_aud_hash(args: &AudArgs, params: &circuit::constants::CircuitConfig)
     println!("Successfully generated aud hashes to {}", &args.out);
 }
 
-fn generate_pk_leaf(args: &LeafArgs, params: &circuit::constants::CircuitConfig) {
+fn generate_pk_leaf(args: &LeafArgs, params: &circuit::types::CircuitConfig) {
     let iss_list: Vec<&str> = args.iss.split(',').map(|s| s.trim()).collect();
     let pk_list: Vec<&str> = args.pk.split(',').map(|s| s.trim()).collect();
 

@@ -8,7 +8,7 @@
 //!
 //! ## Curve and field
 //!
-//! `WitnessGenerator::Field = circuit::constants::F` (BN254 Fr — `ark_bn254::Fr`).
+//! `WitnessGenerator::Field = circuit::types::F` (BN254 Fr — `ark_bn254::Fr`).
 //! `WitnessGenerator::CurveId = Bn254`. The wasm artifact is locked to BN254;
 //! re-targeting to a different curve requires a new crate (or a feature gate).
 //!
@@ -57,10 +57,10 @@ include!(concat!(env!("OUT_DIR"), "/embedded.rs"));
 
 use ark_ar1cs_format::CurveId;
 use ark_ar1cs_wasm_witness::WitnessGenerator;
-use circuit::constants::F;
+use circuit::types::F;
 
 // Cross-ref: this order MUST match `CircuitPublicInputs` field declaration order
-// in `circuit::input` and the `instance` vector produced by
+// in `circuit::witness` and the `instance` vector produced by
 // `ZkapCircuit::generate_constraints` / `ConstraintSynthesizer`. Any reorder
 // of `CircuitPublicInputs` fields or the synthesizer's `enforce_*` call sequence
 // is a silent host-side instance-vector bug — bump `CIRCUIT_ID` and update

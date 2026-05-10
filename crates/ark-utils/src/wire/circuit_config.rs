@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 /// Single source-of-truth circuit-shape configuration shared by:
 /// - the V1 wire payload ([`super::ZkapInputV1::circuit_config`]),
 /// - the circuit-side parameter struct (re-exported from
-///   `circuit::constants::CircuitConfig`),
+///   `circuit::types::CircuitConfig`),
 /// - host-side proof-request assembly (`zkap-service`).
 ///
 /// String-typed fields (`claims`, `forbidden_string`) are kept as

@@ -1,6 +1,6 @@
 //! `generate_crs` — Groth16 CRS generation tool.
 //!
-//! Reads a [`circuit::constants::CircuitConfig`] from a JSON file, runs the
+//! Reads a [`circuit::types::CircuitConfig`] from a JSON file, runs the
 //! Groth16 trusted setup via [`zkap_service::setup`], and writes the proving
 //! key, verifying key, and Solidity verifier to the requested output directory.
 //!

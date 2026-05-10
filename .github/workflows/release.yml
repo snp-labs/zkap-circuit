@@ -92,18 +92,38 @@ jobs:
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
 
-      - name: Generate CRS keys
-        # `integration-tests` is the Phase 5 / C13 rename of the former
-        # `zkap-circuit` marker feature on the `circuit` crate.
-        # The `--config` and `--output` flags match `generate_crs`'s clap
-        # argspec (Phase 6 critic M1: bare positional `output/keys` was
-        # parsed as the implicit `--config` value and tripped a
-        # "missing --output" error at tag-cut). `example.json` carries
-        # `n=6, k=3, tree_height=4` (the same shape the L1 byte-gate uses)
-        # — the PR-side `generate-crs-smoke` job in `ci.yml` runs the same
-        # invocation, so a regression in either workflow surfaces in the
-        # other.
-        run: cargo run --release --features circuit/integration-tests --bin generate_crs -- --config example.json --output output/keys
+      # Phase 9 follow-up: replace generate_crs (legacy 6-file output) with
+      # generate_setup (V1 7-file output incl. paired wasm). The wasm artifact
+      # is required for the prove path; without it, the release tarball is
+      # incomplete and consumers must build wasm separately (and end up with
+      # a dummy-arzkey-paired wasm that aborts at runtime).
+      - name: Add wasm32 target
+        run: rustup target add wasm32-unknown-unknown
+
+      - name: Install binaryen (wasm-opt)
+        # ubuntu-latest does not ship binaryen by default. apt cache is
+        # refreshed by the GitHub-hosted runner ~24h; package fetch is ~10s.
+        run: sudo apt-get update && sudo apt-get install -y binaryen
+
+      - name: Generate CRS + wasm bundle
+        run: cargo run --release --features circuit/integration-tests
+          --bin generate_setup --
+          --config example.json --output output/keys
+
+      - name: Verify pair contract
+        # arzkey bytes 16..48 == wasm.embedded_ar1cs_blake3 (generate_setup
+        # already prints the same hex to stdout, but we re-verify here for
+        # release-path evidence).
+        run: |
+          set -euo pipefail
+          ARZKEY_HEX=$(xxd -s 16 -l 32 -p output/keys/circuit.arzkey | tr -d '\n')
+          test "${#ARZKEY_HEX}" -eq 64 || { echo "ERROR: arzkey blake3 length"; exit 1; }
+          if ! LC_ALL=C grep -aFq "$(printf %s "${ARZKEY_HEX}" | xxd -r -p)" \
+               output/keys/zkap_witness_wasm.opt.wasm; then
+            echo "ERROR: wasm does not contain the arzkey ar1cs_blake3 bytes"
+            exit 1
+          fi
+          echo "pair contract verified (ar1cs_blake3=${ARZKEY_HEX})"
 
       - name: CRS artifact size cap
         # Phase 8 / P8-release-yml-symmetry (mirrors `ci.yml`

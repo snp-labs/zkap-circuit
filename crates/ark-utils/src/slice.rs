@@ -360,8 +360,8 @@ pub fn slice_grouped<F: PrimeField>(
         out_final.extend(bytes);
     }
 
-    // Verify: (outLen - 1) + (numsPerGroup - 1) <= X - 1
-    assert!((max_len - 1) + (nums_per_group - 1) <= x - 1);
+    // Verify: (outLen - 1) + (numsPerGroup - 1) < X
+    assert!((max_len - 1) + (nums_per_group - 1) < x);
 
     // --- Generate rotation options (MultiMux role) ---
     // outOptions[i][j] = outFinal[i + j]

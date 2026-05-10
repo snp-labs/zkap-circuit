@@ -165,19 +165,15 @@ more headroom.
 The `dist/` directory ships two layouts at the moment; consumers
 should pick the layout that matches the API they are using:
 
-- **V1 layout** (current prove path):
+- **V1 layout** (current prove path, **shipped via GitHub Release tarball as of v0.NEXT**):
+  - `circuit.arzkey`, `pk.key`, `vk.key`, `pvk.key`,
+    `Groth16Verifier.sol`, `config.json`, `zkap_witness_wasm.opt.wasm`
   - `dist/1-of-1/` — single-signer (N=1, K=1)
   - `dist/3-of-3/` — three-of-three (N=3, K=3)
-  - Files: `circuit.arzkey` (proving key + ARCS/R1CS identity envelope,
-    `RawProofRequest::pk_path` points at this), `circuit.wasm`
-    (the ZKAP-specific witness-generator artifact paired with
-    `circuit.arzkey` via `ar1cs_blake3`), `config.json`.
-- **Legacy layout** (V0 prove path, kept for the on-chain Solidity
-  verifier consumers):
+- **Legacy layout** (pre-v0.NEXT releases): `pk.arzkey`, `pk.key`, `vk.key`,
+  `pvk.key`, `Groth16Verifier.sol`, `config.json` (no wasm).
   - `dist/1of1/` — single-signer (N=1, K=1)
   - `dist/3of3/` — three-of-three (N=3, K=3)
-  - Files: `pk.key` (uncompressed `ProvingKey<E>`, **not** consumed by
-    the V1 `prove`), `Groth16Verifier.sol`, `config.json`.
 
 Custom configurations can be generated via `setup()` or the
 `generate_crs` CLI binary; both write a paired

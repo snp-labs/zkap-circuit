@@ -1,0 +1,71 @@
+[package]
+name = "zkap-witness-wasm"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "Wasm witness-generator artifact for the ZKAP main circuit (zkap-witness-wasm thin layer over ark-ar1cs-wasm-witness)"
+repository = "https://github.com/snp-labs/zkap-circuit"
+keywords = ["zk", "groth16", "wasm", "arkworks"]
+categories = ["cryptography", "wasm"]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# Generic ConstraintSynthesizer-to-.arwtns layer + wasm export macro.
+ark-ar1cs-wasm-witness = { path = "../../../ark-ar1cs/crates/ark-ar1cs-wasm-witness" }
+ark-ar1cs-format       = { path = "../../../ark-ar1cs/crates/ark-ar1cs-format" }
+
+circuit = { workspace = true }
+# V1 wasm-side conversion needs `build_anchor_witness`, `IndexBits`,
+# `get_poseidon_params`, `get_base64_table`, `MerkleTreeParams`,
+# `VandermondeMatrix`, `PublicKey`, `Signature`. `circuit` already links
+# `gadget`, so naming it directly only adds the use-site, not new bytes.
+gadget = { workspace = true, default-features = false, features = ["crypto", "base64", "rsa"] }
+
+ark-ff                = { workspace = true }
+ark-serialize         = { workspace = true }
+ark-crypto-primitives = { workspace = true, features = ["crh", "merkle_tree"] }
+
+serde     = { workspace = true }
+thiserror = { workspace = true }
+# postcard is also a transitive of ark-ar1cs-wasm-witness; naming it
+# directly here keeps `into_circuit_input` and unit tests on a single
+# consistent version.
+postcard  = { version = "1", default-features = false, features = ["alloc"] }
+
+# wasm32 target needs getrandom's `js` feature so dependencies that pull
+# `getrandom` (rand_core, etc.) compile against the browser/Node bindings
+# instead of failing on the unknown-os target.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
+
+[dev-dependencies]
+ark-ar1cs-wtns   = { path = "../../../ark-ar1cs/crates/ark-ar1cs-wtns" }
+ark-ar1cs-zkey   = { path = "../../../ark-ar1cs/crates/ark-ar1cs-zkey" }
+ark-ar1cs-prover = { path = "../../../ark-ar1cs/crates/ark-ar1cs-prover" }
+ark-ar1cs-format = { path = "../../../ark-ar1cs/crates/ark-ar1cs-format" }
+postcard         = { version = "1", default-features = false, features = ["alloc"] }
+
+# wasmtime: minimal feature set (cranelift JIT + runtime; no CLI/wat).
+wasmtime = { version = "44", default-features = false, features = ["cranelift", "runtime"] }
+
+# Arkworks deps used by the integration test fixture (groth16 setup,
+# circuit synthesis, RSA-signed JWT generation).
+ark-bn254             = { workspace = true }
+ark-ec                = { workspace = true }
+ark-ff                = { workspace = true, features = ["std"] }
+ark-relations         = { workspace = true }
+ark-groth16           = { workspace = true }
+ark-crypto-primitives = { workspace = true, features = ["crh", "merkle_tree", "r1cs"] }
+ark-std               = { workspace = true }
+ark-utils             = { workspace = true, features = ["field-serde"] }
+gadget                = { workspace = true, features = ["full"] }
+ark-serialize         = { workspace = true }
+
+rsa    = { workspace = true }
+sha2   = { workspace = true }
+hex    = { workspace = true }
+base64 = { workspace = true }
+regex  = { workspace = true }
+rand   = { workspace = true }

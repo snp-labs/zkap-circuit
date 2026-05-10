@@ -98,9 +98,7 @@ fn main() {
         .canonicalize()
         .unwrap_or_else(|e| die(format!("canonicalize arzkey '{}': {e}", arzkey.display())));
 
-    println!(
-        "[2/5] cargo build -p zkap-witness-wasm --target wasm32-unknown-unknown --release"
-    );
+    println!("[2/5] cargo build -p zkap-witness-wasm --target wasm32-unknown-unknown --release");
     let workspace_root = locate_workspace_root();
     let status = Command::new(env!("CARGO"))
         .args([
@@ -207,11 +205,8 @@ fn run_wasm_opt(input: &Path, output: &Path) {
         Ok(s) => die(format!("wasm-opt exited {:?}", s.code())),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             eprintln!("WARN: wasm-opt not on PATH; copying raw wasm without -Oz.");
-            eprintln!(
-                "      Install binaryen for production builds (`brew install binaryen`)."
-            );
-            std::fs::copy(input, output)
-                .unwrap_or_else(|e| die(format!("copy raw wasm: {e}")));
+            eprintln!("      Install binaryen for production builds (`brew install binaryen`).");
+            std::fs::copy(input, output).unwrap_or_else(|e| die(format!("copy raw wasm: {e}")));
         }
         Err(e) => die(format!("wasm-opt spawn: {e}")),
     }

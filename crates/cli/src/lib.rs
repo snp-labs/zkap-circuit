@@ -111,8 +111,8 @@ pub fn verify_wasm_exports(path: &Path, required: &[&str]) -> Result<(), String>
         .map_err(|e| format!("Failed to read wasm '{}': {}", path.display(), e))?;
     let mut found: HashSet<&str> = HashSet::new();
     for payload in wasmparser::Parser::new(0).parse_all(&bytes) {
-        let payload =
-            payload.map_err(|e| format!("wasmparser parse error in '{}': {}", path.display(), e))?;
+        let payload = payload
+            .map_err(|e| format!("wasmparser parse error in '{}': {}", path.display(), e))?;
         if let wasmparser::Payload::ExportSection(reader) = payload {
             for export in reader {
                 let export = export.map_err(|e| {

@@ -69,23 +69,28 @@ jobs:
     # n,k-regression that explodes pk.arzkey would do the most damage
     # (release runner exhaustion, partial artifact upload), so the
     # guards belong here at least as much as on the PR-side smoke.
-    # - `concurrency:` cancels superseded runs of this job for the
-    #   same ref so a re-tagged release (or a `workflow_dispatch`
-    #   re-trigger) doesn't queue ~22s × ~1 GiB-on-disk runs that
-    #   the next push would invalidate anyway.
-    # - `timeout-minutes:` matches `ci.yml`'s 10-minute ceiling so a
-    #   hung `cargo run` cannot consume a full 6-hour runner slot.
-    # - The size cap on `output/keys` is the same 2 GiB ceiling
-    #   `ci.yml` enforces (Phase 6 measurement at the committed
-    #   shape was ~977 MiB, leaving a 2× safety margin) — a
-    #   parameter blow-up surfaces here before the artifact upload
-    #   step partially consumes runner disk.
-    name: Generate Proving Keys
+    # - `concurrency:` is keyed by (ref, shape) so a re-tagged release
+    #   (or a `workflow_dispatch` re-trigger) cancels superseded runs
+    #   per shape without the two matrix legs cancelling each other.
+    # - `timeout-minutes:` is 30 to absorb the larger `tree_height=15`
+    #   release shapes; PR-side smoke stays at the tighter 10-minute
+    #   ceiling because it runs the smaller smoke shape only.
+    # - The size cap on `output/keys` is a 2 GiB ceiling per shape.
+    #   The committed release shapes (1-of-1 and 3-of-3) are well
+    #   under this; the cap is a tripwire for a parameter regression
+    #   blowing pk.arzkey past the runner disk budget.
+    name: Generate Proving Keys (${{ matrix.shape }})
     needs: test
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shape:
+          - 1-of-1
+          - 3-of-3
     concurrency:
-      group: generate-keys-${{ github.ref }}
+      group: generate-keys-${{ github.ref }}-${{ matrix.shape }}
       cancel-in-progress: true
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -108,7 +113,7 @@ jobs:
       - name: Generate CRS + wasm bundle
         run: cargo run --release --features circuit/integration-tests
           --bin generate_setup --
-          --config example.json --output output/keys
+          --config configs/release/${{ matrix.shape }}.json --output output/keys
 
       - name: Verify pair contract
         # arzkey bytes 16..48 == wasm.embedded_ar1cs_blake3 (generate_setup
@@ -126,17 +131,14 @@ jobs:
           echo "pair contract verified (ar1cs_blake3=${ARZKEY_HEX})"
 
       - name: CRS artifact size cap
-        # Phase 8 / P8-release-yml-symmetry (mirrors `ci.yml`
-        # `generate-crs-smoke` size cap). 2 GiB (2 097 152 KiB) is a
-        # 2× safety margin over the Phase 6 measurement (~977 MiB)
-        # at the committed `n=6,k=3,tree_height=4` shape. Catches a
-        # parameter blow-up here, before the upload-artifact step
-        # silently truncates or the runner runs out of disk.
+        # 2 GiB (2 097 152 KiB) per-shape ceiling. Catches a parameter
+        # blow-up here, before the upload-artifact step partially consumes
+        # runner disk. Mirrors the guard `ci.yml` enforces on smoke output.
         run: |
           set -euo pipefail
           USED_KIB=$(du -sk output/keys | awk '{print $1}')
           LIMIT_KIB=2097152  # 2 GiB
-          echo "output/keys total: ${USED_KIB} KiB / limit ${LIMIT_KIB} KiB"
+          echo "output/keys total (${{ matrix.shape }}): ${USED_KIB} KiB / limit ${LIMIT_KIB} KiB"
           if [ "$USED_KIB" -gt "$LIMIT_KIB" ]; then
             echo "ERROR: output/keys exceeds 2 GiB cap (${USED_KIB} KiB > ${LIMIT_KIB} KiB)"
             exit 1
@@ -145,7 +147,7 @@ jobs:
       - name: Upload keys
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: proving-keys
+          name: proving-keys-${{ matrix.shape }}
           path: output/keys/
           if-no-files-found: error
 
@@ -163,6 +165,29 @@ jobs:
         with:
           path: artifacts/
 
+      - name: Package shape bundles
+        # Each matrix leg uploaded its `output/keys/` as
+        # `proving-keys-<shape>`, so download-artifact placed them at
+        # `artifacts/proving-keys-<shape>/`. Repack each into a single
+        # `zkap-circuit-<shape>-v<version>.tar.gz` whose top-level
+        # directory matches the archive stem — consumers get a
+        # self-describing folder on extract.
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.validate.outputs.version }}"
+          mkdir -p release-assets
+          for shape in 1-of-1 3-of-3; do
+            SRC="artifacts/proving-keys-${shape}"
+            STEM="zkap-circuit-${shape}-v${VERSION}"
+            test -d "${SRC}" || { echo "ERROR: missing ${SRC}"; exit 1; }
+            mkdir -p "staging/${STEM}"
+            cp -r "${SRC}/." "staging/${STEM}/"
+            tar -czf "release-assets/${STEM}.tar.gz" -C staging "${STEM}"
+            sha256sum "release-assets/${STEM}.tar.gz" \
+              > "release-assets/${STEM}.tar.gz.sha256"
+          done
+          ls -la release-assets/
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2
         with:
@@ -171,4 +196,5 @@ jobs:
           draft: true
           generate_release_notes: true
           files: |
-            artifacts/**/*
+            release-assets/*.tar.gz
+            release-assets/*.tar.gz.sha256

@@ -11,6 +11,11 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  # Bump this token to invalidate Swatinem/rust-cache when stale entries cause
+  # phantom dep-graph errors (e.g. "ark-serialize multiple instances" from a
+  # cache built before a git+rev pin update). Local clean builds pass; bumping
+  # here forces a fresh cache key on the next CI run.
+  CACHE_BUST: "v2"
 
 jobs:
   check:

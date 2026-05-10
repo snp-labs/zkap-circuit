@@ -64,10 +64,9 @@ fn test_jwt_nonce_hex_to_field_256bit() {
     let input = format!("\"0x{}\"", hex_str);
     let mut input_bytes = input.as_bytes().to_vec();
 
-    let expected = F::from_str(
-        "6540000879776827511546239914827296250681122647808546265151524760879082451660",
-    )
-    .unwrap();
+    let expected =
+        F::from_str("6540000879776827511546239914827296250681122647808546265151524760879082451660")
+            .unwrap();
 
     let last_quote_idx = input_bytes.len() - 1;
     input_bytes.resize(200, b'0');
@@ -124,10 +123,9 @@ fn test_jwt_nonce_hex_with_padding() {
     let input = format!("\"0x{}\"", hex_str);
     let mut input_bytes = input.as_bytes().to_vec();
 
-    let expected = F::from_str(
-        "6540000879776827511546239914827296250681122647808546265151524760879082451660",
-    )
-    .unwrap();
+    let expected =
+        F::from_str("6540000879776827511546239914827296250681122647808546265151524760879082451660")
+            .unwrap();
 
     let last_quote_idx = input_bytes.len() - 1; // closing quote position
     input_bytes.resize(200, b'0');

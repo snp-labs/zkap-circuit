@@ -43,9 +43,9 @@ pub mod error;
 
 // Always-available re-exports (codec)
 pub use codec::field::{NonCanonicalFieldError, fe_from_be32_canonical, fe_to_be32, field_to_hex};
-pub use codec::string::{ConvertError, TextError, pad, str_to_limbs, try_str_to_fields};
 #[cfg(feature = "field-serde")]
 pub use codec::string::hex_decimal_to_field;
+pub use codec::string::{ConvertError, TextError, pad, str_to_limbs, try_str_to_fields};
 
 // Field-serde re-exports (selective to avoid ambiguity with
 // codec::string::hex_decimal_to_field).

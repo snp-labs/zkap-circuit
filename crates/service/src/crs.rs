@@ -15,11 +15,11 @@
 use std::io::Cursor;
 use std::path::Path;
 
-use zkap_evm_verifier::SolidityContractGenerator;
 use ark_ar1cs_format::ArcsFile;
 use ark_ar1cs_zkey::ArzkeyFile;
 use ark_serialize::CanonicalSerialize;
 use circuit::types::{CircuitConfig, F};
+use zkap_evm_verifier::SolidityContractGenerator;
 
 use crate::error::ApplicationError;
 use crate::proof::SetupOutput;

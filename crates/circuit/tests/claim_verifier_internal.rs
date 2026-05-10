@@ -11,9 +11,7 @@
 
 use ark_bn254::Fr as F;
 use ark_ff::PrimeField;
-use ark_r1cs_std::{
-    R1CSVar, alloc::AllocVar, eq::EqGadget, fields::fp::FpVar, uint16::UInt16,
-};
+use ark_r1cs_std::{R1CSVar, alloc::AllocVar, eq::EqGadget, fields::fp::FpVar, uint16::UInt16};
 use ark_relations::r1cs::ConstraintSystem;
 use ark_utils::{slice_efficient, slice_from_start};
 

@@ -216,7 +216,9 @@ pub fn build_main_circuit(input: ZkapInputV1) -> Result<ZkapMainCircuit, ZkapWit
 /// Map an [`ark_utils::codec::field::NonCanonicalFieldError`] into the
 /// local error variant, prefixing with the field name so failures stay
 /// actionable when a host sends a `>= p` encoding.
-fn nc_field<S: Into<String>>(field: S) -> impl FnOnce(ark_utils::codec::field::NonCanonicalFieldError) -> ZkapWitnessError {
+fn nc_field<S: Into<String>>(
+    field: S,
+) -> impl FnOnce(ark_utils::codec::field::NonCanonicalFieldError) -> ZkapWitnessError {
     let field = field.into();
     move |e| ZkapWitnessError::NonCanonicalField(format!("{}: {}", field, e))
 }

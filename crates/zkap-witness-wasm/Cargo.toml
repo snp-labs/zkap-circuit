@@ -13,6 +13,10 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 # Generic ConstraintSynthesizer-to-.arwtns layer + wasm export macro.
+# Path-based; workspace-wide path is configured in
+# `<workspace root>/Cargo.toml` under `[workspace.dependencies]` so a
+# single edit re-points all `ark-ar1cs-*` deps if the sibling repo
+# moves. See repo README for the expected sibling-directory layout.
 ark-ar1cs-wasm-witness = { workspace = true }
 ark-ar1cs-format       = { workspace = true }
 
@@ -46,6 +50,8 @@ postcard  = { version = "1", default-features = false, features = ["alloc"] }
 getrandom = { version = "0.2", features = ["js"] }
 
 [dev-dependencies]
+# Path-based via `[workspace.dependencies]`; see the matching note on the
+# top-level `[dependencies]` block.
 ark-ar1cs-wtns   = { workspace = true }
 ark-ar1cs-zkey   = { workspace = true }
 ark-ar1cs-prover = { workspace = true }
@@ -78,3 +84,6 @@ hex    = { workspace = true }
 base64 = { workspace = true }
 regex  = { workspace = true }
 rand   = { workspace = true }
+
+[lints]
+workspace = true

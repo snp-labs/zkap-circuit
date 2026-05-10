@@ -98,3 +98,6 @@ print-trace = ["circuit/print-trace"]
 # Example temporarily disabled — see comment above the [features] block.
 # [[example]]
 # name = "groth16_proof"
+
+[lints]
+workspace = true

@@ -13,6 +13,12 @@
 //! check, one per proof). This is intentional — per-proof allocator reset
 //! prevents fragmentation buildup across JWTs, and is preferred over reuse.
 
+// FFI binding for the host-supplied `mi_collect` (mimalloc) on
+// Android/iOS. The workspace-wide `unsafe_code = "deny"` lint is allowed
+// for this single file because the binding and its call site are the
+// only intentional unsafe in this crate.
+#![allow(unsafe_code)]
+
 use std::io::Cursor;
 use std::path::PathBuf;
 

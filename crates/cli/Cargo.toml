@@ -25,3 +25,6 @@ path = "src/bin/generate_crs.rs"
 [[bin]]
 name = "generate_hash"
 path = "src/bin/generate_hash.rs"
+
+[lints]
+workspace = true

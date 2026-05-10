@@ -173,6 +173,23 @@ canonical layout is a planned follow-up.
 
 **Requirements**: Rust 1.85+ (stable, required for the 2024 edition)
 
+### Sibling repository layout
+
+The wasm witness pipeline (`zkap-witness-wasm` and the `service`/wasm
+runtime path) depends on `ark-ar1cs-*` crates that live in the
+[`ark-ar1cs`](https://github.com/snp-labs/ark-ar1cs) repository as
+path dependencies. Clone both repos as siblings:
+
+```
+<parent>/
+├── ark-ar1cs/        # https://github.com/snp-labs/ark-ar1cs
+└── zkap-circuit/     # this repo
+```
+
+The `ark-ar1cs-*` paths are declared once in this repo's
+[`Cargo.toml`](Cargo.toml) under `[workspace.dependencies]`, and each
+member crate references them via `{ workspace = true }`.
+
 ```bash
 git clone https://github.com/snp-labs/zkap-circuit.git
 cd zkap-circuit

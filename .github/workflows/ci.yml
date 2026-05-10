@@ -173,6 +173,129 @@ jobs:
           print(f"Size gate OK")
           EOF
 
+  generate-crs-smoke:
+    # PR-trigger smoke for the `generate_crs` binary that the
+    # `release.yml` `generate-keys` job runs only on tag push. Phase 6 /
+    # WM1 (Phase 5 critic): without this, breakage in the
+    # `cli::generate_crs → zkap_service::setup → circuit::ZkapCircuit`
+    # chain (CLI argspec, feature gating, arzkey/Solidity emitters)
+    # only surfaces at release time. Running here against the committed
+    # `example.json` (n=6, k=3, tree_height=4 — same shape the L1 byte
+    # gate uses) catches the regression class on every PR.
+    #
+    # The `circuit/integration-tests` feature on `cargo run` mirrors the
+    # release-job invocation form (Phase 5 / C13). The feature itself is
+    # a marker that gates `crates/circuit/tests/groth16_integration.rs`,
+    # not runtime code, so it has no effect on the bin's output — but
+    # keeping the form aligned means a regression in either workflow
+    # surfaces in the other.
+    #
+    # Phase 7 / P7-ci-concurrency (Phase 6 critic M2 + WM (a)(b)):
+    # - `concurrency:` cancels in-progress runs of this job for the
+    #   same ref so rapid pushes don't queue ~22s × ~1 GiB-on-disk
+    #   smoke runs that the next push would invalidate anyway.
+    # - `timeout-minutes:` gives the job a hard ceiling so a hung
+    #   `cargo run` (e.g. arzkey writer stalls, ar1cs panics in a
+    #   way that doesn't drop the process) cannot consume a full
+    #   6-hour runner slot.
+    # - The size cap on `/tmp/ci-crs` is a defence-in-depth check
+    #   against an `n,k` regression that explodes pk.arzkey: the
+    #   Phase 6 measurement at the committed shape was ~1 GiB, so
+    #   2 GiB is a 2× safety margin that still catches a
+    #   parameter-blow-up well before the runner runs out of disk.
+    name: generate_crs (PR smoke)
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: generate-crs-smoke-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+      - name: Run generate_crs against example.json
+        run: |
+          mkdir -p /tmp/ci-crs
+          cargo run --release --features circuit/integration-tests --bin generate_crs -- \
+            --config example.json \
+            --output /tmp/ci-crs
+      - name: Verify CRS artifacts shape
+        run: |
+          set -euo pipefail
+          for f in pk.arzkey pk.key pvk.key vk.key Groth16Verifier.sol config.json; do
+            test -s "/tmp/ci-crs/$f" || { echo "ERROR: missing or empty /tmp/ci-crs/$f"; exit 1; }
+          done
+          echo "All expected CRS artifacts present:"
+          ls -la /tmp/ci-crs/
+          # Sanity-check that the Solidity verifier names match the
+          # zkap-evm-verifier smoke contract (the codegen library and the
+          # bin must agree on the `Groth16Verifier` library name).
+          grep -q "library Groth16Verifier {" /tmp/ci-crs/Groth16Verifier.sol
+      - name: CRS artifact size cap
+        # Phase 7 / P7-ci-concurrency (WM (b)): defence-in-depth
+        # against an `n,k` regression that explodes pk.arzkey. The
+        # Phase 6 measurement at the committed shape was ~1 GiB, so
+        # 2 GiB (2 097 152 KiB) is a 2× safety margin that still
+        # catches a parameter-blow-up well before the runner runs
+        # out of disk.
+        run: |
+          set -euo pipefail
+          USED_KIB=$(du -sk /tmp/ci-crs | awk '{print $1}')
+          LIMIT_KIB=2097152  # 2 GiB
+          echo "/tmp/ci-crs total: ${USED_KIB} KiB / limit ${LIMIT_KIB} KiB"
+          if [ "$USED_KIB" -gt "$LIMIT_KIB" ]; then
+            echo "ERROR: /tmp/ci-crs exceeds 2 GiB cap (${USED_KIB} KiB > ${LIMIT_KIB} KiB)"
+            exit 1
+          fi
+
+  rustdoc:
+    # Phase 8 / P8-arkutils-doc-link-audit (Phase 7 critic MINOR #3) seeded
+    # this gate on `ark-utils`. Phase 9 / P9-gadget-rustdoc-audit (Phase 8
+    # critic MINOR #3) extends it to `gadget`, whose H5-staged-4 sweep
+    # (Phase 8 `c630dd78`) added 213 fresh doc strings without `cargo doc`
+    # validation. Both crates carry
+    # `#![deny(rustdoc::broken_intra_doc_links)]` and
+    # `#![deny(rustdoc::invalid_html_tags)]`, so any unresolved
+    # `[`foo`]` link or stray `Foo<T>` (interpreted as HTML) fails
+    # the doc build. Multiple feature configs are exercised because a
+    # link that resolves under one feature set can break under the
+    # other (e.g. `field-serde`-gated re-exports in `ark-utils`,
+    # `rsa`/`base64`-gated submodules in `gadget`). The default build
+    # is the canonical one; the `--features full`/`--all-features`
+    # build also documents the gated items.
+    name: Rustdoc
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+      - name: Rustdoc (ark-utils, default features)
+        run: cargo doc -p ark-utils --no-deps
+      - name: Rustdoc (ark-utils, all features)
+        run: cargo doc -p ark-utils --no-deps --all-features
+      - name: Rustdoc (gadget, default features)
+        run: cargo doc -p gadget --no-deps
+      # Phase 9 / P9-gadget-rustdoc-matrix-extension (Phase 9 critic
+      # MINOR #1): without partial-feature coverage, a `[`foo`]` link
+      # gated by feature A that resolves to an item gated by feature B
+      # would silently break under `--features A` alone (default + full
+      # both pass: default has no docs, full has both gates open). The
+      # combinations below mirror the `feature-matrix` job (lines 98-103)
+      # so partial-feature broken links surface at PR time.
+      - name: Rustdoc (gadget, hashes-poseidon)
+        run: cargo doc -p gadget --no-deps --features hashes-poseidon
+      - name: Rustdoc (gadget, anchor)
+        run: cargo doc -p gadget --no-deps --features anchor
+      - name: Rustdoc (gadget, rsa)
+        run: cargo doc -p gadget --no-deps --features rsa
+      - name: Rustdoc (gadget, crypto bundle)
+        run: cargo doc -p gadget --no-deps --features crypto
+      - name: Rustdoc (gadget, full feature)
+        run: cargo doc -p gadget --no-deps --features full
+      - name: Rustdoc (circuit)
+        run: cargo doc -p circuit --no-deps
+
   audit:
     name: Security Audit
     runs-on: ubuntu-latest

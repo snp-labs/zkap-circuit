@@ -18,8 +18,13 @@ use crate::base64::{
     decoder::{Base64CharBits, IndexBits},
 };
 
+/// In-circuit representation of the URL-safe Base64 alphabet as 64 `FpVar` constants.
+///
+/// Allocated once as circuit constants so the `select_array_element_be` mux can
+/// select the expected ASCII value for any 6-bit index without per-character allocation.
 #[derive(Clone, Debug)]
 pub struct Base64TableVar<F: PrimeField> {
+    /// The 64 field-element constants corresponding to the ASCII values in [`Base64Table::table`].
     pub table: Vec<FpVar<F>>,
 }
 
@@ -46,13 +51,24 @@ where
 /// Circuit variable representation of Base64CharBits. Must have exactly 6 bits.
 #[derive(Clone)]
 pub struct Base64CharBitsVar<F: PrimeField> {
+    /// The 6 constraint-system `Boolean` variables in MSB-first order (index 0 = bit 5).
     pub bits: Vec<Boolean<F>>,
 }
 
+/// In-circuit vector of per-character 6-bit decompositions for a full padded Base64 input.
+///
+/// Each element covers one Base64 character; the outer slice length equals the padded
+/// input length (a multiple of 4). Allocated as witnesses during proof generation from
+/// [`IndexBits`].
 pub struct IndexBitsVar<F: PrimeField> {
+    /// One [`Base64CharBitsVar`] per input character (including NULL padding positions).
     pub inner: Vec<Base64CharBitsVar<F>>,
 }
 
+/// Stateless gadget struct for URL-safe Base64 decoding.
+///
+/// All methods are associated functions. The phantom field binds `F`; no runtime data
+/// is stored. See [`Base64DecoderGadget::decode`] for the main entry point.
 pub struct Base64DecoderGadget<F: PrimeField> {
     _phantom: std::marker::PhantomData<F>,
 }

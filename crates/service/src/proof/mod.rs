@@ -47,10 +47,18 @@ pub struct SetupOutput {
 }
 
 impl SetupOutput {
+    /// Returns the prepared verifying-key handle that [`verify`] consumes.
+    /// Cloning is cheap (the underlying `PreparedVerifyingKey` is `Arc`-free
+    /// but small and fully owned).
     pub fn verifying_context(&self) -> VerifyingContext {
         VerifyingContext(self.pvk.clone())
     }
 
+    /// Returns `gamma_abc_g1.len()` — i.e., the number of public inputs
+    /// plus one for the constant term, matching the on-chain verifier's
+    /// indexing into `gamma_abc_g1`. This is *not* the textbook
+    /// `n_public_inputs` (which would be `gamma_abc_g1.len() - 1`); callers
+    /// who want that count should subtract 1.
     pub fn public_input_count(&self) -> usize {
         self.pvk.vk.gamma_abc_g1.len()
     }

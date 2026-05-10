@@ -31,8 +31,14 @@ impl Base64CharBits {
     }
 }
 
+/// Per-character 6-bit decompositions for a padded Base64 URL-safe input.
+///
+/// Each entry in `inner` corresponds to one Base64 character position (including
+/// NULL-pad positions). Used as witness input when allocating
+/// [`IndexBitsVar`](crate::base64::constraints::IndexBitsVar) in-circuit.
 #[derive(Debug, Clone, CanonicalSerialize, CanonicalDeserialize)]
 pub struct IndexBits {
+    /// One [`Base64CharBits`] per input character in MSB-first order.
     pub inner: Vec<Base64CharBits>,
 }
 
@@ -96,6 +102,11 @@ pub fn decode_any_base64(input: &str) -> Result<Vec<u8>, Base64Error> {
         .map_err(Base64Error::from)
 }
 
+/// Decodes a Base64 string (any variant) and interprets the result as UTF-8.
+///
+/// Wraps [`decode_any_base64`] and converts the raw bytes to a `String`.
+/// Returns [`Base64Error::InvalidUtf8`] if the payload is valid Base64 but
+/// not valid UTF-8.
 pub fn decode_any_base64_to_string(input: &str) -> Result<String, Base64Error> {
     let decoded_bytes = decode_any_base64(input)?;
     String::from_utf8(decoded_bytes).map_err(Base64Error::from)

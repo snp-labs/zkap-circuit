@@ -3,12 +3,13 @@
 //! # Module groups
 //!
 //! - [`codec`] — field-element / byte-string / affine-point conversions
-//!   ([`hex_decimal_to_field`], [`try_str_to_fields`], [`fe_to_be32`],
-//!   [`field_to_hex`], …; affine helpers under `field-serde`).
+//!   ([`try_str_to_fields`], [`fe_to_be32`], [`field_to_hex`], …; with
+//!   `field-serde`: also `hex_decimal_to_field` and the affine-point
+//!   helpers in `codec::affine`).
 //! - [`r1cs`] — R1CS gadgets (`comparison`, `packing`, `select`, `slice`,
 //!   `uint32`) — all gated behind the `r1cs` feature.
-//! - [`wire`] — V1 wire-format types ([`wire::ZkapInputV1`],
-//!   [`wire::CircuitConfig`]); gated behind the `wire` feature.
+//! - [`wire`] — V1 wire-format types (`wire::ZkapInputV1`,
+//!   `wire::CircuitConfig`); gated behind the `wire` feature.
 //! - [`io`] — uncompressed key-file loader; gated behind the `io` feature.
 //! - [`error`] — re-exports of the per-module error types for callers that
 //!   prefer a single import root (`ark_utils::error::ConvertError`, etc.).
@@ -17,6 +18,24 @@
 //!
 //! Error types are accessible via `ark_utils::error::*` or directly from the
 //! crate root (`ark_utils::ConvertError`, `ark_utils::FieldParseError`, etc.).
+
+// Crate-internal `missing_docs` warning, not a `#[deny]`. Phase 6 / H5
+// staged path: clears the ark-utils baseline (41 warnings at HEAD =
+// dde7792a, plan v2 §6) and locks in the floor without depending on a
+// workspace-wide `[lints.rust] missing_docs = "warn"` (which would block
+// on ≥314 cross-crate warnings — see `00-workspace-hygiene.md` §H5
+// baseline). The workspace-wide flip happens once every other crate
+// hits zero warnings at this gate.
+#![warn(missing_docs)]
+// Phase 8 / P8-arkutils-doc-link-audit (Phase 7 critic MINOR #3):
+// rustdoc lints elevated to deny so a broken intra-doc link or
+// stray angle-bracketed type (`Foo<T>` interpreted as HTML) fails
+// the canonical `cargo doc -p ark-utils --no-deps` build instead
+// of accumulating silently. Only the canonical (default-features)
+// build is gated; `--no-default-features` rustdoc is not on a CI
+// gate today and may surface conditional-feature link warnings.
+#![deny(rustdoc::broken_intra_doc_links)]
+#![deny(rustdoc::invalid_html_tags)]
 
 extern crate alloc;
 

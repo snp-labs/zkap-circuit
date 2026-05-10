@@ -497,6 +497,13 @@ where
     C::BaseField: PrimeField + Absorb,
     BNP: BigNatCircuitParams + Send + Sync,
 {
+    /// Build a fully-formed [`ZkapCircuit`] whose witness slots are
+    /// filled with default zero values for every field. The resulting
+    /// circuit produces the same R1CS matrices as a real proving
+    /// circuit (variable count, constraint count, A/B/C structure are
+    /// all witness-independent), so it is the standard input for the
+    /// Groth16 trusted-setup phase. Real proving paths must overwrite
+    /// every field before calling `prove`.
     pub fn generate_mock_circuit(params: &CircuitConfig) -> Self {
         let n = params.n as usize;
         let k = params.k as usize;

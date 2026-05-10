@@ -30,22 +30,45 @@ use crate::bigint::utils::{
 
 use super::utils::{BigNat, nat_to_limbs};
 
+/// Compile-time constants fixing the limb representation for a multi-limb big integer.
+///
+/// For RSA-2048 over BN254, the canonical choice is `LIMB_WIDTH = 64` and
+/// `N_LIMBS = 32` (giving 2048 bits total). Different instantiations can use wider
+/// limbs to reduce constraint count at the cost of larger field elements.
 pub trait BigNatCircuitParams: Clone + Debug + Eq + PartialEq + Send + Sync {
+    /// Width of each limb in bits; must satisfy `LIMB_WIDTH < |F|` so each limb
+    /// fits in a single field element without overflow.
     const LIMB_WIDTH: usize;
+    /// Number of limbs; total bit width = `LIMB_WIDTH * N_LIMBS`.
     const N_LIMBS: usize;
 }
 
+/// Controls whether limb-range checks are applied during modular exponentiation.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum RangeMode {
+    /// Enforce that each limb fits in `LIMB_WIDTH` bits before operating.
     Checked,
+    /// Skip input range-checks; used in the fast-path for RSA-2048 signature
+    /// verification where callers have already guaranteed canonical form at allocation.
     Unchecked,
 }
 
+/// In-circuit multi-limb big integer over a prime field.
+///
+/// Represents a large natural number as `N_LIMBS` field elements, each holding a
+/// `LIMB_WIDTH`-bit chunk (little-endian). Provides `mul`, `pow_mod`, and equality
+/// operations that reduce to R1CS constraints. The `value` and `word_size` fields
+/// carry native `BigNat` copies for off-circuit witness computation.
 #[derive(Clone, Default)]
 pub struct BigNatVar<ConstraintF: PrimeField, P: BigNatCircuitParams> {
+    /// The `N_LIMBS` field-element variables holding each limb; `limbs[0]` is the least-significant.
     pub limbs: Vec<FpVar<ConstraintF>>, // Must be of length P::N_LIMBS
+    /// Native `BigNat` value matching the limb decomposition; used for off-circuit witness computation.
     pub value: BigNat,
+    /// Maximum value a single limb may hold (typically `2^LIMB_WIDTH − 1`); used in
+    /// range-check and carry propagation logic.
     pub word_size: BigNat,
+    /// Phantom data binding the circuit parameter set.
     pub _params: PhantomData<P>,
 }
 
@@ -601,6 +624,12 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
         self.pow_mod_mode(exp, modulus, num_exp_bits, RangeMode::Unchecked)
     }
 
+    /// Internal dispatch for modular exponentiation with configurable range-check behaviour.
+    ///
+    /// `Checked` mode enforces that all limbs fit in `LIMB_WIDTH` bits before operating;
+    /// `Unchecked` mode skips those checks for callers that have already guaranteed
+    /// canonical form (e.g. `pow_mod_unchecked` in the RSA-2048 fast path).
+    /// Uses a sliding-window scalar-multiplication loop sized by `num_exp_bits`.
     pub fn pow_mod_mode(
         &self,
         exp: &Self,
@@ -976,6 +1005,11 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
         Ok(())
     }
 
+    /// Enforces `a < b` in-circuit using a limb-by-limb borrow-chain comparison.
+    ///
+    /// Assumes both `a` and `b` are in canonical form (each limb `< 2^LIMB_WIDTH`).
+    /// Computes `b − a` limb-wise with borrow propagation; the final borrow being zero
+    /// proves `b > a`. Used to check that the RSA message is strictly less than the modulus.
     pub fn enforce_lt_strict_borrow_chain(
         cs: ConstraintSystemRef<ConstraintF>,
         a: &BigNatVar<ConstraintF, P>,
@@ -1108,6 +1142,9 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> EqGadget<ConstraintF>
 // can be represented by different limb combinations). Callers that require semantic
 // equality should use `enforce_equal_when_carried` instead of `is_eq`.
 
+/// Computes `⌈log₂(x)⌉` for `x > 0`, or `0` for `x == 0`.
+///
+/// Used to size sliding-window tables in `pow_mod_mode` based on `num_exp_bits`.
 pub fn log2(x: usize) -> u32 {
     if x == 0 {
         0
@@ -1118,6 +1155,11 @@ pub fn log2(x: usize) -> u32 {
     }
 }
 
+/// Selects `v[index_bits]` from a slice of R1CS variables using a binary-tree mux.
+///
+/// `index_bits` must be big-endian (MSB first). Recursively halves the slice by
+/// the MSB until a single element is reached. Used inside sliding-window exponentiation
+/// to select the correct precomputed power without leaking which one via branching.
 pub fn select_index<ConstraintF: PrimeField, T: CondSelectGadget<ConstraintF>>(
     v: &[T],
     index_bits: &[Boolean<ConstraintF>],
@@ -1145,7 +1187,15 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> ToBytesGadget<ConstraintF>
             .collect::<Vec<UInt8<ConstraintF>>>())
     }
 }
+/// Allocation helpers for [`BigNatVar`] from pre-computed limb representations.
+///
+/// Used by RSA key/signature allocation where limbs are already available as
+/// `u64` or field-element slices from byte-level deserialization.
 pub trait BigNatTrait<ConstraintF: PrimeField, P: BigNatCircuitParams> {
+    /// Allocates a [`BigNatVar`] from a slice of `u64` limb values.
+    ///
+    /// `word_size` sets the `BigNatVar::word_size` field (maximum per-limb value);
+    /// typically `2^(LIMB_WIDTH - 1)` for RSA keys loaded from bytes.
     fn alloc_from_u64_limbs(
         cs: impl Into<Namespace<ConstraintF>>,
         u64_limbs: &[u64],
@@ -1153,6 +1203,10 @@ pub trait BigNatTrait<ConstraintF: PrimeField, P: BigNatCircuitParams> {
         mode: AllocationMode,
     ) -> Result<BigNatVar<ConstraintF, P>, SynthesisError>;
 
+    /// Allocates a [`BigNatVar`] from a slice of already-converted field-element limbs.
+    ///
+    /// Preferred over `alloc_from_u64_limbs` when limbs are pre-computed from
+    /// big-endian byte slices (e.g. `from_le_bytes_mod_order` per 8-byte chunk).
     fn alloc_from_limbs(
         cs: impl Into<Namespace<ConstraintF>>,
         limbs: &[ConstraintF],

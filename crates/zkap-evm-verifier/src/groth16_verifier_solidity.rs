@@ -10,7 +10,17 @@ use ark_ff::Field;
 use ark_groth16::data_structures::VerifyingKey;
 use ark_std::{ops::Neg, path::Path};
 
+/// Emits a self-contained Solidity verifier contract that embeds the
+/// Groth16 verifying-key constants. Implemented for
+/// [`ark_groth16::VerifyingKey<E>`] so trusted-setup tooling can write
+/// `Groth16Verifier.sol` alongside the proving/verifying key files.
 pub trait SolidityContractGenerator {
+    /// Writes the rendered `Groth16Verifier.sol` to `path`. The output
+    /// is a single library declaration named `Groth16Verifier` with
+    /// `_verify(uint256[] proof, uint256[] instance)` plus the
+    /// embedded `alphaX/Y`, `betaX0..Y1`, `gammaX0..Y1`, `deltaX0..Y1`,
+    /// and `ic###` curve-point constants. Errors are propagated from
+    /// the underlying `std::fs::write`.
     fn generate_solidity<P: AsRef<Path>>(&self, path: P) -> Result<(), std::io::Error>;
 }
 

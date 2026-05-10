@@ -3,7 +3,8 @@
 //! # Entry point
 //!
 //! [`claim_extractor_v2`] — extracts the value bytes of a named claim from a decoded JWT
-//! payload and enforces seven format invariants via [`claim_format_verifier_v2`]:
+//! payload and enforces seven format invariants via the private
+//! `claim_format_verifier_v2` helper:
 //!
 //! 1. `name_len <= colon_idx` (key ends before or at the colon)
 //! 2. `colon_idx < value_idx` (colon precedes the value)
@@ -27,7 +28,7 @@
 //!
 //! # Tests
 //!
-//! Internal correctness tests live in [`crates/circuit/tests/claim_verifier_internal.rs`].
+//! Internal correctness tests live in `crates/circuit/tests/claim_verifier_internal.rs`.
 //! They exercise [`claim_extractor_v2`] against hand-crafted JSON payloads and use only
 //! the public surface, so no `pub(crate)` widening is needed.
 
@@ -41,6 +42,11 @@ use ark_utils::{slice_efficient, slice_from_start};
 use crate::token::constraints::ClaimIndicesVar;
 use format::claim_format_verifier_v2;
 
+/// Slice the named JWT claim's value out of `payload` and enforce all
+/// format invariants on the surrounding bytes (quoting, key match,
+/// colon position, no forbidden substring). Returns the raw value
+/// bytes wrapped in `FpVar`s, padded to `max_len` with the SHA padding
+/// sentinel.
 pub fn claim_extractor_v2<F: PrimeField>(
     key: &str,
     payload: &[FpVar<F>],

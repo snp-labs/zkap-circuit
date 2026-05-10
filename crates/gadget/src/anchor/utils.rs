@@ -7,6 +7,21 @@
 //!
 //! **Deprecation notice**: all public functions in this module have no internal callers
 //! and are slated for removal in the next release after external-grep confirmation.
+//!
+//! TODO: once the workspace-external grep (snp-labs/zkap-circuit's downstreams,
+//! baerae-zkap/zkap-zkp) confirms zero callsites for any of these 10 functions,
+//! delete this whole module wholesale rather than maintaining its docs (Phase 8
+//! critic MINOR #4 follow-up). Until then `#![allow(missing_docs)]` below means
+//! we don't gate the workspace-wide `missing_docs = "warn"` flip on writing
+//! fresh docs for items that are about to disappear.
+
+// Phase 9 P9-anchor-utils-cleanup option (b) — see TODO in module-level
+// `//!` doc above. The H5-staged-4 sweep (Phase 8 `c630dd78`) added fresh
+// doc strings to all 10 deprecated public fns to clear the missing_docs
+// gate; those docs remain (deletion churn isn't worth it before the
+// upstream removal grep), but new items added here do not need to satisfy
+// the workspace `missing_docs = "warn"` lint.
+#![allow(missing_docs)]
 
 use ark_crypto_primitives::{
     crh::{CRHScheme, poseidon::CRH},
@@ -21,6 +36,14 @@ use ark_utils::try_str_to_fields;
 
 use crate::anchor::error::AnchorError;
 
+/// Hashes and divides each secret in `secrets`, returning `(BaseField, ScalarField)` pairs.
+///
+/// Each secret string is first decomposed into `BaseField` chunks via [`try_str_to_fields`],
+/// then hashed with the provided CRH parameters, and finally divided by the ScalarField modulus
+/// to produce a `(quotient, remainder)` pair. The remainder is the value used as the circuit
+/// witness scalar.
+///
+/// Deprecated: no internal callers; see module-level deprecation notice.
 #[deprecated(note = "no internal callers — slated for removal next release after external grep")]
 #[allow(clippy::type_complexity)]
 #[allow(deprecated)]
@@ -56,6 +79,13 @@ where
     Ok((q_fields, r_fields))
 }
 
+/// Hashes a single secret string and divides the hash output by the ScalarField modulus.
+///
+/// Steps: convert `secret` to `BaseField` chunks, CRH-hash them, then perform
+/// `(quotient, remainder) = hash_output / ScalarField::MODULUS`. The remainder
+/// is the value carried as the circuit secret witness.
+///
+/// Deprecated: no internal callers; see module-level deprecation notice.
 #[deprecated(note = "no internal callers — slated for removal next release after external grep")]
 #[allow(deprecated)]
 pub fn process_secret<C, CRH>(
@@ -81,6 +111,10 @@ where
     Ok((q_field, r_field))
 }
 
+/// Convenience wrapper: hash each secret in `secrets` with the Poseidon CRH and return
+/// a flat `Vec<BaseField>` (no modular division). Calls `process_no_tk_secrets` internally.
+///
+/// Deprecated: no internal callers; see module-level deprecation notice.
 #[deprecated(note = "no internal callers — slated for removal next release after external grep")]
 #[allow(deprecated)]
 pub fn process_secrets_poseidon<C>(
@@ -94,6 +128,10 @@ where
     process_no_tk_secrets::<C, CRH<C::BaseField>>(secrets, poseidon_param)
 }
 
+/// Maps each secret string in `secrets` through `process_no_tk_secret` and collects the
+/// resulting `BaseField` hashes. Fails on the first invalid character or hash error.
+///
+/// Deprecated: no internal callers; see module-level deprecation notice.
 #[deprecated(note = "no internal callers — slated for removal next release after external grep")]
 #[allow(deprecated)]
 pub fn process_no_tk_secrets<C, CRH>(
@@ -111,6 +149,10 @@ where
         .collect()
 }
 
+/// Converts `secret` to `BaseField` chunks, then hashes them with the given CRH, returning
+/// a single `BaseField` element. This is the "no token-key" variant: no modular division.
+///
+/// Deprecated: no internal callers; see module-level deprecation notice.
 #[deprecated(note = "no internal callers — slated for removal next release after external grep")]
 pub fn process_no_tk_secret<C, CRH>(
     secret: &str,
@@ -129,6 +171,10 @@ where
     Ok(secret)
 }
 
+/// Divides a `BaseField` element `a` by the `ScalarField` modulus, returning
+/// `(quotient_le_bytes, remainder_le_bytes)` as little-endian byte vectors.
+///
+/// Deprecated: no internal callers; see module-level deprecation notice.
 #[deprecated(note = "no internal callers — slated for removal next release after external grep")]
 pub fn divide_by_scalar_modulus<C: CurveGroup>(a: C::BaseField) -> (Vec<u8>, Vec<u8>)
 where
@@ -144,6 +190,10 @@ where
     (q.to_bytes_le(), r.to_bytes_le())
 }
 
+/// Hashes `elements_to_hash` with the CRH, then divides the `BaseField` output by the
+/// `ScalarField` modulus, returning `(quotient_le_bytes, remainder_le_bytes)`.
+///
+/// Deprecated: no internal callers; see module-level deprecation notice.
 #[deprecated(note = "no internal callers — slated for removal next release after external grep")]
 #[allow(deprecated)]
 pub fn hash_and_divide_by_scalar_modulus<C, CRH>(
@@ -166,6 +216,10 @@ where
     Ok((q, r))
 }
 
+/// Multiplies `a * b` in the `ScalarField`, then divides the product by the `ScalarField` modulus,
+/// returning `(product_le_bytes, quotient_le_bytes, remainder_le_bytes)`.
+///
+/// Deprecated: no internal callers; see module-level deprecation notice.
 #[deprecated(note = "no internal callers — slated for removal next release after external grep")]
 pub fn mul_and_divide_by_scalar_modulus<C: CurveGroup>(
     a: C::ScalarField,
@@ -186,6 +240,10 @@ where
     (product.to_bytes_le(), q.to_bytes_le(), r.to_bytes_le())
 }
 
+/// Byte-slice variant of [`mul_and_divide_by_scalar_modulus`]: decodes `a` and `b` as
+/// little-endian `ScalarField` elements first, then delegates to the field-element version.
+///
+/// Deprecated: no internal callers; see module-level deprecation notice.
 #[deprecated(note = "no internal callers — slated for removal next release after external grep")]
 #[allow(deprecated)]
 pub fn mul_and_divide_by_scalar_modulus_bytes<C: CurveGroup>(
@@ -200,6 +258,13 @@ where
     mul_and_divide_by_scalar_modulus::<C>(a_field, b_field)
 }
 
+/// Generates all `C(n, k)` combinations as sorted index vectors.
+///
+/// Returns an empty `Vec` when `k == 0` or `k > n`. Implemented via the
+/// standard revolving-door algorithm. Used by `find_valid_indices` to
+/// enumerate candidate selector patterns exhaustively.
+///
+/// Deprecated: no internal callers; see module-level deprecation notice.
 // nCk combination generator
 #[deprecated(note = "no internal callers — slated for removal next release after external grep")]
 pub fn combinations(n: usize, k: usize) -> Vec<Vec<usize>> {

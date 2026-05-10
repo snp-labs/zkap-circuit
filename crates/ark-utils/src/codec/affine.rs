@@ -14,16 +14,30 @@ use ark_ec::{
 };
 use ark_ff::PrimeField;
 
+/// Failure modes for affine-point and field-coordinate parsing.
+///
+/// Returned by [`coords_to_affine`] and the underlying field-string conversions
+/// in [`crate::codec::string`]. The `NotOnCurve` / `NotInCorrectSubgroup`
+/// variants are produced by [`FromCoords::validate`] after a candidate point is
+/// constructed; `InvalidDecimal` / `InvalidHex` / `InvalidLength` come from the
+/// string-to-field decoder before construction.
 #[derive(Debug, thiserror::Error)]
 pub enum FieldParseError {
+    /// Decimal string did not parse as a base-field element.
     #[error("Invalid decimal string for field element")]
     InvalidDecimal,
+    /// Hex string did not parse as a base-field element.
     #[error("Invalid hex string for field element")]
     InvalidHex,
+    /// ASCII byte count is not a multiple of the field's expected chunk size
+    /// (first parameter is the required multiple, second is the actual length).
     #[error("Invalid length for ASCII to field conversion: expected multiple of {0}, got {1}")]
     InvalidLength(usize, usize),
+    /// Coordinates parsed but the resulting point fails the curve equation.
     #[error("point is not on curve")]
     NotOnCurve,
+    /// Point is on the curve but outside the correct prime-order subgroup —
+    /// rejecting it is required for soundness in pairing-based protocols.
     #[error("point is not in correct subgroup")]
     NotInCorrectSubgroup,
 }
@@ -86,8 +100,21 @@ where
 
     Ok(p)
 }
+/// Builder for [`AffineRepr`] points that takes raw `(x, y)` coordinates and
+/// returns a validated point.
+///
+/// Split into `from_coords` (cheap construction without curve checks) and
+/// `validate` (which enforces both the curve equation and prime-order
+/// subgroup membership) so callers can amortise validation across batches —
+/// [`coords_to_affine`] always validates per call.
 pub trait FromCoords: AffineRepr {
+    /// Construct an affine point from coordinates without validating that it
+    /// lies on the curve or in the correct subgroup. Pair with [`Self::validate`]
+    /// before use in any soundness-critical path.
     fn from_coords(x: Self::BaseField, y: Self::BaseField) -> Self;
+    /// Returns `Ok(())` iff the point lies on the curve **and** in the
+    /// prime-order subgroup. Both checks are required for pairing soundness;
+    /// the curve check alone admits points of unwanted order.
     fn validate(p: &Self) -> Result<(), FieldParseError>;
 }
 

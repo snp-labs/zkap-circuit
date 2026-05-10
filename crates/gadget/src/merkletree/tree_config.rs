@@ -20,6 +20,11 @@ use ark_crypto_primitives::crh::poseidon::{
     constraints::{CRHGadget, TwoToOneCRHGadget},
 };
 
+/// Poseidon-based Merkle tree configuration for BN254-Fr membership proofs.
+///
+/// Leaf hashing uses `poseidon::CRH<F>` and interior node combining uses
+/// `poseidon::TwoToOneCRH<F>`. Both leaf and inner digests are plain `F`
+/// field elements, avoiding type conversions at each level.
 pub struct MerkleTreeParams<F: PrimeField> {
     _field: PhantomData<F>,
 }
@@ -33,6 +38,8 @@ impl<F: PrimeField + Absorb> Config for MerkleTreeParams<F> {
     type TwoToOneHash = poseidon::TwoToOneCRH<F>;
 }
 
+/// R1CS configuration gadget for [`MerkleTreeParams`]: maps each native type to
+/// its in-circuit `FpVar` / `CRHGadget` counterpart.
 pub struct MerkleTreeParamsVar<F: PrimeField> {
     _field: PhantomData<F>,
 }
@@ -49,7 +56,16 @@ where
     type TwoToOneHash = TwoToOneCRHGadget<F>;
 }
 
+/// Extension trait that adds an `empty` constructor to [`Path`].
+///
+/// [`Path`] is an external type from `ark-crypto-primitives`, so an inherent `impl` is not
+/// possible. This trait is implemented for `Path<P>` to supply a default all-zero sibling
+/// path of the given `height`, used for placeholder witness allocation before tree proofs
+/// are computed.
 pub trait Empty<P: Config> {
+    /// Constructs a default `Path` with all-zero sibling hashes and `leaf_index = 0`.
+    ///
+    /// `height` must equal the tree depth; the `auth_path` will have `height - 1` entries.
     fn empty(height: usize) -> Path<P>;
 }
 

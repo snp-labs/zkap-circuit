@@ -52,17 +52,35 @@ fn gc() {
     }
 }
 
+/// Output of a batched [`ProofGenerator::generate`] call.
+///
+/// `proofs[i]` is the Groth16 proof for `inputs[i]`; `public_inputs[i]` is the
+/// 8-element instance vector (canonical layout — see
+/// [`crate::dto::ZkapProofResult::public_inputs_for`]) that pairs with it.
 pub struct ProofOutput {
+    /// Groth16 proof for each input, in the same order as
+    /// `ProofGenerator::generate`'s `inputs` argument.
     pub proofs: Vec<Proof<BN254>>,
+    /// Per-proof public-input vectors. Each inner vector is the 8-element
+    /// instance vector (canonical ZKAP layout) consumed by the on-chain
+    /// verifier.
     pub public_inputs: Vec<Vec<F>>,
 }
 
+/// Per-proof Groth16 generator backed by an arzkey file and the wasm
+/// witness-runtime artifact.
+///
+/// Holds only the resolved on-disk paths; the heavy state (proving key, wasm
+/// bytes) is loaded inside [`ProofGenerator::generate`] so the generator is
+/// cheap to construct and free of background memory residency.
 pub struct ProofGenerator {
     pk_path: PathBuf,
     wasm_path: PathBuf,
 }
 
 impl ProofGenerator {
+    /// Build a `ProofGenerator` from the on-disk arzkey and wasm artifact
+    /// paths. Both files are read lazily inside [`Self::generate`].
     pub fn new(pk_path: PathBuf, wasm_path: PathBuf) -> Self {
         Self { pk_path, wasm_path }
     }

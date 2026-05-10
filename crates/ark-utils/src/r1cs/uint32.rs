@@ -10,10 +10,18 @@ use ark_ff::PrimeField;
 use ark_r1cs_std::{prelude::Boolean, prelude::ToBitsGadget, uint8::UInt8, uint32::UInt32};
 use ark_relations::r1cs::SynthesisError;
 
+/// Bitwise / byte-construction helpers missing from the upstream
+/// [`UInt32`] gadget. Implemented for `UInt32<F>` below.
 pub trait UInt32Ext<F: PrimeField>: Sized {
+    /// Logical right shift by `by` positions (`by < 32`).
     fn shr(&self, by: usize) -> Self;
+    /// Bitwise NOT (one's complement).
     fn not(&self) -> Self;
+    /// Bitwise AND with `other`. Both operands keep their existing R1CS
+    /// allocations; only the resulting bits are newly allocated.
     fn bitand(&self, other: &Self) -> Result<Self, SynthesisError>;
+    /// Reconstruct a 32-bit value from exactly four big-endian
+    /// [`UInt8`] bytes (`bytes[0]` is the most significant byte).
     fn from_bytes_be(bytes: &[UInt8<F>]) -> Result<Self, SynthesisError>;
 }
 

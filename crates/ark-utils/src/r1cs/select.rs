@@ -118,6 +118,10 @@ pub fn select_array_element<F: PrimeField>(
     }
 }
 
+/// Big-endian variant of [`select_array_element`] — the most significant
+/// bit of `idx_bits` selects between the two halves at every level. The
+/// length of `input` must equal `2.pow(idx_bits.len())` and `input` must
+/// be non-empty.
 pub fn select_array_element_be<F: PrimeField>(
     input: &[FpVar<F>],
     idx_bits: &[Boolean<F>],

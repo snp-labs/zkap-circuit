@@ -3,12 +3,12 @@
 //! Two domains are covered, each in its own sibling submodule:
 //!
 //! - **Hex (nonce)**: [`jwt_nonce_hex_to_field`] + [`hex_char_to_value`]
-//!   live in [`nonce`]. Parse a `"0x…"` hex string (up to 64 digits) into a
-//!   single field element.
+//!   live in the private `nonce` submodule. Parse a `"0x…"` hex string
+//!   (up to 64 digits) into a single field element.
 //!
 //! - **Decimal (expiry)**: [`jwt_exp_to_field`] (with private
-//!   `decimal_byte_to_digit`) lives in [`exp`]. Parse a 10-digit decimal
-//!   timestamp byte array into a single field element.
+//!   `decimal_byte_to_digit`) lives in the private `exp` submodule. Parse
+//!   a 10-digit decimal timestamp byte array into a single field element.
 //!
 //! All functions enforce their parsing constraints in-circuit.  See the
 //! individual function doc-comments for the precise soundness/completeness
@@ -22,7 +22,7 @@
 //! # Tests
 //!
 //! Internal correctness tests live in
-//! [`crates/circuit/tests/jwt_field_internal.rs`].  They exercise both
+//! `crates/circuit/tests/jwt_field_internal.rs`.  They exercise both
 //! [`jwt_nonce_hex_to_field`] and [`jwt_exp_to_field`] through the public
 //! surface, so no `pub(crate)` widening is needed.
 

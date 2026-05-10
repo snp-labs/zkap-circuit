@@ -9,14 +9,28 @@ use circuit::token::{Claim, ClaimIndices};
 use gadget::base64::Base64Error;
 use thiserror::Error;
 
+/// Failure modes for JWT claim parsing.
+///
+/// Returned by [`parse_claim_from_str`]; converts into
+/// [`crate::error::ApplicationError::ParseError`] via the `From` impl in
+/// [`crate::error`].
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum TokenError {
+    /// JWT payload could not be parsed structurally — for example, the
+    /// targeted key was not surrounded by the expected `"…"` quoting or its
+    /// value was not closed with a balancing quote / `,` / `}`.
     #[error("Invalid JWT format: {0}")]
     InvalidFormat(String),
 
+    /// Base64 decoding of a JWT segment failed (auto-converted from
+    /// [`Base64Error`] via `?`); the JWT is malformed at the segment
+    /// boundary, before any claim extraction is attempted.
     #[error("Base64 error")]
     Base64ErrorInToken(#[from] Base64Error),
 
+    /// The requested key was not present in the payload JSON. The string
+    /// carries the requested key name so callers can surface it in audit
+    /// logs without re-deriving it.
     #[error("Key not found: {0}")]
     NotFoundKeyError(String),
 }

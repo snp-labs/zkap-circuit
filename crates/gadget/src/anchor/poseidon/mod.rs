@@ -29,10 +29,14 @@ use crate::{
 pub struct PoseidonAnchor<F: PrimeField>(pub Vec<F>);
 
 impl<F: PrimeField> PoseidonAnchor<F> {
+    /// Wraps `values` as a [`PoseidonAnchor`]; the caller must ensure
+    /// `values.len() == m` where `m = n − k + 1`.
     pub fn new(values: Vec<F>) -> Self {
         Self(values)
     }
 
+    /// Returns an all-zero anchor of the given `size`; used to allocate
+    /// placeholder witnesses before values are computed.
     pub fn empty(size: usize) -> Self {
         Self(vec![F::zero(); size])
     }
@@ -41,6 +45,9 @@ impl<F: PrimeField> PoseidonAnchor<F> {
 /// Poseidon Anchor public key
 #[derive(Clone, Debug, CanonicalSerialize, CanonicalDeserialize)]
 pub struct PoseidonAnchorPublicKey<F: PrimeField> {
+    /// Fixed Poseidon configuration (MDS matrix + round constants) shared by both
+    /// native and in-circuit evaluation; produced once by
+    /// [`crate::hashes::poseidon::get_poseidon_params`].
     pub params: PoseidonConfig<F>,
 }
 
@@ -67,6 +74,8 @@ pub struct PoseidonAnchorWitness<F: PrimeField> {
 }
 
 impl<F: PrimeField> PoseidonAnchorWitness<F> {
+    /// Returns an all-zero witness for an `(n, k)` scheme; used to allocate
+    /// placeholder witnesses where `m = n − k + 1` determines vector lengths.
     pub fn empty(n: usize, k: usize) -> Self {
         let m = n - k + 1;
         Self {
@@ -76,8 +85,8 @@ impl<F: PrimeField> PoseidonAnchorWitness<F> {
         }
     }
 
-    /// Compute partial RHS for split proof
-    /// partial_rhs[i] = b[i] * h_known[i]
+    /// Compute partial RHS for split proof.
+    /// `partial_rhs[i] = b[i] * h_known[i]`
     pub fn compute_partial_rhs(&self) -> Vec<F> {
         self.b
             .iter()
@@ -89,10 +98,10 @@ impl<F: PrimeField> PoseidonAnchorWitness<F> {
 
 // ==================== Utility Functions ====================
 
-/// Helper function for building a Witness
+/// Helper function for building a Witness.
 ///
-/// This function computes h_known in the same way as the circuit:
-/// h_known[i] = H(i, secret[hash_idx]) where selector[i] == 1
+/// This function computes `h_known` in the same way as the circuit:
+/// `h_known[i] = H(i, secret[hash_idx])` where `selector[i] == 1`.
 ///
 /// # Arguments
 /// * `params` - Poseidon parameters
@@ -215,6 +224,11 @@ impl<F: PrimeField + Absorb> HashedSecretsCache<F> {
 
 // ==================== Poseidon Anchor Scheme V3 ====================
 
+/// Concrete implementation of [`crate::anchor::AnchorScheme`] using Poseidon CRH over BN254-Fr.
+///
+/// The field type `F` is parameterised so tests can substitute a smaller field;
+/// production callers use `ark_bn254::Fr`. All hash evaluations use the fixed
+/// parameters from [`crate::hashes::poseidon::get_poseidon_params`].
 pub struct PoseidonAnchorScheme<F: PrimeField> {
     _phantom: core::marker::PhantomData<F>,
 }

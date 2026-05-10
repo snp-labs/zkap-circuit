@@ -1,14 +1,22 @@
 //! String-to-field and padding conversion helpers.
 //!
-//! Exports: [`try_str_to_fields`], [`pad`], [`str_to_limbs`],
-//! [`hex_decimal_to_field`] (feature `field-serde`), [`ConvertError`],
-//! [`TextError`].  These are always available regardless of feature flags
-//! (except `hex_decimal_to_field` which requires `field-serde`).
+//! Exports: [`try_str_to_fields`], [`pad`], [`str_to_limbs`], [`ConvertError`],
+//! [`TextError`], and (with `field-serde` feature) `hex_decimal_to_field`.
+//! All but the last are always available regardless of feature flags.
 
 use ark_ff::PrimeField;
 
-/// Converts a string to field elements, returning an error if the length
-/// is not a multiple of the limb width.
+/// Pack ASCII bytes into base-field elements, one limb per
+/// `(MODULUS_BIT_SIZE - 1) / 8` byte chunk.
+///
+/// The chunk width is one byte short of the modulus byte size so each chunk
+/// is always less than the field modulus — i.e. `from_be_bytes_mod_order`
+/// is a no-op reduction and the encoding is injective on the input bytes.
+/// This is what the circuit relies on when comparing a Poseidon-hashed JWT
+/// claim against its in-circuit field representation; a multiple-of-limb
+/// input length is therefore a correctness invariant, not just a
+/// convenience, and `Err(InvalidLength)` here means the caller failed to
+/// pad upstream (use [`pad`] when the source is variable-width).
 pub fn try_str_to_fields<F: PrimeField>(s: &str) -> Result<Vec<F>, ConvertError> {
     let bytes = s.as_bytes();
     let limb_width = (F::MODULUS_BIT_SIZE - 1) as usize / 8;
@@ -26,24 +34,37 @@ pub fn try_str_to_fields<F: PrimeField>(s: &str) -> Result<Vec<F>, ConvertError>
         .collect())
 }
 
+/// Errors returned by [`pad`] when padding-related invariants are violated.
 #[derive(Debug, thiserror::Error)]
 pub enum TextError {
+    /// The input string did not satisfy the expected text format
+    /// (e.g. exceeded the requested padding length).
     #[error("Invalid format: {0}")]
     InvalidFormat(String),
 }
 
+/// Errors returned by string-to-field conversion helpers in this module.
 #[derive(Debug, thiserror::Error)]
 pub enum ConvertError {
+    /// The input byte length is not a multiple of the field's limb width.
     #[error("Invalid length: expected multiple of {expected_multiple}, got {actual}")]
     InvalidLength {
+        /// The required multiple (limb width in bytes).
         expected_multiple: usize,
+        /// The observed input length in bytes.
         actual: usize,
     },
+    /// Generic format violation message for callers that cannot describe the
+    /// failure in a more specific variant.
     #[error("Invalid format: {0}")]
     InvalidFormat(String),
+    /// Returned by [`hex_decimal_to_field`] when a `0x`-prefixed input is not
+    /// a valid hex string.
     #[cfg(feature = "field-serde")]
     #[error("Invalid hex string: {0}")]
     InvalidHex(String),
+    /// Returned by [`hex_decimal_to_field`] when a non-`0x` input fails
+    /// decimal parsing.
     #[cfg(feature = "field-serde")]
     #[error("Invalid decimal string: {0}")]
     InvalidDecimal(String),

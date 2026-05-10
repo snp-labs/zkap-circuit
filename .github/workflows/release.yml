@@ -15,8 +15,6 @@ permissions: {}
 
 env:
   CARGO_TERM_COLOR: always
-  ZK_N: 3
-  ZK_K: 3
 
 jobs:
   validate:
@@ -64,21 +62,65 @@ jobs:
       - run: cargo test --release --workspace
 
   generate-keys:
+    # Phase 8 / P8-release-yml-symmetry (Phase 7 critic MINOR #4):
+    # mirror the defence-in-depth guards from `ci.yml`'s
+    # `generate-crs-smoke` job onto the tag-cut path that emits the
+    # actual release artifacts. tag-cut is precisely where an
+    # n,k-regression that explodes pk.arzkey would do the most damage
+    # (release runner exhaustion, partial artifact upload), so the
+    # guards belong here at least as much as on the PR-side smoke.
+    # - `concurrency:` cancels superseded runs of this job for the
+    #   same ref so a re-tagged release (or a `workflow_dispatch`
+    #   re-trigger) doesn't queue ~22s × ~1 GiB-on-disk runs that
+    #   the next push would invalidate anyway.
+    # - `timeout-minutes:` matches `ci.yml`'s 10-minute ceiling so a
+    #   hung `cargo run` cannot consume a full 6-hour runner slot.
+    # - The size cap on `output/keys` is the same 2 GiB ceiling
+    #   `ci.yml` enforces (Phase 6 measurement at the committed
+    #   shape was ~977 MiB, leaving a 2× safety margin) — a
+    #   parameter blow-up surfaces here before the artifact upload
+    #   step partially consumes runner disk.
     name: Generate Proving Keys
     needs: test
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: generate-keys-${{ github.ref }}
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
 
       - name: Generate CRS keys
-        # ZK_N and ZK_K are inherited from workflow-level env: block.
-        # Removing those env vars causes build_common.rs to use dev defaults (N=6),
-        # which may OOM on CI runners.
         # `integration-tests` is the Phase 5 / C13 rename of the former
         # `zkap-circuit` marker feature on the `circuit` crate.
-        run: cargo run --release --features circuit/integration-tests --bin generate_crs -- output/keys
+        # The `--config` and `--output` flags match `generate_crs`'s clap
+        # argspec (Phase 6 critic M1: bare positional `output/keys` was
+        # parsed as the implicit `--config` value and tripped a
+        # "missing --output" error at tag-cut). `example.json` carries
+        # `n=6, k=3, tree_height=4` (the same shape the L1 byte-gate uses)
+        # — the PR-side `generate-crs-smoke` job in `ci.yml` runs the same
+        # invocation, so a regression in either workflow surfaces in the
+        # other.
+        run: cargo run --release --features circuit/integration-tests --bin generate_crs -- --config example.json --output output/keys
+
+      - name: CRS artifact size cap
+        # Phase 8 / P8-release-yml-symmetry (mirrors `ci.yml`
+        # `generate-crs-smoke` size cap). 2 GiB (2 097 152 KiB) is a
+        # 2× safety margin over the Phase 6 measurement (~977 MiB)
+        # at the committed `n=6,k=3,tree_height=4` shape. Catches a
+        # parameter blow-up here, before the upload-artifact step
+        # silently truncates or the runner runs out of disk.
+        run: |
+          set -euo pipefail
+          USED_KIB=$(du -sk output/keys | awk '{print $1}')
+          LIMIT_KIB=2097152  # 2 GiB
+          echo "output/keys total: ${USED_KIB} KiB / limit ${LIMIT_KIB} KiB"
+          if [ "$USED_KIB" -gt "$LIMIT_KIB" ]; then
+            echo "ERROR: output/keys exceeds 2 GiB cap (${USED_KIB} KiB > ${LIMIT_KIB} KiB)"
+            exit 1
+          fi
 
       - name: Upload keys
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

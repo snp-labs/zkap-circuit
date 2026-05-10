@@ -1,9 +1,11 @@
-//! R1CS gadget for RSA-2048 PKCS#1 v1.5 signature verification.
+//! R1CS gadgets for RSA-2048 PKCS#1 v1.5 signature verification.
 //!
-//! [`RSA2048VerifyGadget`] implements [`crate::signature::constraints::SigVerifyGadget`]
-//! for RSA-2048 over BN254. The `output_with_prefix` function hardcodes the PKCS#1 v1.5
-//! DigestInfo prefix bytes (SHA-256 OID encoding: `0x30 0x31 0x30 0x0d …`) and enforces
-//! their equality with the recovered message bytes.
+//! Provides the in-circuit allocator types — [`ParameterVar`], [`PublicKeyVar`], and
+//! [`SignatureVar`] — alongside [`output_with_prefix`], which hardcodes the PKCS#1 v1.5
+//! DigestInfo prefix bytes (SHA-256 OID encoding: `0x30 0x31 0x30 0x0d …`) and is used
+//! by callers to enforce their equality with the recovered message bytes when wiring
+//! up [`SigVerifyGadget`](crate::signature::constraints::SigVerifyGadget) for RSA-2048
+//! over BN254.
 
 use std::marker::PhantomData;
 
@@ -25,8 +27,16 @@ use crate::{
     signature::rsa::{PublicKey, Signature},
 };
 
+/// Constraint field for curve `C`: the base-prime field of `C`'s base field.
+///
+/// For BN254 (`ark_bn254::G1Projective`), this resolves to `ark_bn254::Fq`, which is the
+/// field in which all RSA limb arithmetic is expressed inside the R1CS gadget.
 pub type ConstraintF<C> = <<C as CurveGroup>::BaseField as Field>::BasePrimeField;
 
+/// In-circuit representation of [`Parameter`](super::Parameter).
+///
+/// RSA has no public parameters beyond the key, so this is a zero-sized phantom wrapper.
+/// It exists solely to satisfy the [`AllocVar`] bound required by [`SigVerifyGadget`](crate::signature::constraints::SigVerifyGadget).
 #[derive(Clone, Debug, Default)]
 pub struct ParameterVar<ConstriantF: PrimeField> {
     _phantom: PhantomData<ConstriantF>,
@@ -44,9 +54,16 @@ impl<ConstriantF: PrimeField> AllocVar<(), ConstriantF> for ParameterVar<Constri
     }
 }
 
+/// In-circuit RSA public key, split into big-integer limb variables.
+///
+/// Both `n` (modulus) and `e` (public exponent) are allocated as [`BigNatVar`] with
+/// `BNP::N_LIMBS` limbs of `BNP::LIMB_WIDTH` bits each. The byte order is reversed from
+/// big-endian on the wire to little-endian limbs during `AllocVar` construction.
 #[derive(Clone, Default)]
 pub struct PublicKeyVar<F: PrimeField, BNP: BigNatCircuitParams> {
+    /// In-circuit RSA modulus `n` (little-endian limbs, each `BNP::LIMB_WIDTH` bits).
     pub n: BigNatVar<F, BNP>,
+    /// In-circuit RSA public exponent `e` (little-endian limbs, same layout as `n`).
     pub e: BigNatVar<F, BNP>,
 }
 
@@ -92,8 +109,14 @@ impl<ConstraintF: PrimeField, BNP: BigNatCircuitParams> ToBytesGadget<Constraint
     }
 }
 
+/// In-circuit RSA-2048 signature, represented as a [`BigNatVar`].
+///
+/// The 256 raw signature bytes are byte-reversed (big-endian → little-endian) and
+/// chunked into `BNP::N_LIMBS` limbs during `AllocVar` construction, matching the
+/// limb layout of [`PublicKeyVar::n`] so that modular exponentiation constraints align.
 #[derive(Clone)]
 pub struct SignatureVar<F: PrimeField, BNP: BigNatCircuitParams> {
+    /// The RSA signature as little-endian limb variables (same layout as the modulus).
     pub sig: BigNatVar<F, BNP>,
 }
 
@@ -130,6 +153,12 @@ impl<ConstraintF: PrimeField, BNP: BigNatCircuitParams> ToBytesGadget<Constraint
     }
 }
 
+/// Prepends the PKCS#1 v1.5 DigestInfo prefix to an in-circuit SHA-256 hash.
+///
+/// The prefix encodes the SHA-256 OID (`30 31 30 0d 06 09 60 86 48 01 65 03 04 02 01 05 00
+/// 04 20`) followed by 0xff padding bytes up to 256 bytes total (per RFC 3447 §9.2).
+/// The returned slice is compared byte-by-byte with the RSA-decrypted signature to
+/// enforce PKCS#1 v1.5 validity inside the R1CS circuit.
 pub fn output_with_prefix<F: PrimeField>(hashed: &[UInt8<F>]) -> Vec<UInt8<F>> {
     let mut output = Vec::new();
     let prefix1 = UInt8::<F>::constant_vec(&[32, 4, 0, 5, 1, 2, 4, 3]);

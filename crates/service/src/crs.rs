@@ -47,9 +47,9 @@ pub(crate) fn persist_setup_output(
     let arzkey = ArzkeyFile::from_setup_output(arcs, setup.pk.clone());
     let arzkey_path = output_dir.join("pk.arzkey");
     let mut arzkey_file = std::fs::File::create(&arzkey_path)?;
-    arzkey.write(&mut arzkey_file).map_err(|e| {
-        ApplicationError::Other(format!("Failed to write pk.arzkey: {}", e))
-    })?;
+    arzkey
+        .write(&mut arzkey_file)
+        .map_err(|e| ApplicationError::Other(format!("Failed to write pk.arzkey: {}", e)))?;
 
     setup
         .vk

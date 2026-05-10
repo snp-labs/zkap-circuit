@@ -42,15 +42,15 @@
 //! break — the `WitnessGenerator::CIRCUIT_ID` MUST be bumped in lockstep.
 
 use ark_crypto_primitives::{
-    crh::{poseidon::CRH, CRHScheme},
+    crh::{CRHScheme, poseidon::CRH},
     merkle_tree::Path,
     sponge::poseidon::PoseidonConfig,
 };
 use ark_ff::{PrimeField, Zero};
 
-use circuit::constants::{BNP, CG, F};
 #[cfg(test)]
 use circuit::constants::CircuitConfig;
+use circuit::constants::{BNP, CG, F};
 use circuit::input::{
     AnchorWitness, AudienceWitness, CircuitConstants, CircuitPublicInputs, JwtWitness,
     MerkleWitness, MiscWitness, ZkapCircuitInput,
@@ -58,8 +58,8 @@ use circuit::input::{
 use circuit::token::ClaimIndices;
 use circuit::zkap::ZkapCircuit;
 use gadget::{
-    anchor::poseidon::{build_anchor_witness, PoseidonAnchor},
-    base64::{get_base64_table, IndexBits},
+    anchor::poseidon::{PoseidonAnchor, build_anchor_witness},
+    base64::{IndexBits, get_base64_table},
     hashes::poseidon::get_poseidon_params,
     matrix::VandermondeMatrix,
     signature::rsa::{PublicKey, Signature},
@@ -216,7 +216,9 @@ pub fn build_main_circuit(input: ZkapInputV1) -> Result<ZkapMainCircuit, ZkapWit
 /// Map an [`ark_utils::field_codec::NonCanonicalFieldError`] into the
 /// local error variant, prefixing with the field name so failures stay
 /// actionable when a host sends a `>= p` encoding.
-fn nc_field<S: Into<String>>(field: S) -> impl FnOnce(ark_utils::field_codec::NonCanonicalFieldError) -> ZkapWitnessError {
+fn nc_field<S: Into<String>>(
+    field: S,
+) -> impl FnOnce(ark_utils::field_codec::NonCanonicalFieldError) -> ZkapWitnessError {
     let field = field.into();
     move |e| ZkapWitnessError::NonCanonicalField(format!("{}: {}", field, e))
 }
@@ -237,7 +239,7 @@ pub(crate) struct AnchorStage {
 /// `anchor_selector` against `(n, k)`, then constructs the Poseidon anchor.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn build_anchor_witness_from_v1(
-    anchor_values_be: &[[ u8; 32]],
+    anchor_values_be: &[[u8; 32]],
     anchor_known_x_be: &[[u8; 32]],
     anchor_selector: &[u8],
     anchor_current_idx: u64,
@@ -276,9 +278,7 @@ pub(crate) fn build_anchor_witness_from_v1(
         )));
     }
     let current_idx = anchor_current_idx as usize;
-    if current_idx >= n
-        || anchor_selector.get(current_idx).copied().unwrap_or(0) != 1
-    {
+    if current_idx >= n || anchor_selector.get(current_idx).copied().unwrap_or(0) != 1 {
         return Err(ZkapWitnessError::DimensionMismatch(format!(
             "anchor_current_idx={} not in 0..n or selector[idx] != 1",
             current_idx
@@ -288,19 +288,28 @@ pub(crate) fn build_anchor_witness_from_v1(
     let known_x_list: Vec<F> = anchor_known_x_be
         .iter()
         .enumerate()
-        .map(|(i, b)| fe_from_be32_canonical(b).map_err(nc_field(format!("anchor_known_x_be[{}]", i))))
+        .map(|(i, b)| {
+            fe_from_be32_canonical(b).map_err(nc_field(format!("anchor_known_x_be[{}]", i)))
+        })
         .collect::<Result<Vec<_>, _>>()?;
     let anchor_values: Vec<F> = anchor_values_be
         .iter()
         .enumerate()
-        .map(|(i, b)| fe_from_be32_canonical(b).map_err(nc_field(format!("anchor_values_be[{}]", i))))
+        .map(|(i, b)| {
+            fe_from_be32_canonical(b).map_err(nc_field(format!("anchor_values_be[{}]", i)))
+        })
         .collect::<Result<Vec<_>, _>>()?;
     let anchor_witness =
         build_anchor_witness(poseidon_param, &known_x_list, anchor_selector, matrix)
             .map_err(|e| ZkapWitnessError::AnchorBuild(format!("{:?}", e)))?;
     let anchor = PoseidonAnchor::new(anchor_values.clone());
 
-    Ok(AnchorStage { anchor_values, anchor_witness, anchor, current_idx })
+    Ok(AnchorStage {
+        anchor_values,
+        anchor_witness,
+        anchor,
+        current_idx,
+    })
 }
 
 /// Outputs of the JWT-witness build stage.
@@ -405,7 +414,8 @@ pub(crate) fn build_jwt_witness_from_v1(
         .find(|(_, k)| *k == "aud")
         .map(|(idx, _)| idx)
         .ok_or_else(|| ZkapWitnessError::ClaimNotFound("aud".to_owned()))?;
-    let aud_bytes_padded = claim_value_bytes_padded(&payload_bytes, aud_idx, cfg.max_aud_len as usize);
+    let aud_bytes_padded =
+        claim_value_bytes_padded(&payload_bytes, aud_idx, cfg.max_aud_len as usize);
     let aud_packed = pack_bytes_to_field_native(&aud_bytes_padded);
     // Validate h_aud computable (poseidon evaluate) — side-effect check only.
     CRH::<F>::evaluate(poseidon_param, aud_packed.clone())
@@ -424,7 +434,12 @@ pub(crate) fn build_jwt_witness_from_v1(
         pad_start_byte_idx,
     };
 
-    Ok(JwtStage { jwt_witness, payload_bytes, claim_indices, aud_packed })
+    Ok(JwtStage {
+        jwt_witness,
+        payload_bytes,
+        claim_indices,
+        aud_packed,
+    })
 }
 
 /// Outputs of the audience-witness build stage.
@@ -472,7 +487,10 @@ pub(crate) fn build_audience_witness_from_v1(
     // Silence unused-param warnings — claim_indices/claims used by caller for pub-input stage.
     let _ = (claim_indices, claims, payload_bytes);
 
-    Ok(AudienceStage { aud_list, h_aud_list })
+    Ok(AudienceStage {
+        aud_list,
+        h_aud_list,
+    })
 }
 
 /// Stage 7: decode Merkle auth-path scalars and build `MerkleWitness`.
@@ -493,9 +511,8 @@ pub(crate) fn build_merkle_witness_from_v1(
         )));
     }
 
-    let leaf_sibling_hash =
-        fe_from_be32_canonical(merkle_leaf_sibling_hash_be)
-            .map_err(nc_field("merkle_leaf_sibling_hash_be"))?;
+    let leaf_sibling_hash = fe_from_be32_canonical(merkle_leaf_sibling_hash_be)
+        .map_err(nc_field("merkle_leaf_sibling_hash_be"))?;
     let auth_path: Vec<F> = merkle_auth_path_be
         .iter()
         .enumerate()
@@ -554,7 +571,12 @@ pub(crate) fn compute_public_inputs_from_v1(
     let h_a = CRH::<F>::evaluate(poseidon_param, h_a_inputs)
         .map_err(|e| ZkapWitnessError::AnchorBuild(format!("Poseidon h_a: {}", e)))?;
 
-    let inner: F = witness.a.iter().zip(anchor_values.iter()).map(|(a, anc)| *a * *anc).sum();
+    let inner: F = witness
+        .a
+        .iter()
+        .zip(anchor_values.iter())
+        .map(|(a, anc)| *a * *anc)
+        .sum();
     let lhs = inner * random;
 
     // partial_rhs = b[current_idx] * h_id * random
@@ -567,8 +589,16 @@ pub(crate) fn compute_public_inputs_from_v1(
         Err(ZkapWitnessError::ClaimNotFound(key.to_owned()))
     };
 
-    let iss_bytes_padded = claim_value_bytes_padded(payload_bytes, claim_indices_for("iss")?, cfg.max_iss_len as usize);
-    let sub_bytes_padded = claim_value_bytes_padded(payload_bytes, claim_indices_for("sub")?, cfg.max_sub_len as usize);
+    let iss_bytes_padded = claim_value_bytes_padded(
+        payload_bytes,
+        claim_indices_for("iss")?,
+        cfg.max_iss_len as usize,
+    );
+    let sub_bytes_padded = claim_value_bytes_padded(
+        payload_bytes,
+        claim_indices_for("sub")?,
+        cfg.max_sub_len as usize,
+    );
     let iss_packed = pack_bytes_to_field_native(&iss_bytes_padded);
     let sub_packed = pack_bytes_to_field_native(&sub_bytes_padded);
 
@@ -582,10 +612,21 @@ pub(crate) fn compute_public_inputs_from_v1(
         .map_err(|e| ZkapWitnessError::AnchorBuild(format!("Poseidon h_id: {}", e)))?;
     let partial_rhs = witness.b[current_idx] * h_id * random;
 
-    let exp_bytes_padded = claim_value_bytes_padded(payload_bytes, claim_indices_for("exp")?, cfg.max_exp_len as usize);
+    let exp_bytes_padded = claim_value_bytes_padded(
+        payload_bytes,
+        claim_indices_for("exp")?,
+        cfg.max_exp_len as usize,
+    );
     let jwt_exp = decimal_bytes_to_field(&exp_bytes_padded)?;
 
-    Ok(PublicInputsStage { hanchor, h_a, root, lhs, partial_rhs, jwt_exp })
+    Ok(PublicInputsStage {
+        hanchor,
+        h_a,
+        root,
+        lhs,
+        partial_rhs,
+        jwt_exp,
+    })
 }
 
 /// Full V1 → `ZkapCircuitInput<F>` conversion. Compiles for both native
@@ -623,7 +664,8 @@ pub fn into_circuit_input(input: ZkapInputV1) -> Result<ZkapCircuitInput<F>, Zka
 
     // 1. Validate config.
     let cfg = circuit_config;
-    cfg.validate().map_err(|e| ZkapWitnessError::InvalidConfig(e.to_string()))?;
+    cfg.validate()
+        .map_err(|e| ZkapWitnessError::InvalidConfig(e.to_string()))?;
 
     let n = cfg.n as usize;
     let k = cfg.k as usize;
@@ -722,7 +764,9 @@ pub fn into_circuit_input(input: ZkapInputV1) -> Result<ZkapCircuitInput<F>, Zka
             current_idx: anchor_stage.current_idx,
         },
         merkle,
-        audience: AudienceWitness { aud_list: aud_stage.aud_list },
+        audience: AudienceWitness {
+            aud_list: aud_stage.aud_list,
+        },
         misc: MiscWitness { random },
     })
 }
@@ -939,7 +983,12 @@ mod tests {
         let payload = r#"{"aud":"test-audience","exp":1700000000,"iss":"https://x","nonce":"0xdead","sub":"u_0"}"#;
         let aud = locate_claim(payload, "aud").expect("aud claim");
         assert_eq!(aud.offset, 1);
-        assert_eq!(&payload.as_bytes()[aud.offset..aud.offset + aud.claim_len].last().unwrap(), &&b',');
+        assert_eq!(
+            &payload.as_bytes()[aud.offset..aud.offset + aud.claim_len]
+                .last()
+                .unwrap(),
+            &&b','
+        );
         let exp = locate_claim(payload, "exp").expect("exp claim");
         let val_byte = payload.as_bytes()[exp.offset + exp.value_idx];
         assert_eq!(val_byte, b'1');

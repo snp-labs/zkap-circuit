@@ -34,7 +34,7 @@ use ark_std::rand::SeedableRng;
 use wasmtime::{Engine, Linker, Memory, Module, Store, TypedFunc};
 use zkap_witness_wasm::ZkapInputV1;
 
-use common::{build_v1_fixture_bundle, TestCircuit, V1FixtureBundle};
+use common::{TestCircuit, V1FixtureBundle, build_v1_fixture_bundle};
 
 /// Workspace root = parent of `crates/zkap-witness-wasm`.
 fn workspace_root() -> PathBuf {
@@ -140,8 +140,7 @@ fn rebuild_wasm(arzkey_path: &Path) -> PathBuf {
         .expect("spawn `cargo build` for wasm32-unknown-unknown");
     assert!(status.success(), "wasm rebuild failed (exit {:?})", status);
 
-    target_dir
-        .join("wasm32-unknown-unknown/release/zkap_witness_wasm.wasm")
+    target_dir.join("wasm32-unknown-unknown/release/zkap_witness_wasm.wasm")
 }
 
 /// Wasm linear-memory harness: typed function handles, the exported
@@ -292,7 +291,10 @@ fn wasm_to_prove_full_pipeline() {
     let workspace = workspace_root();
     let arzkey_path = workspace.join("target/test_fixtures/wasm_to_prove.arzkey");
 
-    eprintln!("[step 0] generating fresh test arzkey at {}", arzkey_path.display());
+    eprintln!(
+        "[step 0] generating fresh test arzkey at {}",
+        arzkey_path.display()
+    );
     let (arzkey_in_mem, v1_input, satisfying_circuit) = generate_test_arzkey(&arzkey_path);
 
     eprintln!("[step 0] rebuilding zkap-witness-wasm against the test arzkey");
@@ -371,7 +373,10 @@ fn wasm_to_prove_full_pipeline() {
     harness.free(host_blake3_ptr, 32);
 
     // Step 7 — parse the wasm output as an ArwtnsFile.
-    eprintln!("[step 7] ArwtnsFile::read(wasm output, {} bytes)", wasm_arwtns_bytes.len());
+    eprintln!(
+        "[step 7] ArwtnsFile::read(wasm output, {} bytes)",
+        wasm_arwtns_bytes.len()
+    );
     let arwtns: ArwtnsFile<Fr> =
         ArwtnsFile::<Fr>::read(&mut std::io::Cursor::new(&wasm_arwtns_bytes))
             .expect("ArwtnsFile::read on wasm output");
@@ -410,8 +415,8 @@ fn wasm_to_prove_full_pipeline() {
     let mut rng = ark_std::rand::rngs::StdRng::seed_from_u64(7);
     let proof = prove(&arzkey, &arwtns, &mut rng).expect("prove");
     let pvk = prepare_verifying_key(&arzkey.vk);
-    let valid = Groth16::<Bn254>::verify_proof(&pvk, &proof, &arwtns.instance)
-        .expect("verify_proof");
+    let valid =
+        Groth16::<Bn254>::verify_proof(&pvk, &proof, &arwtns.instance).expect("verify_proof");
     assert!(valid, "Groth16 verify_proof returned false");
 
     // === Wrong-pair coverage (verifies the pair contract holds in
@@ -449,7 +454,9 @@ fn wasm_to_prove_full_pipeline() {
     harness.free(bad_out_ptr_slot, 4);
     harness.free(bad_out_len_slot, 4);
 
-    eprintln!("[wrong-pair B] arwtns.header.ar1cs_blake3 tamper → expect prove error before SNARK work");
+    eprintln!(
+        "[wrong-pair B] arwtns.header.ar1cs_blake3 tamper → expect prove error before SNARK work"
+    );
     let mut tampered_arwtns = arwtns.clone();
     tampered_arwtns.header.ar1cs_blake3[0] ^= 0x01;
     assert_ne!(
@@ -524,10 +531,7 @@ fn host_rejects_wasm_with_mismatched_ar1cs_blake3() {
     #[derive(Clone)]
     struct ToyCircuit;
     impl ConstraintSynthesizer<Fr> for ToyCircuit {
-        fn generate_constraints(
-            self,
-            cs: ConstraintSystemRef<Fr>,
-        ) -> Result<(), SynthesisError> {
+        fn generate_constraints(self, cs: ConstraintSystemRef<Fr>) -> Result<(), SynthesisError> {
             let z = cs.new_input_variable(|| Ok(Fr::from(15u64)))?;
             let x = cs.new_witness_variable(|| Ok(Fr::from(3u64)))?;
             let y = cs.new_witness_variable(|| Ok(Fr::from(5u64)))?;
@@ -580,8 +584,7 @@ fn host_rejects_wasm_with_mismatched_ar1cs_blake3() {
         // Sanity assert: toy's body must NOT collide with the main
         // fixture's, otherwise the mismatch test is vacuous.
         let main_arzkey_for_diff = {
-            let mut f2 =
-                std::fs::File::open(&arzkey_path_main).expect("open main fixture arzkey");
+            let mut f2 = std::fs::File::open(&arzkey_path_main).expect("open main fixture arzkey");
             ArzkeyFile::<Bn254>::read(&mut f2).expect("main arzkey read")
         };
         assert_ne!(

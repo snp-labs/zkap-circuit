@@ -32,7 +32,11 @@ pub fn die(msg: impl std::fmt::Display) -> ! {
 /// prints a human-readable message to stderr and exits with code 1.
 pub fn load_config_or_exit(path: &Path) -> CircuitConfig {
     zkap_service::load_circuit_config(path).unwrap_or_else(|e| {
-        die(format!("Failed to load config from {}: {}", path.display(), e))
+        die(format!(
+            "Failed to load config from {}: {}",
+            path.display(),
+            e
+        ))
     })
 }
 

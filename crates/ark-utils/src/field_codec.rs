@@ -153,6 +153,9 @@ mod tests {
         // string is therefore the full 64-char zero string with the `0x`
         // prefix. (This matches the legacy `service::field_to_hex` behavior.)
         let s = field_to_hex(Fr::zero());
-        assert_eq!(s, "0x0000000000000000000000000000000000000000000000000000000000000000");
+        assert_eq!(
+            s,
+            "0x0000000000000000000000000000000000000000000000000000000000000000"
+        );
     }
 }

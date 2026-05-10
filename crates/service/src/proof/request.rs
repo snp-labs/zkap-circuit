@@ -61,11 +61,7 @@ impl ZkapPerJwtFields {
     ///
     /// This replaces the 17-line ad-hoc mapping that previously lived
     /// in `proof/mod.rs`.
-    pub fn to_zkap_input_v1(
-        &self,
-        shared: &ZkapSharedFields,
-        cfg: &CircuitConfig,
-    ) -> ZkapInputV1 {
+    pub fn to_zkap_input_v1(&self, shared: &ZkapSharedFields, cfg: &CircuitConfig) -> ZkapInputV1 {
         ZkapInputV1 {
             jwt_bytes: self.jwt_bytes.clone(),
             rsa_modulus_be: self.rsa_modulus_be.clone(),

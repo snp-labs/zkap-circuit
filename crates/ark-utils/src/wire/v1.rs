@@ -175,7 +175,10 @@ mod tests {
         // n=6, k=3 → 4 elements; postcard varint(4) = 0x04
         let n_minus_k_plus1 = (cfg.n - cfg.k + 1) as usize;
         let av_off = h_sign_off + 32;
-        assert_eq!(bytes[av_off], n_minus_k_plus1 as u8, "anchor_values_be varint");
+        assert_eq!(
+            bytes[av_off], n_minus_k_plus1 as u8,
+            "anchor_values_be varint"
+        );
         for elem_i in 0..n_minus_k_plus1 {
             let elem_off = av_off + 1 + elem_i * 32;
             for &b in &bytes[elem_off..elem_off + 32] {
@@ -199,7 +202,11 @@ mod tests {
         let n = cfg.n as usize;
         let asel_off = akx_off + 1 + k * 32;
         assert_eq!(bytes[asel_off], n as u8, "anchor_selector varint");
-        assert_eq!(&bytes[asel_off + 1..asel_off + 1 + n], &[1, 1, 1, 0, 0, 0], "anchor_selector content");
+        assert_eq!(
+            &bytes[asel_off + 1..asel_off + 1 + n],
+            &[1, 1, 1, 0, 0, 0],
+            "anchor_selector content"
+        );
 
         // --- anchor_current_idx: u64 varint(0) = 0x00 ---
         let aci_off = asel_off + 1 + n;

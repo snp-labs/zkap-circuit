@@ -9,7 +9,7 @@
 //! refuses to proceed unless every import has a definition.
 
 use wasmi::{
-    core::ValType, Engine, ExternType, FuncType, Linker, Memory, Module, Store, TypedFunc, Val,
+    Engine, ExternType, FuncType, Linker, Memory, Module, Store, TypedFunc, Val, core::ValType,
 };
 
 use super::{RuntimeError, WasmWitnessRuntime};
@@ -47,10 +47,7 @@ fn default_val_for(ty: ValType) -> Val {
 /// expected from the witness wasm artifacts and are left to fail loudly
 /// during instantiation if they appear (a host-side dep change rather
 /// than a runtime input the host should silently absorb).
-fn install_stub_imports(
-    linker: &mut Linker<()>,
-    module: &Module,
-) -> Result<(), RuntimeError> {
+fn install_stub_imports(linker: &mut Linker<()>, module: &Module) -> Result<(), RuntimeError> {
     for import in module.imports() {
         if let ExternType::Func(func_ty) = import.ty() {
             let module_name = import.module().to_string();
@@ -141,9 +138,9 @@ impl WasmWitnessRuntime for WasmiRuntime {
             .start(&mut store)
             .map_err(|e| RuntimeError::Instantiation(format!("InstancePre::start: {}", e)))?;
 
-        let memory = instance.get_memory(&store, "memory").ok_or_else(|| {
-            RuntimeError::Instantiation("module does not export `memory`".into())
-        })?;
+        let memory = instance
+            .get_memory(&store, "memory")
+            .ok_or_else(|| RuntimeError::Instantiation("module does not export `memory`".into()))?;
         let alloc = instance
             .get_typed_func::<u32, u32>(&store, "wasm_alloc")
             .map_err(|e| RuntimeError::Instantiation(format!("wasm_alloc export: {}", e)))?;
@@ -157,9 +154,7 @@ impl WasmWitnessRuntime for WasmiRuntime {
             })?;
         let witness = instance
             .get_typed_func::<(u32, u32, u32, u32, u32), i32>(&store, "witness_generator")
-            .map_err(|e| {
-                RuntimeError::Instantiation(format!("witness_generator export: {}", e))
-            })?;
+            .map_err(|e| RuntimeError::Instantiation(format!("witness_generator export: {}", e)))?;
 
         Ok(WasmiRuntime {
             store,
@@ -215,9 +210,8 @@ impl WasmWitnessRuntime for WasmiRuntime {
         input_postcard: &[u8],
         host_blake3: &[u8; 32],
     ) -> Result<Vec<u8>, RuntimeError> {
-        let input_len = u32::try_from(input_postcard.len()).map_err(|_| {
-            RuntimeError::Memory("postcard input larger than u32::MAX".into())
-        })?;
+        let input_len = u32::try_from(input_postcard.len())
+            .map_err(|_| RuntimeError::Memory("postcard input larger than u32::MAX".into()))?;
 
         // 1. Allocate + write input buffer.
         let in_ptr = self.call_alloc(input_len)?;

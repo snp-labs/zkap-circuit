@@ -19,9 +19,9 @@ use std::path::PathBuf;
 use ark_ar1cs_wtns::ArwtnsFile;
 use ark_ar1cs_zkey::ArzkeyFile;
 use ark_groth16::Proof;
+use ark_utils::wire::ZkapInputV1;
 use circuit::constants::{BN254, F};
 use rand::rngs::OsRng;
-use ark_utils::wire::ZkapInputV1;
 
 use crate::error::ApplicationError;
 use crate::proof::runtime::{DefaultRuntime, RuntimeError, WasmWitnessRuntime};
@@ -130,8 +130,8 @@ impl ProofGenerator {
                 .generate_witness(&postcard_bytes, &arzkey.header.ar1cs_blake3)
                 .map_err(map_runtime_err)?;
 
-            let arwtns: ArwtnsFile<F> =
-                ArwtnsFile::<F>::read(&mut Cursor::new(&arwtns_bytes)).map_err(|e| {
+            let arwtns: ArwtnsFile<F> = ArwtnsFile::<F>::read(&mut Cursor::new(&arwtns_bytes))
+                .map_err(|e| {
                     ApplicationError::ProofGenerationFailed(format!(
                         "ArwtnsFile::read on wasm output: {}",
                         e
@@ -167,9 +167,8 @@ impl ProofGenerator {
                 e
             ))
         })?;
-        ArzkeyFile::read(&mut std::io::BufReader::new(f)).map_err(|e| {
-            ApplicationError::InvalidFormat(format!("Failed to load arzkey: {}", e))
-        })
+        ArzkeyFile::read(&mut std::io::BufReader::new(f))
+            .map_err(|e| ApplicationError::InvalidFormat(format!("Failed to load arzkey: {}", e)))
     }
 }
 

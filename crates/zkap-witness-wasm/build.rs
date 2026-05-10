@@ -52,8 +52,7 @@ fn main() {
     // that `tests/wasm_to_prove.rs` can generate its own `.arzkey` at
     // runtime and respawn cargo against the wasm32 target with the right
     // env var.
-    let target_arch =
-        env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH not set");
+    let target_arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH not set");
     let is_wasm = target_arch == "wasm32";
 
     let blake3 = match env::var(ENV_VAR) {

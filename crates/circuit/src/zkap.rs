@@ -64,6 +64,10 @@ use crate::{
         constraints::{ClaimIndicesVar, RSA2048VerifyGadget},
     },
 };
+use ark_utils::{
+    comparison::enforce_less_than, packing::pack_decompose_bytes_unchecked, single_multiplexer,
+    slice_efficient,
+};
 use gadget::{
     anchor::poseidon::{
         PoseidonAnchor,
@@ -91,10 +95,6 @@ use gadget::{
         PublicKey, Signature,
         constraints::{PublicKeyVar, SignatureVar},
     },
-};
-use ark_utils::{
-    comparison::enforce_less_than, packing::pack_decompose_bytes_unchecked, single_multiplexer,
-    slice_efficient,
 };
 
 /// The main Groth16 R1CS circuit for the ZKAP protocol.

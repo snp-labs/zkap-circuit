@@ -27,8 +27,8 @@ use ark_utils::{
     slice_efficient,
 };
 
-use crate::hashes::sha256::{H, K, utils::conditionally_select_vec};
 use super::digest::DigestVar;
+use crate::hashes::sha256::{H, K, utils::conditionally_select_vec};
 
 #[derive(Clone)]
 pub struct SHA256Gadget<F: PrimeField> {

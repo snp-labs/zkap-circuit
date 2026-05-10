@@ -12,7 +12,7 @@
 #![allow(dead_code)]
 
 use ark_crypto_primitives::{
-    crh::{poseidon::CRH, CRHScheme},
+    crh::{CRHScheme, poseidon::CRH},
     merkle_tree::MerkleTree,
     sponge::poseidon::PoseidonConfig,
 };
@@ -604,12 +604,8 @@ pub fn build_v1_fixture_bundle() -> V1FixtureBundle {
     let aud_packed = pack_bytes_to_field_native(&aud_bytes);
     let (aud_list, h_aud_list) = build_audience_list(&aud_packed, &params, &cfg);
 
-    let anchor_values_be: Vec<[u8; 32]> = anchor_ctx
-        .anchor
-        .0
-        .iter()
-        .map(fe_to_be32_bytes)
-        .collect();
+    let anchor_values_be: Vec<[u8; 32]> =
+        anchor_ctx.anchor.0.iter().map(fe_to_be32_bytes).collect();
     let anchor_known_x_be: Vec<[u8; 32]> = known_x_list.iter().map(fe_to_be32_bytes).collect();
     let random_be = fe_to_be32_bytes(&random);
     let h_sign_user_op_be = fe_to_be32_bytes(&h_sign_user_op);

@@ -90,6 +90,8 @@ pub use hash::{generate_aud_hash, generate_hash, generate_leaf_hash};
 #[cfg(feature = "proof")]
 pub use dto::{PerProofPublicInputs, ProofComponents, SharedPublicInputs, ZkapProofResult};
 #[cfg(feature = "proof")]
-pub use proof::{RawProofRequest, SetupOutput, VerifyingContext, ZkapPerJwtFields, ZkapSharedFields};
+pub use proof::{
+    RawProofRequest, SetupOutput, VerifyingContext, ZkapPerJwtFields, ZkapSharedFields,
+};
 #[cfg(feature = "proof")]
 pub use proof::{prove, setup, verify};

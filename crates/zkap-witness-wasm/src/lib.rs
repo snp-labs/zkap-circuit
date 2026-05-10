@@ -44,7 +44,7 @@ pub mod error;
 pub mod input;
 
 pub use error::ZkapWitnessError;
-pub use input::{build_main_circuit, into_circuit_input, ZkapMainCircuit};
+pub use input::{ZkapMainCircuit, build_main_circuit, into_circuit_input};
 
 // Re-export V1 wire types and the field codec helpers from `ark-utils`
 // so existing call sites (`zkap_witness_wasm::ZkapInputV1`, etc.) keep
@@ -66,14 +66,14 @@ use circuit::constants::F;
 // is a silent host-side instance-vector bug — bump `CIRCUIT_ID` and update
 // this slice in the same commit. See W5 (issue W10) for the gate rationale.
 const ZKAP_PUBLIC_INPUT_NAMES: &[&str] = &[
-    "hanchor",       // CircuitPublicInputs::hanchor       (field 0)
-    "h_a",           // CircuitPublicInputs::h_a            (field 1)
-    "root",          // CircuitPublicInputs::root           (field 2)
-    "h_sign_user_op",// CircuitPublicInputs::h_sign_user_op (field 3)
-    "jwt_exp",       // CircuitPublicInputs::jwt_exp        (field 4)
-    "partial_rhs",   // CircuitPublicInputs::partial_rhs    (field 5)
-    "lhs",           // CircuitPublicInputs::lhs            (field 6)
-    "h_aud_list",    // CircuitPublicInputs::h_aud_list     (field 7)
+    "hanchor",        // CircuitPublicInputs::hanchor       (field 0)
+    "h_a",            // CircuitPublicInputs::h_a            (field 1)
+    "root",           // CircuitPublicInputs::root           (field 2)
+    "h_sign_user_op", // CircuitPublicInputs::h_sign_user_op (field 3)
+    "jwt_exp",        // CircuitPublicInputs::jwt_exp        (field 4)
+    "partial_rhs",    // CircuitPublicInputs::partial_rhs    (field 5)
+    "lhs",            // CircuitPublicInputs::lhs            (field 6)
+    "h_aud_list",     // CircuitPublicInputs::h_aud_list     (field 7)
 ];
 
 /// Wasm witness generator for the ZKAP main circuit.
@@ -106,7 +106,7 @@ impl WitnessGenerator for ZkapWitnessGenerator {
 }
 
 ark_ar1cs_wasm_witness::export_witness_generator!(
-    generator       = ZkapWitnessGenerator,
+    generator = ZkapWitnessGenerator,
     embedded_blake3 = EMBEDDED_AR1CS_BLAKE3,
 );
 

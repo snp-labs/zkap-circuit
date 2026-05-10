@@ -70,7 +70,10 @@ impl CircuitConfig {
             return Err(CircuitConfigError::InvalidK(self.k));
         }
         if self.k > self.n {
-            return Err(CircuitConfigError::KExceedsN { k: self.k, n: self.n });
+            return Err(CircuitConfigError::KExceedsN {
+                k: self.k,
+                n: self.n,
+            });
         }
         if self.n < 1 {
             return Err(CircuitConfigError::InvalidN(self.n));
@@ -85,7 +88,9 @@ impl CircuitConfig {
             });
         }
         if self.num_audience_limit < 1 {
-            return Err(CircuitConfigError::InvalidNumAudienceLimit(self.num_audience_limit));
+            return Err(CircuitConfigError::InvalidNumAudienceLimit(
+                self.num_audience_limit,
+            ));
         }
         if self.claims.is_empty() {
             return Err(CircuitConfigError::EmptyClaims);

@@ -19,7 +19,6 @@ pub enum TokenError {
 
     #[error("Key not found: {0}")]
     NotFoundKeyError(String),
-
 }
 
 /// Parses a JSON claim from a string and extracts its metadata.

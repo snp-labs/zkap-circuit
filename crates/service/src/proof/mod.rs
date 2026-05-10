@@ -19,13 +19,15 @@ use ark_ar1cs_format::{ArcsFile, CurveId};
 use ark_crypto_primitives::snark::CircuitSpecificSetupSNARK;
 #[allow(unused_imports)]
 use ark_crypto_primitives::snark::SNARK;
-use ark_groth16::{prepare_verifying_key, Groth16, PreparedVerifyingKey, ProvingKey, VerifyingKey};
-use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystem, OptimizationGoal, SynthesisMode};
-use circuit::constants::{CircuitConfig, BN254, BNP, CG, F};
+use ark_groth16::{Groth16, PreparedVerifyingKey, ProvingKey, VerifyingKey, prepare_verifying_key};
+use ark_relations::r1cs::{
+    ConstraintSynthesizer, ConstraintSystem, OptimizationGoal, SynthesisMode,
+};
+use ark_utils::wire::ZkapInputV1;
+use circuit::constants::{BN254, BNP, CG, CircuitConfig, F};
 use circuit::zkap::ZkapCircuit;
 use rand::rngs::OsRng;
 use std::path::Path;
-use ark_utils::wire::ZkapInputV1;
 
 use crate::dto::{ProofComponents, ZkapProofResult};
 use crate::error::ApplicationError;

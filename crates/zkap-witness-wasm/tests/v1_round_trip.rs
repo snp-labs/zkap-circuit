@@ -12,13 +12,13 @@
 mod common;
 
 use ark_ar1cs_format::CurveId;
-use ark_ar1cs_wasm_witness::{witness_generator_native, WitnessGenerator};
+use ark_ar1cs_wasm_witness::{WitnessGenerator, witness_generator_native};
 use ark_ar1cs_wtns::ArwtnsFile;
 use ark_bn254::Fr;
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystem, OptimizationGoal};
 use zkap_witness_wasm::{ZkapInputV1, ZkapWitnessGenerator};
 
-use common::{build_v1_fixture_bundle, TestCircuit, V1FixtureBundle};
+use common::{TestCircuit, V1FixtureBundle, build_v1_fixture_bundle};
 
 /// Acceptance: every V1 payload produced from the test fixtures yields a
 /// satisfying `ZkapCircuit`. Drives the circuit in `Prove` mode (the
@@ -82,18 +82,17 @@ fn v1_native_witness_generator_pipeline() {
     // wires this up to the real arzkey blake3.
     let blake3 = [0xCDu8; 32];
     let postcard_bytes = postcard::to_allocvec(&v1).expect("postcard encode V1");
-    let arwtns_bytes = witness_generator_native::<ZkapWitnessGenerator>(
-        &postcard_bytes,
-        &blake3,
-        &blake3,
-    )
-    .expect("witness_generator_native::<V1> failed");
+    let arwtns_bytes =
+        witness_generator_native::<ZkapWitnessGenerator>(&postcard_bytes, &blake3, &blake3)
+            .expect("witness_generator_native::<V1> failed");
 
     assert!(!arwtns_bytes.is_empty(), "arwtns output is empty");
-    let arwtns: ArwtnsFile<Fr> =
-        ArwtnsFile::<Fr>::read(&mut std::io::Cursor::new(&arwtns_bytes))
-            .expect("ArwtnsFile::read on V1 output");
-    assert_eq!(arwtns.header.ar1cs_blake3, blake3, "blake3 binding mismatch");
+    let arwtns: ArwtnsFile<Fr> = ArwtnsFile::<Fr>::read(&mut std::io::Cursor::new(&arwtns_bytes))
+        .expect("ArwtnsFile::read on V1 output");
+    assert_eq!(
+        arwtns.header.ar1cs_blake3, blake3,
+        "blake3 binding mismatch"
+    );
     assert_eq!(
         arwtns.header.curve_id as u8,
         CurveId::Bn254 as u8,

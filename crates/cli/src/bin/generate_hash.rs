@@ -108,9 +108,8 @@ fn generate_aud_hash(args: &AudArgs, params: &circuit::constants::CircuitConfig)
         .map(|s| s.trim().to_string())
         .collect();
 
-    let aud_result = zkap_service::generate_aud_hash(params, aud_vec.clone()).unwrap_or_else(|e| {
-        die(format!("Error generating audience hash: {}", e))
-    });
+    let aud_result = zkap_service::generate_aud_hash(params, aud_vec.clone())
+        .unwrap_or_else(|e| die(format!("Error generating audience hash: {}", e)));
 
     let output = AudOutput {
         input: aud_vec,
@@ -147,9 +146,8 @@ fn generate_pk_leaf(args: &LeafArgs, params: &circuit::constants::CircuitConfig)
                 pk: pk.to_string(),
             };
 
-            let leaf_hex = zkap_service::generate_leaf_hash(params, iss, pk).unwrap_or_else(|e| {
-                die(format!("Error computing leaf for iss '{}': {}", iss, e))
-            });
+            let leaf_hex = zkap_service::generate_leaf_hash(params, iss, pk)
+                .unwrap_or_else(|e| die(format!("Error computing leaf for iss '{}': {}", iss, e)));
 
             (input_data, leaf_hex)
         })

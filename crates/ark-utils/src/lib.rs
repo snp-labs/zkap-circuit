@@ -46,9 +46,9 @@ pub mod error;
 pub mod field_codec;
 
 // Always-available re-exports
-pub use convert::{ConvertError, TextError, pad, str_to_limbs, try_str_to_fields};
 #[cfg(feature = "field-serde")]
 pub use convert::hex_decimal_to_field;
+pub use convert::{ConvertError, TextError, pad, str_to_limbs, try_str_to_fields};
 pub use field_codec::{NonCanonicalFieldError, fe_from_be32_canonical, fe_to_be32, field_to_hex};
 
 // R1CS re-exports
@@ -59,7 +59,9 @@ pub use packing::{
     pack_bytes_to_field_unchecked, pack_decompose_bytes_checked, pack_decompose_bytes_unchecked,
 };
 #[cfg(feature = "r1cs")]
-pub use select::{multi_mux, one_bit_vector, select_array_element, select_array_element_be, single_multiplexer};
+pub use select::{
+    multi_mux, one_bit_vector, select_array_element, select_array_element_be, single_multiplexer,
+};
 #[cfg(feature = "r1cs")]
 pub use slice::{
     num_to_segments_be, segments_to_num_be, slice_efficient, slice_from_start, slice_grouped,

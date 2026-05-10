@@ -51,13 +51,15 @@ use std::io::BufReader;
 use std::path::PathBuf;
 
 use ark_ar1cs_zkey::ArzkeyHeader;
-use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystem, OptimizationGoal, SynthesisMode};
+use ark_relations::r1cs::{
+    ConstraintSynthesizer, ConstraintSystem, OptimizationGoal, SynthesisMode,
+};
 use ark_serialize::CanonicalSerialize;
 use ark_utils::wire::ZkapInputV1;
 use circuit::constants::{BNP, CG, F};
 use circuit::zkap::ZkapCircuit;
 use sha2::{Digest, Sha256};
-use zkap_service::{setup, CircuitConfig};
+use zkap_service::{CircuitConfig, setup};
 
 // ─── Fixture builders ─────────────────────────────────────────────────────────
 
@@ -170,13 +172,11 @@ const GOLDEN_AR1CS_BLAKE3_F1: &str =
 
 /// F2 Tier A — `n=8, k=3, tree_height=5`.
 /// Captured at P0-A commit by running Tier A test with --nocapture.
-const GOLDEN_AR1CS_BLAKE3_F2: &str =
-    "PLACEHOLDER_F2_RUN_IGNORED_TO_CAPTURE";
+const GOLDEN_AR1CS_BLAKE3_F2: &str = "PLACEHOLDER_F2_RUN_IGNORED_TO_CAPTURE";
 
 /// F3 Tier A — `n=4, k=2, tree_height=3`.
 /// Captured at P0-A commit by running Tier A test with --nocapture.
-const GOLDEN_AR1CS_BLAKE3_F3: &str =
-    "PLACEHOLDER_F3_RUN_IGNORED_TO_CAPTURE";
+const GOLDEN_AR1CS_BLAKE3_F3: &str = "PLACEHOLDER_F3_RUN_IGNORED_TO_CAPTURE";
 
 // ─── Golden constants — Tier B (CircuitConfig::serialize_compressed) ──────────
 
@@ -318,7 +318,11 @@ fn synthesize_and_inspect(cfg: &CircuitConfig) -> (usize, usize, usize, String) 
     // Deterministic R1CS matrix hash.
     // Matrix<F> = Vec<Vec<(F, usize)>> where tuple is (coeff, col_index).
     let mut hasher = Sha256::new();
-    for (tag, matrix) in [(b'A', &matrices.a), (b'B', &matrices.b), (b'C', &matrices.c)] {
+    for (tag, matrix) in [
+        (b'A', &matrices.a),
+        (b'B', &matrices.b),
+        (b'C', &matrices.c),
+    ] {
         hasher.update([tag]);
         hasher.update((matrix.len() as u64).to_le_bytes());
         for row in matrix {
@@ -455,7 +459,8 @@ fn tier_b_circuit_config_canonical_f1() {
         .expect("CircuitConfig::serialize_compressed must succeed");
     let actual = hex::encode(&buf);
     assert_eq!(
-        actual, GOLDEN_CIRCUIT_CONFIG_F1,
+        actual,
+        GOLDEN_CIRCUIT_CONFIG_F1,
         "L1 break — F1 CircuitConfig::serialize_compressed drift.\n\
          baseline ({} bytes): {GOLDEN_CIRCUIT_CONFIG_F1}\n\
          actual   ({} bytes): {actual}",
@@ -472,7 +477,8 @@ fn tier_b_circuit_config_canonical_f2() {
         .expect("CircuitConfig::serialize_compressed must succeed");
     let actual = hex::encode(&buf);
     assert_eq!(
-        actual, GOLDEN_CIRCUIT_CONFIG_F2,
+        actual,
+        GOLDEN_CIRCUIT_CONFIG_F2,
         "L1 break — F2 CircuitConfig::serialize_compressed drift.\n\
          baseline ({} bytes): {GOLDEN_CIRCUIT_CONFIG_F2}\n\
          actual   ({} bytes): {actual}",
@@ -489,7 +495,8 @@ fn tier_b_circuit_config_canonical_f3() {
         .expect("CircuitConfig::serialize_compressed must succeed");
     let actual = hex::encode(&buf);
     assert_eq!(
-        actual, GOLDEN_CIRCUIT_CONFIG_F3,
+        actual,
+        GOLDEN_CIRCUIT_CONFIG_F3,
         "L1 break — F3 CircuitConfig::serialize_compressed drift.\n\
          baseline ({} bytes): {GOLDEN_CIRCUIT_CONFIG_F3}\n\
          actual   ({} bytes): {actual}",
@@ -507,7 +514,8 @@ fn tier_c_zkap_input_v1_postcard_f1() {
     let buf = postcard::to_allocvec(&v1).expect("postcard::to_allocvec must succeed");
     let actual = hex::encode(&buf);
     assert_eq!(
-        actual, GOLDEN_ZKAP_INPUT_V1_F1,
+        actual,
+        GOLDEN_ZKAP_INPUT_V1_F1,
         "L1 break — F1 ZkapInputV1 postcard drift.\n\
          baseline ({} bytes): {GOLDEN_ZKAP_INPUT_V1_F1}\n\
          actual   ({} bytes): {actual}",

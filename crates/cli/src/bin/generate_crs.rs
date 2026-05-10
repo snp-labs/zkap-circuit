@@ -36,14 +36,14 @@ fn main() {
     let output_dir = PathBuf::from(&cli.output);
     println!("Generate CRS files at path: {}", output_dir.display());
     println!("==================================================");
-    println!("{}", serde_json::to_string_pretty(&params).unwrap_or_else(|e| {
-        die(format!("Failed to serialise config for display: {}", e))
-    }));
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&params)
+            .unwrap_or_else(|e| { die(format!("Failed to serialise config for display: {}", e)) })
+    );
     println!("==================================================");
 
-    setup(&params, &output_dir).unwrap_or_else(|e| {
-        die(format!("CRS generation failed: {}", e))
-    });
+    setup(&params, &output_dir).unwrap_or_else(|e| die(format!("CRS generation failed: {}", e)));
 
     println!("CRS generation complete.");
 }

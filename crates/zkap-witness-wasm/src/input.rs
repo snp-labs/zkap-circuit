@@ -1,10 +1,11 @@
 //! V1 → `ZkapCircuitInput<F>` conversion for the wasm witness-generator.
 //!
-//! The wire types ([`ZkapInputV1`], [`ZkapCircuitConfigV1`]) and the
-//! field-element BE codec live in `zkap-input-types` (no `circuit`/`gadget`
-//! deps). This module is the conversion-side companion: it pulls in the
-//! circuit-side types and turns a postcard-decoded V1 payload into a fully
-//! assigned [`ZkapMainCircuit`].
+//! The wire types ([`ZkapInputV1`], [`CircuitConfig`]) live in
+//! `ark-utils::wire` and the field-element BE codec lives in
+//! `ark-utils::field_codec` — both modules are `circuit`/`gadget`-free.
+//! This module is the conversion-side companion: it pulls in the
+//! circuit-side types and turns a postcard-decoded V1 payload into a
+//! fully assigned [`ZkapMainCircuit`].
 //!
 //! # V1 — semantic input
 //!
@@ -34,7 +35,7 @@
 //! | `merkle_leaf_sibling_hash_be`  | raw 32 bytes (no length prefix)                 |
 //! | `merkle_auth_path_be`          | postcard `Vec<[u8;32]>`, length = `tree_height - 1` |
 //! | `merkle_leaf_idx`              | postcard u64 varint                             |
-//! | `circuit_config`               | nested struct, see [`ZkapCircuitConfigV1`]      |
+//! | `circuit_config`               | nested struct, see [`CircuitConfig`]            |
 //!
 //! Bumping the order of any of the above fields, or changing
 //! big-endian / variable-vs-fixed-length conventions, is a wire-format
@@ -47,7 +48,9 @@ use ark_crypto_primitives::{
 };
 use ark_ff::{PrimeField, Zero};
 
-use circuit::constants::{CircuitConfig, RawCircuitConfig, BNP, CG, F};
+use circuit::constants::{BNP, CG, F};
+#[cfg(test)]
+use circuit::constants::CircuitConfig;
 use circuit::input::{
     AnchorWitness, AudienceWitness, CircuitConstants, CircuitPublicInputs, JwtWitness,
     MerkleWitness, MiscWitness, ZkapCircuitInput,
@@ -62,71 +65,14 @@ use gadget::{
     signature::rsa::{PublicKey, Signature},
 };
 
-use zkap_input_types::{fe_from_be32_canonical, ZkapCircuitConfigV1, ZkapInputV1, RSA_2048_BYTES};
+use ark_utils::field_codec::fe_from_be32_canonical;
+use ark_utils::wire::{RSA_2048_BYTES, ZkapInputV1};
 
 use crate::error::ZkapWitnessError;
 
 /// Concrete `ZkapCircuit` instantiation used by this wasm artifact —
 /// `(Curve = ed_on_bn254, BigNat = 2048-bit limbs)`.
 pub type ZkapMainCircuit = ZkapCircuit<CG, BNP>;
-
-// ---------- circuit-side ↔ V1 config conversions ----------
-//
-// `From` impls would violate the orphan rule (both `ZkapCircuitConfigV1`
-// and `CircuitConfig` are foreign to this crate from the perspective of
-// any future caller that sees both types via re-exports), so the
-// conversions are exposed as free functions.
-
-/// Build a wire-format [`ZkapCircuitConfigV1`] from the circuit-side
-/// [`CircuitConfig`].
-pub fn config_v1_from_circuit(c: &CircuitConfig) -> ZkapCircuitConfigV1 {
-    ZkapCircuitConfigV1 {
-        max_jwt_b64_len: c.max_jwt_b64_len,
-        max_payload_b64_len: c.max_payload_b64_len,
-        max_aud_len: c.max_aud_len,
-        max_exp_len: c.max_exp_len,
-        max_iss_len: c.max_iss_len,
-        max_nonce_len: c.max_nonce_len,
-        max_sub_len: c.max_sub_len,
-        n: c.n,
-        k: c.k,
-        tree_height: c.tree_height,
-        num_audience_limit: c.num_audience_limit,
-        claims: c
-            .claims
-            .iter()
-            .map(|b| {
-                core::str::from_utf8(b)
-                    .expect("CircuitConfig::claims entries are valid UTF-8")
-                    .to_owned()
-            })
-            .collect(),
-        forbidden_string: core::str::from_utf8(&c.forbidden_string)
-            .expect("CircuitConfig::forbidden_string is valid UTF-8")
-            .to_owned(),
-    }
-}
-
-/// Build a circuit-side [`CircuitConfig`] from a wire-format
-/// [`ZkapCircuitConfigV1`].
-pub fn circuit_config_from_v1(c: &ZkapCircuitConfigV1) -> CircuitConfig {
-    let raw = RawCircuitConfig {
-        max_jwt_b64_len: c.max_jwt_b64_len,
-        max_payload_b64_len: c.max_payload_b64_len,
-        max_aud_len: c.max_aud_len,
-        max_exp_len: c.max_exp_len,
-        max_iss_len: c.max_iss_len,
-        max_nonce_len: c.max_nonce_len,
-        max_sub_len: c.max_sub_len,
-        n: c.n,
-        k: c.k,
-        tree_height: c.tree_height,
-        num_audience_limit: c.num_audience_limit,
-        claims: c.claims.clone(),
-        forbidden_string: c.forbidden_string.clone(),
-    };
-    CircuitConfig::from(raw)
-}
 
 // ---------- limb packing (mirrors test fixtures' pack_bytes_to_field_native) ----------
 
@@ -265,10 +211,10 @@ pub fn build_main_circuit(input: ZkapInputV1) -> Result<ZkapMainCircuit, ZkapWit
     Ok(ZkapMainCircuit::from_input(ci))
 }
 
-/// Map a [`zkap_input_types::NonCanonicalFieldError`] into the local
-/// error variant, prefixing with the field name so failures stay
+/// Map an [`ark_utils::field_codec::NonCanonicalFieldError`] into the
+/// local error variant, prefixing with the field name so failures stay
 /// actionable when a host sends a `>= p` encoding.
-fn nc_field<S: Into<String>>(field: S) -> impl FnOnce(zkap_input_types::NonCanonicalFieldError) -> ZkapWitnessError {
+fn nc_field<S: Into<String>>(field: S) -> impl FnOnce(ark_utils::field_codec::NonCanonicalFieldError) -> ZkapWitnessError {
     let field = field.into();
     move |e| ZkapWitnessError::NonCanonicalField(format!("{}: {}", field, e))
 }
@@ -296,7 +242,7 @@ pub fn into_circuit_input(input: ZkapInputV1) -> Result<ZkapCircuitInput<F>, Zka
     } = input;
 
     // 1. Validate config + dimensions.
-    let cfg = circuit_config_from_v1(&circuit_config);
+    let cfg = circuit_config;
     cfg.validate().map_err(ZkapWitnessError::InvalidConfig)?;
 
     let n = cfg.n as usize;
@@ -435,9 +381,7 @@ pub fn into_circuit_input(input: ZkapInputV1) -> Result<ZkapCircuitInput<F>, Zka
         .map_err(|e| ZkapWitnessError::MalformedJwt(format!("payload not UTF-8: {}", e)))?;
 
     let mut claim_indices: Vec<ClaimIndices> = Vec::with_capacity(cfg.claims.len());
-    for key_bytes in &cfg.claims {
-        let key = core::str::from_utf8(key_bytes)
-            .map_err(|e| ZkapWitnessError::InvalidConfig(format!("claim key: {}", e)))?;
+    for key in &cfg.claims {
         claim_indices.push(locate_claim(payload_str, key)?);
     }
 
@@ -475,8 +419,8 @@ pub fn into_circuit_input(input: ZkapInputV1) -> Result<ZkapCircuitInput<F>, Zka
 
     // 6. Audience derivation.
     let claim_indices_for = |key: &str| -> Result<&ClaimIndices, ZkapWitnessError> {
-        for (i, k_bytes) in cfg.claims.iter().enumerate() {
-            if k_bytes.as_slice() == key.as_bytes() {
+        for (i, k) in cfg.claims.iter().enumerate() {
+            if k == key {
                 return Ok(&claim_indices[i]);
             }
         }
@@ -495,7 +439,7 @@ pub fn into_circuit_input(input: ZkapInputV1) -> Result<ZkapCircuitInput<F>, Zka
     // forbidden = "\"<forbidden_string>\"" padded to max_aud_len, packed, hashed.
     let mut forbidden_bytes = Vec::with_capacity(cfg.forbidden_string.len() + 2);
     forbidden_bytes.push(b'"');
-    forbidden_bytes.extend_from_slice(&cfg.forbidden_string);
+    forbidden_bytes.extend_from_slice(cfg.forbidden_string.as_bytes());
     forbidden_bytes.push(b'"');
     let forbidden_padded = pad_claim_value_to_max(&forbidden_bytes, cfg.max_aud_len as usize);
     let forbidden_packed = pack_bytes_to_field_native(&forbidden_padded);
@@ -707,8 +651,8 @@ fn base64_url_no_pad_decode(input: &[u8]) -> Result<Vec<u8>, String> {
 mod tests {
     use super::*;
 
-    fn sample_config_v1() -> ZkapCircuitConfigV1 {
-        ZkapCircuitConfigV1 {
+    fn sample_config_v1() -> CircuitConfig {
+        CircuitConfig {
             max_jwt_b64_len: 1024,
             max_payload_b64_len: 640,
             max_aud_len: 155,
@@ -803,11 +747,10 @@ mod tests {
     }
 
     #[test]
-    fn config_v1_round_trip_through_circuit_config() {
+    fn config_v1_validates_and_clones_consistently() {
         let cfg_v1 = sample_config_v1();
-        let cfg = circuit_config_from_v1(&cfg_v1);
-        cfg.validate().expect("sample config validates");
-        let back = config_v1_from_circuit(&cfg);
+        cfg_v1.validate().expect("sample config validates");
+        let back = cfg_v1.clone();
         assert_eq!(cfg_v1, back);
     }
 

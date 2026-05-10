@@ -4,13 +4,12 @@
 //! The `#[ignore]` tests require CRS generation and are slow (~30s+).
 //! Run with: `cargo test -p zkap-service --test service_integration -- --ignored`
 
-use circuit::constants::RawCircuitConfig;
 use zkap_service::{
     CircuitConfig, Secret, generate_anchor, generate_aud_hash, generate_hash, generate_leaf_hash,
 };
 
 fn test_config() -> CircuitConfig {
-    let raw = RawCircuitConfig {
+    CircuitConfig {
         max_jwt_b64_len: 1024,
         max_payload_b64_len: 640,
         max_aud_len: 155,
@@ -30,8 +29,7 @@ fn test_config() -> CircuitConfig {
             "sub".into(),
         ],
         forbidden_string: "forbidden".into(),
-    };
-    raw.into()
+    }
 }
 
 // ============ Cross-module integration tests ============
@@ -51,10 +49,10 @@ fn test_anchor_generation_and_hash_pipeline() {
     let anchor = generate_anchor(&params, secrets).unwrap();
 
     // Anchor should have n - k + 1 elements
-    assert_eq!(anchor.anchor.len(), (params.n - params.k + 1) as usize);
+    assert_eq!(anchor.len(), (params.n - params.k + 1) as usize);
 
     // Hash the anchor elements — outputs are 0x-prefixed hex strings
-    let h = generate_hash(anchor.anchor).unwrap();
+    let h = generate_hash(anchor).unwrap();
     assert!(h.starts_with("0x"), "hash should be 0x-prefixed hex: {}", h);
 }
 
@@ -101,7 +99,7 @@ fn test_anchor_deterministic_with_same_secrets() {
 
     let anchor1 = generate_anchor(&params, secrets.clone()).unwrap();
     let anchor2 = generate_anchor(&params, secrets).unwrap();
-    assert_eq!(anchor1.anchor, anchor2.anchor);
+    assert_eq!(anchor1, anchor2);
 }
 
 #[test]
@@ -126,7 +124,7 @@ fn test_anchor_different_secrets_different_output() {
 
     let anchor_a = generate_anchor(&params, secrets_a).unwrap();
     let anchor_b = generate_anchor(&params, secrets_b).unwrap();
-    assert_ne!(anchor_a.anchor, anchor_b.anchor);
+    assert_ne!(anchor_a, anchor_b);
 }
 
 // ============ Slow tests (require CRS) ============

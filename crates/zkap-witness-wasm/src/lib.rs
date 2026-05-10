@@ -10,17 +10,14 @@ pub mod error;
 pub mod input;
 
 pub use error::ZkapWitnessError;
-pub use input::{
-    build_main_circuit, circuit_config_from_v1, config_v1_from_circuit, into_circuit_input,
-    ZkapMainCircuit,
-};
+pub use input::{build_main_circuit, into_circuit_input, ZkapMainCircuit};
 
-// Re-export V1 wire types from the dedicated crate so existing call sites
-// (`zkap_witness_wasm::ZkapInputV1`, etc.) keep working.
-pub use zkap_input_types::{
-    fe_from_be32_canonical, fe_to_be32, NonCanonicalFieldError, ZkapCircuitConfigV1, ZkapInputV1,
-    RSA_2048_BYTES,
-};
+// Re-export V1 wire types and the field codec helpers from `ark-utils`
+// so existing call sites (`zkap_witness_wasm::ZkapInputV1`, etc.) keep
+// working. Wire schema and codec live in two distinct ark-utils
+// modules after PR1 of L4 absorption.
+pub use ark_utils::field_codec::{NonCanonicalFieldError, fe_from_be32_canonical, fe_to_be32};
+pub use ark_utils::wire::{CircuitConfig, RSA_2048_BYTES, ZkapInputV1};
 
 include!(concat!(env!("OUT_DIR"), "/embedded.rs"));
 

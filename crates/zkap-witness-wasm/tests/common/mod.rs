@@ -28,7 +28,7 @@ use sha2::Sha256;
 use ark_utils::pad;
 use ark_utils::try_str_to_fields;
 use circuit::{
-    constants::{BNP, CG, CircuitConfig, PAD_CHAR, RawCircuitConfig},
+    constants::{BNP, CG, CircuitConfig, PAD_CHAR},
     input::*,
     token::ClaimIndices,
     zkap::ZkapCircuit,
@@ -87,7 +87,7 @@ pub type TestCircuit = ZkapCircuit<CG, BNP>;
 
 /// Build a test CircuitConfig (dev profile)
 pub fn test_params() -> CircuitConfig {
-    let raw = RawCircuitConfig {
+    CircuitConfig {
         max_jwt_b64_len: 1024,
         max_payload_b64_len: 640,
         max_aud_len: 155,
@@ -107,8 +107,7 @@ pub fn test_params() -> CircuitConfig {
             "sub".into(),
         ],
         forbidden_string: "forbidden".into(),
-    };
-    raw.into()
+    }
 }
 
 // ============================================================
@@ -222,11 +221,7 @@ pub fn build_jwt_witness(
     let payload_str = String::from_utf8(payload_bytes).unwrap();
 
     // ClaimIndices for each claim
-    let claims: Vec<&str> = cfg
-        .claims
-        .iter()
-        .map(|c| std::str::from_utf8(c).unwrap())
-        .collect();
+    let claims: Vec<&str> = cfg.claims.iter().map(|c| c.as_str()).collect();
     let claim_indices: Vec<ClaimIndices> = claims
         .iter()
         .map(|key| {
@@ -493,7 +488,7 @@ pub fn build_audience_list(
     let h_aud = CRH::<F>::evaluate(params, aud_packed.to_vec()).unwrap();
 
     // Forbidden value: pad "forbidden" with quotes to match circuit format
-    let forbidden_str = std::str::from_utf8(&cfg.forbidden_string).unwrap();
+    let forbidden_str = cfg.forbidden_string.as_str();
     let mut forbidden_bytes = format!("\"{}\"", forbidden_str).into_bytes();
     forbidden_bytes.resize(cfg.max_aud_len as usize, 0x00);
     let forbidden_packed = pack_bytes_to_field_native(&forbidden_bytes);
@@ -549,7 +544,7 @@ pub fn fe_to_be32_bytes(value: &F) -> [u8; 32] {
 /// system is satisfied.
 pub fn build_v1_fixture_bundle() -> V1FixtureBundle {
     let cfg = test_params();
-    let cfg_v1 = zkap_witness_wasm::config_v1_from_circuit(&cfg);
+    let cfg_v1 = cfg.clone();
     let params = get_poseidon_params::<F>();
     let random = F::from(12345u64);
     let h_sign_user_op = F::from(67890u64);

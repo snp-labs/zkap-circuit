@@ -10,7 +10,7 @@
 //! | `vk.key` | Verifying key (uncompressed binary) |
 //! | `pvk.key` | Prepared verifying key (uncompressed binary) |
 //! | `Groth16Verifier.sol` | Solidity on-chain verifier contract |
-//! | `config.json` | Circuit configuration in JSON (RawCircuitConfig format) |
+//! | `config.json` | Circuit configuration in JSON (CircuitConfig JSON format) |
 
 use std::io::Cursor;
 use std::path::Path;
@@ -19,7 +19,7 @@ use crate::evm::groth16_verifier_solidity::SolidityContractGenerator;
 use ark_ar1cs_format::ArcsFile;
 use ark_ar1cs_zkey::ArzkeyFile;
 use ark_serialize::CanonicalSerialize;
-use circuit::constants::{CircuitConfig, F, RawCircuitConfig};
+use circuit::constants::{CircuitConfig, F};
 
 use crate::error::ApplicationError;
 use crate::proof::SetupOutput;
@@ -92,31 +92,8 @@ fn write_key_file<T: CanonicalSerialize>(value: &T, path: &Path) -> Result<(), A
 }
 
 fn write_config_json(config: &CircuitConfig, path: &Path) -> Result<(), ApplicationError> {
-    let raw = config_to_raw(config);
-    let json = serde_json::to_string_pretty(&raw)
+    let json = serde_json::to_string_pretty(config)
         .map_err(|e| ApplicationError::Other(format!("Failed to serialize config.json: {}", e)))?;
     std::fs::write(path, json)
         .map_err(|e| ApplicationError::Other(format!("Failed to write config.json: {}", e)))
-}
-
-fn config_to_raw(config: &CircuitConfig) -> RawCircuitConfig {
-    RawCircuitConfig {
-        max_jwt_b64_len: config.max_jwt_b64_len,
-        max_payload_b64_len: config.max_payload_b64_len,
-        max_aud_len: config.max_aud_len,
-        max_exp_len: config.max_exp_len,
-        max_iss_len: config.max_iss_len,
-        max_nonce_len: config.max_nonce_len,
-        max_sub_len: config.max_sub_len,
-        n: config.n,
-        k: config.k,
-        tree_height: config.tree_height,
-        num_audience_limit: config.num_audience_limit,
-        claims: config
-            .claims
-            .iter()
-            .map(|c| String::from_utf8_lossy(c).into_owned())
-            .collect(),
-        forbidden_string: String::from_utf8_lossy(&config.forbidden_string).into_owned(),
-    }
 }

@@ -1,55 +1,18 @@
-//! V1 wire-format types for the ZKAP main circuit, with no dependency on
-//! `circuit` or `gadget`. This crate is the single source of truth for the
-//! semantic [`ZkapInputV1`] payload that the host hands to the wasm
-//! witness-generator and that the wasm side decodes via postcard.
-//!
-//! The full encoding contract — field order, BE/LE rules, length prefixes,
-//! the `WitnessGenerator::CIRCUIT_ID` lockstep requirement — lives in
-//! `zkap-witness-wasm::input` (the conversion-side companion). Bumping
-//! anything here is a wire-format break.
-//!
-//! Splitting these types into their own crate lets `zkap-service`, mobile
-//! bindings, and any other host-side caller construct a V1 payload without
-//! pulling the full circuit / gadget compile graph.
+//! V1 wire-format payload (`ZkapInputV1`) and its RSA byte-length
+//! constant. Absorbed verbatim from former `zkap-input-types` crate.
 
 extern crate alloc;
 
-use alloc::format;
-use alloc::string::String;
 use alloc::vec::Vec;
 
-use ark_ff::{BigInteger, PrimeField};
 use serde::{Deserialize, Serialize};
+
+use super::CircuitConfig;
 
 /// Required wire-format length for `rsa_modulus_be` and `rsa_signature_be`.
 /// RSA-2048 keys/signatures are exactly 256 bytes; any other length is a
 /// host bug or a malformed payload.
 pub const RSA_2048_BYTES: usize = 256;
-
-// ============================================================
-// V1 — semantic schema
-// ============================================================
-
-/// Plain-data mirror of the circuit's `RawCircuitConfig` field set. This
-/// crate intentionally does NOT depend on `circuit::constants::CircuitConfig`;
-/// hosts and the wasm side both convert between this struct and the
-/// circuit-side type at their respective boundaries.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ZkapCircuitConfigV1 {
-    pub max_jwt_b64_len: u64,
-    pub max_payload_b64_len: u64,
-    pub max_aud_len: u64,
-    pub max_exp_len: u64,
-    pub max_iss_len: u64,
-    pub max_nonce_len: u64,
-    pub max_sub_len: u64,
-    pub n: u64,
-    pub k: u64,
-    pub tree_height: u64,
-    pub num_audience_limit: u64,
-    pub claims: Vec<String>,
-    pub forbidden_string: String,
-}
 
 /// Semantic V1 wire format. See `zkap-witness-wasm::input` module docs for
 /// the full encoding contract — every change to field order, BE/LE, or
@@ -106,119 +69,15 @@ pub struct ZkapInputV1 {
 
     /// Circuit shape parameters. Bumping any shape value requires
     /// regenerating the `.arzkey` and rebuilding the wasm.
-    pub circuit_config: ZkapCircuitConfigV1,
-}
-
-// ---------- field-element ↔ 32 byte BE helpers ----------
-
-/// Returned by [`fe_from_be32_canonical`] when the input bytes encode an
-/// integer that is `>= F::MODULUS`. V1 wire format requires canonical
-/// encodings — silent `mod p` reduction would let a malformed wire
-/// payload silently re-target a different field element.
-#[derive(Debug, thiserror::Error, PartialEq, Eq)]
-#[error("non-canonical 32-byte BE field encoding: {0}")]
-pub struct NonCanonicalFieldError(pub String);
-
-/// Strict canonical 32-byte BE → `F` decoder.
-///
-/// Returns `Err(NonCanonicalFieldError)` when the input bytes encode an
-/// integer `>= F::MODULUS`. The check uses a round-trip equality:
-/// `fe_to_be32(F::from_be_bytes_mod_order(bytes)) == bytes` holds iff the
-/// input was already a canonical encoding.
-pub fn fe_from_be32_canonical<F: PrimeField>(
-    bytes: &[u8; 32],
-) -> Result<F, NonCanonicalFieldError> {
-    let f = F::from_be_bytes_mod_order(bytes);
-    if fe_to_be32(&f) != *bytes {
-        return Err(NonCanonicalFieldError(format!(
-            "0x{} represents an integer >= F::MODULUS",
-            hex_encode(bytes)
-        )));
-    }
-    Ok(f)
-}
-
-/// Pack a field element into 32 BE bytes. `into_bigint().to_bytes_be()`
-/// for fields whose modulus fits in 254 bits (e.g. BN254 Fr) returns at
-/// most 32 bytes; the leading-zero pad covers low-bit values.
-pub fn fe_to_be32<F: PrimeField>(value: &F) -> [u8; 32] {
-    let bytes = value.into_bigint().to_bytes_be();
-    let mut out = [0u8; 32];
-    debug_assert!(bytes.len() <= 32);
-    let start = 32 - bytes.len();
-    out[start..].copy_from_slice(&bytes);
-    out
-}
-
-fn hex_encode(bytes: &[u8]) -> String {
-    let mut s = String::with_capacity(bytes.len() * 2);
-    for b in bytes {
-        s.push_str(&format!("{:02x}", b));
-    }
-    s
+    pub circuit_config: CircuitConfig,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ark_bn254::Fr;
-    use ark_ff::Zero;
 
-    /// BN254 Fr modulus, big-endian.
-    const BN254_FR_MODULUS_BE: [u8; 32] = [
-        0x30, 0x64, 0x4e, 0x72, 0xe1, 0x31, 0xa0, 0x29, 0xb8, 0x50, 0x45, 0xb6, 0x81, 0x81, 0x58,
-        0x5d, 0x28, 0x33, 0xe8, 0x48, 0x79, 0xb9, 0x70, 0x91, 0x43, 0xe1, 0xf5, 0x93, 0xf0, 0x00,
-        0x00, 0x01,
-    ];
-
-    #[test]
-    fn canonical_decoder_accepts_zero() {
-        let bytes = [0u8; 32];
-        let decoded: Fr = fe_from_be32_canonical(&bytes).expect("zero is canonical");
-        assert_eq!(decoded, Fr::zero());
-    }
-
-    #[test]
-    fn canonical_decoder_accepts_p_minus_one() {
-        let mut bytes = BN254_FR_MODULUS_BE;
-        bytes[31] = 0x00;
-        let decoded: Fr = fe_from_be32_canonical(&bytes).expect("p - 1 must be canonical");
-        assert_eq!(fe_to_be32(&decoded), bytes);
-    }
-
-    #[test]
-    fn canonical_decoder_rejects_p() {
-        let bytes = BN254_FR_MODULUS_BE;
-        let err: Result<Fr, _> = fe_from_be32_canonical(&bytes);
-        assert!(err.is_err());
-    }
-
-    #[test]
-    fn canonical_decoder_rejects_p_plus_one() {
-        let mut bytes = BN254_FR_MODULUS_BE;
-        bytes[31] = 0x02;
-        let err: Result<Fr, _> = fe_from_be32_canonical(&bytes);
-        assert!(err.is_err());
-    }
-
-    #[test]
-    fn fe_be32_round_trip_low_value() {
-        let v = Fr::from(42u64);
-        let bytes = fe_to_be32(&v);
-        let mut leading = 0;
-        for &b in &bytes {
-            if b != 0 {
-                break;
-            }
-            leading += 1;
-        }
-        assert!(leading > 0, "expected leading zeros for low-bit value");
-        let back = Fr::from_be_bytes_mod_order(&bytes);
-        assert_eq!(back, v);
-    }
-
-    fn sample_config_v1() -> ZkapCircuitConfigV1 {
-        ZkapCircuitConfigV1 {
+    fn sample_config_v1() -> CircuitConfig {
+        CircuitConfig {
             max_jwt_b64_len: 1024,
             max_payload_b64_len: 640,
             max_aud_len: 155,

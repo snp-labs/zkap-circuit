@@ -1,7 +1,7 @@
 //! Wasm witness-generator runtime abstraction.
 //!
 //! The host loads a `.wasm` artifact built from the matching circuit, hands
-//! it raw V1 input bytes (postcard-encoded [`zkap_input_types::ZkapInputV1`])
+//! it raw V1 input bytes (postcard-encoded [`ark_utils::wire::ZkapInputV1`])
 //! plus the paired `.arzkey`'s `ar1cs_blake3`, and reads back a serialized
 //! `ArwtnsFile`. The wasm side enforces the blake3 pair-check internally;
 //! callers just pass `arzkey.header.ar1cs_blake3` through.

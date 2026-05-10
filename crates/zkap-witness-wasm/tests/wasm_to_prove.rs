@@ -498,8 +498,7 @@ fn wasm_to_prove_full_pipeline() {
 fn host_rejects_wasm_with_mismatched_ar1cs_blake3() {
     use ark_relations::r1cs::{ConstraintSystemRef, LinearCombination, SynthesisError};
     use std::path::PathBuf;
-    use zkap_service::constants::RawCircuitConfig;
-    use zkap_service::{CircuitConfig, RawProofRequest};
+    use zkap_service::{CircuitConfig, RawProofRequest, ZkapPerJwtFields, ZkapSharedFields};
 
     let workspace = workspace_root();
 
@@ -599,7 +598,7 @@ fn host_rejects_wasm_with_mismatched_ar1cs_blake3() {
     // intentionally zero — the host pair-check fires *before* per-input
     // postcard encoding and witness generation, so semantic validity of
     // the JWT/anchor/Merkle data is irrelevant for this test.
-    let raw_cfg = RawCircuitConfig {
+    let cfg = CircuitConfig {
         max_jwt_b64_len: 256,
         max_payload_b64_len: 192,
         max_aud_len: 32,
@@ -620,24 +619,27 @@ fn host_rejects_wasm_with_mismatched_ar1cs_blake3() {
         ],
         forbidden_string: "forbidden".into(),
     };
-    let cfg = CircuitConfig::from(raw_cfg);
 
     let raw = RawProofRequest {
         pk_path: toy_arzkey_path.clone(),
         wasm_path: wasm_path.clone(),
-        random_be: [0u8; 32],
-        h_sign_user_op_be: [0u8; 32],
-        anchor_values_be: vec![[0u8; 32]; 1],
-        anchor_known_x_be: vec![[0u8; 32]; 1],
-        anchor_selector: vec![1u8],
-        merkle_root_be: [0u8; 32],
-        jwt_bytes: vec![Vec::new()],
-        rsa_modulus_be: vec![vec![0u8; 256]],
-        rsa_signature_be: vec![vec![0u8; 256]],
-        anchor_current_idx: vec![0u64],
-        merkle_leaf_sibling_hash_be: vec![[0u8; 32]],
-        merkle_auth_path_be: vec![Vec::new()],
-        merkle_leaf_idx: vec![0u64],
+        shared: ZkapSharedFields {
+            random_be: [0u8; 32],
+            h_sign_user_op_be: [0u8; 32],
+            anchor_values_be: vec![[0u8; 32]; 1],
+            anchor_known_x_be: vec![[0u8; 32]; 1],
+            anchor_selector: vec![1u8],
+            merkle_root_be: [0u8; 32],
+        },
+        per_jwt: vec![ZkapPerJwtFields {
+            jwt_bytes: Vec::new(),
+            rsa_modulus_be: vec![0u8; 256],
+            rsa_signature_be: vec![0u8; 256],
+            anchor_current_idx: 0,
+            merkle_leaf_sibling_hash_be: [0u8; 32],
+            merkle_auth_path_be: Vec::new(),
+            merkle_leaf_idx: 0,
+        }],
     };
 
     // ── Step 2: invoke zkap_service::prove and assert host-side rejection ──

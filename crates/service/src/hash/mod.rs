@@ -121,10 +121,8 @@ pub fn generate_leaf_hash(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use circuit::constants::RawCircuitConfig;
-
     fn test_config() -> CircuitConfig {
-        let raw = RawCircuitConfig {
+        CircuitConfig {
             max_jwt_b64_len: 1024,
             max_payload_b64_len: 640,
             max_aud_len: 155,
@@ -144,8 +142,7 @@ mod tests {
                 "sub".into(),
             ],
             forbidden_string: "forbidden".into(),
-        };
-        raw.into()
+        }
     }
 
     #[test]

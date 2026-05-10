@@ -58,21 +58,33 @@ impl ProofComponents {
     }
 }
 
-/// Proof generation response: Groth16 proofs with public inputs in Solidity-compatible format.
+/// Public inputs that are shared across all proofs in a batch.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct SharedPublicInputs {
+    pub hanchor: String,
+    pub h_a: String,
+    pub root: String,
+    pub h_sign_user_op: String,
+    pub lhs: String,
+    pub h_aud_list: String,
+}
+
+/// Per-proof public inputs (one per credential in the batch).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PerProofPublicInputs {
+    pub jwt_exp: String,
+    pub verification_rhs: String,
+}
+
+/// Proof generation response: Groth16 proofs + public inputs split into shared + per-proof parts.
 ///
-/// The `shared_inputs` field holds the 6 public input values common to all proofs in this batch:
-/// `[hanchor, h_a, root, h_sign_user_op, lhs, h_aud_list]`.
 /// Use [`ZkapProofResult::public_inputs_for`] to reconstruct the full 8-element public input
-/// vector required for on-chain verification of proof at a given index.
+/// vector required for on-chain verification of the proof at a given index.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ZkapProofResult {
     pub proofs: Vec<ProofComponents>,
-    /// Public inputs shared across all proofs: `[hanchor, h_a, root, h_sign_user_op, lhs, h_aud_list]`
-    pub shared_inputs: Vec<String>,
-    /// Per-proof JWT expiration timestamps (one per credential)
-    pub jwt_exp_list: Vec<String>,
-    /// Per-proof verification RHS values (one per credential)
-    pub verification_rhs_list: Vec<String>,
+    pub shared: SharedPublicInputs,
+    pub per_proof: Vec<PerProofPublicInputs>,
 }
 
 impl ZkapProofResult {
@@ -81,18 +93,18 @@ impl ZkapProofResult {
     /// Layout required by the Groth16 verifier:
     /// `[hanchor, h_a, root, h_sign_user_op, jwt_exp, verification_rhs, lhs, h_aud_list]`
     ///
-    /// Panics if `index >= proofs.len()` or `shared_inputs.len() < 6`.
+    /// Panics if `index >= per_proof.len()`.
     pub fn public_inputs_for(&self, index: usize) -> Vec<String> {
-        // shared_inputs = [hanchor(0), h_a(1), root(2), h_sign_user_op(3), lhs(4), h_aud_list(5)]
+        let p = &self.per_proof[index];
         vec![
-            self.shared_inputs[0].clone(), // hanchor
-            self.shared_inputs[1].clone(), // h_a
-            self.shared_inputs[2].clone(), // root
-            self.shared_inputs[3].clone(), // h_sign_user_op
-            self.jwt_exp_list[index].clone(),
-            self.verification_rhs_list[index].clone(),
-            self.shared_inputs[4].clone(), // lhs
-            self.shared_inputs[5].clone(), // h_aud_list
+            self.shared.hanchor.clone(),
+            self.shared.h_a.clone(),
+            self.shared.root.clone(),
+            self.shared.h_sign_user_op.clone(),
+            p.jwt_exp.clone(),
+            p.verification_rhs.clone(),
+            self.shared.lhs.clone(),
+            self.shared.h_aud_list.clone(),
         ]
     }
 }
@@ -106,41 +118,37 @@ impl From<(Vec<Proof<BN254>>, Vec<Vec<F>>)> for ZkapProofResult {
         if raw_inputs.is_empty() {
             return Self {
                 proofs,
-                shared_inputs: vec![],
-                jwt_exp_list: vec![],
-                verification_rhs_list: vec![],
+                shared: SharedPublicInputs::default(),
+                per_proof: vec![],
             };
         }
 
-        // Index definitions for public inputs:
-        // 0: hanchor, 1: h_a, 2: root, 3: h_sign_userop, 4: jwt_exp,
-        // 5: verification_rhs (partial_rhs), 6: lhs, 7: h_aud_list
-        const JWT_EXP_INDEX: usize = 4;
-        const VERIFICATION_RHS_INDEX: usize = 5;
+        // arwtns instance layout (8 elements per proof):
+        //   [hanchor(0), h_a(1), root(2), h_sign_user_op(3),
+        //    jwt_exp(4), verification_rhs(5), lhs(6), h_aud_list(7)]
+        // shared values are taken from the first proof — they are constant across the batch.
+        let first = &raw_inputs[0];
+        let shared = SharedPublicInputs {
+            hanchor: crate::field_to_hex(first[0]),
+            h_a: crate::field_to_hex(first[1]),
+            root: crate::field_to_hex(first[2]),
+            h_sign_user_op: crate::field_to_hex(first[3]),
+            lhs: crate::field_to_hex(first[6]),
+            h_aud_list: crate::field_to_hex(first[7]),
+        };
 
-        let jwt_exp_list: Vec<String> = raw_inputs
+        let per_proof: Vec<PerProofPublicInputs> = raw_inputs
             .iter()
-            .map(|inputs| crate::field_to_hex(inputs[JWT_EXP_INDEX]))
-            .collect();
-
-        let verification_rhs_list: Vec<String> = raw_inputs
-            .iter()
-            .map(|inputs| crate::field_to_hex(inputs[VERIFICATION_RHS_INDEX]))
-            .collect();
-
-        // Shared inputs: all indices except per-proof ones, taken from first proof's inputs
-        let shared_inputs: Vec<String> = raw_inputs[0]
-            .iter()
-            .enumerate()
-            .filter(|(i, _)| *i != JWT_EXP_INDEX && *i != VERIFICATION_RHS_INDEX)
-            .map(|(_, input)| crate::field_to_hex(*input))
+            .map(|inputs| PerProofPublicInputs {
+                jwt_exp: crate::field_to_hex(inputs[4]),
+                verification_rhs: crate::field_to_hex(inputs[5]),
+            })
             .collect();
 
         Self {
             proofs,
-            shared_inputs,
-            jwt_exp_list,
-            verification_rhs_list,
+            shared,
+            per_proof,
         }
     }
 }

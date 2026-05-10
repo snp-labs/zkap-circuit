@@ -412,6 +412,8 @@ dependencies = [
  "ark-serialize",
  "ark-std",
  "hex",
+ "postcard",
+ "serde",
  "thiserror",
 ]
 
@@ -2346,17 +2348,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "zkap-input-types"
-version = "0.1.0"
-dependencies = [
- "ark-bn254",
- "ark-ff",
- "postcard",
- "serde",
- "thiserror",
-]
-
-[[package]]
 name = "zkap-service"
 version = "0.1.0"
 dependencies = [
@@ -2392,7 +2383,6 @@ dependencies = [
  "signature",
  "thiserror",
  "wasmi",
- "zkap-input-types",
 ]
 
 [[package]]
@@ -2426,7 +2416,6 @@ dependencies = [
  "sha2",
  "thiserror",
  "wasmtime",
- "zkap-input-types",
  "zkap-service",
 ]
 

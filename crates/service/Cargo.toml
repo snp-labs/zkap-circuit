@@ -13,7 +13,6 @@ categories = ["cryptography"]
 gadget = { workspace = true, default-features = false, features = ["crypto", "base64", "rsa"] }
 circuit = { workspace = true }
 ark-utils = { workspace = true, features = ["field-serde", "io"] }
-zkap-input-types = { workspace = true }
 
 thiserror = { workspace = true }
 serde      = { workspace = true }

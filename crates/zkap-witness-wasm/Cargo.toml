@@ -16,10 +16,8 @@ crate-type = ["cdylib", "rlib"]
 ark-ar1cs-wasm-witness = { path = "../../../ark-ar1cs/crates/ark-ar1cs-wasm-witness" }
 ark-ar1cs-format       = { path = "../../../ark-ar1cs/crates/ark-ar1cs-format" }
 
-# V1 wire types (no circuit dep) — single source of truth for the host/wasm
-# postcard schema.
-zkap-input-types = { workspace = true }
-
+# V1 wire types (`ark_utils::wire`) are pulled transitively via
+# `circuit` and `ark-utils`; no direct dep needed after PR1 of L4 absorption.
 circuit = { workspace = true }
 # V1 wasm-side conversion needs `build_anchor_witness`, `IndexBits`,
 # `get_poseidon_params`, `get_base64_table`, `MerkleTreeParams`,
@@ -27,6 +25,9 @@ circuit = { workspace = true }
 # `gadget`, so naming it directly only adds the use-site, not new bytes.
 gadget = { workspace = true, default-features = false, features = ["crypto", "base64", "rsa"] }
 
+# V1 wire schema (`ark_utils::wire`) and field codec helpers, absorbed
+# from former `zkap-input-types` crate (PR1 of L4 absorption).
+ark-utils             = { workspace = true }
 ark-ff                = { workspace = true }
 ark-serialize         = { workspace = true }
 ark-crypto-primitives = { workspace = true, features = ["crh", "merkle_tree"] }

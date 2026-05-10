@@ -30,12 +30,19 @@ pub use affine_serde as field_serde;
 #[cfg(feature = "io")]
 pub mod io;
 
+// V1 wire schema (feature = "wire") — absorbed from former
+// `zkap-input-types` crate. See `wire/mod.rs` head doc for context.
+#[cfg(feature = "wire")]
+pub mod wire;
+
 // Always available
 pub mod convert;
 pub mod error;
+pub mod field_codec;
 
 // Always-available re-exports
 pub use convert::*;
+pub use field_codec::{NonCanonicalFieldError, fe_from_be32_canonical, fe_to_be32, field_to_hex};
 
 // R1CS re-exports
 #[cfg(feature = "r1cs")]

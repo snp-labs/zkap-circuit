@@ -16,7 +16,7 @@ use ark_ar1cs_zkey::ArzkeyFile;
 use ark_groth16::Proof;
 use circuit::constants::{BN254, F};
 use rand::rngs::OsRng;
-use zkap_input_types::ZkapInputV1;
+use ark_utils::wire::ZkapInputV1;
 
 use crate::error::ApplicationError;
 use crate::proof::runtime::{DefaultRuntime, RuntimeError, WasmWitnessRuntime};

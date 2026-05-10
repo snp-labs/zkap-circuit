@@ -6,7 +6,6 @@ members = [
     "crates/cli",
     "crates/gadget",
     "crates/service",
-    "crates/zkap-input-types",
     "crates/zkap-witness-wasm",
 ]
 
@@ -18,7 +17,6 @@ ark-utils                 = { path = "crates/ark-utils" }
 gadget                    = { path = "crates/gadget", default-features = false }
 circuit                   = { path = "crates/circuit" }
 zkap-service              = { path = "crates/service" }
-zkap-input-types          = { path = "crates/zkap-input-types" }
 ark-ar1cs-format       = { path = "../ark-ar1cs/crates/ark-ar1cs-format" }
 ark-ar1cs-prover       = { path = "../ark-ar1cs/crates/ark-ar1cs-prover" }
 ark-ar1cs-wasm-witness = { path = "../ark-ar1cs/crates/ark-ar1cs-wasm-witness" }

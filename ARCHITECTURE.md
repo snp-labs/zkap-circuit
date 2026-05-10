@@ -45,7 +45,7 @@ zkap-circuit is a Rust library for generating Groth16 zero-knowledge proofs that
 
 **circuit** defines the main ZkapCircuit struct, CircuitConfig (runtime parameters like n/k/max_jwt_b64_len/tree_height), and witness types (JwtWitness, AnchorWitness, MerkleWitness, AudienceWitness). It orchestrates all gadgets into a single R1CS constraint system that proves JWT validity, threshold membership, issuer membership, and audience membership without exposing the JWT itself.
 
-**zkap-service** is the public API layer that orchestrates proof generation end-to-end. It parses JWTs, validates requests, builds circuit witness, invokes Groth16 proving/verification, and provides utilities for anchor generation and hash computation. All request/response types (RawProofRequest, ProofRequest) are defined here and serializable for platform bindings.
+**zkap-service** is the public API layer that orchestrates proof generation end-to-end. It parses JWTs, validates requests, builds circuit witness, invokes Groth16 proving/verification, and provides utilities for anchor generation and hash computation. The host-facing request type `RawProofRequest` is defined in `proof/request.rs`; response types (`ZkapProofResult` with `SharedPublicInputs` / `PerProofPublicInputs`, `AudHashResult`) live in `dto/` and are serializable for platform bindings.
 
 The crate is split into two build profiles via the `proof` Cargo feature (enabled by default):
 - **With `proof`** (default): full Groth16 proving stack, including `ark-groth16`, `ark-serialize`, `memmap2`, `jsonwebtoken`, and hash crates. Use for native server-side proof generation.
@@ -127,7 +127,7 @@ structurally before the SNARK runs.
 
 **Poseidon Hash for Anchor Scheme**: The threshold anchor scheme uses Poseidon hashing with a Vandermonde matrix approach rather than traditional threshold cryptography. This is efficient in-circuit (Poseidon is field-arithmetic-optimized) and allows non-interactive threshold proofs. Parameters are cached globally via OnceLock to avoid recomputation.
 
-**Service Crate Flat Module Structure**: Service modules (proof, anchor, hash, jwt, dto) are organized by responsibility, not by data type. Each module handles its own DTOs and logic: `proof/` manages RawProofRequest → ProofRequest → ZkapCircuitInput → Proof, `anchor/` handles Poseidon anchor generation, `hash/` provides standalone hash utilities, and `jwt/` parses and extracts witnesses. This avoids deep nesting and keeps request/response handling colocated with orchestration logic.
+**Service Crate Flat Module Structure**: Service modules (proof, anchor, hash, jwt, dto) are organized by responsibility, not by data type. Each module handles its own DTOs and logic: `proof/` manages RawProofRequest → ZkapInputV1 → (wasm) → ArwtnsFile → Proof, `anchor/` handles Poseidon anchor generation, `hash/` provides standalone hash utilities, and `jwt/` parses and extracts witnesses. This avoids deep nesting and keeps request/response handling colocated with orchestration logic.
 
 **OnceLock Cached Poseidon Parameters**: Poseidon configuration is expensive to construct. It is computed once lazily via OnceLock::get_or_init and shared across all modules (service::poseidon_params()). This eliminates redundant computation and is thread-safe.
 
@@ -136,22 +136,22 @@ structurally before the SNARK runs.
 ```
 service/src/
 ├── proof/         Prove, verify, setup orchestration
+│   ├── mod.rs         prove/verify/setup entry points + V1 payload assembly
 │   ├── request.rs     RawProofRequest validation
-│   ├── types.rs       CircuitContext, AnchorContext, AudienceContext
-│   ├── context.rs     Circuit input construction from witness
-│   └── generator.rs   Groth16 proving and verification
+│   ├── runtime/       wasmi backend driving the witness-generator wasm
+│   └── generator.rs   Groth16 proving (per-proof allocator reset)
 ├── anchor/        Poseidon anchor generation for threshold schemes
-│   ├── poseidon.rs    generate_anchor (k-of-N aggregation)
-│   └── types.rs       Secret, AnchorResult types
+│   ├── mod.rs         AnchorConfig
+│   ├── poseidon.rs    generate_anchor (k-of-N aggregation, returns Vec<String>)
+│   └── types.rs       Secret type
 ├── hash/          Standalone Poseidon hash utilities
 │   └── mod.rs         generate_hash, generate_aud_hash, generate_leaf_hash
-├── jwt/           JWT parsing and witness construction
-│   ├── parser.rs      Parse JWT header/payload/signature
-│   └── builder.rs     Build JwtWitness and ClaimIndices
+├── jwt/           JWT parsing
+│   ├── mod.rs
+│   └── parser.rs      Parse JWT header/payload/signature
 ├── dto/           Platform-agnostic data transfer objects
-│   ├── proof.rs       Serializable proof/verify request/response
-│   ├── anchor.rs      Serializable anchor request/response
-│   └── hash.rs        Serializable hash request/response
+│   ├── proof.rs       ProofComponents, SharedPublicInputs, PerProofPublicInputs, ZkapProofResult
+│   └── hash.rs        AudHashResult
 ├── crs.rs         CRS persistence (writes pk.arzkey [V1 prove path],
 │                  pk.key/vk.key/pvk.key [legacy], Groth16Verifier.sol, config.json)
 ├── error.rs       ApplicationError enum (parse, validation, constraint failures)

@@ -164,3 +164,12 @@ impl<F: PrimeField + Absorb> ZkapCircuitInput<F> {
         self.public_inputs.to_vec()
     }
 }
+
+// Compile-time assertion that the host-side witness bundle is `Send + Sync`
+// for the concrete protocol field `crate::types::F`. `zkap-service::proof::
+// prove(...)` is invoked from `tokio::task::spawn_blocking` and the witness
+// must therefore be safe to move across threads. Plan: circuit.md C-A17.
+const _: fn() = || {
+    fn assert_send_sync<T: Send + Sync + ?Sized>() {}
+    assert_send_sync::<ZkapCircuitInput<crate::types::F>>();
+};

@@ -1,5 +1,5 @@
 //! Groth16 integration tests for ZkapCircuit
-//! Run: cargo test -p circuit --test groth16_integration --features zkap-circuit
+//! Run: cargo test -p circuit --test groth16_integration --features integration-tests
 
 use ark_bn254::Bn254;
 use ark_crypto_primitives::{

@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# DEPRECATED 2026-05-10: replaced by `cargo run -p zkap-cli --bin generate_setup`.
+# Kept for backward compatibility; new workflows should use the Rust binary.
+#
 # Build, optimize, size-gate, and verify the zkap-witness-wasm artifact.
 #
 # Usage:

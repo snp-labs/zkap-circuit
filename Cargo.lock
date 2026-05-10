@@ -2344,8 +2344,11 @@ version = "0.1.0"
 dependencies = [
  "circuit",
  "clap",
+ "hex",
  "serde",
  "serde_json",
+ "sha2",
+ "wasmparser",
  "zkap-service",
 ]
 

@@ -136,16 +136,8 @@ fn fp2_to_solidity_emits_c1_before_c0_for_solidity_convention() {
     assert_ne!(c0, c1, "distinct G2 yields distinct Fp2 components");
 
     assert_eq!(out.len(), 2, "Fp2 → 2 hex words");
-    assert_eq!(
-        out[0],
-        fp_hex_word(c1),
-        "Solidity reverses Fp2: c1 first"
-    );
-    assert_eq!(
-        out[1],
-        fp_hex_word(c0),
-        "Solidity reverses Fp2: c0 second"
-    );
+    assert_eq!(out[0], fp_hex_word(c1), "Solidity reverses Fp2: c1 first");
+    assert_eq!(out[1], fp_hex_word(c0), "Solidity reverses Fp2: c0 second");
 }
 
 #[test]
@@ -314,16 +306,8 @@ fn generate_solidity_round_trip_pins_distinct_vk_constants() {
 /// `"gamma"`, `"delta"`).
 fn assert_g2_neg_pinned(body: &str, tag: &str, pt: &G2Affine) {
     let neg = pt.into_group().neg().into_affine();
-    let neg_x: Vec<_> = neg
-        .x()
-        .unwrap()
-        .to_base_prime_field_elements()
-        .collect();
-    let neg_y: Vec<_> = neg
-        .y()
-        .unwrap()
-        .to_base_prime_field_elements()
-        .collect();
+    let neg_x: Vec<_> = neg.x().unwrap().to_base_prime_field_elements().collect();
+    let neg_y: Vec<_> = neg.y().unwrap().to_base_prime_field_elements().collect();
     // g2_constant emits Fp2 reversed: X0 = c1, X1 = c0, Y0 = c1, Y1 = c0.
     assert!(
         body.contains(&format!("{tag}X0 = {};", fp_decimal(&neg_x[1]))),
@@ -345,11 +329,7 @@ fn assert_g2_neg_pinned(body: &str, tag: &str, pt: &G2Affine) {
     // The un-negated y-coordinate must NOT appear under this tag — this
     // is what catches a regression that drops the `.neg()` call on
     // `<tag>_g2` while leaving the others intact.
-    let pos_y: Vec<_> = pt
-        .y()
-        .unwrap()
-        .to_base_prime_field_elements()
-        .collect();
+    let pos_y: Vec<_> = pt.y().unwrap().to_base_prime_field_elements().collect();
     assert_ne!(
         neg_y[1], pos_y[1],
         "{tag}: negated y must differ from un-negated y on a distinct G2 point"

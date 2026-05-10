@@ -144,6 +144,22 @@ The same test suite also covers the host-side
 `ar1cs_blake3` mismatch fail-fast path
 (`host_rejects_wasm_with_mismatched_ar1cs_blake3`).
 
+## Quick setup (single command)
+
+```bash
+cargo run --release -p zkap-cli --bin generate_setup -- \
+    --config example.json --output crs/<name>
+```
+
+Produces the V1 layout (`circuit.arzkey`, `pk.key`, `vk.key`, `pvk.key`,
+`Groth16Verifier.sol`, `config.json`, `zkap_witness_wasm.opt.wasm`) in
+one shot. Wraps `generate_crs` (Groth16 trusted setup) and the host side
+of `crates/zkap-witness-wasm/build-wasm.sh` (cargo wasm32 build,
+`wasm-opt -Oz`, 8 MiB size gate, export verification, paired-fingerprint
+report). Pass `--skip-wasm-opt` if `binaryen` is not installed; raise the
+size cap with `--wasm-size-limit-mib N` if the configured circuit needs
+more headroom.
+
 ## Pre-built CRS Artifacts
 
 The `dist/` directory ships two layouts at the moment; consumers

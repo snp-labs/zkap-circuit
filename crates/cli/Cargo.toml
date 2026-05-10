@@ -13,6 +13,9 @@ zkap-service = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+wasmparser = "0.246"
 
 [lib]
 name = "zkap_cli"
@@ -25,6 +28,10 @@ path = "src/bin/generate_crs.rs"
 [[bin]]
 name = "generate_hash"
 path = "src/bin/generate_hash.rs"
+
+[[bin]]
+name = "generate_setup"
+path = "src/bin/generate_setup.rs"
 
 [lints]
 workspace = true

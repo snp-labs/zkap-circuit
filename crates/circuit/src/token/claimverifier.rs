@@ -28,11 +28,7 @@
 mod format;
 
 use ark_ff::PrimeField;
-use ark_r1cs_std::{
-    eq::EqGadget,
-    fields::fp::FpVar,
-    uint16::UInt16,
-};
+use ark_r1cs_std::{eq::EqGadget, fields::fp::FpVar, uint16::UInt16};
 use ark_relations::r1cs::SynthesisError;
 use ark_utils::{slice_efficient, slice_from_start};
 

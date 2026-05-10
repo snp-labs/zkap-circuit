@@ -70,8 +70,8 @@ fn write_sample_config(scratch: &ScratchDir) -> PathBuf {
 }
 
 fn read_json(path: &Path) -> serde_json::Value {
-    let bytes = std::fs::read(path)
-        .unwrap_or_else(|e| panic!("read {} failed: {}", path.display(), e));
+    let bytes =
+        std::fs::read(path).unwrap_or_else(|e| panic!("read {} failed: {}", path.display(), e));
     serde_json::from_slice(&bytes)
         .unwrap_or_else(|e| panic!("parse {} as JSON failed: {}", path.display(), e))
 }

@@ -27,7 +27,7 @@ use ark_ar1cs_format::CurveId;
 use ark_ar1cs_wasm_witness::circuit_to_arwtns;
 use ark_bn254::Fr;
 
-use common::{build_v1_fixture_bundle, TestCircuit, V1FixtureBundle};
+use common::{TestCircuit, V1FixtureBundle, build_v1_fixture_bundle};
 
 /// Acceptance: `into_circuit_input(v1)` produces a `ZkapCircuitInput`
 /// whose synthesized `.arwtns` is byte-identical to the native baseline

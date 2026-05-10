@@ -78,3 +78,15 @@ log = "0.4"
 lto = true
 strip = "symbols"
 panic = "abort"
+
+# Test-only profile that mirrors release optimization but flips panic
+# back to unwind. Cargo does not propagate `panic = "abort"` from
+# `[profile.release]` to test binaries (the test harness needs unwind),
+# so a fresh `cargo test --release` build hits a panic-strategy
+# mismatch (deps=abort vs test crate=unwind). CI runs the workspace
+# test sweep with `cargo test --profile release-tests --workspace` to
+# get release-level speed without the conflict; the mobile-targeted
+# `[profile.release]` keeps `panic = "abort"` for binary size.
+[profile.release-tests]
+inherits = "release"
+panic = "unwind"

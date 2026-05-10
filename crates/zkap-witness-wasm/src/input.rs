@@ -48,14 +48,14 @@ use ark_crypto_primitives::{
 };
 use ark_ff::{PrimeField, Zero};
 
-use circuit::types::{BNP, CG, F};
+use circuit::token::ClaimIndices;
 #[cfg(test)]
 use circuit::types::CircuitConfig;
+use circuit::types::{BNP, CG, F};
 use circuit::witness::{
     AnchorWitness, AudienceWitness, CircuitConstants, CircuitPublicInputs, JwtWitness,
     MerkleWitness, MiscWitness, ZkapCircuitInput,
 };
-use circuit::token::ClaimIndices;
 use circuit::zkap::ZkapCircuit;
 use gadget::{
     anchor::poseidon::{PoseidonAnchor, build_anchor_witness},

@@ -20,8 +20,8 @@ use gadget::{
     signature::rsa::{PublicKey, Signature},
 };
 
-use crate::types::CircuitConfig;
 use crate::token::ClaimIndices;
+use crate::types::CircuitConfig;
 
 /// Circuit constants (determined at setup time)
 #[derive(Clone, CanonicalSerialize, CanonicalDeserialize)]

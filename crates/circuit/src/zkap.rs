@@ -54,15 +54,16 @@ use ark_relations::r1cs::ConstraintSynthesizer;
 use ark_serialize::*;
 use std::marker::PhantomData;
 
-use crate::types::CircuitConfig;
 use crate::token::jwt_field::{jwt_exp_to_field, jwt_nonce_hex_to_field};
+use crate::types::CircuitConfig;
 use crate::{
-    ExposesPublicInputs, witness,
+    ExposesPublicInputs,
     token::{
         ClaimIndices,
         claimverifier::claim_extractor_v2,
         constraints::{ClaimIndicesVar, RSA2048VerifyGadget},
     },
+    witness,
 };
 use ark_utils::{
     comparison::enforce_less_than, packing::pack_decompose_bytes_unchecked, single_multiplexer,

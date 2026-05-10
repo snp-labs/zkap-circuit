@@ -67,10 +67,9 @@ pub fn load_circuit_config(
     let content = std::fs::read_to_string(path).map_err(|e| {
         error::ApplicationError::InvalidFormat(format!("Failed to read config: {}", e))
     })?;
-    let config: circuit::types::CircuitConfig =
-        serde_json::from_str(&content).map_err(|e| {
-            error::ApplicationError::InvalidFormat(format!("Failed to parse config: {}", e))
-        })?;
+    let config: circuit::types::CircuitConfig = serde_json::from_str(&content).map_err(|e| {
+        error::ApplicationError::InvalidFormat(format!("Failed to parse config: {}", e))
+    })?;
     config
         .validate()
         .map_err(|e| error::ApplicationError::InvalidFormat(e.to_string()))?;

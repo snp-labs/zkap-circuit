@@ -106,7 +106,8 @@ fn generate_solidity_round_trip_writes_expected_scaffold() {
     ));
     let path: PathBuf = dir.join("Groth16Verifier.sol");
 
-    vk.generate_solidity(&path).expect("generate_solidity write");
+    vk.generate_solidity(&path)
+        .expect("generate_solidity write");
 
     let body = std::fs::read_to_string(&path).expect("read written contract");
 
@@ -116,7 +117,10 @@ fn generate_solidity_round_trip_writes_expected_scaffold() {
         "license header"
     );
     assert!(body.contains("pragma solidity ^0.8.0;"), "pragma");
-    assert!(body.contains("library Groth16Verifier {"), "library scaffold");
+    assert!(
+        body.contains("library Groth16Verifier {"),
+        "library scaffold"
+    );
     assert!(
         body.contains("error InvalidProofLength();"),
         "error: InvalidProofLength"

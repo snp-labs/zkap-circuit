@@ -51,12 +51,24 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
-      - run: cargo test --release --workspace
+      # Workspace-wide test sweep on the *dev* profile. We deliberately
+      # avoid `--release` here: the workspace root sets
+      # `[profile.release] panic = "abort"`, and Cargo does not propagate
+      # that to test binaries, so a fresh `cargo test --release` build
+      # produces a panic-strategy mismatch (deps=abort vs test
+      # crate=unwind). Dev profile keeps everything on `unwind` and
+      # exercises the same code paths. The named L1 byte-gate step below
+      # keeps `--release` because that target is invoked via
+      # `cargo test -p zkap-service --test l3_byte_gate` only — it does
+      # not pull in the full workspace conflict surface, and `--release`
+      # there is purely for runtime speed (Tier A F2/F3 are
+      # `#[ignore]`-d at ~120s on debug; the running tiers cite
+      # ~12s/fixture on debug, so release just keeps CI snappy).
+      - run: cargo test --workspace
       # Explicitly name the L1 golden gate so failures are easy to identify.
-      # `cargo test --release --workspace` above already covers this; the
-      # named step here provides a clear CI signal and runs only fast tiers
-      # (B/C/D/E). Tier A F2/F3 are #[ignore]-d (slow: ~120s each) and
-      # will NOT run here — invoke with `-- --include-ignored` explicitly.
+      # Runs only fast tiers (B/C/D/E); Tier A F2/F3 are `#[ignore]`-d
+      # (slow: ~120s each) and will NOT run here — invoke with
+      # `-- --include-ignored` explicitly.
       - name: L1 byte-gate (P0-A goldens)
         run: cargo test --release -p zkap-service --test l3_byte_gate
 

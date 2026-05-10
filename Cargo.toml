@@ -6,6 +6,7 @@ members = [
     "crates/cli",
     "crates/gadget",
     "crates/service",
+    "crates/zkap-evm-verifier",
     "crates/zkap-witness-wasm",
 ]
 
@@ -32,6 +33,7 @@ ark-utils                 = { path = "crates/ark-utils" }
 gadget                    = { path = "crates/gadget", default-features = false }
 circuit                   = { path = "crates/circuit" }
 zkap-service              = { path = "crates/service" }
+zkap-evm-verifier         = { path = "crates/zkap-evm-verifier" }
 ark-ar1cs-format       = { git = "https://github.com/baerae-zkap/ark-ar1cs", rev = "7c8916467716467594345dd2f50cbb818e61f36e" }
 ark-ar1cs-prover       = { git = "https://github.com/baerae-zkap/ark-ar1cs", rev = "7c8916467716467594345dd2f50cbb818e61f36e" }
 ark-ar1cs-wasm-witness = { git = "https://github.com/baerae-zkap/ark-ar1cs", rev = "7c8916467716467594345dd2f50cbb818e61f36e" }

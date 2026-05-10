@@ -66,8 +66,7 @@ use crate::{
     witness,
 };
 use ark_utils::{
-    comparison::enforce_less_than, packing::pack_decompose_bytes_unchecked, single_multiplexer,
-    slice_efficient,
+    enforce_less_than, pack_decompose_bytes_unchecked, single_multiplexer, slice_efficient,
 };
 use gadget::{
     anchor::poseidon::{

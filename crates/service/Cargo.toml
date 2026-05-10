@@ -26,6 +26,7 @@ log = { workspace = true }
 hex = { workspace = true }
 
 # --- Proof-only dependencies (optional, heavy) ---
+zkap-evm-verifier     = { workspace = true, optional = true }
 ark-ec                = { workspace = true, optional = true }
 ark-groth16           = { workspace = true, optional = true }
 ark-poly              = { workspace = true, optional = true }
@@ -69,6 +70,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [features]
 default = ["proof"]
 proof = [
+    "dep:zkap-evm-verifier",
     "dep:ark-ec",
     "dep:ark-groth16",
     "dep:ark-poly",

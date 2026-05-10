@@ -50,7 +50,7 @@ pub use input::{ZkapMainCircuit, build_main_circuit, into_circuit_input};
 // so existing call sites (`zkap_witness_wasm::ZkapInputV1`, etc.) keep
 // working. Wire schema and codec live in two distinct ark-utils
 // modules after PR1 of L4 absorption.
-pub use ark_utils::field_codec::{NonCanonicalFieldError, fe_from_be32_canonical, fe_to_be32};
+pub use ark_utils::codec::field::{NonCanonicalFieldError, fe_from_be32_canonical, fe_to_be32};
 pub use ark_utils::wire::{CircuitConfig, RSA_2048_BYTES, ZkapInputV1};
 
 include!(concat!(env!("OUT_DIR"), "/embedded.rs"));

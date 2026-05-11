@@ -45,28 +45,28 @@ gadget                    = { path = "crates/gadget", default-features = false }
 circuit                   = { path = "crates/circuit" }
 zkap-service              = { path = "crates/service" }
 zkap-evm-verifier         = { path = "crates/zkap-evm-verifier" }
-ark-ar1cs-format       = { git = "https://github.com/baerae-zkap/ark-ar1cs", rev = "7c8916467716467594345dd2f50cbb818e61f36e" }
-ark-ar1cs-prover       = { git = "https://github.com/baerae-zkap/ark-ar1cs", rev = "7c8916467716467594345dd2f50cbb818e61f36e" }
-ark-ar1cs-wasm-witness = { git = "https://github.com/baerae-zkap/ark-ar1cs", rev = "7c8916467716467594345dd2f50cbb818e61f36e" }
-ark-ar1cs-wtns         = { git = "https://github.com/baerae-zkap/ark-ar1cs", rev = "7c8916467716467594345dd2f50cbb818e61f36e" }
-ark-ar1cs-zkey         = { git = "https://github.com/baerae-zkap/ark-ar1cs", rev = "7c8916467716467594345dd2f50cbb818e61f36e" }
+ark-ar1cs-format       = { git = "https://github.com/baerae-zkap/ark-ar1cs", rev = "0370db0e89a72a9ae7eace683a1e37d1768bcf97" }
+ark-ar1cs-prover       = { git = "https://github.com/baerae-zkap/ark-ar1cs", rev = "0370db0e89a72a9ae7eace683a1e37d1768bcf97" }
+ark-ar1cs-wasm-witness = { git = "https://github.com/baerae-zkap/ark-ar1cs", rev = "0370db0e89a72a9ae7eace683a1e37d1768bcf97" }
+ark-ar1cs-wtns         = { git = "https://github.com/baerae-zkap/ark-ar1cs", rev = "0370db0e89a72a9ae7eace683a1e37d1768bcf97" }
+ark-ar1cs-zkey         = { git = "https://github.com/baerae-zkap/ark-ar1cs", rev = "0370db0e89a72a9ae7eace683a1e37d1768bcf97" }
 
 wasmi    = { version = "0.38", default-features = false, features = ["std"] }
 postcard = { version = "1", default-features = false, features = ["alloc"] }
 
 thiserror = { version = "2.0.12" }
 serde = { version = "1.0.227", features = ["derive"] }
-ark-groth16 = { version = "0.5.0" }  # default already includes parallel
-ark-ec = { version = "0.5.0", features = ["parallel"] }
-ark-ff = { version = "0.5.0", features = ["parallel"] }
-ark-poly = { version = "0.5.0", features = ["parallel"] }
-ark-r1cs-std = { version = "0.5.0" }
-ark-relations = { version = "0.5.0" }
-ark-std = { version = "0.5.0" }
-ark-crypto-primitives = { version = "0.5.0" }
-ark-bn254 = { version = "0.5.0" }
-ark-ed-on-bn254 = { version = "0.5.0" }
-ark-serialize = { version = "0.5.0" }
+ark-groth16 = { version = "0.6" }  # default already includes parallel
+ark-ec = { version = "0.6", features = ["parallel"] }
+ark-ff = { version = "0.6", features = ["parallel"] }
+ark-poly = { version = "0.6", features = ["parallel"] }
+ark-r1cs-std = { version = "0.6" }
+ark-relations = { version = "0.6" }
+ark-std = { version = "0.6" }
+ark-crypto-primitives = { version = "0.6" }
+ark-bn254 = { version = "0.6" }
+ark-ed-on-bn254 = { version = "0.6" }
+ark-serialize = { version = "0.6" }
 memmap2 = { version = "0.9.8" }
 once_cell = { version = "1.21.3" }
 base64 = { version = "0.22.1" }

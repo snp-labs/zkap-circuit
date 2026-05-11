@@ -16,7 +16,7 @@ use ark_r1cs_std::{
     fields::{FieldVar, fp::FpVar},
     prelude::Boolean,
 };
-use ark_relations::r1cs::{Namespace, SynthesisError};
+use ark_relations::gr1cs::{Namespace, SynthesisError};
 
 use crate::{
     anchor::{
@@ -139,7 +139,7 @@ impl<F: PrimeField + Absorb> PoseidonAnchorSchemeGadget<F> {
     /// On precondition violation (length mismatch) the function returns
     /// `Err(SynthesisError::Unsatisfiable)`. The `Unsatisfiable` variant is
     /// reused here as a reporting channel because arkworks'
-    /// `ark_relations::r1cs::SynthesisError` is the foreign error type
+    /// `ark_relations::gr1cs::SynthesisError` is the foreign error type
     /// returned by every constraint method in the gadget surface and does
     /// not carry a `LengthMismatch` variant; replacing the return type with
     /// a custom error would cascade through every R1CS-synthesising call
@@ -374,12 +374,12 @@ impl<F: PrimeField + Absorb> AnchorSchemeGadget<PoseidonAnchorScheme<F>, F>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ark_r1cs_std::{R1CSVar, alloc::AllocVar, fields::fp::FpVar};
-    use ark_relations::r1cs::ConstraintSystem;
+    use ark_r1cs_std::{GR1CSVar, alloc::AllocVar, fields::fp::FpVar};
+    use ark_relations::gr1cs::ConstraintSystem;
 
     type F = ark_bn254::Fr;
 
-    fn fp(cs: &ark_relations::r1cs::ConstraintSystemRef<F>, v: u64) -> FpVar<F> {
+    fn fp(cs: &ark_relations::gr1cs::ConstraintSystemRef<F>, v: u64) -> FpVar<F> {
         FpVar::new_witness(cs.clone(), || Ok(F::from(v))).unwrap()
     }
 

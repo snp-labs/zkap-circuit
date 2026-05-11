@@ -11,8 +11,8 @@
 //! when moving from `src/` to `tests/`.
 
 use ark_bn254::Fr as F;
-use ark_r1cs_std::{R1CSVar, alloc::AllocVar, eq::EqGadget, fields::fp::FpVar, uint16::UInt16};
-use ark_relations::r1cs::ConstraintSystem;
+use ark_r1cs_std::{GR1CSVar, alloc::AllocVar, eq::EqGadget, fields::fp::FpVar, uint16::UInt16};
+use ark_relations::gr1cs::ConstraintSystem;
 use std::str::FromStr;
 
 use circuit::token::jwt_field::{jwt_exp_to_field, jwt_nonce_hex_to_field};

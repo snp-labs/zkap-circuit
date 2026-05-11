@@ -7,13 +7,13 @@
 
 use ark_ff::PrimeField;
 use ark_r1cs_std::{
-    R1CSVar,
+    GR1CSVar,
     eq::EqGadget,
     fields::{FieldVar, fp::FpVar},
     prelude::Boolean,
     select::CondSelectGadget,
 };
-use ark_relations::r1cs::SynthesisError;
+use ark_relations::gr1cs::SynthesisError;
 
 /// Selects the column at the `selector` index from a 2D array.
 ///
@@ -23,7 +23,7 @@ use ark_relations::r1cs::SynthesisError;
 pub fn multi_mux<F, T>(inputs: &[Vec<T>], selector: &FpVar<F>) -> Result<Vec<T>, SynthesisError>
 where
     F: PrimeField,
-    T: R1CSVar<F> + Clone + CondSelectGadget<F>,
+    T: GR1CSVar<F> + Clone + CondSelectGadget<F>,
 {
     let out_len = inputs.len();
     let mut output = Vec::with_capacity(out_len);
@@ -42,7 +42,7 @@ where
 pub fn single_multiplexer<F, T>(inp: &[T], idx: &FpVar<F>) -> Result<T, SynthesisError>
 where
     F: PrimeField,
-    T: R1CSVar<F> + Clone + CondSelectGadget<F>,
+    T: GR1CSVar<F> + Clone + CondSelectGadget<F>,
 {
     let n = inp.len();
     let eq_bits = one_bit_vector(idx, n)?;
@@ -66,7 +66,7 @@ where
 pub fn one_bit_vector<F, Out>(index: &FpVar<F>, n: usize) -> Result<Vec<Out>, SynthesisError>
 where
     F: PrimeField,
-    Out: R1CSVar<F> + From<Boolean<F>>,
+    Out: GR1CSVar<F> + From<Boolean<F>>,
 {
     if n == 0 {
         return Ok(vec![]);
@@ -154,7 +154,7 @@ mod tests {
     use ark_ff::{One, Zero};
     use ark_r1cs_std::eq::EqGadget;
     use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar};
-    use ark_relations::r1cs::ConstraintSystem;
+    use ark_relations::gr1cs::ConstraintSystem;
 
     use crate::{lt_bit_vector, one_bit_vector};
 

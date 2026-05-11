@@ -8,7 +8,7 @@
 
 use ark_ff::PrimeField;
 use ark_r1cs_std::{prelude::Boolean, select::CondSelectGadget, uint32::UInt32};
-use ark_relations::r1cs::SynthesisError;
+use ark_relations::gr1cs::SynthesisError;
 
 use crate::hashes::sha256::{H, K};
 

@@ -20,7 +20,7 @@ use ark_crypto_primitives::snark::CircuitSpecificSetupSNARK;
 #[allow(unused_imports)]
 use ark_crypto_primitives::snark::SNARK;
 use ark_groth16::{Groth16, PreparedVerifyingKey, ProvingKey, VerifyingKey, prepare_verifying_key};
-use ark_relations::r1cs::{
+use ark_relations::gr1cs::{
     ConstraintSynthesizer, ConstraintSystem, OptimizationGoal, SynthesisMode,
 };
 use circuit::types::{BN254, BNP, CG, CircuitConfig, F};
@@ -85,9 +85,9 @@ pub fn setup(params: &CircuitConfig, output_dir: &Path) -> Result<SetupOutput, A
         .generate_constraints(cs_setup.clone())
         .map_err(|e| ApplicationError::InvalidFormat(format!("Arcs synthesis failed: {}", e)))?;
     cs_setup.finalize();
-    let matrices = cs_setup
-        .to_matrices()
-        .ok_or_else(|| ApplicationError::InvalidFormat("Failed to extract R1CS matrices".into()))?;
+    let matrices = ark_ar1cs_format::ConstraintMatrices::from_cs(&cs_setup).map_err(|e| {
+        ApplicationError::InvalidFormat(format!("Failed to extract R1CS matrices: {e:?}"))
+    })?;
     let arcs = ArcsFile::from_matrices(CurveId::Bn254, &matrices);
 
     crate::crs::persist_setup_output(&output, params, output_dir, arcs)?;

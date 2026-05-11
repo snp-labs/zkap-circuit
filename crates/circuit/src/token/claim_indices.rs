@@ -9,7 +9,7 @@ use std::borrow::Borrow;
 
 use ark_ff::PrimeField;
 use ark_r1cs_std::{alloc::AllocVar, uint16::UInt16};
-use ark_relations::r1cs::{Namespace, SynthesisError};
+use ark_relations::gr1cs::{Namespace, SynthesisError};
 
 use crate::token::ClaimIndices;
 

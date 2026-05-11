@@ -9,7 +9,7 @@
 use ark_ff::PrimeField;
 use ark_r1cs_std::eq::EqGadget;
 use ark_r1cs_std::fields::{FieldVar, fp::FpVar};
-use ark_relations::r1cs::SynthesisError;
+use ark_relations::gr1cs::SynthesisError;
 
 /// Packs byte FpVars into a single FpVar (performance-optimized version).
 ///
@@ -131,8 +131,8 @@ pub fn pack_decompose_bytes_checked<F: PrimeField>(
 mod tests {
     use super::*;
     use ark_ff::{Field, Zero};
-    use ark_r1cs_std::{R1CSVar, alloc::AllocVar};
-    use ark_relations::r1cs::ConstraintSystem;
+    use ark_r1cs_std::{GR1CSVar, alloc::AllocVar};
+    use ark_relations::gr1cs::ConstraintSystem;
 
     type TestField = ark_bn254::Fr;
 

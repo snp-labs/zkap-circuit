@@ -8,7 +8,7 @@
 
 use ark_ff::Field;
 use ark_r1cs_std::prelude::*;
-use ark_relations::r1cs::SynthesisError;
+use ark_relations::gr1cs::SynthesisError;
 
 use crate::signature::SignatureScheme;
 

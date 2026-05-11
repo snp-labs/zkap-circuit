@@ -50,7 +50,7 @@ use ark_r1cs_std::{
     uint8::UInt8,
     uint16::UInt16,
 };
-use ark_relations::r1cs::ConstraintSynthesizer;
+use ark_relations::gr1cs::ConstraintSynthesizer;
 use ark_serialize::*;
 use std::marker::PhantomData;
 
@@ -149,8 +149,8 @@ where
 {
     fn generate_constraints(
         self,
-        cs: ark_relations::r1cs::ConstraintSystemRef<C::BaseField>,
-    ) -> ark_relations::r1cs::Result<()> {
+        cs: ark_relations::gr1cs::ConstraintSystemRef<C::BaseField>,
+    ) -> ark_relations::gr1cs::Result<()> {
         assert!(self.anchor.selector.len() == self.params.n as usize);
         // Implement the constraint generation logic here
 
@@ -289,7 +289,7 @@ where
         let sha_pad_jwt_b64_to_fp = sha_pad_jwt_b64
             .iter()
             .map(|u8| u8.to_fp())
-            .collect::<ark_relations::r1cs::Result<Vec<_>>>()?;
+            .collect::<ark_relations::gr1cs::Result<Vec<_>>>()?;
 
         // Bind JWT payload boundary to the '.' separator positions.
         // If payload_offset_b64/payload_len_b64 are independent of the actual JWT '.' position,

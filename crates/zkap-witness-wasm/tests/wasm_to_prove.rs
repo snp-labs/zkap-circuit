@@ -19,6 +19,7 @@ mod common;
 
 use std::path::{Path, PathBuf};
 
+use ark_ar1cs_format::ConstraintMatrices;
 use ark_ar1cs_format::{ArcsFile, CurveId};
 use ark_ar1cs_prover::prove;
 use ark_ar1cs_wasm_witness::circuit_to_arwtns;
@@ -27,8 +28,8 @@ use ark_ar1cs_zkey::ArzkeyFile;
 use ark_bn254::{Bn254, Fr};
 use ark_crypto_primitives::snark::CircuitSpecificSetupSNARK;
 use ark_groth16::{Groth16, prepare_verifying_key};
-use ark_relations::r1cs::{
-    ConstraintMatrices, ConstraintSynthesizer, ConstraintSystem, OptimizationGoal, SynthesisMode,
+use ark_relations::gr1cs::{
+    ConstraintSynthesizer, ConstraintSystem, OptimizationGoal, SynthesisMode,
 };
 use ark_std::rand::SeedableRng;
 use wasmtime::{Engine, Linker, Memory, Module, Store, TypedFunc};
@@ -56,7 +57,7 @@ fn collect_matrices(circuit: TestCircuit) -> ConstraintMatrices<Fr> {
         .generate_constraints(cs.clone())
         .expect("generate_constraints failed in Setup mode");
     cs.finalize();
-    cs.to_matrices().expect("to_matrices() returned None")
+    ConstraintMatrices::from_cs(&cs).expect("ConstraintMatrices::from_cs failed")
 }
 
 /// Step 1 (test setup): build a satisfying `ZkapCircuit`, run Groth16
@@ -503,7 +504,7 @@ fn wasm_to_prove_full_pipeline() {
 /// host-side check ever runs.
 #[test]
 fn host_rejects_wasm_with_mismatched_ar1cs_blake3() {
-    use ark_relations::r1cs::{ConstraintSystemRef, LinearCombination, SynthesisError};
+    use ark_relations::gr1cs::{ConstraintSystemRef, LinearCombination, SynthesisError};
     use std::path::PathBuf;
     use zkap_service::{CircuitConfig, RawProofRequest, ZkapPerJwtFields, ZkapSharedFields};
 
@@ -535,10 +536,10 @@ fn host_rejects_wasm_with_mismatched_ar1cs_blake3() {
             let z = cs.new_input_variable(|| Ok(Fr::from(15u64)))?;
             let x = cs.new_witness_variable(|| Ok(Fr::from(3u64)))?;
             let y = cs.new_witness_variable(|| Ok(Fr::from(5u64)))?;
-            cs.enforce_constraint(
-                LinearCombination::from(x),
-                LinearCombination::from(y),
-                LinearCombination::from(z),
+            cs.enforce_r1cs_constraint(
+                || LinearCombination::from(x),
+                || LinearCombination::from(y),
+                || LinearCombination::from(z),
             )?;
             Ok(())
         }
@@ -563,7 +564,8 @@ fn host_rejects_wasm_with_mismatched_ar1cs_blake3() {
             .generate_constraints(cs.clone())
             .expect("toy generate_constraints");
         cs.finalize();
-        let toy_matrices = cs.to_matrices().expect("toy to_matrices");
+        let toy_matrices =
+            ConstraintMatrices::from_cs(&cs).expect("toy ConstraintMatrices::from_cs");
         let toy_arcs = ArcsFile::<Fr>::from_matrices(CurveId::Bn254, &toy_matrices);
         let toy_arzkey = ArzkeyFile::<Bn254>::from_setup_output(toy_arcs, toy_pk);
 

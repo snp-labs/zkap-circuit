@@ -72,7 +72,7 @@ ark-ec                = { workspace = true }
 ark-ff                = { workspace = true, features = ["std"] }
 ark-relations         = { workspace = true }
 ark-groth16           = { workspace = true }
-ark-crypto-primitives = { workspace = true, features = ["crh", "merkle_tree", "r1cs"] }
+ark-crypto-primitives = { workspace = true, features = ["crh", "merkle_tree", "constraints"] }
 ark-std               = { workspace = true }
 ark-utils             = { workspace = true, features = ["field-serde"] }
 gadget                = { workspace = true, features = ["full"] }

@@ -12,7 +12,7 @@ use ark_r1cs_std::{
     select::CondSelectGadget,
     uint16::UInt16,
 };
-use ark_relations::r1cs::SynthesisError;
+use ark_relations::gr1cs::SynthesisError;
 
 use crate::{is_less_than, lt_bit_vector, multi_mux, select_array_element};
 
@@ -416,8 +416,8 @@ pub fn slice_efficient<F: PrimeField>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ark_r1cs_std::{R1CSVar, alloc::AllocVar, fields::fp::FpVar};
-    use ark_relations::r1cs::ConstraintSystem;
+    use ark_r1cs_std::{GR1CSVar, alloc::AllocVar, fields::fp::FpVar};
+    use ark_relations::gr1cs::ConstraintSystem;
 
     type F = ark_bn254::Fr;
 

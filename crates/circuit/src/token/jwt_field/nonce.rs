@@ -20,7 +20,7 @@ use ark_r1cs_std::{
     prelude::{Boolean, ToBitsGadget},
     uint16::UInt16,
 };
-use ark_relations::r1cs::SynthesisError;
+use ark_relations::gr1cs::SynthesisError;
 
 /// Converts a JWT nonce string of the form `"0x[0-9A-Fa-f]+"` to a field element.
 ///

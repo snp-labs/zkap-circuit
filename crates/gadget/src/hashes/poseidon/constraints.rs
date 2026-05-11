@@ -19,7 +19,7 @@ use ark_r1cs_std::{
     fields::fp::FpVar,
     groups::{CurveVar, GroupOpsBounds},
 };
-use ark_relations::r1cs::{ConstraintSystemRef, SynthesisError};
+use ark_relations::gr1cs::{ConstraintSystemRef, SynthesisError};
 
 /// Enforces that the Poseidon chain-hash of the serialised `anchor` points equals `_hanchor`
 /// in-circuit.
@@ -77,8 +77,8 @@ mod tests {
         CRHScheme,
         poseidon::{CRH, constraints::CRHParametersVar},
     };
-    use ark_r1cs_std::{R1CSVar, alloc::AllocVar, eq::EqGadget, fields::fp::FpVar};
-    use ark_relations::r1cs::ConstraintSystem;
+    use ark_r1cs_std::{GR1CSVar, alloc::AllocVar, eq::EqGadget, fields::fp::FpVar};
+    use ark_relations::gr1cs::ConstraintSystem;
 
     type F = ark_bn254::Fr;
 

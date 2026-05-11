@@ -19,7 +19,7 @@ use ark_r1cs_std::{
     fields::{FieldVar, fp::FpVar},
     prelude::Boolean,
 };
-use ark_relations::r1cs::SynthesisError;
+use ark_relations::gr1cs::SynthesisError;
 
 /// Converts a decimal byte array (e.g. JWT exp field) to a field element.
 ///

@@ -8,7 +8,7 @@ use core::iter;
 
 use ark_ff::PrimeField;
 use ark_r1cs_std::{prelude::Boolean, prelude::ToBitsGadget, uint8::UInt8, uint32::UInt32};
-use ark_relations::r1cs::SynthesisError;
+use ark_relations::gr1cs::SynthesisError;
 
 /// Bitwise / byte-construction helpers missing from the upstream
 /// [`UInt32`] gadget. Implemented for `UInt32<F>` below.
@@ -71,8 +71,8 @@ impl<F: PrimeField> UInt32Ext<F> for UInt32<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ark_r1cs_std::{R1CSVar, uint8::UInt8, uint32::UInt32};
-    use ark_relations::r1cs::ConstraintSystem;
+    use ark_r1cs_std::{GR1CSVar, uint8::UInt8, uint32::UInt32};
+    use ark_relations::gr1cs::ConstraintSystem;
 
     type F = ark_bn254::Fr;
 

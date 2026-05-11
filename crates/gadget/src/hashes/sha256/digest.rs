@@ -1,6 +1,6 @@
 //! `DigestVar` — the canonical R1CS type for a 32-byte SHA-256 output.
 //!
-//! [`DigestVar`] wraps a `[UInt8<F>; 32]` array and implements `AllocVar`, `R1CSVar`,
+//! [`DigestVar`] wraps a `[UInt8<F>; 32]` array and implements `AllocVar`, `GR1CSVar`,
 //! `EqGadget`, `ToBytesGadget`, and `CondSelectGadget` so it can be used as a
 //! standard constraint variable. It is the output type of [`crate::hashes::sha256::constraints::SHA256Gadget`]
 //! and is re-exported from [`crate::hashes::sha256`] as the primary import path.
@@ -9,19 +9,19 @@ use std::borrow::Borrow;
 
 use ark_ff::PrimeField;
 use ark_r1cs_std::{
-    R1CSVar,
+    GR1CSVar,
     alloc::{AllocVar, AllocationMode},
     eq::EqGadget,
     prelude::{Boolean, ToBytesGadget},
     select::CondSelectGadget,
     uint8::UInt8,
 };
-use ark_relations::r1cs::{ConstraintSystemRef, Namespace, SynthesisError};
+use ark_relations::gr1cs::{ConstraintSystemRef, Namespace, SynthesisError};
 
 /// In-circuit representation of a 32-byte SHA-256 digest.
 ///
 /// Wraps exactly 32 `UInt8<F>` variables and implements the standard arkworks R1CS traits
-/// (`AllocVar`, `R1CSVar`, `EqGadget`, `ToBytesGadget`, `CondSelectGadget`) so it can be
+/// (`AllocVar`, `GR1CSVar`, `EqGadget`, `ToBytesGadget`, `CondSelectGadget`) so it can be
 /// used as a circuit output type in SHA-256 gadget compositions. Panics at allocation time
 /// if fewer or more than 32 bytes are provided.
 #[derive(Clone, Debug)]
@@ -96,7 +96,7 @@ impl<ConstraintF: PrimeField> AllocVar<Vec<u8>, ConstraintF> for DigestVar<Const
     }
 }
 
-impl<ConstraintF: PrimeField> R1CSVar<ConstraintF> for DigestVar<ConstraintF> {
+impl<ConstraintF: PrimeField> GR1CSVar<ConstraintF> for DigestVar<ConstraintF> {
     type Value = [u8; 32];
 
     fn cs(&self) -> ConstraintSystemRef<ConstraintF> {

@@ -11,7 +11,7 @@ use ark_crypto_primitives::{
 use ark_ec::CurveGroup;
 use ark_ff::{BigInteger, One, PrimeField, Zero};
 use ark_groth16::{Groth16, prepare_verifying_key};
-use ark_relations::r1cs::ConstraintSynthesizer;
+use ark_relations::gr1cs::ConstraintSynthesizer;
 use ark_std::rand::SeedableRng;
 use base64::Engine;
 use rsa::pkcs1v15::SigningKey;
@@ -656,7 +656,7 @@ fn debug_constraint_satisfaction() {
     let inputs = build_valid_circuit_inputs();
     for (i, input) in inputs.into_iter().enumerate() {
         let circuit = TestCircuit::from_input(input);
-        let cs = ark_relations::r1cs::ConstraintSystem::<F>::new_ref();
+        let cs = ark_relations::gr1cs::ConstraintSystem::<F>::new_ref();
         circuit.generate_constraints(cs.clone()).unwrap();
 
         if !cs.is_satisfied().unwrap() {

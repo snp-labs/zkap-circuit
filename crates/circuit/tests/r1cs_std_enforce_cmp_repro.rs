@@ -35,7 +35,7 @@ use ark_bn254::Fr;
 use ark_r1cs_std::{
     alloc::AllocVar, convert::ToBitsGadget, eq::EqGadget, fields::fp::FpVar, prelude::Boolean,
 };
-use ark_relations::r1cs::ConstraintSystem;
+use ark_relations::gr1cs::ConstraintSystem;
 use core::cmp::Ordering;
 
 /// Build a circuit that enforces `a <= b` using

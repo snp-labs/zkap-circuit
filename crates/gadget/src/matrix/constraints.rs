@@ -29,12 +29,12 @@ impl<F: PrimeField> VandermondeMatrixVar<F> {
     pub fn vector_mul_matrix(
         &self,
         a: &[FpVar<F>],
-    ) -> Result<Vec<FpVar<F>>, ark_relations::r1cs::SynthesisError> {
+    ) -> Result<Vec<FpVar<F>>, ark_relations::gr1cs::SynthesisError> {
         let m = self.matrix.len();
         let n = self.matrix[0].len();
 
         if a.len() != m {
-            return Err(ark_relations::r1cs::SynthesisError::Unsatisfiable);
+            return Err(ark_relations::gr1cs::SynthesisError::Unsatisfiable);
         }
 
         let mut result = Vec::with_capacity(n);
@@ -56,10 +56,10 @@ impl<F: PrimeField> VandermondeMatrixVar<F> {
 
 impl<F: PrimeField> AllocVar<VandermondeMatrix<F>, F> for VandermondeMatrixVar<F> {
     fn new_variable<T: std::borrow::Borrow<VandermondeMatrix<F>>>(
-        cs: impl Into<ark_relations::r1cs::Namespace<F>>,
-        f: impl FnOnce() -> Result<T, ark_relations::r1cs::SynthesisError>,
+        cs: impl Into<ark_relations::gr1cs::Namespace<F>>,
+        f: impl FnOnce() -> Result<T, ark_relations::gr1cs::SynthesisError>,
         mode: ark_r1cs_std::prelude::AllocationMode,
-    ) -> Result<Self, ark_relations::r1cs::SynthesisError> {
+    ) -> Result<Self, ark_relations::gr1cs::SynthesisError> {
         let ns = cs.into();
         let cs = ns.cs();
 

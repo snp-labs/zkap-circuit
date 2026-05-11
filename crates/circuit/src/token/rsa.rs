@@ -11,13 +11,13 @@
 
 use ark_ff::PrimeField;
 use ark_r1cs_std::{
-    R1CSVar,
+    GR1CSVar,
     convert::{ToBytesGadget, ToConstraintFieldGadget},
     eq::EqGadget,
     prelude::Boolean,
     uint8::UInt8,
 };
-use ark_relations::r1cs::SynthesisError;
+use ark_relations::gr1cs::SynthesisError;
 use gadget::{
     bigint::constraints::{BigNatCircuitParams, BigNatVar},
     signature::rsa::constraints::{PublicKeyVar, SignatureVar, output_with_prefix},

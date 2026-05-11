@@ -1,4 +1,4 @@
-use ark_relations::r1cs::SynthesisError;
+use ark_relations::gr1cs::SynthesisError;
 use thiserror::Error;
 
 /// Error type for both native and in-circuit hash evaluations.

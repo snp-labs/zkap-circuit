@@ -1,6 +1,6 @@
 use std::string::FromUtf8Error;
 
-use ark_relations::r1cs::SynthesisError;
+use ark_relations::gr1cs::SynthesisError;
 use base64::DecodeError;
 use thiserror::Error;
 
@@ -11,7 +11,7 @@ use thiserror::Error;
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum Base64Error {
     /// Propagated from arkworks R1CS constraint allocation; wraps any
-    /// [`ark_relations::r1cs::SynthesisError`] that occurs during gadget enforcement.
+    /// [`ark_relations::gr1cs::SynthesisError`] that occurs during gadget enforcement.
     #[error("Synthesis error: {0}")]
     SynthesisError(#[from] SynthesisError),
 

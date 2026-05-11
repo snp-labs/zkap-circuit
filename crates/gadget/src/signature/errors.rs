@@ -15,9 +15,9 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum SignatureError {
     /// Propagated from arkworks R1CS constraint allocation; wraps any
-    /// [`ark_relations::r1cs::SynthesisError`] encountered while building the gadget.
+    /// [`ark_relations::gr1cs::SynthesisError`] encountered while building the gadget.
     #[error("Synthesis error: {0}")]
-    SynthesisError(#[from] ark_relations::r1cs::SynthesisError),
+    SynthesisError(#[from] ark_relations::gr1cs::SynthesisError),
 
     /// The supplied public key bytes could not be parsed or validated (e.g., modulus
     /// is too small, exponent is zero).

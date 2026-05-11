@@ -9,7 +9,7 @@ use ark_ff::PrimeField;
 use ark_r1cs_std::{
     alloc::AllocVar, eq::EqGadget, fields::fp::FpVar, prelude::Boolean, select::CondSelectGadget,
 };
-use ark_relations::r1cs::SynthesisError;
+use ark_relations::gr1cs::SynthesisError;
 
 use ark_utils::select_array_element_be;
 
@@ -33,7 +33,7 @@ where
     F: PrimeField,
 {
     fn new_variable<T: std::borrow::Borrow<Base64Table>>(
-        cs: impl Into<ark_relations::r1cs::Namespace<F>>,
+        cs: impl Into<ark_relations::gr1cs::Namespace<F>>,
         f: impl FnOnce() -> Result<T, SynthesisError>,
         mode: ark_r1cs_std::prelude::AllocationMode,
     ) -> Result<Self, SynthesisError> {
@@ -134,7 +134,7 @@ impl<F: PrimeField> Base64DecoderGadget<F> {
 
 impl<F: PrimeField> AllocVar<Base64CharBits, F> for Base64CharBitsVar<F> {
     fn new_variable<T: std::borrow::Borrow<Base64CharBits>>(
-        cs: impl Into<ark_relations::r1cs::Namespace<F>>,
+        cs: impl Into<ark_relations::gr1cs::Namespace<F>>,
         f: impl FnOnce() -> Result<T, SynthesisError>,
         mode: ark_r1cs_std::prelude::AllocationMode,
     ) -> Result<Self, SynthesisError> {
@@ -162,7 +162,7 @@ impl<F: PrimeField> AllocVar<Base64CharBits, F> for Base64CharBitsVar<F> {
 
 impl<F: PrimeField> AllocVar<IndexBits, F> for IndexBitsVar<F> {
     fn new_variable<T: std::borrow::Borrow<IndexBits>>(
-        cs: impl Into<ark_relations::r1cs::Namespace<F>>,
+        cs: impl Into<ark_relations::gr1cs::Namespace<F>>,
         f: impl FnOnce() -> Result<T, SynthesisError>,
         mode: ark_r1cs_std::prelude::AllocationMode,
     ) -> Result<Self, SynthesisError> {
@@ -187,8 +187,8 @@ impl<F: PrimeField> AllocVar<IndexBits, F> for IndexBitsVar<F> {
 mod tests {
     use super::*;
     use crate::base64::{decoder::IndexBits, get_base64_table};
-    use ark_r1cs_std::{R1CSVar, prelude::AllocationMode};
-    use ark_relations::r1cs::ConstraintSystem;
+    use ark_r1cs_std::{GR1CSVar, prelude::AllocationMode};
+    use ark_relations::gr1cs::ConstraintSystem;
 
     type F = ark_bn254::Fr;
 

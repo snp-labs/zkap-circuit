@@ -16,7 +16,7 @@ use ark_r1cs_std::{
     prelude::ToBytesGadget,
     uint8::UInt8,
 };
-use ark_relations::r1cs::SynthesisError;
+use ark_relations::gr1cs::SynthesisError;
 use num_bigint::BigUint as NumBigUint;
 
 use crate::{
@@ -44,8 +44,8 @@ pub struct ParameterVar<ConstriantF: PrimeField> {
 
 impl<ConstriantF: PrimeField> AllocVar<(), ConstriantF> for ParameterVar<ConstriantF> {
     fn new_variable<T: std::borrow::Borrow<()>>(
-        _cs: impl Into<ark_relations::r1cs::Namespace<ConstriantF>>,
-        _f: impl FnOnce() -> Result<T, ark_relations::r1cs::SynthesisError>,
+        _cs: impl Into<ark_relations::gr1cs::Namespace<ConstriantF>>,
+        _f: impl FnOnce() -> Result<T, ark_relations::gr1cs::SynthesisError>,
         _mode: ark_r1cs_std::prelude::AllocationMode,
     ) -> Result<Self, SynthesisError> {
         Ok(ParameterVar {
@@ -71,7 +71,7 @@ impl<ConstraintF: PrimeField, BNP: BigNatCircuitParams> AllocVar<PublicKey, Cons
     for PublicKeyVar<ConstraintF, BNP>
 {
     fn new_variable<T: std::borrow::Borrow<PublicKey>>(
-        cs: impl Into<ark_relations::r1cs::Namespace<ConstraintF>>,
+        cs: impl Into<ark_relations::gr1cs::Namespace<ConstraintF>>,
         f: impl FnOnce() -> Result<T, SynthesisError>,
         mode: AllocationMode,
     ) -> Result<Self, SynthesisError> {
@@ -124,7 +124,7 @@ impl<ConstriantF: PrimeField, BNP: BigNatCircuitParams> AllocVar<Signature, Cons
     for SignatureVar<ConstriantF, BNP>
 {
     fn new_variable<T: std::borrow::Borrow<Signature>>(
-        cs: impl Into<ark_relations::r1cs::Namespace<ConstriantF>>,
+        cs: impl Into<ark_relations::gr1cs::Namespace<ConstriantF>>,
         f: impl FnOnce() -> Result<T, SynthesisError>,
         mode: AllocationMode,
     ) -> Result<Self, SynthesisError> {
@@ -183,8 +183,8 @@ pub fn output_with_prefix<F: PrimeField>(hashed: &[UInt8<F>]) -> Vec<UInt8<F>> {
 #[cfg(test)]
 mod tests {
     use ark_ff::PrimeField;
-    use ark_r1cs_std::{R1CSVar, alloc::AllocVar};
-    use ark_relations::r1cs::ConstraintSystemRef;
+    use ark_r1cs_std::{GR1CSVar, alloc::AllocVar};
+    use ark_relations::gr1cs::ConstraintSystemRef;
     use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 
     use crate::{
@@ -209,7 +209,7 @@ mod tests {
 
     #[test]
     fn test_var() {
-        let cs = ark_relations::r1cs::ConstraintSystem::<F>::new_ref();
+        let cs = ark_relations::gr1cs::ConstraintSystem::<F>::new_ref();
         let pk_var = get_new_pk::<F, RSATESTParms>(N, "AQAB", cs.clone());
         let (n_var, e_var) = get_old_pk::<F, RSATESTParms>(N, "AQAB", cs.clone());
 

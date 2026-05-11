@@ -11,8 +11,8 @@
 
 use ark_bn254::Fr as F;
 use ark_ff::PrimeField;
-use ark_r1cs_std::{R1CSVar, alloc::AllocVar, eq::EqGadget, fields::fp::FpVar, uint16::UInt16};
-use ark_relations::r1cs::ConstraintSystem;
+use ark_r1cs_std::{GR1CSVar, alloc::AllocVar, eq::EqGadget, fields::fp::FpVar, uint16::UInt16};
+use ark_relations::gr1cs::ConstraintSystem;
 use ark_utils::{slice_efficient, slice_from_start};
 
 use circuit::token::claim_indices::ClaimIndicesVar;
@@ -92,7 +92,7 @@ fn extract_string(result: &[FpVar<F>], length: usize) -> String {
 }
 
 /// Helper function to create payload FpVar from string
-fn create_payload(cs: ark_relations::r1cs::ConstraintSystemRef<F>, s: &str) -> Vec<FpVar<F>> {
+fn create_payload(cs: ark_relations::gr1cs::ConstraintSystemRef<F>, s: &str) -> Vec<FpVar<F>> {
     s.bytes()
         .map(|byte| FpVar::<F>::new_witness(cs.clone(), || Ok(F::from(byte))).unwrap())
         .collect()
@@ -100,7 +100,7 @@ fn create_payload(cs: ark_relations::r1cs::ConstraintSystemRef<F>, s: &str) -> V
 
 /// Helper function to create ClaimIndicesVar
 fn create_claim_indices_var(
-    cs: ark_relations::r1cs::ConstraintSystemRef<F>,
+    cs: ark_relations::gr1cs::ConstraintSystemRef<F>,
     indices: &ClaimIndices,
 ) -> ClaimIndicesVar<F> {
     ClaimIndicesVar {

@@ -19,7 +19,7 @@ use ark_r1cs_std::{
     prelude::{Boolean, ToBitsGadget},
     uint16::UInt16,
 };
-use ark_relations::r1cs::{Namespace, SynthesisError};
+use ark_relations::gr1cs::{Namespace, SynthesisError};
 
 use crate::merkletree::{
     MerkleCircuitInput,
@@ -127,13 +127,13 @@ mod tests {
     };
     use ark_ff::PrimeField;
     use ark_r1cs_std::{
-        R1CSVar,
+        GR1CSVar,
         alloc::AllocVar,
         eq::EqGadget,
         fields::fp::FpVar,
         prelude::{Boolean, ToBitsGadget},
     };
-    use ark_relations::r1cs::{ConstraintSystemRef, SynthesisError};
+    use ark_relations::gr1cs::{ConstraintSystemRef, SynthesisError};
 
     use crate::{
         bigint::constraints::BigNatCircuitParams,
@@ -194,7 +194,7 @@ mod tests {
     }
 
     fn generate_merkle_tree_verify_gadget<F: PrimeField + Absorb>(
-        cs: &ark_relations::r1cs::ConstraintSystemRef<F>,
+        cs: &ark_relations::gr1cs::ConstraintSystemRef<F>,
         poseidon_parameters: PoseidonConfig<F>,
         path: &Path<MerkleTreeParams<F>>,
         root: &F,
@@ -249,7 +249,7 @@ mod tests {
         println!("path_2: {:?}", path_2);
         println!("path_3: {:?}", path_3);
 
-        let cs = ark_relations::r1cs::ConstraintSystem::<F>::new_ref();
+        let cs = ark_relations::gr1cs::ConstraintSystem::<F>::new_ref();
         generate_merkle_tree_verify_gadget(
             &cs,
             get_poseidon_params::<F>(),
@@ -258,7 +258,7 @@ mod tests {
             idx_1,
         );
 
-        let cs = ark_relations::r1cs::ConstraintSystem::<F>::new_ref();
+        let cs = ark_relations::gr1cs::ConstraintSystem::<F>::new_ref();
         generate_merkle_tree_verify_gadget(
             &cs,
             get_poseidon_params::<F>(),
@@ -266,7 +266,7 @@ mod tests {
             &root_2,
             idx_2,
         );
-        let cs = ark_relations::r1cs::ConstraintSystem::<F>::new_ref();
+        let cs = ark_relations::gr1cs::ConstraintSystem::<F>::new_ref();
         generate_merkle_tree_verify_gadget(
             &cs,
             get_poseidon_params::<F>(),
@@ -323,7 +323,7 @@ mod tests {
         println!("root: {:?}", root);
         println!("path: {:?}", path);
 
-        let cs = ark_relations::r1cs::ConstraintSystem::<F>::new_ref();
+        let cs = ark_relations::gr1cs::ConstraintSystem::<F>::new_ref();
         let value = [F::from(1u64), F::from(2u64), F::from(3u64)];
         let values = value
             .iter()
@@ -332,7 +332,7 @@ mod tests {
         let _h_var = chain_hash_gadget(cs.clone(), &values).unwrap();
         println!("num constraints: {}", cs.num_constraints());
 
-        let cs = ark_relations::r1cs::ConstraintSystem::<F>::new_ref();
+        let cs = ark_relations::gr1cs::ConstraintSystem::<F>::new_ref();
         let parameter =
             CRHParametersVar::<F>::new_constant(cs.clone(), get_poseidon_params::<F>().clone())
                 .unwrap();
@@ -355,7 +355,7 @@ mod tests {
         let (_root, path, _) = generate_merkle_tree_input::<F>(tree_height, n_leaves, idx);
         let wrong_root = F::from(999999u64); // tampered root
 
-        let cs = ark_relations::r1cs::ConstraintSystem::<F>::new_ref();
+        let cs = ark_relations::gr1cs::ConstraintSystem::<F>::new_ref();
         let poseidon_params = get_poseidon_params::<F>();
         let hash_params_var =
             CRHParametersVar::<F>::new_constant(cs.clone(), poseidon_params.clone()).unwrap();
@@ -386,7 +386,7 @@ mod tests {
 
         let (root, path, _) = generate_merkle_tree_input::<F>(tree_height, n_leaves, idx);
 
-        let cs = ark_relations::r1cs::ConstraintSystem::<F>::new_ref();
+        let cs = ark_relations::gr1cs::ConstraintSystem::<F>::new_ref();
         let poseidon_params = get_poseidon_params::<F>();
         let hash_params_var =
             CRHParametersVar::<F>::new_constant(cs.clone(), poseidon_params.clone()).unwrap();
@@ -419,7 +419,7 @@ mod tests {
 
         let (root, path, _) = generate_merkle_tree_input::<F>(tree_height, n_leaves, idx);
 
-        let cs = ark_relations::r1cs::ConstraintSystem::<F>::new_ref();
+        let cs = ark_relations::gr1cs::ConstraintSystem::<F>::new_ref();
         generate_merkle_tree_verify_gadget(&cs, get_poseidon_params::<F>(), &path, &root, idx);
 
         assert!(cs.is_satisfied().unwrap());

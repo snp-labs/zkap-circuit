@@ -15,7 +15,7 @@ use ark_ar1cs_format::CurveId;
 use ark_ar1cs_wasm_witness::{WitnessGenerator, witness_generator_native};
 use ark_ar1cs_wtns::ArwtnsFile;
 use ark_bn254::Fr;
-use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystem, OptimizationGoal};
+use ark_relations::gr1cs::{ConstraintSynthesizer, ConstraintSystem, OptimizationGoal};
 use zkap_witness_wasm::{ZkapInputV1, ZkapWitnessGenerator};
 
 use common::{TestCircuit, V1FixtureBundle, build_v1_fixture_bundle};

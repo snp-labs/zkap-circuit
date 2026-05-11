@@ -28,7 +28,7 @@ use ark_r1cs_std::{
     select::CondSelectGadget,
     uint16::UInt16,
 };
-use ark_relations::r1cs::SynthesisError;
+use ark_relations::gr1cs::SynthesisError;
 use ark_utils::{is_less_than, single_multiplexer};
 
 pub(super) fn claim_format_verifier_v2<F: PrimeField>(

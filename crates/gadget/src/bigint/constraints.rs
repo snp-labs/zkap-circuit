@@ -9,7 +9,7 @@ use core::{borrow::Borrow, cmp::max, marker::PhantomData};
 
 use ark_ff::{BitIteratorBE, PrimeField};
 use ark_r1cs_std::{
-    R1CSVar,
+    GR1CSVar,
     alloc::{AllocVar, AllocationMode},
     eq::EqGadget,
     fields::{FieldVar, fp::FpVar},
@@ -17,7 +17,7 @@ use ark_r1cs_std::{
     select::CondSelectGadget,
     uint8::UInt8,
 };
-use ark_relations::r1cs::{ConstraintSystemRef, Namespace, SynthesisError};
+use ark_relations::gr1cs::{ConstraintSystemRef, Namespace, SynthesisError};
 use num::Zero;
 use num_integer::Integer;
 use num_traits::One;
@@ -92,7 +92,7 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> AllocVar<BigNat, Constrain
     }
 }
 
-impl<ConstraintF: PrimeField, P: BigNatCircuitParams> R1CSVar<ConstraintF>
+impl<ConstraintF: PrimeField, P: BigNatCircuitParams> GR1CSVar<ConstraintF>
     for BigNatVar<ConstraintF, P>
 {
     type Value = BigNat;
@@ -1257,7 +1257,7 @@ mod test {
     use std::io::Write;
 
     use ark_ed_on_bn254::Fq;
-    use ark_relations::r1cs::ConstraintSystem;
+    use ark_relations::gr1cs::ConstraintSystem;
 
     use super::*;
 

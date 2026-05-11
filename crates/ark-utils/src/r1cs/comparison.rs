@@ -7,13 +7,13 @@
 
 use ark_ff::{BigInteger, PrimeField};
 use ark_r1cs_std::{
-    R1CSVar,
+    GR1CSVar,
     alloc::AllocVar,
     eq::EqGadget,
     fields::{FieldVar, fp::FpVar},
     prelude::Boolean,
 };
-use ark_relations::r1cs::SynthesisError;
+use ark_relations::gr1cs::SynthesisError;
 
 use crate::one_bit_vector;
 
@@ -183,8 +183,8 @@ pub fn compare_bits_raw<F: PrimeField>(
 
 #[cfg(test)]
 mod tests {
-    use ark_r1cs_std::{R1CSVar, alloc::AllocVar, eq::EqGadget, fields::fp::FpVar};
-    use ark_relations::r1cs::{ConstraintSystem, ConstraintSystemRef};
+    use ark_r1cs_std::{GR1CSVar, alloc::AllocVar, eq::EqGadget, fields::fp::FpVar};
+    use ark_relations::gr1cs::{ConstraintSystem, ConstraintSystemRef};
 
     use crate::lt_bit_vector;
 

@@ -19,7 +19,7 @@ use ark_r1cs_std::{
     uint16::UInt16,
     uint32::UInt32,
 };
-use ark_relations::r1cs::{Namespace, SynthesisError};
+use ark_relations::gr1cs::{Namespace, SynthesisError};
 
 use ark_utils::{UInt32Ext, enforce_less_than, is_greater_or_equal, is_less_than, slice_efficient};
 
@@ -454,7 +454,7 @@ impl<F: PrimeField> SHA256Gadget<F> {
         prefix_blocks: &UInt16<F>,
         total_len_wo_pad_bytes: &UInt16<F>,
         pad_start_in_suffix: &UInt16<F>,
-    ) -> Result<DigestVar<F>, ark_relations::r1cs::SynthesisError> {
+    ) -> Result<DigestVar<F>, ark_relations::gr1cs::SynthesisError> {
         Self::enforce_sha2_pad_verifier(
             data,
             &nblocks_idx,
@@ -757,8 +757,8 @@ impl<F: PrimeField> AllocVar<Vec<u32>, F> for SHA256Gadget<F> {
 mod tests {
     use super::*;
     use ark_bn254::Fr;
-    use ark_r1cs_std::R1CSVar;
-    use ark_relations::r1cs::ConstraintSystem;
+    use ark_r1cs_std::GR1CSVar;
+    use ark_relations::gr1cs::ConstraintSystem;
     use sha2::{Digest, Sha256};
 
     #[test]

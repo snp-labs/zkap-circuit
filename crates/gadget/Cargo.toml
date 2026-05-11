@@ -19,7 +19,7 @@ ark-ff = { workspace = true }
 ark-r1cs-std = { workspace = true }
 ark-relations = { workspace = true }
 ark-std = { workspace = true }
-ark-crypto-primitives = { workspace = true, features = ["crh", "r1cs", "prf", "merkle_tree"] }
+ark-crypto-primitives = { workspace = true, features = ["crh", "constraints", "prf", "merkle_tree"] }
 ark-bn254 = { workspace = true }
 ark-ed-on-bn254 = { workspace = true, features = ["r1cs"] }
 

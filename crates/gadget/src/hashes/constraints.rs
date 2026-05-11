@@ -3,7 +3,7 @@
 //! [`CRHSchemeGadget`] and [`TwoToOneCRHSchemeGadget`] are the circuit-level counterparts
 //! of [`crate::hashes::CRHScheme`] and [`crate::hashes::TwoToOneCRHScheme`]. Their
 //! associated `OutputVar` must satisfy the standard arkworks R1CS variable bounds
-//! (`EqGadget`, `ToBytesGadget`, `CondSelectGadget`, `AllocVar`, `R1CSVar`).
+//! (`EqGadget`, `ToBytesGadget`, `CondSelectGadget`, `AllocVar`, `GR1CSVar`).
 
 use ark_ff::Field;
 
@@ -29,7 +29,7 @@ pub trait CRHSchemeGadget<H: CRHScheme, ConstraintF: Field>: Sized {
         + ToBytesGadget<ConstraintF>
         + CondSelectGadget<ConstraintF>
         + AllocVar<H::Output, ConstraintF>
-        + R1CSVar<ConstraintF>
+        + GR1CSVar<ConstraintF>
         + Debug
         + Clone
         + Sized;
@@ -50,7 +50,7 @@ pub trait TwoToOneCRHSchemeGadget<H: TwoToOneCRHScheme, ConstraintF: Field>: Siz
         + ToBytesGadget<ConstraintF>
         + CondSelectGadget<ConstraintF>
         + AllocVar<H::Output, ConstraintF>
-        + R1CSVar<ConstraintF>
+        + GR1CSVar<ConstraintF>
         + Debug
         + Clone
         + Sized;

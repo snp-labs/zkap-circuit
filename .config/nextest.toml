@@ -1,0 +1,16 @@
+# Nextest config. CI invokes `cargo nextest run --profile ci --cargo-profile release-tests`.
+# Note: nextest's `--profile` (this file's section names) is distinct from cargo's
+# `--cargo-profile`. Both must be supplied to invoke release-tests under the `ci` profile.
+
+[profile.default]
+fail-fast = false
+slow-timeout = { period = "60s", terminate-after = 3 }
+failure-output = "immediate-final"
+
+# CI profile: retry once to absorb known flakiness (e.g. SOURCE_DATE_EPOCH race in
+# crates/cli/tests/manifest_golden.rs), surface a single consolidated failure block.
+[profile.ci]
+fail-fast = false
+slow-timeout = { period = "60s", terminate-after = 3 }
+failure-output = "immediate-final"
+retries = { backoff = "fixed", count = 1, delay = "1s" }

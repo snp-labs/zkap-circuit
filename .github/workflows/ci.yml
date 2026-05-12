@@ -42,15 +42,19 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+      - uses: taiki-e/install-action@c070f87102a1c75b3183910f391c1cb887fe13c8 # v2
+        with:
+          tool: cargo-nextest
       # Workspace-wide test sweep on the `release-tests` custom profile,
-      # defined in the root Cargo.toml as release optimization + unwind
-      # panic. The mobile-targeted `[profile.release]` keeps
+      # defined in the root Cargo.toml as release optimization (LTO off) +
+      # unwind panic. The mobile-targeted `[profile.release]` keeps
       # `panic = "abort"`, which Cargo does not propagate to test
       # binaries — `cargo test --release` therefore hits a
       # panic-strategy mismatch (deps=abort vs test crate=unwind). The
-      # custom profile sidesteps that while preserving release-level
-      # runtime speed for the heavier ZK tests.
-      - run: cargo test --profile release-tests --workspace
+      # custom profile sidesteps that. Nextest's per-test process model
+      # also eliminates env-variable races between parallel tests
+      # (e.g. SOURCE_DATE_EPOCH in crates/cli/tests/manifest_golden.rs).
+      - run: cargo nextest run --profile ci --cargo-profile release-tests --workspace
 
   build:
     name: Build (Release)

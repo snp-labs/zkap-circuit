@@ -64,15 +64,18 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+      - uses: taiki-e/install-action@c070f87102a1c75b3183910f391c1cb887fe13c8 # v2
+        with:
+          tool: cargo-nextest
       - run: cargo clippy --workspace -- -D warnings
       # Workspace `[profile.release]` is `panic = "abort"`, which Cargo does
       # not propagate to test binaries; `cargo test --release` therefore
       # hits a panic-strategy mismatch (deps=abort vs test crate=unwind)
       # and fails at link time. The root Cargo.toml defines a
-      # `release-tests` profile (release optimization + `panic = "unwind"`)
+      # `release-tests` profile (release optimization, LTO off, `panic = "unwind"`)
       # for exactly this reason — `ci.yml` already uses it. Mirror that
       # here so the tag-cut path test invocation matches the PR-side one.
-      - run: cargo test --profile release-tests --workspace
+      - run: cargo nextest run --profile ci --cargo-profile release-tests --workspace
 
   generate-keys:
     # Phase 8 / P8-release-yml-symmetry (Phase 7 critic MINOR #4):

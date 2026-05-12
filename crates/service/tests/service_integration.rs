@@ -138,7 +138,7 @@ fn test_setup_creates_all_artifacts() {
     let tmp_dir = std::env::temp_dir().join("zkap-test-artifacts");
     let _ = std::fs::remove_dir_all(&tmp_dir);
 
-    setup(&params, &tmp_dir).expect("setup() failed");
+    setup(&params, &tmp_dir, &mut rand::rngs::OsRng, None).expect("setup() failed");
 
     // All 5 required files must exist
     assert!(tmp_dir.join("pk.key").exists(), "pk.key missing");
@@ -168,7 +168,7 @@ fn test_setup_config_json_round_trip() {
     let tmp_dir = std::env::temp_dir().join("zkap-test-config-roundtrip");
     let _ = std::fs::remove_dir_all(&tmp_dir);
 
-    setup(&params, &tmp_dir).expect("setup() failed");
+    setup(&params, &tmp_dir, &mut rand::rngs::OsRng, None).expect("setup() failed");
 
     let loaded =
         load_circuit_config(&tmp_dir.join("config.json")).expect("load_circuit_config failed");
@@ -195,7 +195,8 @@ fn test_setup_and_verify() {
     let tmp_dir = std::env::temp_dir().join("zkap-test-setup-verify");
     let _ = std::fs::remove_dir_all(&tmp_dir);
 
-    let setup_output = setup(&params, &tmp_dir).expect("setup() failed");
+    let setup_output =
+        setup(&params, &tmp_dir, &mut rand::rngs::OsRng, None).expect("setup() failed");
 
     // VK should have the right number of public inputs
     assert!(setup_output.public_input_count() > 0);

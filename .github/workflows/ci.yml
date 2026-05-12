@@ -228,7 +228,8 @@ jobs:
           mkdir -p /tmp/ci-crs
           cargo run --release --features circuit/integration-tests \
             --bin generate_setup -- \
-            --config example.json --output /tmp/ci-crs
+            --config example.json --output /tmp/ci-crs \
+            --circuit-id zkap-main-v1
       - name: Verify 7-file V1 layout
         run: |
           set -euo pipefail

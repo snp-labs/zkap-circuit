@@ -7,7 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking
+
+- **`zkap_service::setup` signature change.** Now takes a caller-supplied
+  `&mut dyn rand::RngCore` and an `Option<&Path>` `ptau` placeholder:
+  `setup(params, output_dir, rng, ptau)`. Stage 1 always passes
+  `ptau = None`; passing `Some(_)` returns `ApplicationError::InvalidFormat`
+  with "Stage 2 not yet active". This unblocks the future trusted-setup
+  ceremony integration (Powers-of-Tau + Phase 2 MPC, deferred to
+  Stage 2) without another breaking change. The four in-tree callers
+  (`generate_setup`, `generate_crs`, `service::tests::l3_byte_gate`,
+  `service::tests::service_integration`) are migrated in this PR.
+  `SetupOutput` gains a `shape: SetupShape { num_instance, num_witness,
+  num_constraints }` populated from the synthesized constraint system,
+  so the setup binary can pin those counts in `manifest.json` without
+  re-synthesizing.
+
 ### Added
+
+- **`manifest.json` v1 emit from `generate_setup`.** Setup output now
+  includes a human-readable SSOT manifest alongside the existing seven
+  files. Schema: `manifest_version`, `circuit_id`, `circuit_tag`
+  (`{id}__{cfg_sha256[..8]}`), `curve`, `proof_system`, `ar1cs_blake3`,
+  `shape`, `public_input_names`, `artifacts.{arzkey,wasm,vk,
+  evm_verifier,circuit_config}` (sha256 + size + kind, wasm carries
+  `abi.{version, exports}`, circuit_config carries
+  `schema_owner = "npm:@baerae/zkap-zkp@^1"` + `schema_ref =
+  "ZkapCircuitConfigV1"`), `setup_provenance.kind ∈ {"os-rng", "seed",
+  "ceremony"}`, `toxic_waste_disclosure` (derived from provenance),
+  `build` (repo, commit, ark-ar1cs rev, rustc, RFC3339 `built_at`).
+  The `ceremony` provenance variant is serialisable but never emitted
+  by Stage 1 — `--ptau` / `--phase2-attestations` fail explicitly so
+  the schema parks Stage 2's contract today. See
+  `~/01_baerae/ark-ar1cs/.omc/plans/2026-05-12-deployment-bundle-spec.md`
+  §4 / §7.
+- **`generate_setup` CLI: deterministic RNG gate.** New flags:
+  `--circuit-id <str>` (required), `--rng-seed <hex>` paired with
+  `--allow-test-only` (ChaCha20 from 32-byte seed; sets
+  `setup_provenance.kind = "seed"`), `--ptau <path>` /
+  `--phase2-attestations <path>` (Stage 2 placeholders, hard-fail),
+  `--build-commit <sha>` (default = `git rev-parse HEAD`). Default
+  randomness is `OsRng` with `setup_provenance.kind = "os-rng"` and the
+  `"operator must be trusted"` trust-model disclosure.
+- **`SOURCE_DATE_EPOCH` reproducible-builds support.** When set, the
+  manifest's `build.built_at` (RFC3339 UTC) is derived from that
+  unix-seconds value instead of wallclock. Combined with `--rng-seed
+  --allow-test-only` + pinned `--build-commit`, two runs against the
+  same config produce a byte-equal `manifest.json` (golden test:
+  `crates/cli/tests/manifest_golden.rs`).
 
 - **V1 byte API prove path with wasm witness-generator runtime.** `zkap_service::prove` now drives the ZKAP-specific `crates/zkap-witness-wasm` artifact (`circuit.wasm`) through a host-side `wasmi`-based runtime, postcard-encoded `ZkapInputV1` payloads, and the `ark_ar1cs_prover::prove(.arzkey, .arwtns)` interface. Witness construction is fully delegated to the wasm artifact; the host no longer pulls `circuit::ZkapCircuit` into the prove path. `RawProofRequest` now carries raw byte buffers (BE field elements, full JWT bytes, RSA modulus / signature byte strings) and a `wasm_path` alongside the existing `pk_path`.
 - **`zkap-input-types` crate.** V1 wire-format types (`ZkapInputV1`, `ZkapCircuitConfigV1`, `RSA_2048_BYTES`, `fe_from_be32_canonical` / `fe_to_be32`) live in a `circuit`/`gadget`-free crate so hosts can construct V1 payloads without the full circuit compile graph.
@@ -27,7 +74,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Planned follow-ups (not in this release)
 
 - Restore a runnable `groth16_proof` example against the V1 byte API using a checked-in small fixture `.arzkey` + `.wasm` pair.
-- Cleanup of the `dist/` directory: today both the legacy V0 layout (`dist/1of1`, `dist/3of3` with `pk.key` + `Groth16Verifier.sol`) and the V1 layout (`dist/1-of-1`, `dist/3-of-3` with `circuit.arzkey` + `circuit.wasm`) coexist. A single canonical layout plus a per-bundle `manifest.json` (sha256 of `circuit.arzkey`, sha256 of `circuit.wasm`, `ar1cs_blake3`) is planned.
+- Cleanup of the `dist/` directory: today both the legacy V0 layout (`dist/1of1`, `dist/3of3` with `pk.key` + `Groth16Verifier.sol`) and the V1 layout (`dist/1-of-1`, `dist/3-of-3` with `circuit.arzkey` + `circuit.wasm`) coexist. A single canonical layout plus the per-bundle `manifest.json` (now landed in this release) is planned in PR-bundle-rename / PR-bundle-cleanup.
 - Cross-project artifact compatibility test that exercises the checked-in `dist/` artifacts (currently the integration test rebuilds artifacts from scratch).
 - Binding-side `prove` smoke test in `zkap-zkp` (the napi/UniFFI/wasm-bindgen byte-conversion code is currently exercised only at compile time).
 - Decide whether the wasm host runtime (`wasmi`/`wasmtime` backend) should be relocated from `zkap-service` to a dedicated `ark-ar1cs-wasm-runtime` crate so that mobile bindings can drop the runtime when unused.

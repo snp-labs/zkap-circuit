@@ -11,6 +11,7 @@
 //! ```
 
 use clap::Parser;
+use rand::rngs::OsRng;
 use std::path::PathBuf;
 use zkap_cli::{die, load_config_or_exit};
 use zkap_service::setup;
@@ -43,7 +44,8 @@ fn main() {
     );
     println!("==================================================");
 
-    setup(&params, &output_dir).unwrap_or_else(|e| die(format!("CRS generation failed: {}", e)));
+    setup(&params, &output_dir, &mut OsRng, None)
+        .unwrap_or_else(|e| die(format!("CRS generation failed: {}", e)));
 
     println!("CRS generation complete.");
 }

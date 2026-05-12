@@ -5,6 +5,7 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "CLI tools for ZK circuit CRS generation and hash computation"
 repository = "https://github.com/snp-labs/zkap-circuit"
+build = "build.rs"
 
 [dependencies]
 circuit = { workspace = true }
@@ -15,6 +16,10 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
+thiserror = { workspace = true }
+rand = { workspace = true }
+rand_chacha = { workspace = true }
+time = { workspace = true }
 wasmparser = "0.246"
 
 [lib]

@@ -127,6 +127,7 @@ jobs:
         run: cargo run --release --features circuit/integration-tests
           --bin generate_setup --
           --config configs/release/${{ matrix.shape }}.json --output output/keys
+          --circuit-id zkap-main-${{ matrix.shape }}
 
       - name: Verify pair contract
         # arzkey bytes 16..48 == wasm.embedded_ar1cs_blake3 (generate_setup

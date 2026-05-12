@@ -2655,9 +2655,13 @@ dependencies = [
  "circuit",
  "clap",
  "hex",
+ "rand",
+ "rand_chacha",
  "serde",
  "serde_json",
  "sha2",
+ "thiserror",
+ "time",
  "wasmparser",
  "zkap-service",
 ]

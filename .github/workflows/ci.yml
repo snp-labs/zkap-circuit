@@ -18,15 +18,6 @@ env:
   CACHE_BUST: "v2"
 
 jobs:
-  check:
-    name: Check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
-      - run: cargo check --workspace
-
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
@@ -51,26 +42,19 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+      - uses: taiki-e/install-action@c070f87102a1c75b3183910f391c1cb887fe13c8 # v2
+        with:
+          tool: cargo-nextest
       # Workspace-wide test sweep on the `release-tests` custom profile,
-      # defined in the root Cargo.toml as release optimization + unwind
-      # panic. The mobile-targeted `[profile.release]` keeps
+      # defined in the root Cargo.toml as release optimization (LTO off) +
+      # unwind panic. The mobile-targeted `[profile.release]` keeps
       # `panic = "abort"`, which Cargo does not propagate to test
       # binaries — `cargo test --release` therefore hits a
       # panic-strategy mismatch (deps=abort vs test crate=unwind). The
-      # custom profile sidesteps that while preserving release-level
-      # runtime speed for the heavier ZK tests.
-      - run: cargo test --profile release-tests --workspace
-      # Explicitly name the L1 golden gate so failures are easy to identify.
-      # The byte-gate sweep above already covers this target via
-      # `cargo test --profile release-tests`. The named step below
-      # provides a clear CI signal and runs only fast tiers (B/C/D/E);
-      # Tier A F2/F3 are `#[ignore]`-d (~120s each) and will NOT run
-      # here — invoke with `-- --include-ignored` explicitly. Kept on
-      # `--profile release-tests` so it reuses the workspace sweep's
-      # incremental cache instead of rebuilding under a separate
-      # profile.
-      - name: L1 byte-gate (P0-A goldens)
-        run: cargo test --profile release-tests -p zkap-service --test l3_byte_gate
+      # custom profile sidesteps that. Nextest's per-test process model
+      # also eliminates env-variable races between parallel tests
+      # (e.g. SOURCE_DATE_EPOCH in crates/cli/tests/manifest_golden.rs).
+      - run: cargo nextest run --profile ci --cargo-profile release-tests --workspace
 
   build:
     name: Build (Release)

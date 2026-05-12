@@ -105,3 +105,5 @@ panic = "abort"
 [profile.release-tests]
 inherits = "release"
 panic = "unwind"
+# LTO inherited from [profile.release] adds heavy link-time cost (arkworks generic graph) without measurable test-execution benefit; release builds keep lto=true for mobile binary size.
+lto = false

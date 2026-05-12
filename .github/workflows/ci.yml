@@ -34,12 +34,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      # wasm_to_prove integration tests rebuild zkap-witness-wasm for
+      # wasm32-unknown-unknown inside the test fixture, so the Test job
+      # toolchain needs that target installed (the test sets
+      # AR1CS_WITNESS_ARZKEY_PATH itself per-run).
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
       - uses: taiki-e/install-action@c070f87102a1c75b3183910f391c1cb887fe13c8 # v2
         with:
           tool: cargo-nextest
-      # Workspace test sweep on the `release-tests` custom profile,
+      # Workspace-wide test sweep on the `release-tests` custom profile,
       # defined in the root Cargo.toml as release optimization (LTO off) +
       # unwind panic. The mobile-targeted `[profile.release]` keeps
       # `panic = "abort"`, which Cargo does not propagate to test
@@ -48,32 +54,7 @@ jobs:
       # custom profile sidesteps that. Nextest's per-test process model
       # also eliminates env-variable races between parallel tests
       # (e.g. SOURCE_DATE_EPOCH in crates/cli/tests/manifest_golden.rs).
-      # zkap-witness-wasm is excluded here; it runs in `wasm-witness-tests`
-      # on its own runner because its 3 integration tests (~120-165s each)
-      # dominate the nextest wall clock when bundled with the rest.
-      - run: cargo nextest run --profile ci --cargo-profile release-tests --workspace --exclude zkap-witness-wasm
-
-  wasm-witness-tests:
-    # Split off from `test` so its 3 slow integration tests
-    # (v1_round_trip_satisfies_constraints ~117s,
-    # host_rejects_wasm_with_mismatched_ar1cs_blake3 ~152s,
-    # wasm_to_prove_full_pipeline ~164s) no longer sit on the main test
-    # job's critical path. The wasm32 toolchain target is needed here
-    # because the wasm_to_prove tests rebuild zkap-witness-wasm for
-    # wasm32-unknown-unknown inside the test fixture; the test itself
-    # sets AR1CS_WITNESS_ARZKEY_PATH per-run.
-    name: Test (zkap-witness-wasm)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-        with:
-          targets: wasm32-unknown-unknown
-      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
-      - uses: taiki-e/install-action@c070f87102a1c75b3183910f391c1cb887fe13c8 # v2
-        with:
-          tool: cargo-nextest
-      - run: cargo nextest run --profile ci --cargo-profile release-tests -p zkap-witness-wasm
+      - run: cargo nextest run --profile ci --cargo-profile release-tests --workspace
 
   build:
     name: Build (Release)
@@ -212,7 +193,7 @@ jobs:
     #   parameter-blow-up well before the runner runs out of disk.
     #   The new wasm artifact is ≤ 8 MiB and does not change the disk math.
     name: generate_setup (PR smoke)
-    needs: [test, wasm-witness-tests]
+    needs: test
     runs-on: ubuntu-latest
     timeout-minutes: 10
     concurrency:

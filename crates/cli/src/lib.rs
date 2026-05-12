@@ -21,9 +21,19 @@
 //! Keeping these here removes copy-paste patterns from the binary entry points
 //! and gives a single place to change exit behaviour.
 
+pub mod manifest;
+
+pub use manifest::{
+    ArtifactEntry, ArtifactKey, Artifacts, BuildMetadata, BuilderError,
+    ContributionPublicKeyJson, Manifest, ManifestBuilder, Phase2Attestation, PtauRef, REQUIRED_EXPORTS,
+    SetupProvenance, Shape, ToxicWasteDisclosure, WasmAbi, canonical_json_bytes,
+    compute_circuit_tag, derive_toxic_waste_disclosure, read_arzkey_blake3_hex,
+};
+
 use std::collections::HashSet;
 use std::io::Read;
 use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use circuit::types::CircuitConfig;
 use serde::Serialize;
@@ -134,6 +144,27 @@ pub fn verify_wasm_exports(path: &Path, required: &[&str]) -> Result<(), String>
     } else {
         Err(format!("missing exports: {:?}", missing))
     }
+}
+
+/// RFC3339 UTC timestamp for `manifest.json#/build/built_at`.
+/// Reads `SOURCE_DATE_EPOCH` (Debian reproducible-builds convention)
+/// when set; otherwise wallclock. Returns `Err` only when
+/// `SOURCE_DATE_EPOCH` is set but not a valid unix-seconds integer.
+pub fn built_at_now() -> Result<String, String> {
+    let secs = match std::env::var("SOURCE_DATE_EPOCH") {
+        Ok(raw) => raw
+            .parse::<i64>()
+            .map_err(|e| format!("SOURCE_DATE_EPOCH ({raw:?}) is not a valid unix timestamp: {e}"))?,
+        Err(_) => SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|e| format!("system clock pre-dates UNIX_EPOCH: {e}"))?
+            .as_secs() as i64,
+    };
+    let dt = time::OffsetDateTime::from_unix_timestamp(secs).map_err(|e| {
+        format!("SOURCE_DATE_EPOCH ({secs}) is outside the supported time range: {e}")
+    })?;
+    dt.format(&time::format_description::well_known::Rfc3339)
+        .map_err(|e| format!("RFC3339 format failure: {e}"))
 }
 
 /// Compute the sha256 of the file at `path` and return it as a lowercase

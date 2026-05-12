@@ -24,10 +24,10 @@
 pub mod manifest;
 
 pub use manifest::{
-    ArtifactEntry, ArtifactKey, Artifacts, BuildMetadata, BuilderError,
-    ContributionPublicKeyJson, Manifest, ManifestBuilder, Phase2Attestation, PtauRef, REQUIRED_EXPORTS,
-    SetupProvenance, Shape, ToxicWasteDisclosure, WasmAbi, canonical_json_bytes,
-    compute_circuit_tag, derive_toxic_waste_disclosure, read_arzkey_blake3_hex,
+    ArtifactEntry, ArtifactKey, Artifacts, BuildMetadata, BuilderError, ContributionPublicKeyJson,
+    Manifest, ManifestBuilder, Phase2Attestation, PtauRef, REQUIRED_EXPORTS, SetupProvenance,
+    Shape, ToxicWasteDisclosure, WasmAbi, canonical_json_bytes, compute_circuit_tag,
+    derive_toxic_waste_disclosure, read_arzkey_blake3_hex,
 };
 
 use std::collections::HashSet;
@@ -152,9 +152,9 @@ pub fn verify_wasm_exports(path: &Path, required: &[&str]) -> Result<(), String>
 /// `SOURCE_DATE_EPOCH` is set but not a valid unix-seconds integer.
 pub fn built_at_now() -> Result<String, String> {
     let secs = match std::env::var("SOURCE_DATE_EPOCH") {
-        Ok(raw) => raw
-            .parse::<i64>()
-            .map_err(|e| format!("SOURCE_DATE_EPOCH ({raw:?}) is not a valid unix timestamp: {e}"))?,
+        Ok(raw) => raw.parse::<i64>().map_err(|e| {
+            format!("SOURCE_DATE_EPOCH ({raw:?}) is not a valid unix timestamp: {e}")
+        })?,
         Err(_) => SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_err(|e| format!("system clock pre-dates UNIX_EPOCH: {e}"))?

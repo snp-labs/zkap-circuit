@@ -100,8 +100,8 @@ fn main() {
     let params = load_config_or_exit(Path::new(&cli.config));
     let out = PathBuf::from(&cli.output);
 
-    let cfg_value = serde_json::to_value(&params)
-        .unwrap_or_else(|e| die(format!("canonicalize config: {e}")));
+    let cfg_value =
+        serde_json::to_value(&params).unwrap_or_else(|e| die(format!("canonicalize config: {e}")));
     let canonical_cfg_bytes = canonical_json_bytes(&cfg_value);
     let circuit_tag = compute_circuit_tag(&cli.circuit_id, &canonical_cfg_bytes);
 
@@ -189,7 +189,12 @@ fn main() {
             setup_output.shape.num_witness,
             setup_output.shape.num_constraints,
         )
-        .with_public_input_names(ZKAP_PUBLIC_INPUT_NAMES.iter().map(|s| s.to_string()).collect())
+        .with_public_input_names(
+            ZKAP_PUBLIC_INPUT_NAMES
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+        )
         .with_artifact(
             ArtifactKey::Arzkey,
             make_artifact_entry(&arzkey, "circuit.arzkey", "core", None, None, None),
@@ -330,11 +335,12 @@ impl WithAbi for ArtifactEntry {
 fn pick_rng(seed_hex: Option<&str>, allow_test_only: bool) -> (Box<dyn RngCore>, SetupProvenance) {
     match (seed_hex, allow_test_only) {
         (Some(seed), true) => {
-            let bytes = decode_seed_hex(seed)
-                .unwrap_or_else(|e| die(format!("--rng-seed: {e}")));
+            let bytes = decode_seed_hex(seed).unwrap_or_else(|e| die(format!("--rng-seed: {e}")));
             (
                 Box::new(ChaCha20Rng::from_seed(bytes)),
-                SetupProvenance::Seed { seed: seed.to_string() },
+                SetupProvenance::Seed {
+                    seed: seed.to_string(),
+                },
             )
         }
         (Some(_), false) => die("--rng-seed requires --allow-test-only"),
@@ -347,10 +353,7 @@ fn decode_seed_hex(s: &str) -> Result<[u8; 32], String> {
     let stripped = s.strip_prefix("0x").unwrap_or(s);
     let bytes = hex::decode(stripped).map_err(|e| format!("hex decode: {e}"))?;
     if bytes.len() != 32 {
-        return Err(format!(
-            "must decode to 32 bytes, got {}",
-            bytes.len()
-        ));
+        return Err(format!("must decode to 32 bytes, got {}", bytes.len()));
     }
     let mut out = [0u8; 32];
     out.copy_from_slice(&bytes);

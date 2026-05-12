@@ -14,10 +14,7 @@ fn main() {
         .and_then(Path::parent)
         .map(|p| p.join("Cargo.toml"))
         .expect("workspace root is two parents up from crates/cli");
-    println!(
-        "cargo:rerun-if-changed={}",
-        workspace_cargo_toml.display()
-    );
+    println!("cargo:rerun-if-changed={}", workspace_cargo_toml.display());
     println!("cargo:rerun-if-env-changed=RUSTC");
 
     let rustc = std::env::var("RUSTC").unwrap_or_else(|_| "rustc".into());

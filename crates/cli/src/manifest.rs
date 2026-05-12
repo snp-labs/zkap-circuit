@@ -394,9 +394,7 @@ impl ManifestBuilder {
                 .public_input_names
                 .ok_or(BuilderError::MissingField("public_input_names"))?,
             artifacts: Artifacts {
-                arzkey: self
-                    .arzkey
-                    .ok_or(BuilderError::MissingArtifact("arzkey"))?,
+                arzkey: self.arzkey.ok_or(BuilderError::MissingArtifact("arzkey"))?,
                 wasm: self.wasm.ok_or(BuilderError::MissingArtifact("wasm"))?,
                 vk: self.vk.ok_or(BuilderError::MissingArtifact("vk"))?,
                 evm_verifier: self.evm_verifier,
@@ -486,7 +484,10 @@ mod tests {
                 "lhs".into(),
                 "h_aud_list".into(),
             ])
-            .with_artifact(ArtifactKey::Arzkey, sample_artifact("circuit.arzkey", "core"))
+            .with_artifact(
+                ArtifactKey::Arzkey,
+                sample_artifact("circuit.arzkey", "core"),
+            )
             .with_artifact(
                 ArtifactKey::Wasm,
                 ArtifactEntry {

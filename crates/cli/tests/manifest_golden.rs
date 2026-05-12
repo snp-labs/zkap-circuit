@@ -14,8 +14,7 @@ use zkap_cli::{
 };
 
 const FIXED_EPOCH: &str = "1700000000";
-const SEED_HEX: &str =
-    "0x42424242deadbeef0000000000000000000000000000000000000000000000ff";
+const SEED_HEX: &str = "0x42424242deadbeef0000000000000000000000000000000000000000000000ff";
 
 /// Single source of truth for the per-test sample manifest. Building it
 /// twice from the same inputs must yield byte-equal JSON.

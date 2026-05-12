@@ -60,17 +60,6 @@ jobs:
       # custom profile sidesteps that while preserving release-level
       # runtime speed for the heavier ZK tests.
       - run: cargo test --profile release-tests --workspace
-      # Explicitly name the L1 golden gate so failures are easy to identify.
-      # The byte-gate sweep above already covers this target via
-      # `cargo test --profile release-tests`. The named step below
-      # provides a clear CI signal and runs only fast tiers (B/C/D/E);
-      # Tier A F2/F3 are `#[ignore]`-d (~120s each) and will NOT run
-      # here — invoke with `-- --include-ignored` explicitly. Kept on
-      # `--profile release-tests` so it reuses the workspace sweep's
-      # incremental cache instead of rebuilding under a separate
-      # profile.
-      - name: L1 byte-gate (P0-A goldens)
-        run: cargo test --profile release-tests -p zkap-service --test l3_byte_gate
 
   build:
     name: Build (Release)

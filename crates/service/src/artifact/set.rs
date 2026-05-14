@@ -34,9 +34,26 @@ impl ArtifactSet {
     /// Load every artifact named in `manifest` from `dir` and verify the
     /// integrity claims (sha256 + `ar1cs_blake3`) before returning.
     ///
-    /// This is the **canonical production entry point**: the manifest is
-    /// the trust boundary, and every artifact the prover sees has been
-    /// hash-checked here.
+    /// This is the **canonical production entry point** — the manifest
+    /// is the trust boundary, and every artifact the prover later sees
+    /// has been hash-checked here. The contract is:
+    ///
+    /// * `ArcsFile::read(circuit.ar1cs)` succeeds.
+    /// * `arcs.body_blake3() == manifest.ar1cs_blake3`.
+    /// * `sha256(circuit.ar1cs) == manifest.artifacts.ar1cs.sha256`.
+    /// * `sha256(pk.bin)        == manifest.artifacts.pk.sha256`.
+    /// * `sha256(vk.bin)        == manifest.artifacts.vk.sha256`.
+    /// * `sha256(pvk.bin)       == manifest.artifacts.pvk.sha256`.
+    /// * `sha256(config.json)   == manifest.artifacts.circuit_config.sha256`.
+    /// * If `manifest.artifacts.evm_verifier` is `Some`, then
+    ///   `sha256(Groth16Verifier.sol) == manifest.artifacts.evm_verifier.sha256`.
+    ///
+    /// Any disagreement returns [`ArtifactError::HashMismatch`] with
+    /// the failing manifest field name carried in the `field` slot
+    /// (e.g. `"ar1cs_blake3"`, `"artifacts.pk.sha256"`,
+    /// `"artifacts.evm_verifier.sha256"`). The downstream
+    /// [`crate::prover::Prover::prove`] performs **no** additional hash
+    /// validation; trust gating lives entirely in this loader.
     pub fn load(manifest: &Manifest, dir: &Path) -> Result<Self, ArtifactError> {
         let arcs = load_arcs(dir, &manifest.artifacts.ar1cs, &manifest.ar1cs_blake3)?;
         let pk = load_canonical::<ProvingKey<BN254>>(dir, &manifest.artifacts.pk, "pk")?;
@@ -44,6 +61,9 @@ impl ArtifactSet {
         let pvk =
             load_canonical::<PreparedVerifyingKey<BN254>>(dir, &manifest.artifacts.pvk, "pvk")?;
         let cfg = load_circuit_config(dir, &manifest.artifacts.circuit_config)?;
+        if let Some(entry) = manifest.artifacts.evm_verifier.as_ref() {
+            verify_sha256(dir, entry, "artifacts.evm_verifier.sha256")?;
+        }
         Ok(Self {
             pk,
             vk,
@@ -57,11 +77,12 @@ impl ArtifactSet {
     /// **without** consulting a manifest.
     ///
     /// **non-canonical: bypasses manifest hash validation; production
-    /// callers MUST use [`ArtifactSet::load`].** This entry point exists
-    /// for tests, dev tools, and caller-trusted environments where
-    /// integrity has been established out of band. Calls in production
-    /// code are policy violations and are detectable by the
-    /// `scripts/check-removed-api.sh` rule set.
+    /// callers MUST use [`ArtifactSet::load`].** No `sha256` check, no
+    /// `ar1cs_blake3` comparison, no `evm_verifier` check — only the
+    /// minimal parse / `CanonicalDeserialize` errors surface from this
+    /// path. Use only in tests, dev tools, and caller-trusted
+    /// environments where bundle integrity has been established out
+    /// of band.
     pub fn load_unverified(dir: &Path) -> Result<Self, ArtifactError> {
         let arcs_path = dir.join("circuit.ar1cs");
         let arcs_bytes = std::fs::read(&arcs_path).map_err(|e| ArtifactError::Io {
@@ -203,4 +224,32 @@ fn sha256_hex(bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(bytes);
     hex::encode(hasher.finalize())
+}
+
+/// Read `dir/entry.path` and assert `sha256(bytes) == entry.sha256`.
+///
+/// Used for artifact entries that need only an integrity check (no
+/// `CanonicalDeserialize` follow-up), e.g. the optional
+/// `Groth16Verifier.sol`. The `field` argument is the manifest path
+/// reported in [`ArtifactError::HashMismatch`] so the error message
+/// names the failing slot.
+fn verify_sha256(
+    dir: &Path,
+    entry: &ArtifactEntry,
+    field: &'static str,
+) -> Result<(), ArtifactError> {
+    let path = dir.join(&entry.path);
+    let bytes = std::fs::read(&path).map_err(|e| ArtifactError::Io {
+        path: path.clone(),
+        source: e,
+    })?;
+    let sha_hex = sha256_hex(&bytes);
+    if sha_hex != entry.sha256 {
+        return Err(ArtifactError::HashMismatch {
+            field,
+            expected: entry.sha256.clone(),
+            got: sha_hex,
+        });
+    }
+    Ok(())
 }

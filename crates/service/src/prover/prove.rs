@@ -87,9 +87,21 @@ impl Prover {
     /// 5. [`ar1cs_prove`] produces the Groth16 proof against `self.pk`
     ///    and `self.arcs`.
     ///
-    /// **Trust gating is `ArtifactSet::load`'s job.** This method
-    /// performs no manifest lookup, no `arcs.body_blake3()` comparison,
-    /// and no `pk`/`vk` hash check — the loader already did those.
+    /// # Trust boundary
+    ///
+    /// `Prover::prove` does **not** receive a `&Manifest`, does
+    /// **not** recompute `arcs.body_blake3()`, and does **not**
+    /// re-verify any `sha256` hash on `pk` / `vk` / `pvk` /
+    /// `circuit_config` / `evm_verifier`. The loader
+    /// ([`ArtifactSet::load`]) is the **single** trust gate; production
+    /// callers MUST use it (or the
+    /// [`prove_from_unverified_paths`] non-canonical shortcut for
+    /// caller-trusted paths only — see its rustdoc warning). Any
+    /// reintroduction of manifest / hash validation inside this method
+    /// would be a duplication of the loader's job and a policy break;
+    /// the absence is enforced by the `artifact_set_load` integration
+    /// test (`crates/service/tests/artifact_set_load.rs`) against the
+    /// loader.
     pub fn prove<R>(
         &self,
         req: &ProofRequest,

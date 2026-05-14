@@ -9,7 +9,7 @@
 //!
 //! **`proof` feature (default):**
 //! - [`setup`] — trusted setup: generates proving/verifying keys and writes them to disk
-//! - [`prove`] — generate Groth16 zero-knowledge proofs (takes [`RawProofRequest`])
+//! - [`prove`] — generate Groth16 zero-knowledge proofs (takes [`ProofRequest`])
 //! - [`verify`] — verify Groth16 proofs (takes [`VerifyingContext`])
 //! - [`jwt`] — JWT payload claim parsing ([`jwt::parser::parse_claim_from_str`])
 //!
@@ -19,7 +19,7 @@
 //! directly. The bundled `Groth16Verifier.sol` produced by [`setup`] uses it
 //! internally.
 //! - DTOs: [`ProofComponents`], [`SharedPublicInputs`], [`PerProofPublicInputs`], [`ZkapProofResult`]
-//! - Keys: [`SetupOutput`], [`VerifyingContext`], [`ZkapSharedFields`], [`ZkapPerJwtFields`]
+//! - Keys: [`SetupOutput`], [`VerifyingContext`], [`SharedFields`], [`PerJwtFields`]
 //!
 //! **Note on `use-optimized` feature**: an alias for `proof`, kept for source compatibility.
 
@@ -63,6 +63,15 @@ pub(crate) mod crs;
 pub mod jwt;
 #[cfg(feature = "proof")]
 pub mod proof;
+
+// Native witness-shaping path — pure, wasm-free. Lives at the same
+// feature tier as `proof` because it pulls `circuit::ZkapCircuit` /
+// `circuit::witness::ZkapCircuitInput`, which are only useful in the
+// proving direction. The post-migration native prover (Commit 4)
+// consumes this module; the legacy wasm runtime keeps its own copy of
+// the conversion logic until Commit 7 removes the wasm crate.
+#[cfg(feature = "proof")]
+pub mod witness;
 
 use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;
 use circuit::types::F;
@@ -110,8 +119,8 @@ pub use hash::{generate_aud_hash, generate_hash, generate_leaf_hash};
 #[cfg(feature = "proof")]
 pub use dto::{PerProofPublicInputs, ProofComponents, SharedPublicInputs, ZkapProofResult};
 #[cfg(feature = "proof")]
-pub use proof::{
-    RawProofRequest, SetupOutput, SetupShape, VerifyingContext, ZkapPerJwtFields, ZkapSharedFields,
-};
+pub use proof::{SetupOutput, SetupShape, VerifyingContext};
 #[cfg(feature = "proof")]
 pub use proof::{prove, setup, verify};
+#[cfg(feature = "proof")]
+pub use witness::{PerJwtFields, ProofRequest, SharedFields};

@@ -1,19 +1,21 @@
-//! ZKAP proof generation service — wasm-witness-runtime variant.
+//! ZKAP proof generation service — wasm-witness-runtime variant
+//! (transitional Commit 3 state).
 //!
 //! The host-facing entry point is [`prove`], which:
-//! 1. validates [`RawProofRequest`] against the circuit shape,
-//! 2. assembles one [`ZkapInputV1`] per JWT,
-//! 3. dispatches each input through the wasm witness-generator runtime,
-//! 4. runs `ark_ar1cs_prover::prove` against the matching `.arzkey`.
+//! 1. validates the [`ProofRequest`](crate::witness::ProofRequest)
+//!    against the circuit shape via [`crate::witness::build_input`],
+//! 2. dispatches each input through the wasm witness-generator runtime,
+//! 3. runs `ark_ar1cs_prover::prove` against the matching `.arzkey`.
 //!
-//! Witness construction is fully delegated to the `.wasm` artifact —
-//! `service` no longer pulls `circuit::ZkapCircuit` into the prove path.
+//! The wasm runtime call path is the transitional Commit 3 state; the
+//! native prove flow (Commit 4) will replace it with
+//! [`crate::witness::into_circuit_input`] + `ark_ar1cs::prove`. The
+//! request type itself is already migrated: artifact paths flow through
+//! [`prove`]'s explicit `pk_path` / `wasm_path` parameters, not through
+//! the request struct.
 
 pub mod generator;
-pub mod request;
 pub mod runtime;
-
-pub use request::{RawProofRequest, ZkapPerJwtFields, ZkapSharedFields};
 
 use ark_ar1cs_format::{ArcsFile, CurveId};
 use ark_crypto_primitives::snark::CircuitSpecificSetupSNARK;
@@ -26,12 +28,11 @@ use ark_relations::gr1cs::{
 use circuit::types::{BN254, BNP, CG, CircuitConfig, F};
 use circuit::zkap::ZkapCircuit;
 use rand::{CryptoRng, RngCore};
-use std::path::Path;
-
-use ark_utils::wire::ZkapInputV1;
+use std::path::{Path, PathBuf};
 
 use crate::dto::{ProofComponents, ZkapProofResult};
 use crate::error::ApplicationError;
+use crate::witness::ProofRequest;
 use ark_utils::hex_decimal_to_field;
 
 use self::generator::ProofGenerator;
@@ -215,37 +216,30 @@ pub fn setup(
     Ok(output)
 }
 
-/// Generate Groth16 proofs from raw user inputs via the wasm
-/// witness-generator runtime.
+/// Generate Groth16 proofs from a native-path [`ProofRequest`] via the
+/// (still wasm-backed) witness-generator runtime.
+///
+/// The request itself carries no artifact paths — `pk_path` and
+/// `wasm_path` are explicit parameters so the post-migration call site
+/// can swap the wasm runtime for the native prover (Commit 4) without
+/// reshaping the request struct again.
 pub fn prove(
     params: &CircuitConfig,
-    raw: RawProofRequest,
+    req: ProofRequest,
+    pk_path: PathBuf,
+    wasm_path: PathBuf,
 ) -> Result<ZkapProofResult, ApplicationError> {
-    log::info!("[ZKAP-v3] Step 1: Validating RawProofRequest...");
-    let k = params.k as usize;
-    let n = params.n as usize;
-    raw.validate(k, n)?;
-    if raw.token_count() != k {
-        return Err(ApplicationError::InvalidFormat(format!(
-            "expected {} JWTs (k), got {}",
-            k,
-            raw.token_count()
-        )));
-    }
+    log::info!("[ZKAP-v3] Step 1: Building V1 inputs from ProofRequest...");
+    let inputs = crate::witness::build_input(&req, params)?;
 
-    log::info!("[ZKAP-v3] Step 2: Building {} ZkapInputV1 payloads...", k);
-
-    let inputs: Vec<ZkapInputV1> = raw
-        .per_jwt
-        .iter()
-        .map(|jwt| jwt.to_zkap_input_v1(&raw.shared, params))
-        .collect();
-
-    log::info!("[ZKAP-v3] Step 3: Generating proofs via wasm runtime...");
-    let generator = ProofGenerator::new(raw.pk_path, raw.wasm_path);
+    log::info!(
+        "[ZKAP-v3] Step 2: Generating {} proofs via wasm runtime...",
+        inputs.len()
+    );
+    let generator = ProofGenerator::new(pk_path, wasm_path);
     let output = generator.generate(&inputs)?;
     log::info!(
-        "[ZKAP-v3] Step 3 completed: {} proofs generated",
+        "[ZKAP-v3] Step 2 completed: {} proofs generated",
         output.proofs.len()
     );
 

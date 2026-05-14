@@ -506,7 +506,7 @@ fn wasm_to_prove_full_pipeline() {
 fn host_rejects_wasm_with_mismatched_ar1cs_blake3() {
     use ark_relations::gr1cs::{ConstraintSystemRef, LinearCombination, SynthesisError};
     use std::path::PathBuf;
-    use zkap_service::{CircuitConfig, RawProofRequest, ZkapPerJwtFields, ZkapSharedFields};
+    use zkap_service::{CircuitConfig, PerJwtFields, ProofRequest, SharedFields};
 
     let workspace = workspace_root();
 
@@ -596,9 +596,9 @@ fn host_rejects_wasm_with_mismatched_ar1cs_blake3() {
         );
     }
 
-    // ── Step 1: minimal valid CircuitConfig + RawProofRequest (n=k=1) ──
+    // ── Step 1: minimal valid CircuitConfig + ProofRequest (n=k=1) ──
     //
-    // The shape only has to satisfy `RawProofRequest::validate(k=1, n=1)`
+    // The shape only has to satisfy `ProofRequest::validate(k=1, n=1)`
     // and reach `ProofGenerator::generate`. Field byte contents are
     // intentionally zero — the host pair-check fires *before* per-input
     // postcard encoding and witness generation, so semantic validity of
@@ -625,10 +625,8 @@ fn host_rejects_wasm_with_mismatched_ar1cs_blake3() {
         forbidden_string: "forbidden".into(),
     };
 
-    let raw = RawProofRequest {
-        pk_path: toy_arzkey_path.clone(),
-        wasm_path: wasm_path.clone(),
-        shared: ZkapSharedFields {
+    let req = ProofRequest {
+        shared: SharedFields {
             random_be: [0u8; 32],
             h_sign_user_op_be: [0u8; 32],
             anchor_values_be: vec![[0u8; 32]; 1],
@@ -636,7 +634,7 @@ fn host_rejects_wasm_with_mismatched_ar1cs_blake3() {
             anchor_selector: vec![1u8],
             merkle_root_be: [0u8; 32],
         },
-        per_jwt: vec![ZkapPerJwtFields {
+        per_jwt: vec![PerJwtFields {
             jwt_bytes: Vec::new(),
             rsa_modulus_be: vec![0u8; 256],
             rsa_signature_be: vec![0u8; 256],
@@ -649,7 +647,7 @@ fn host_rejects_wasm_with_mismatched_ar1cs_blake3() {
 
     // ── Step 2: invoke zkap_service::prove and assert host-side rejection ──
     eprintln!("[mismatch test] zkap_service::prove(toy_arzkey, main_wasm)");
-    let result = zkap_service::prove(&cfg, raw);
+    let result = zkap_service::prove(&cfg, req, toy_arzkey_path.clone(), wasm_path.clone());
     let err = result.expect_err(
         "mismatched (wasm, arzkey) pair must be rejected by the host-side fail-fast check",
     );

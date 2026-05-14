@@ -68,8 +68,11 @@ cargo doc --workspace --no-deps --open
 ### Running Examples
 
 ```sh
-# Full proof lifecycle (setup → prove → verify), ~2–5 min in release mode
-cargo run -p zkap-service --example groth16_proof --release
+# Compile the in-tree examples (zkap-service ships none today; the
+# canonical end-to-end exercise lives in
+# `crates/service/tests/native_prove_e2e.rs` and the slow
+# `circuit::tests::groth16_integration` suite).
+cargo build --workspace --examples --release
 ```
 
 ### Linting
@@ -93,17 +96,21 @@ zkap-circuit/
 ├── crates/
 │   ├── ark-utils/  # R1CS helpers, field arithmetic, EVM codegen
 │   ├── circuit/    # Main ZK circuit definitions (ZkapCircuit, CircuitConfig)
-│   ├── cli/        # CLI binaries (generate_crs, generate_hash)
+│   ├── cli/        # CLI binaries (generate_setup, generate_hash)
 │   ├── gadget/     # Reusable circuit gadgets (anchors, signatures, matrix ops)
-│   └── service/    # Proof generation service (prove, verify, generate_anchor)
+│   └── service/    # Proof generation service
 │       ├── src/
-│       │   ├── proof/    # Proof orchestration (prove, verify, setup)
-│       │   ├── anchor/   # Anchor generation (Poseidon anchor scheme)
+│       │   ├── witness/  # Native input shaping (ProofRequest → ZkapInputV1 → ZkapCircuitInput)
+│       │   ├── artifact/ # Manifest-validated CRS bundle loader (ArtifactSet::load)
+│       │   ├── prover/   # Native ar1cs prover (Prover::from_artifact + Prover::prove)
+│       │   ├── proof/    # Trusted setup (setup, SetupOutput)
+│       │   ├── anchor_host/  # Anchor generation (Poseidon anchor scheme)
 │       │   ├── hash/     # Hash utilities (Poseidon hash, audience hash, leaf hash)
 │       │   ├── jwt/      # JWT parsing and witness construction
-│       │   └── dto/      # Platform-agnostic DTOs for bindings
+│       │   ├── dto/      # Platform-agnostic DTOs for bindings
+│       │   └── manifest.rs   # Manifest schema + ManifestBuilder
 │       └── tests/        # Integration tests
-└── vendor/         # Vendored dependencies
+└── dist/           # Pre-built CRS bundles (1-of-1, 3-of-3 in 7-file layout)
 ```
 
 ## Branch and Review

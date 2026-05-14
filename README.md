@@ -25,13 +25,15 @@ A Rust library for generating Groth16 zero-knowledge proofs that verify JWT/OAut
 ```
 +----------------------------------------------------------+
 |                   crates/service                         |
-|   prove()  verify()  setup()  RawProofRequest             |
-|   generate_anchor()  generate_hash()  generate_aud_hash()|
+|   setup()  Prover::prove()  generate_anchor()            |
+|   ArtifactSet::load()       generate_hash()              |
+|   ProofRequest              generate_aud_hash()          |
 +------------------------+---------------------------------+
                          |
 +---------------------+  |  +------------------------------+
 |    crates/cli       |  |  |                              |
-|  generate_crs (bin) |  |  |                              |
+| generate_setup (bin)|  |  |                              |
+| generate_hash (bin) |  |  |                              |
 +---------------------+  |  |                              |
                          |  |                              |
 +------------------------v--v------------------------------+
@@ -89,8 +91,8 @@ gadget = { git = "https://github.com/snp-labs/zkap-circuit", features = ["full"]
 | `gadget::signature::rsa` | RSA-2048 witness and constraint types | `PublicKey`, `Signature`, `PublicKeyVar`, `SignatureVar` |
 | `gadget::merkletree` | Poseidon Merkle tree | `MerkleTreeParams`, `MerkleTreeParamsVar` |
 | `circuit` | Main circuit implementation | `ZkapCircuit`, `ZkapCircuitInput`, `CircuitPublicInputs`, `CircuitConfig` |
-| `cli` | CRS generation and hash utilities | `generate_crs`, `generate_hash` (binaries) |
-| `service` | Proof generation service layer | `prove`, `verify`, `setup`, `generate_anchor`, `generate_hash` |
+| `cli` | CRS bundle and hash utilities | `generate_setup`, `generate_hash` (binaries) |
+| `service` | Proof generation service layer | `setup`, `Prover::prove`, `ArtifactSet::load`, `generate_anchor`, `generate_hash` |
 
 ## Quick Start
 
@@ -111,75 +113,59 @@ let aud = generate_aud_hash(&config, vec!["my-audience".into()]).unwrap();
 let leaf = generate_leaf_hash(&config, "https://issuer.example", "<base64 RSA N>").unwrap();
 ```
 
-> The V1 prove path (`zkap_service::prove`) takes a `RawProofRequest`
-> populated with raw bytes (BE-encoded field elements, full JWT bytes,
-> RSA modulus / signature byte strings) plus a paired
-> (`.arzkey`, witness-generator `.wasm`) bundle on disk. The
-> stand-alone `groth16_proof` example is **temporarily disabled** while
-> the V1 byte API rewrite lands (see [Examples and tests](#examples-and-tests)).
-> For full type signatures and field semantics, see the
-> [API Reference](docs/API_REFERENCE.md).
-
-## Examples and tests
-
-The `crates/service/examples/groth16_proof.rs` example targets the
-legacy V0 hex/Base64 `RawProofRequest::new` shape and is currently
-parked as `groth16_proof.rs.bak` while we rewrite it against the V1
-byte API. Restoring a runnable end-to-end example (using a checked-in
-small fixture `.arzkey` + `.wasm` pair) is a planned follow-up.
-
-In the meantime, the canonical end-to-end exercise of the wasm
-witness-generator + ark-ar1cs prove path is the integration test
-`crates/zkap-witness-wasm/tests/wasm_to_prove.rs`. It freshly
-generates a test `.arzkey`, rebuilds `zkap-witness-wasm` for
-`wasm32-unknown-unknown` against that `.arzkey`, drives the four
-ABI exports, and runs `prove` + `verify_proof` end-to-end:
-
-```bash
-# Builds the wasm32 artifact internally, takes ~1 minute on a clean tree.
-cargo test -p zkap-witness-wasm --test wasm_to_prove --release
-```
-
-The same test suite also covers the host-side
-`ar1cs_blake3` mismatch fail-fast path
-(`host_rejects_wasm_with_mismatched_ar1cs_blake3`).
+> The native prove path (`zkap_service::Prover`) takes a
+> [`ProofRequest`](crates/service/src/witness/request.rs) populated
+> with raw bytes (BE-encoded field elements, full JWT bytes, RSA
+> modulus / signature byte strings). The proving keys (`pk.bin`,
+> `vk.bin`, `pvk.bin`), the R1CS matrices (`circuit.ar1cs`), the
+> circuit config, and the optional Solidity verifier are loaded as a
+> manifest-validated [`ArtifactSet`](crates/service/src/artifact/set.rs)
+> from the on-disk bundle. For full type signatures and field
+> semantics, see the [API Reference](docs/API_REFERENCE.md).
+>
+> In-process verification: hold the `PreparedVerifyingKey` borrow
+> from `Prover::prepared_verifying_key()` (or
+> `SetupOutput::prepared_verifying_key()`) and call
+> `ark_groth16::Groth16::<Bn254>::verify_proof(pvk, &proof, &inputs)`
+> directly — the previous in-crate `zkap_service::verify` wrapper was
+> retired in the 2026-05 ark-ar1cs boundary migration.
 
 ## Quick setup (single command)
 
 ```bash
 cargo run --release -p zkap-cli --bin generate_setup -- \
-    --config example.json --output crs/<name>
+    --config example.json --output crs/<name> \
+    --circuit-id zkap-main-v1
 ```
 
-Produces the V1 layout (`circuit.arzkey`, `pk.key`, `vk.key`, `pvk.key`,
-`Groth16Verifier.sol`, `config.json`, `zkap_witness_wasm.opt.wasm`) in
-one shot. Wraps `generate_crs` (Groth16 trusted setup) and the host side
-of `crates/zkap-witness-wasm/build-wasm.sh` (cargo wasm32 build,
-`wasm-opt -Oz`, 8 MiB size gate, export verification, paired-fingerprint
-report). Pass `--skip-wasm-opt` if `binaryen` is not installed; raise the
-size cap with `--wasm-size-limit-mib N` if the configured circuit needs
-more headroom.
+Produces the 7-file CRS bundle (`circuit.ar1cs`, `pk.bin`, `vk.bin`,
+`pvk.bin`, `Groth16Verifier.sol`, `config.json`, `manifest.json`) in
+one shot. The `manifest.json` is the trust boundary — `ArtifactSet::load`
+checks `arcs.body_blake3 == manifest.ar1cs_blake3` and sha256 of every
+listed artifact before exposing it to `Prover::prove`.
 
 ## Pre-built CRS Artifacts
 
-The `dist/` directory ships two layouts at the moment; consumers
-should pick the layout that matches the API they are using:
+The `dist/` directory ships pre-generated bundles for the canonical
+shapes; consumers can drop these straight into `ArtifactSet::load`:
 
-- **V1 layout** (current prove path, **shipped via GitHub Release tarball as of v0.NEXT**):
-  - `circuit.arzkey`, `pk.key`, `vk.key`, `pvk.key`,
-    `Groth16Verifier.sol`, `config.json`, `zkap_witness_wasm.opt.wasm`
-  - `dist/1-of-1/` — single-signer (N=1, K=1)
-  - `dist/3-of-3/` — three-of-three (N=3, K=3)
-- **Legacy layout** (pre-v0.NEXT releases): `pk.arzkey`, `pk.key`, `vk.key`,
-  `pvk.key`, `Groth16Verifier.sol`, `config.json` (no wasm).
-  - `dist/1of1/` — single-signer (N=1, K=1)
-  - `dist/3of3/` — three-of-three (N=3, K=3)
+- `dist/1-of-1/` — single-signer (N=1, K=1)
+- `dist/3-of-3/` — three-of-three (N=3, K=3)
+
+Each directory contains exactly the seven post-migration bundle files:
+
+```
+circuit.ar1cs        # R1CS matrices in ark-ar1cs canonical envelope
+pk.bin               # Proving key (arkworks CanonicalSerialize)
+vk.bin               # Verifying key
+pvk.bin              # Prepared verifying key
+Groth16Verifier.sol  # Solidity on-chain verifier (optional, generated)
+config.json          # CircuitConfig
+manifest.json        # Hash claims + build metadata (trust boundary)
+```
 
 Custom configurations can be generated via `setup()` or the
-`generate_crs` CLI binary; both write a paired
-(`pk.arzkey`, `pk.key`, `vk.key`, `pvk.key`, `Groth16Verifier.sol`,
-`config.json`) bundle today. Cleaning the dist tree to a single
-canonical layout is a planned follow-up.
+`generate_setup` CLI binary; both write the same 7-file layout.
 
 ## Building from Source
 
@@ -187,20 +173,17 @@ canonical layout is a planned follow-up.
 
 ### Sibling repository layout
 
-The wasm witness pipeline (`zkap-witness-wasm` and the `service`/wasm
-runtime path) depends on `ark-ar1cs-*` crates that live in the
-[`ark-ar1cs`](https://github.com/snp-labs/ark-ar1cs) repository as
-path dependencies. Clone both repos as siblings:
+The `service` and `circuit` crates depend on `ark-ar1cs` (root crate;
+exposes `prove`, `synthesize_full_assignment`, and the `format::ArcsFile`
+envelope). It is declared in this repo's
+[`Cargo.toml`](Cargo.toml) under `[workspace.dependencies]` as a
+git+rev pin against the
+[`ark-ar1cs`](https://github.com/baerae-zkap/ark-ar1cs) repository:
 
+```toml
+[workspace.dependencies]
+ark-ar1cs = { git = "https://github.com/baerae-zkap/ark-ar1cs", rev = "<commit>" }
 ```
-<parent>/
-├── ark-ar1cs/        # https://github.com/snp-labs/ark-ar1cs
-└── zkap-circuit/     # this repo
-```
-
-The `ark-ar1cs-*` paths are declared once in this repo's
-[`Cargo.toml`](Cargo.toml) under `[workspace.dependencies]`, and each
-member crate references them via `{ workspace = true }`.
 
 ```bash
 git clone https://github.com/snp-labs/zkap-circuit.git
@@ -209,11 +192,11 @@ cd zkap-circuit
 # Build
 cargo build --release
 
-# Run tests (258 tests across all crates)
-cargo test
+# Run tests (workspace-wide)
+cargo test --workspace
 
 # Lint
-cargo clippy -- -D warnings
+cargo clippy --workspace --all-targets -- -D warnings
 ```
 
 **Circuit parameters** are configured at runtime via `CircuitConfig` (loaded from a JSON config file via `load_circuit_config`, or from the `config.json` written by `setup`):

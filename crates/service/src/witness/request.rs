@@ -1,25 +1,22 @@
-//! Raw V2 proof request — V1-semantic, byte-array shape.
+//! Native-path [`ProofRequest`] — host-facing surface for the
+//! post-migration prove flow.
 //!
-//! [`RawProofRequest`] is the host-facing surface that the wasm runtime
-//! consumes. All fields are raw bytes (BE-encoded field elements, RSA
-//! big-endian byte strings, JWT byte buffers) so that bindings (Node,
-//! UniFFI, React-Native) carry no hex/Base64 string parsing — the
-//! conversion to canonical wire bytes happens at the caller.
-//!
-//! The request is split into three parts:
-//! - file paths (host-only),
-//! - [`ZkapSharedFields`] — fields constant across the K-credential batch,
-//! - [`ZkapPerJwtFields`] — one entry per credential.
+//! Lands as part of Commit 3 of the 2026-05 ark-ar1cs boundary
+//! migration. The request carries **no** artifact paths — every
+//! pre-migration field that pointed at on-disk bytes is gone.
+//! Post-migration call sites pass the artifact bundle (e.g. via
+//! `ArtifactSet`) to the prover separately, so a [`ProofRequest`]
+//! is a pure description of the credentials being proven and the
+//! field elements that compose the public-input vector.
 
-use std::path::PathBuf;
+use ark_utils::wire::ZkapInputV1;
+use circuit::types::CircuitConfig;
 
-use ark_utils::wire::{CircuitConfig, ZkapInputV1};
+use crate::witness::error::ZkapWitnessError;
 
-use crate::error::ApplicationError;
-
-/// Fields that are shared across every JWT in a K-credential batch.
+/// Fields shared across every JWT in a K-credential batch.
 #[derive(Debug, Clone)]
-pub struct ZkapSharedFields {
+pub struct SharedFields {
     /// Big-endian field encoding of the proof's blinding `random` scalar.
     pub random_be: [u8; 32],
     /// Big-endian field encoding of `h_sign_user_op` (public input).
@@ -37,7 +34,7 @@ pub struct ZkapSharedFields {
 
 /// Per-credential fields (one entry per JWT in the batch).
 #[derive(Debug, Clone)]
-pub struct ZkapPerJwtFields {
+pub struct PerJwtFields {
     /// Full JWT bytes.
     pub jwt_bytes: Vec<u8>,
     /// RSA-2048 modulus N as the natural big-endian byte string — exactly
@@ -55,13 +52,10 @@ pub struct ZkapPerJwtFields {
     pub merkle_leaf_idx: u64,
 }
 
-impl ZkapPerJwtFields {
+impl PerJwtFields {
     /// Compose this per-JWT slice with the batch-shared fields and the
     /// wire-format circuit config into a single [`ZkapInputV1`] payload.
-    ///
-    /// This replaces the 17-line ad-hoc mapping that previously lived
-    /// in `proof/mod.rs`.
-    pub fn to_zkap_input_v1(&self, shared: &ZkapSharedFields, cfg: &CircuitConfig) -> ZkapInputV1 {
+    pub fn to_zkap_input_v1(&self, shared: &SharedFields, cfg: &CircuitConfig) -> ZkapInputV1 {
         ZkapInputV1 {
             jwt_bytes: self.jwt_bytes.clone(),
             rsa_modulus_be: self.rsa_modulus_be.clone(),
@@ -81,59 +75,58 @@ impl ZkapPerJwtFields {
     }
 }
 
-/// Raw, unvalidated proof request received from the outside world.
+/// Native-path proof request: no artifact paths, ready for in-process
+/// witness shaping.
 ///
-/// `shared.anchor_values_be.len()` MUST equal `n - k + 1`,
-/// `shared.anchor_known_x_be.len()` MUST equal `k`,
-/// `shared.anchor_selector.len()` MUST equal `n`, and
-/// `per_jwt.len()` MUST equal `k`. Length validation runs in
-/// [`Self::validate`] and is also re-applied by the wasm-side
-/// `into_circuit_input` for defense-in-depth.
+/// Shape invariants (re-checked by [`Self::validate`] and the deeper
+/// [`crate::witness::input::into_circuit_input`] conversion):
+///
+/// * `shared.anchor_values_be.len() == n - k + 1`
+/// * `shared.anchor_known_x_be.len() == k`
+/// * `shared.anchor_selector.len() == n`, cardinality = `k`
+/// * `per_jwt.len() == k`
 #[derive(Debug, Clone)]
-pub struct RawProofRequest {
-    /// Path to the `.arzkey` proving key on disk.
-    pub pk_path: PathBuf,
-    /// Path to the `.wasm` witness-generator artifact paired with `pk_path`.
-    pub wasm_path: PathBuf,
+pub struct ProofRequest {
     /// Fields constant across all K credentials in this request.
-    pub shared: ZkapSharedFields,
+    pub shared: SharedFields,
     /// Per-credential fields, one entry per JWT.
-    pub per_jwt: Vec<ZkapPerJwtFields>,
+    pub per_jwt: Vec<PerJwtFields>,
 }
 
-impl RawProofRequest {
+impl ProofRequest {
     /// Number of JWT credentials (`k`).
     pub fn token_count(&self) -> usize {
         self.per_jwt.len()
     }
 
-    /// Validate the shared and per-JWT shapes against `params.k` / `params.n`.
-    /// Catches host-side dimension bugs before the wasm boundary.
-    pub fn validate(&self, k: usize, n: usize) -> Result<(), ApplicationError> {
+    /// Validate the shared and per-JWT shapes against `params.k` /
+    /// `params.n`. Catches host-side dimension bugs before the heavier
+    /// `ZkapCircuitInput` conversion runs.
+    pub fn validate(&self, k: usize, n: usize) -> Result<(), ZkapWitnessError> {
         let expected_anchor_values = n - k + 1;
         if self.shared.anchor_values_be.len() != expected_anchor_values {
-            return Err(ApplicationError::InvalidFormat(format!(
+            return Err(ZkapWitnessError::DimensionMismatch(format!(
                 "shared.anchor_values_be.len()={} but n - k + 1 = {}",
                 self.shared.anchor_values_be.len(),
                 expected_anchor_values
             )));
         }
         if self.shared.anchor_known_x_be.len() != k {
-            return Err(ApplicationError::InvalidFormat(format!(
+            return Err(ZkapWitnessError::DimensionMismatch(format!(
                 "shared.anchor_known_x_be.len()={} but k={}",
                 self.shared.anchor_known_x_be.len(),
                 k
             )));
         }
         if self.shared.anchor_selector.len() != n {
-            return Err(ApplicationError::InvalidFormat(format!(
+            return Err(ZkapWitnessError::DimensionMismatch(format!(
                 "shared.anchor_selector.len()={} but n={}",
                 self.shared.anchor_selector.len(),
                 n
             )));
         }
         if self.per_jwt.len() != k {
-            return Err(ApplicationError::InvalidFormat(format!(
+            return Err(ZkapWitnessError::DimensionMismatch(format!(
                 "per_jwt.len()={} but k={}",
                 self.per_jwt.len(),
                 k
@@ -143,12 +136,32 @@ impl RawProofRequest {
     }
 }
 
+/// Build a `Vec<ZkapInputV1>` from a [`ProofRequest`] and circuit config.
+///
+/// Validates the request shape against `(cfg.k, cfg.n)`, then composes
+/// one [`ZkapInputV1`] per JWT. Each output payload is ready to feed
+/// into [`crate::witness::input::into_circuit_input`] (native prove
+/// path) without any further preprocessing.
+pub fn build_input(
+    req: &ProofRequest,
+    cfg: &CircuitConfig,
+) -> Result<Vec<ZkapInputV1>, ZkapWitnessError> {
+    let k = cfg.k as usize;
+    let n = cfg.n as usize;
+    req.validate(k, n)?;
+    Ok(req
+        .per_jwt
+        .iter()
+        .map(|jwt| jwt.to_zkap_input_v1(&req.shared, cfg))
+        .collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn empty_per_jwt() -> ZkapPerJwtFields {
-        ZkapPerJwtFields {
+    fn empty_per_jwt() -> PerJwtFields {
+        PerJwtFields {
             jwt_bytes: Vec::new(),
             rsa_modulus_be: Vec::new(),
             rsa_signature_be: Vec::new(),
@@ -159,11 +172,9 @@ mod tests {
         }
     }
 
-    fn empty(k: usize, n: usize) -> RawProofRequest {
-        RawProofRequest {
-            pk_path: PathBuf::from("/tmp/pk.arzkey"),
-            wasm_path: PathBuf::from("/tmp/zkap.wasm"),
-            shared: ZkapSharedFields {
+    fn empty(k: usize, n: usize) -> ProofRequest {
+        ProofRequest {
+            shared: SharedFields {
                 random_be: [0u8; 32],
                 h_sign_user_op_be: [0u8; 32],
                 anchor_values_be: vec![[0u8; 32]; n - k + 1],
@@ -177,31 +188,31 @@ mod tests {
 
     #[test]
     fn validate_accepts_consistent_shape() {
-        let raw = empty(3, 6);
-        assert!(raw.validate(3, 6).is_ok());
+        let req = empty(3, 6);
+        assert!(req.validate(3, 6).is_ok());
     }
 
     #[test]
     fn validate_rejects_wrong_anchor_values() {
-        let mut raw = empty(3, 6);
-        raw.shared.anchor_values_be.pop();
-        let err = raw.validate(3, 6).unwrap_err();
+        let mut req = empty(3, 6);
+        req.shared.anchor_values_be.pop();
+        let err = req.validate(3, 6).unwrap_err();
         assert!(format!("{}", err).contains("anchor_values_be"));
     }
 
     #[test]
     fn validate_rejects_wrong_per_jwt_count() {
-        let mut raw = empty(3, 6);
-        raw.per_jwt.pop();
-        let err = raw.validate(3, 6).unwrap_err();
+        let mut req = empty(3, 6);
+        req.per_jwt.pop();
+        let err = req.validate(3, 6).unwrap_err();
         assert!(format!("{}", err).contains("per_jwt"));
     }
 
     #[test]
     fn validate_rejects_wrong_selector() {
-        let mut raw = empty(3, 6);
-        raw.shared.anchor_selector.pop();
-        let err = raw.validate(3, 6).unwrap_err();
+        let mut req = empty(3, 6);
+        req.shared.anchor_selector.pop();
+        let err = req.validate(3, 6).unwrap_err();
         assert!(format!("{}", err).contains("anchor_selector"));
     }
 }

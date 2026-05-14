@@ -10,6 +10,10 @@ build = "build.rs"
 [dependencies]
 circuit = { workspace = true }
 zkap-service = { workspace = true }
+# `circuit.ar1cs` body_blake3 read helper needs the format envelope
+# (re-exported from the `ark-ar1cs` root crate after Commit 4 of the
+# 2026-05 ark-ar1cs boundary migration).
+ark-ar1cs = { workspace = true }
 
 clap = { workspace = true, features = ["derive"] }
 serde = { workspace = true }
@@ -20,15 +24,14 @@ thiserror = { workspace = true }
 rand = { workspace = true }
 rand_chacha = { workspace = true }
 time = { workspace = true }
-wasmparser = "0.246"
 
 [lib]
 name = "zkap_cli"
 path = "src/lib.rs"
 
-[[bin]]
-name = "generate_crs"
-path = "src/bin/generate_crs.rs"
+# `generate_setup` is the canonical CLI binary; pre-migration setup
+# binaries were retired in the 2026-05 ark-ar1cs boundary migration
+# (Commit 2).
 
 [[bin]]
 name = "generate_hash"

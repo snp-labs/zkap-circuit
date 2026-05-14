@@ -1,8 +1,9 @@
 //! Key-file I/O helpers for arkworks proving/verifying keys.
 //!
-//! Exports: [`load_key_uncompressed`], [`IoError`].  Loads a
+//! Exports: [`load_key_uncompressed`], [`IoError`]. Loads a
 //! `CanonicalDeserialize` value from an uncompressed binary file (e.g.
-//! `.arzkey`).  Requires the `io` feature (implied by `wire` default).
+//! the `.bin` payloads in the post-migration CRS bundle). Requires the
+//! `io` feature (implied by `wire` default).
 
 use ark_serialize::CanonicalDeserialize;
 use std::{fs::File, io::BufReader, path::PathBuf};
@@ -20,7 +21,7 @@ pub enum IoError {
 }
 
 /// Load a `CanonicalDeserialize` value from an uncompressed binary file
-/// (e.g. an arkworks `.arzkey` proving / verifying key written with
+/// (e.g. an arkworks proving / verifying key written with
 /// `serialize_uncompressed`). Uses the `_unchecked` deserialiser — the
 /// caller is responsible for trusting the source of `path`.
 pub fn load_key_uncompressed<T: CanonicalDeserialize + Send + Sync + 'static>(

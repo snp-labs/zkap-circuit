@@ -7,77 +7,88 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Breaking
+### Breaking — 2026-05 ark-ar1cs boundary migration
 
-- **`zkap_service::setup` signature change.** Now takes a caller-supplied
-  `&mut dyn rand::RngCore` and an `Option<&Path>` `ptau` placeholder:
-  `setup(params, output_dir, rng, ptau)`. Stage 1 always passes
-  `ptau = None`; passing `Some(_)` returns `ApplicationError::InvalidFormat`
-  with "Stage 2 not yet active". This unblocks the future trusted-setup
-  ceremony integration (Powers-of-Tau + Phase 2 MPC, deferred to
-  Stage 2) without another breaking change. The four in-tree callers
-  (`generate_setup`, `generate_crs`, `service::tests::l3_byte_gate`,
-  `service::tests::service_integration`) are migrated in this PR.
-  `SetupOutput` gains a `shape: SetupShape { num_instance, num_witness,
-  num_constraints }` populated from the synthesized constraint system,
-  so the setup binary can pin those counts in `manifest.json` without
-  re-synthesizing.
+The proving stack moved off the historical wasm-runtime path and onto
+a native `ark-ar1cs` flow. Every public type and entry point that
+referenced the wasm path is gone; downstream callers must rewire
+once.
+
+- **CRS bundle layout (7 files).** `setup()` and the `generate_setup`
+  CLI now write a single canonical bundle: `circuit.ar1cs`, `pk.bin`,
+  `vk.bin`, `pvk.bin`, `Groth16Verifier.sol`, `config.json`,
+  `manifest.json`. Older filenames and the wasm artifact that
+  pre-dated the migration are no longer produced or consumed.
+- **`ProofRequest` is the new request type.** Holds only
+  `shared: SharedFields` and `per_jwt: Vec<PerJwtFields>` — every
+  artifact-path field is gone. Lives in
+  `service::witness::request`.
+- **Native ar1cs prove path.** The proving entry point is
+  `service::prover::Prover` (`Prover::from_artifact(set)` +
+  `Prover::prove(&request, rng)`). Internally chains
+  `witness::build_input → witness::into_circuit_input →
+  ZkapCircuit::from_input → ark_ar1cs::synthesize_full_assignment →
+  ark_ar1cs::prove(&pk, &arcs, &full_assignment, rng)`. The
+  non-canonical `prove_from_unverified_paths(bundle_dir, &req, rng)`
+  shortcut exists for tests/dev tools and is documented in-line as
+  bypassing the manifest hash gate.
+- **`ArtifactSet::load(manifest, dir)` is the single trust gate.**
+  The loader checks `arcs.body_blake3() == manifest.ar1cs_blake3`
+  plus `sha256` of every artifact (`circuit.ar1cs`, `pk.bin`,
+  `vk.bin`, `pvk.bin`, `config.json`, optional `Groth16Verifier.sol`).
+  Mismatch returns `ArtifactError::HashMismatch { field, expected,
+  got }`. `Prover::prove` performs no manifest lookup, no
+  `body_blake3` recompute, and no sha256 re-check. Tamper tests in
+  `crates/service/tests/artifact_set_load.rs` enforce the contract.
+- **Verify wrapper retired.** The previous in-crate verify helper
+  and its opaque verifying-context handle are gone. Callers borrow
+  the `PreparedVerifyingKey` from `Prover::prepared_verifying_key()`
+  / `SetupOutput::prepared_verifying_key()` and call
+  `ark_groth16::Groth16::<Bn254>::verify_proof(pvk, &proof,
+  &inputs)` directly.
+- **Cargo features purged.** Every wasm-runtime / streaming-prover
+  feature flag is removed. The default `proof` feature now pulls
+  only `ark-ar1cs` (root crate), `ark-groth16`, and the in-tree
+  wire/codec helpers.
+- **Legacy CLI binary removed.** Pre-migration setup binaries were
+  retired; `generate_setup` is the canonical superset that writes
+  the 7-file bundle in one shot.
+- **Wasm witness substrate removed.** The wasm witness-generator
+  crate, its ABI glue, and the host-side wasm runtime are no longer
+  part of the workspace. Production callers depend on the native
+  prove path.
 
 ### Added
 
-- **`manifest.json` v1 emit from `generate_setup`.** Setup output now
-  includes a human-readable SSOT manifest alongside the existing seven
-  files. Schema: `manifest_version`, `circuit_id`, `circuit_tag`
-  (`{id}__{cfg_sha256[..8]}`), `curve`, `proof_system`, `ar1cs_blake3`,
-  `shape`, `public_input_names`, `artifacts.{arzkey,wasm,vk,
-  evm_verifier,circuit_config}` (sha256 + size + kind, wasm carries
-  `abi.{version, exports}`, circuit_config carries
-  `schema_owner = "npm:@baerae/zkap-zkp@^1"` + `schema_ref =
-  "ZkapCircuitConfigV1"`), `setup_provenance.kind ∈ {"os-rng", "seed",
-  "ceremony"}`, `toxic_waste_disclosure` (derived from provenance),
-  `build` (repo, commit, ark-ar1cs rev, rustc, RFC3339 `built_at`).
-  The `ceremony` provenance variant is serialisable but never emitted
-  by Stage 1 — `--ptau` / `--phase2-attestations` fail explicitly so
-  the schema parks Stage 2's contract today. See
-  `~/01_baerae/ark-ar1cs/.omc/plans/2026-05-12-deployment-bundle-spec.md`
-  §4 / §7.
-- **`generate_setup` CLI: deterministic RNG gate.** New flags:
-  `--circuit-id <str>` (required), `--rng-seed <hex>` paired with
-  `--allow-test-only` (ChaCha20 from 32-byte seed; sets
-  `setup_provenance.kind = "seed"`), `--ptau <path>` /
-  `--phase2-attestations <path>` (Stage 2 placeholders, hard-fail),
-  `--build-commit <sha>` (default = `git rev-parse HEAD`). Default
-  randomness is `OsRng` with `setup_provenance.kind = "os-rng"` and the
-  `"operator must be trusted"` trust-model disclosure.
-- **`SOURCE_DATE_EPOCH` reproducible-builds support.** When set, the
-  manifest's `build.built_at` (RFC3339 UTC) is derived from that
+- **Manifest hash check coverage.** `ArtifactSet::load` enumerates
+  every artifact entry and reports the failing slot via
+  `ArtifactError::HashMismatch::field` (e.g. `"ar1cs_blake3"`,
+  `"artifacts.pk.sha256"`, `"artifacts.evm_verifier.sha256"`). Pinned
+  by 9 active tamper tests in
+  `crates/service/tests/artifact_set_load.rs`.
+- **`SOURCE_DATE_EPOCH` reproducible-builds support.** When set,
+  `manifest.build.built_at` (RFC3339 UTC) is derived from that
   unix-seconds value instead of wallclock. Combined with `--rng-seed
   --allow-test-only` + pinned `--build-commit`, two runs against the
   same config produce a byte-equal `manifest.json` (golden test:
   `crates/cli/tests/manifest_golden.rs`).
-
-- **V1 byte API prove path with wasm witness-generator runtime.** `zkap_service::prove` now drives the ZKAP-specific `crates/zkap-witness-wasm` artifact (`circuit.wasm`) through a host-side `wasmi`-based runtime, postcard-encoded `ZkapInputV1` payloads, and the `ark_ar1cs_prover::prove(.arzkey, .arwtns)` interface. Witness construction is fully delegated to the wasm artifact; the host no longer pulls `circuit::ZkapCircuit` into the prove path. `RawProofRequest` now carries raw byte buffers (BE field elements, full JWT bytes, RSA modulus / signature byte strings) and a `wasm_path` alongside the existing `pk_path`.
-- **`zkap-input-types` crate.** V1 wire-format types (`ZkapInputV1`, `ZkapCircuitConfigV1`, `RSA_2048_BYTES`, `fe_from_be32_canonical` / `fe_to_be32`) live in a `circuit`/`gadget`-free crate so hosts can construct V1 payloads without the full circuit compile graph.
-- **`ar1cs_blake3` envelope binding.** `setup()` now writes `pk.arzkey` (proving key + ARCS/R1CS identity envelope) alongside the legacy `pk.key`/`vk.key`/`pvk.key`/`Groth16Verifier.sol`/`config.json` outputs. `circuit.wasm` build (`crates/zkap-witness-wasm/build-wasm.sh`) bakes the same hash in as `EMBEDDED_AR1CS_BLAKE3` via `build.rs`. The hash binds `.arzkey`, `.wasm`, and `.arwtns` to a single circuit identity.
-- **Host-side `ar1cs_blake3` fail-fast pair check** in `ProofGenerator::generate`. Before the per-proof loop, the host instantiates the wasm runtime once, reads `embedded_ar1cs_blake3()`, and compares to `arzkey.header.ar1cs_blake3`. Mismatch returns `ApplicationError::InvalidFormat("ar1cs_blake3 mismatch: ...")` without entering the per-proof loop. The wasm-side `witness_generator` still enforces the same equality check internally as defense in depth — this host-side check improves mismatch detection and UX (catches stale caches, wrong dist paths, accidental mis-pairings) but is **not** a complete supply-chain defense against malicious wasm.
-- **`wasm_to_prove` integration test** (`crates/zkap-witness-wasm/tests/wasm_to_prove.rs`). End-to-end: synthesizes a fresh test `.arzkey`, rebuilds `zkap-witness-wasm` as `wasm32-unknown-unknown` against it, drives the four ABI exports (`wasm_alloc`, `wasm_free`, `embedded_ar1cs_blake3`, `witness_generator`), checks the wasm-produced `.arwtns` is byte-identical to the native `circuit_to_arwtns` baseline, and runs `prove` + `verify_proof`. Includes a wrong-pair tamper test (wasm-side ABI 5 `Blake3Mismatch`) and a host-side mismatch test (`host_rejects_wasm_with_mismatched_ar1cs_blake3`) covering the new fail-fast path.
-- `proof` feature flag for `zkap-service`: separates the heavyweight Groth16 proving stack (enabled by default) from a lightweight WASM-compatible build. Disable with `default-features = false` for browser and mobile targets where proof generation happens server-side.
+- **`prove_from_unverified_paths`** — non-canonical shortcut that
+  loads `pk.bin`, `vk.bin`, `pvk.bin`, `circuit.ar1cs`, and
+  `config.json` from a directory via `ArtifactSet::load_unverified`
+  and forwards to `Prover::from_artifact` + `Prover::prove`. The
+  rustdoc explicitly warns that production callers MUST use
+  `ArtifactSet::load(manifest, dir)`.
+- **`scripts/check-removed-api.sh`** and
+  **`scripts/check-bundle-layout.sh`** are wired into CI as required
+  gates on every PR. The bundle-layout gate runs against
+  `dist/1-of-1` and `dist/3-of-3`.
 
 ### Changed
 
-- **`groth16_proof` example temporarily disabled** (parked as `crates/service/examples/groth16_proof.rs.bak`). The example targets the legacy V0 hex/Base64 `RawProofRequest::new` shape and predates the wasm-witness runtime. Restoring a runnable end-to-end example using a checked-in small fixture `.arzkey` + `.wasm` pair is a planned follow-up. `cargo test -p zkap-witness-wasm --test wasm_to_prove --release` is the canonical V1 end-to-end exercise in the meantime.
-- **`use-optimized` feature** is now a no-op alias for `proof` (the wasm-witness runtime path obsoletes the streaming Groth16 prover; the alias is kept for source-compat with downstream Cargo invocations).
-- Removed unused workspace dependency `dotenvy` (unreferenced across all crates).
-- Removed unused direct dependencies from `zkap-service`: `once_cell` (stdlib `OnceLock` used instead), `num`, `num-integer`, `num-bigint`, `num-traits` (RSA numeric ops handled inside `gadget`), `ark-ed-on-bn254`, and `ark-ec` (available transitively via `circuit`/`gadget`).
-- Explicitly declared `[lib]` section in `zkap-service` (`staticlib`, `cdylib`, `rlib`) for clarity.
-
-### Planned follow-ups (not in this release)
-
-- Restore a runnable `groth16_proof` example against the V1 byte API using a checked-in small fixture `.arzkey` + `.wasm` pair.
-- Cleanup of the `dist/` directory: today both the legacy V0 layout (`dist/1of1`, `dist/3of3` with `pk.key` + `Groth16Verifier.sol`) and the V1 layout (`dist/1-of-1`, `dist/3-of-3` with `circuit.arzkey` + `circuit.wasm`) coexist. A single canonical layout plus the per-bundle `manifest.json` (now landed in this release) is planned in PR-bundle-rename / PR-bundle-cleanup.
-- Cross-project artifact compatibility test that exercises the checked-in `dist/` artifacts (currently the integration test rebuilds artifacts from scratch).
-- Binding-side `prove` smoke test in `zkap-zkp` (the napi/UniFFI/wasm-bindgen byte-conversion code is currently exercised only at compile time).
-- Decide whether the wasm host runtime (`wasmi`/`wasmtime` backend) should be relocated from `zkap-service` to a dedicated `ark-ar1cs-wasm-runtime` crate so that mobile bindings can drop the runtime when unused.
+- **Workspace pin** for `ark-ar1cs` bumped to the rev that fuses the
+  previous sub-crates into a single `ark-ar1cs` root crate and
+  exposes `prove(pk, arcs, full_assignment, rng)` +
+  `synthesize_full_assignment` as the canonical native API.
 
 ---
 

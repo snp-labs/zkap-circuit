@@ -9,9 +9,16 @@
 //!
 //! **`proof` feature (default):**
 //! - [`setup`] — trusted setup: generates proving/verifying keys and writes them to disk
-//! - [`prove`] — generate Groth16 zero-knowledge proofs (takes [`RawProofRequest`])
-//! - [`verify`] — verify Groth16 proofs (takes [`VerifyingContext`])
+//! - [`Prover`] / [`prove_from_unverified_paths`] — native Groth16 prover
+//!   (takes [`ProofRequest`])
 //! - [`jwt`] — JWT payload claim parsing ([`jwt::parser::parse_claim_from_str`])
+//!
+//! Proof verification is intentionally **not** wrapped by this crate
+//! after Commit 5 of the 2026-05 ark-ar1cs boundary migration: callers
+//! borrow the prepared verifying key from
+//! [`SetupOutput::prepared_verifying_key`] (or from a `Prover` /
+//! [`ArtifactSet`]) and feed it directly to
+//! `ark_groth16::Groth16::verify_proof`.
 //!
 //! Solidity on-chain verifier codegen lives in the sibling crate
 //! [`zkap-evm-verifier`](../zkap_evm_verifier/index.html); call
@@ -19,9 +26,7 @@
 //! directly. The bundled `Groth16Verifier.sol` produced by [`setup`] uses it
 //! internally.
 //! - DTOs: [`ProofComponents`], [`SharedPublicInputs`], [`PerProofPublicInputs`], [`ZkapProofResult`]
-//! - Keys: [`SetupOutput`], [`VerifyingContext`], [`ZkapSharedFields`], [`ZkapPerJwtFields`]
-//!
-//! **Note on `use-optimized` feature**: an alias for `proof`, kept for source compatibility.
+//! - Keys: [`SetupOutput`], [`SharedFields`], [`PerJwtFields`]
 
 // Crate-internal `missing_docs` warning, not a `#[deny]`. Phase 7 / H5
 // staged path: clears the zkap-service baseline (39 service warnings +
@@ -34,28 +39,32 @@
 // The workspace-wide flip happens once gadget hits zero at this gate.
 #![warn(missing_docs)]
 
-// Feature-matrix guards — fail loudly on unsupported combinations.
-//
-// `runtime-wasmtime` is reserved but has zero implementation; activating it
-// silently would leave the wasmi backend running, which is misleading.
-#[cfg(feature = "runtime-wasmtime")]
-compile_error!("`runtime-wasmtime` is not yet implemented; use `runtime-wasmi` instead");
-
-// `proof` requires exactly one runtime backend.
-#[cfg(all(feature = "proof", not(feature = "runtime-wasmi")))]
-compile_error!("`proof` feature requires a runtime backend; enable `runtime-wasmi`");
-
 pub(crate) mod anchor_host;
 pub(crate) mod dto;
 pub mod error;
 pub(crate) mod hash;
 
+// Manifest schema — proof-feature-independent. Hosts that consume the
+// manifest without pulling ark-groth16 (lightweight bindings, manifest
+// inspectors, dev tools) can depend on the module cheaply.
+pub mod manifest;
+
+#[cfg(feature = "proof")]
+pub mod artifact;
 #[cfg(feature = "proof")]
 pub(crate) mod crs;
 #[cfg(feature = "proof")]
 pub mod jwt;
 #[cfg(feature = "proof")]
 pub mod proof;
+
+// Native witness-shaping path — pure, wasm-free.
+#[cfg(feature = "proof")]
+pub mod witness;
+
+// Native ark-ar1cs prover — canonical post-migration entry point.
+#[cfg(feature = "proof")]
+pub mod prover;
 
 use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;
 use circuit::types::F;
@@ -101,10 +110,12 @@ pub use hash::{generate_aud_hash, generate_hash, generate_leaf_hash};
 
 // Public API (proof feature only)
 #[cfg(feature = "proof")]
+pub use artifact::{ArtifactError, ArtifactSet};
+#[cfg(feature = "proof")]
 pub use dto::{PerProofPublicInputs, ProofComponents, SharedPublicInputs, ZkapProofResult};
 #[cfg(feature = "proof")]
-pub use proof::{
-    RawProofRequest, SetupOutput, SetupShape, VerifyingContext, ZkapPerJwtFields, ZkapSharedFields,
-};
+pub use proof::{SetupOutput, SetupShape, setup};
 #[cfg(feature = "proof")]
-pub use proof::{prove, setup, verify};
+pub use prover::{Prover, prove_from_unverified_paths};
+#[cfg(feature = "proof")]
+pub use witness::{PerJwtFields, ProofRequest, SharedFields};

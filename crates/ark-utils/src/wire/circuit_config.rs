@@ -16,11 +16,10 @@ use serde::{Deserialize, Serialize};
 /// - host-side proof-request assembly (`zkap-service`).
 ///
 /// String-typed fields (`claims`, `forbidden_string`) are kept as
-/// `String` / `Vec<String>` for ergonomic JSON serialisation and for
-/// canonical-byte parity with the legacy `RawCircuitConfig` JSON layout.
+/// `String` / `Vec<String>` for ergonomic JSON serialisation.
 /// `CanonicalSerialize` of `String` produces the same bytes as
-/// `CanonicalSerialize` of `Vec<u8>`, so `.arzkey` byte compatibility
-/// is preserved across the consolidation.
+/// `CanonicalSerialize` of `Vec<u8>`, so the on-disk byte stream stays
+/// stable across the consolidation.
 #[derive(
     Clone, Debug, PartialEq, Eq, Serialize, Deserialize, CanonicalSerialize, CanonicalDeserialize,
 )]

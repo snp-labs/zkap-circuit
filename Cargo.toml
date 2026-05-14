@@ -7,7 +7,6 @@ members = [
     "crates/gadget",
     "crates/service",
     "crates/zkap-evm-verifier",
-    "crates/zkap-witness-wasm",
 ]
 
 [workspace.package]
@@ -45,13 +44,16 @@ gadget                    = { path = "crates/gadget", default-features = false }
 circuit                   = { path = "crates/circuit" }
 zkap-service              = { path = "crates/service" }
 zkap-evm-verifier         = { path = "crates/zkap-evm-verifier" }
-ark-ar1cs-format       = { git = "https://github.com/baerae-zkap/ark-ar1cs", rev = "0370db0e89a72a9ae7eace683a1e37d1768bcf97" }
-ark-ar1cs-prover       = { git = "https://github.com/baerae-zkap/ark-ar1cs", rev = "0370db0e89a72a9ae7eace683a1e37d1768bcf97" }
-ark-ar1cs-wasm-witness = { git = "https://github.com/baerae-zkap/ark-ar1cs", rev = "0370db0e89a72a9ae7eace683a1e37d1768bcf97" }
-ark-ar1cs-wtns         = { git = "https://github.com/baerae-zkap/ark-ar1cs", rev = "0370db0e89a72a9ae7eace683a1e37d1768bcf97" }
-ark-ar1cs-zkey         = { git = "https://github.com/baerae-zkap/ark-ar1cs", rev = "0370db0e89a72a9ae7eace683a1e37d1768bcf97" }
+# `ark-ar1cs` exposes the post-migration prover surface: `prove`,
+# `synthesize_full_assignment`, and the `format` submodule
+# (`ArcsFile`, `ConstraintMatrices`, `CurveId`). Pinned to the upstream
+# rev whose workspace fuses `format` / `prover` / `zkey` into the
+# single root crate.
+ark-ar1cs = { git = "https://github.com/baerae-zkap/ark-ar1cs", rev = "b003a7d8ec39becd489e2266eb336df34e11a463" }
 
-wasmi    = { version = "0.38", default-features = false, features = ["std"] }
+# Kept for `ark-utils` (still uses postcard for V1 wire serialization).
+# zkap-service stopped depending on postcard in Commit 4 when the wasm
+# runtime path was retired.
 postcard = { version = "1", default-features = false, features = ["alloc"] }
 
 thiserror = { version = "2.0.12" }

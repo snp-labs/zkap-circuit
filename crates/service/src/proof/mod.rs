@@ -1,21 +1,15 @@
-//! ZKAP proof generation service — wasm-witness-runtime variant.
+//! ZKAP trusted-setup entry point.
 //!
-//! The host-facing entry point is [`prove`], which:
-//! 1. validates [`RawProofRequest`] against the circuit shape,
-//! 2. assembles one [`ZkapInputV1`] per JWT,
-//! 3. dispatches each input through the wasm witness-generator runtime,
-//! 4. runs `ark_ar1cs_prover::prove` against the matching `.arzkey`.
-//!
-//! Witness construction is fully delegated to the `.wasm` artifact —
-//! `service` no longer pulls `circuit::ZkapCircuit` into the prove path.
+//! After Commit 4 of the 2026-05 ark-ar1cs boundary migration the
+//! proving entry point lives in [`crate::prover`]
+//! ([`crate::prover::Prover`] / [`crate::prover::prove_from_unverified_paths`]).
+//! Commit 5 then removed the in-crate verify wrapper — callers verify
+//! proofs by calling `Groth16::verify_proof` directly against the
+//! `vk` / `pvk` exposed on [`Prover`] (or
+//! [`crate::artifact::ArtifactSet`]). This module is now the home of
+//! only the [`setup`] function.
 
-pub mod generator;
-pub mod request;
-pub mod runtime;
-
-pub use request::{RawProofRequest, ZkapPerJwtFields, ZkapSharedFields};
-
-use ark_ar1cs_format::{ArcsFile, CurveId};
+use ark_ar1cs::format::{ArcsFile, ConstraintMatrices, CurveId};
 use ark_crypto_primitives::snark::CircuitSpecificSetupSNARK;
 #[allow(unused_imports)]
 use ark_crypto_primitives::snark::SNARK;
@@ -28,16 +22,7 @@ use circuit::zkap::ZkapCircuit;
 use rand::{CryptoRng, RngCore};
 use std::path::Path;
 
-use ark_utils::wire::ZkapInputV1;
-
-use crate::dto::{ProofComponents, ZkapProofResult};
 use crate::error::ApplicationError;
-use ark_utils::hex_decimal_to_field;
-
-use self::generator::ProofGenerator;
-
-/// Opaque handle to a Groth16 prepared verifying key.
-pub struct VerifyingContext(pub(crate) PreparedVerifyingKey<BN254>);
 
 /// Constraint-system shape produced by [`setup`].
 ///
@@ -56,22 +41,40 @@ pub struct SetupShape {
 }
 
 /// Output of [`setup`].
+///
+/// Holds every artifact the post-migration CRS bundle needs:
+/// `pk`, `vk`, `pvk` (uncompressed `CanonicalSerialize` targets),
+/// `arcs` (R1CS body for `circuit.ar1cs`), and the [`CircuitConfig`]
+/// the keys were built against — the same shape
+/// [`crate::artifact::ArtifactSet`] mirrors on the read side.
 pub struct SetupOutput {
     pub(crate) pk: ProvingKey<BN254>,
     pub(crate) vk: VerifyingKey<BN254>,
     pub(crate) pvk: PreparedVerifyingKey<BN254>,
+    /// `.ar1cs` body extracted alongside the proving/verifying keys.
+    /// Used by [`crate::crs::persist_setup_output`] to emit
+    /// `circuit.ar1cs` and by CLI tooling to compute the manifest's
+    /// `ar1cs_blake3` field.
+    pub arcs: ArcsFile<F>,
     /// Constraint-system shape — populated from the synthesized
     /// [`ConstraintSystem`] used to extract the R1CS matrices, so the
-    /// counts always match the `.arzkey` payload.
+    /// counts always match the `circuit.ar1cs` payload.
     pub shape: SetupShape,
+    /// The [`CircuitConfig`] used to synthesize `pk`/`vk`/`arcs`. Kept
+    /// here so [`Self::into_artifact_set`] can hand a `Prover` the
+    /// same config without re-reading `config.json`.
+    pub(crate) cfg: CircuitConfig,
 }
 
 impl SetupOutput {
-    /// Returns the prepared verifying-key handle that [`verify`] consumes.
-    /// Cloning is cheap (the underlying `PreparedVerifyingKey` is `Arc`-free
-    /// but small and fully owned).
-    pub fn verifying_context(&self) -> VerifyingContext {
-        VerifyingContext(self.pvk.clone())
+    /// Returns the bundled prepared verifying key.
+    ///
+    /// The in-crate verify wrapper was retired in Commit 5 of the
+    /// 2026-05 ark-ar1cs boundary migration; callers that need to
+    /// verify a proof in-process hand this borrow straight to
+    /// `ark_groth16::Groth16::verify_proof`.
+    pub fn prepared_verifying_key(&self) -> &PreparedVerifyingKey<BN254> {
+        &self.pvk
     }
 
     /// Returns `gamma_abc_g1.len()` — i.e., the number of public inputs
@@ -81,6 +84,25 @@ impl SetupOutput {
     /// who want that count should subtract 1.
     pub fn public_input_count(&self) -> usize {
         self.pvk.vk.gamma_abc_g1.len()
+    }
+
+    /// Convert this [`SetupOutput`] into a [`crate::artifact::ArtifactSet`]
+    /// in memory, without going through disk.
+    ///
+    /// Useful for tests and in-process flows that want to feed the
+    /// freshly-built `pk`/`vk`/`pvk`/`arcs` straight into a
+    /// [`crate::prover::Prover::from_artifact`] call. Production callers
+    /// should instead persist via [`setup`] and re-load through
+    /// [`crate::artifact::ArtifactSet::load`] so the manifest hash check
+    /// is exercised on every prove batch.
+    pub fn into_artifact_set(self) -> crate::artifact::ArtifactSet {
+        crate::artifact::ArtifactSet {
+            pk: self.pk,
+            vk: self.vk,
+            pvk: self.pvk,
+            arcs: self.arcs,
+            cfg: self.cfg,
+        }
     }
 }
 
@@ -165,65 +187,20 @@ pub fn setup(
         num_constraints: cs_setup.num_constraints() as u64,
     };
 
-    let matrices = ark_ar1cs_format::ConstraintMatrices::from_cs(&cs_setup).map_err(|e| {
+    let matrices = ConstraintMatrices::from_cs(&cs_setup).map_err(|e| {
         ApplicationError::InvalidFormat(format!("Failed to extract R1CS matrices: {e:?}"))
     })?;
     let arcs = ArcsFile::from_matrices(CurveId::Bn254, &matrices);
 
-    let output = SetupOutput { pk, vk, pvk, shape };
-    crate::crs::persist_setup_output(&output, params, output_dir, arcs)?;
+    let output = SetupOutput {
+        pk,
+        vk,
+        pvk,
+        arcs,
+        shape,
+        cfg: params.clone(),
+    };
+    crate::crs::persist_setup_output(&output, params, output_dir, &output.arcs)?;
 
     Ok(output)
-}
-
-/// Generate Groth16 proofs from raw user inputs via the wasm
-/// witness-generator runtime.
-pub fn prove(
-    params: &CircuitConfig,
-    raw: RawProofRequest,
-) -> Result<ZkapProofResult, ApplicationError> {
-    log::info!("[ZKAP-v3] Step 1: Validating RawProofRequest...");
-    let k = params.k as usize;
-    let n = params.n as usize;
-    raw.validate(k, n)?;
-    if raw.token_count() != k {
-        return Err(ApplicationError::InvalidFormat(format!(
-            "expected {} JWTs (k), got {}",
-            k,
-            raw.token_count()
-        )));
-    }
-
-    log::info!("[ZKAP-v3] Step 2: Building {} ZkapInputV1 payloads...", k);
-
-    let inputs: Vec<ZkapInputV1> = raw
-        .per_jwt
-        .iter()
-        .map(|jwt| jwt.to_zkap_input_v1(&raw.shared, params))
-        .collect();
-
-    log::info!("[ZKAP-v3] Step 3: Generating proofs via wasm runtime...");
-    let generator = ProofGenerator::new(raw.pk_path, raw.wasm_path);
-    let output = generator.generate(&inputs)?;
-    log::info!(
-        "[ZKAP-v3] Step 3 completed: {} proofs generated",
-        output.proofs.len()
-    );
-
-    Ok((output.proofs, output.public_inputs).into())
-}
-
-/// Verify a single Groth16 proof against an opaque verifying context.
-pub fn verify(
-    ctx: &VerifyingContext,
-    proof: &ProofComponents,
-    public_inputs: &[String],
-) -> Result<bool, ApplicationError> {
-    let ark_proof = proof.to_ark_proof()?;
-    let ark_inputs: Vec<F> = public_inputs
-        .iter()
-        .map(|s| hex_decimal_to_field::<F>(s).map_err(ApplicationError::from))
-        .collect::<Result<_, _>>()?;
-    Groth16::<BN254>::verify_proof(&ctx.0, &ark_proof, &ark_inputs)
-        .map_err(|e| ApplicationError::InvalidFormat(format!("Proof verification failed: {}", e)))
 }

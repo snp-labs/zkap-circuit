@@ -1,21 +1,23 @@
-//! Errors raised by the zkap-witness-wasm thin layer.
+//! Errors raised by the native witness builder.
 //!
-//! Conversions to [`WitnessAbiCode`] funnel every variant to
-//! `CircuitBuildError` (status 7); finer-grained ABI signals
-//! (`PostcardDecodeError`, `MalformedInput`) are produced by the generic
-//! macro before this layer is reached.
+//! Lives alongside [`crate::witness::input`] so callers that perform the
+//! `ZkapInputV1 → ZkapCircuitInput<F>` conversion in-process (post-migration
+//! native prove path) get the same diagnostic surface that the old wasm
+//! witness-generator exposed.
+//!
+//! These variants do **not** map to a `WitnessAbiCode`; that mapping is a
+//! wasm-side concern and remains in the legacy `zkap-witness-wasm` crate
+//! until its Commit 7 removal.
 
-use ark_ar1cs_wasm_witness::WitnessAbiCode;
+use thiserror::Error;
 
-/// Failure modes raised by the V1 ZKAP witness builder. Every variant
-/// converts to [`WitnessAbiCode::CircuitBuildError`] (status 7) at the
-/// wasm ABI boundary; the variant differentiation exists for native
-/// callers (host-side wasm runtime, integration tests) that need
-/// finer-grained diagnostics. See [`crate::input::to_zkap_input_v1`]
-/// and [`crate::main::build_main_circuit`] for the call sites that
-/// produce each variant.
+use crate::error::ApplicationError;
+
+/// Failure modes raised by the native V1 ZKAP witness builder. Mirrors
+/// the variants exposed by the legacy `zkap-witness-wasm` thin layer so
+/// migration call sites keep the same diagnostic granularity.
 #[non_exhaustive]
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Error)]
 pub enum ZkapWitnessError {
     /// `circuit_config.validate()` rejected the supplied parameters.
     #[error("zkap V1 circuit config invalid: {0}")]
@@ -55,15 +57,13 @@ pub enum ZkapWitnessError {
     NonCanonicalField(String),
 
     /// The `rsa_signature_be` wire field does not byte-match the
-    /// base64-decoded `sig_b64` segment of `jwt_bytes`. V1 ships both
-    /// to make the host's intent explicit, then the wasm side rejects
-    /// any disagreement before building the witness.
+    /// base64-decoded `sig_b64` segment of `jwt_bytes`.
     #[error("zkap V1 RSA signature mismatch: {0}")]
     SignatureMismatch(String),
 }
 
-impl From<ZkapWitnessError> for WitnessAbiCode {
-    fn from(_: ZkapWitnessError) -> Self {
-        WitnessAbiCode::CircuitBuildError
+impl From<ZkapWitnessError> for ApplicationError {
+    fn from(e: ZkapWitnessError) -> Self {
+        ApplicationError::InvalidFormat(e.to_string())
     }
 }

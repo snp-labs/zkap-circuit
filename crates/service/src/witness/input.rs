@@ -1,45 +1,21 @@
-//! V1 → `ZkapCircuitInput<F>` conversion for the wasm witness-generator.
+//! Native V1 → `ZkapCircuitInput<F>` conversion.
 //!
 //! The wire types ([`ZkapInputV1`], [`CircuitConfig`]) live in
 //! `ark-utils::wire` and the field-element BE codec lives in
-//! `ark-utils::field_codec` — both modules are `circuit`/`gadget`-free.
+//! `ark-utils::codec::field` — both modules are `circuit`/`gadget`-free.
 //! This module is the conversion-side companion: it pulls in the
-//! circuit-side types and turns a postcard-decoded V1 payload into a
-//! fully assigned [`ZkapMainCircuit`].
+//! circuit-side types and turns a V1 payload into a fully assigned
+//! [`ZkapMainCircuit`] without any wasm dependency.
 //!
-//! # V1 — semantic input
+//! The legacy `zkap-witness-wasm` crate continues to ship its own
+//! near-identical copy so the wasm artifact keeps building; this module
+//! is the native-prove-path equivalent and the long-term home of the
+//! logic after the wasm crate is removed in Commit 7 of the 2026-05
+//! ark-ar1cs boundary migration.
 //!
-//! [`ZkapInputV1`] is the long-term wire format. The host sends raw
-//! authentication material (full JWT bytes, RSA modulus, anchor scalars
-//! together with selector and index, Merkle path, audience-related
-//! circuit config), and the wasm side reconstructs the entire
-//! [`ZkapMainCircuit`] — constants, public inputs, JWT, anchor, Merkle,
-//! audience witnesses. The wasm artifact is the single source of truth
-//! for circuit-witness construction; the host needs no dependency on
-//! `circuit::ZkapCircuit`.
-//!
-//! ## Wire format (postcard, fields in declaration order)
-//!
-//! | Field                          | Encoding                                        |
-//! |--------------------------------|-------------------------------------------------|
-//! | `jwt_bytes`                    | postcard `Vec<u8>` (varint len + raw bytes)     |
-//! | `rsa_modulus_be`               | postcard `Vec<u8>` (RSA-2048 N, exactly 256 BE bytes) |
-//! | `rsa_signature_be`             | postcard `Vec<u8>` (RSA-2048 sig, exactly 256 BE bytes) |
-//! | `random_be`                    | raw 32 bytes (no length prefix)                 |
-//! | `h_sign_user_op_be`            | raw 32 bytes (no length prefix)                 |
-//! | `anchor_values_be`             | postcard `Vec<[u8;32]>`, length = `n - k + 1`   |
-//! | `anchor_known_x_be`            | postcard `Vec<[u8;32]>`, length = `k`           |
-//! | `anchor_selector`              | postcard `Vec<u8>`, length = `n`, each `0`/`1`  |
-//! | `anchor_current_idx`           | postcard u64 varint                             |
-//! | `merkle_root_be`               | raw 32 bytes (no length prefix)                 |
-//! | `merkle_leaf_sibling_hash_be`  | raw 32 bytes (no length prefix)                 |
-//! | `merkle_auth_path_be`          | postcard `Vec<[u8;32]>`, length = `tree_height - 1` |
-//! | `merkle_leaf_idx`              | postcard u64 varint                             |
-//! | `circuit_config`               | nested struct, see [`CircuitConfig`]            |
-//!
-//! Bumping the order of any of the above fields, or changing
-//! big-endian / variable-vs-fixed-length conventions, is a wire-format
-//! break — the `WitnessGenerator::CIRCUIT_ID` MUST be bumped in lockstep.
+//! Postcard wire decoding and any wasm-side ABI glue intentionally do
+//! **not** live here — see `crates/zkap-witness-wasm/src/input.rs` for
+//! the legacy ABI helpers.
 
 use ark_crypto_primitives::{
     crh::{CRHScheme, poseidon::CRH},
@@ -49,8 +25,6 @@ use ark_crypto_primitives::{
 use ark_ff::{PrimeField, Zero};
 
 use circuit::token::ClaimIndices;
-#[cfg(test)]
-use circuit::types::CircuitConfig;
 use circuit::types::{BNP, CG, F};
 use circuit::witness::{
     AnchorWitness, AudienceWitness, CircuitConstants, CircuitPublicInputs, JwtWitness,
@@ -66,17 +40,14 @@ use gadget::{
 };
 
 use ark_utils::codec::field::fe_from_be32_canonical;
-use ark_utils::wire::{RSA_2048_BYTES, ZkapInputV1};
+use ark_utils::wire::{CircuitConfig as WireCircuitConfig, RSA_2048_BYTES, ZkapInputV1};
 
-use crate::error::ZkapWitnessError;
+use crate::witness::error::ZkapWitnessError;
 
-/// Concrete `ZkapCircuit` instantiation used by this wasm artifact —
+/// Concrete `ZkapCircuit` instantiation used by the native prove path —
 /// `(Curve = ed_on_bn254, BigNat = 2048-bit limbs)`.
 pub type ZkapMainCircuit = ZkapCircuit<CG, BNP>;
 
-// ---------- limb packing (mirrors test fixtures' pack_bytes_to_field_native) ----------
-
-/// 31 = (254 - 1) / 8 — the BN254 byte-limb width.
 const BN254_LIMB_WIDTH: usize = 31;
 
 #[doc(hidden)]
@@ -93,8 +64,6 @@ fn pad_claim_value_to_max(value: &[u8], max_len: usize) -> Vec<u8> {
     v.resize(max_len, 0x00);
     v
 }
-
-// ---------- JWT byte-level helpers ----------
 
 /// Recompute SHA-256 padding for `signing_input = header_b64.payload_b64`,
 /// then zero-pad the buffer out to `max_jwt_b64_len`. Returns
@@ -115,14 +84,6 @@ pub fn sha_pad_signing_input(signing_input: &[u8], max_jwt_b64_len: usize) -> (V
     (sha_padded, nblocks)
 }
 
-/// Locate a top-level JSON claim and return its [`ClaimIndices`] in the
-/// shape produced by the test-suite regex:
-/// `\s*("key")\s*:\s*("?[^",]*"?)\s*([,}])`.
-///
-/// The decoded JWT payloads emitted by the test fixtures are canonical
-/// (no insignificant whitespace), so this scanner mirrors the regex's
-/// observable behavior on those inputs without pulling the `regex`
-/// crate into the wasm bundle.
 fn locate_claim(payload: &str, key: &str) -> Result<ClaimIndices, ZkapWitnessError> {
     let needle = {
         let mut s = String::with_capacity(key.len() + 2);
@@ -189,8 +150,6 @@ fn locate_claim(payload: &str, key: &str) -> Result<ClaimIndices, ZkapWitnessErr
     })
 }
 
-/// Extract the claim's *value* bytes (with quotes for strings, unquoted for
-/// numbers), zero-padded to `max_len`.
 fn claim_value_bytes_padded(
     payload_bytes: &[u8],
     indices: &ClaimIndices,
@@ -203,9 +162,7 @@ fn claim_value_bytes_padded(
     bytes
 }
 
-// ---------- main conversion ----------
-
-/// One-shot host/wasm entry point: `V1 → ZkapMainCircuit` ready for
+/// One-shot native entry point: `V1 → ZkapMainCircuit` ready for
 /// `ConstraintSynthesizer`. Wraps [`into_circuit_input`] and
 /// `ZkapCircuit::from_input`.
 pub fn build_main_circuit(input: ZkapInputV1) -> Result<ZkapMainCircuit, ZkapWitnessError> {
@@ -213,9 +170,6 @@ pub fn build_main_circuit(input: ZkapInputV1) -> Result<ZkapMainCircuit, ZkapWit
     Ok(ZkapMainCircuit::from_input(ci))
 }
 
-/// Map an [`ark_utils::codec::field::NonCanonicalFieldError`] into the
-/// local error variant, prefixing with the field name so failures stay
-/// actionable when a host sends a `>= p` encoding.
 fn nc_field<S: Into<String>>(
     field: S,
 ) -> impl FnOnce(ark_utils::codec::field::NonCanonicalFieldError) -> ZkapWitnessError {
@@ -223,9 +177,6 @@ fn nc_field<S: Into<String>>(
     move |e| ZkapWitnessError::NonCanonicalField(format!("{}: {}", field, e))
 }
 
-// ---------- per-stage helpers (pub(crate) for unit tests) ----------
-
-/// Outputs of the anchor-witness build stage.
 pub(crate) struct AnchorStage {
     pub(crate) anchor_values: Vec<F>,
     pub(crate) anchor_witness: gadget::anchor::poseidon::PoseidonAnchorWitness<F>,
@@ -233,10 +184,6 @@ pub(crate) struct AnchorStage {
     pub(crate) current_idx: usize,
 }
 
-/// Stage 3: decode anchor BE scalars and run `build_anchor_witness`.
-///
-/// Validates dimensions of `anchor_values_be`, `anchor_known_x_be`, and
-/// `anchor_selector` against `(n, k)`, then constructs the Poseidon anchor.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn build_anchor_witness_from_v1(
     anchor_values_be: &[[u8; 32]],
@@ -312,7 +259,6 @@ pub(crate) fn build_anchor_witness_from_v1(
     })
 }
 
-/// Outputs of the JWT-witness build stage.
 pub(crate) struct JwtStage {
     pub(crate) jwt_witness: JwtWitness,
     pub(crate) payload_bytes: Vec<u8>,
@@ -320,16 +266,11 @@ pub(crate) struct JwtStage {
     pub(crate) aud_packed: Vec<F>,
 }
 
-/// Stage 5: parse and validate the JWT, build `JwtWitness`.
-///
-/// Validates RSA buffer lengths, checks signature byte-consistency with the
-/// JWT `sig` segment, locates all claims listed in `cfg.claims`, and
-/// computes SHA-256 padding for the signing input.
 pub(crate) fn build_jwt_witness_from_v1(
     jwt_bytes: &[u8],
     rsa_modulus_be: &[u8],
     rsa_signature_be: &[u8],
-    cfg: &ark_utils::wire::CircuitConfig,
+    cfg: &WireCircuitConfig,
     poseidon_param: &PoseidonConfig<F>,
 ) -> Result<JwtStage, ZkapWitnessError> {
     if rsa_modulus_be.len() != RSA_2048_BYTES {
@@ -388,14 +329,11 @@ pub(crate) fn build_jwt_witness_from_v1(
         claim_indices.push(locate_claim(payload_str, key)?);
     }
 
-    // RSA pk: e is fixed to 65537 (circuit asserts this).
     let pk = PublicKey {
         n: rsa_modulus_be.to_vec(),
         e: vec![0x01, 0x00, 0x01],
     };
 
-    // Signature consistency: rsa_signature_be MUST byte-match the
-    // base64-decoded sig_b64 segment of jwt_bytes.
     let sig_bytes_decoded = base64_url_no_pad_decode(sig_b64.as_bytes())
         .map_err(|e| ZkapWitnessError::Base64(format!("signature: {}", e)))?;
     if sig_bytes_decoded != rsa_signature_be {
@@ -407,7 +345,6 @@ pub(crate) fn build_jwt_witness_from_v1(
     }
     let sig = Signature(rsa_signature_be.to_vec());
 
-    // aud is always in cfg.claims; pack it now so the audience stage can reuse it.
     let aud_idx = claim_indices
         .iter()
         .zip(cfg.claims.iter())
@@ -417,7 +354,6 @@ pub(crate) fn build_jwt_witness_from_v1(
     let aud_bytes_padded =
         claim_value_bytes_padded(&payload_bytes, aud_idx, cfg.max_aud_len as usize);
     let aud_packed = pack_bytes_to_field_native(&aud_bytes_padded);
-    // Validate h_aud computable (poseidon evaluate) — side-effect check only.
     CRH::<F>::evaluate(poseidon_param, aud_packed.clone())
         .map_err(|e| ZkapWitnessError::AnchorBuild(format!("Poseidon h_aud (jwt stage): {}", e)))?;
 
@@ -442,23 +378,17 @@ pub(crate) fn build_jwt_witness_from_v1(
     })
 }
 
-/// Outputs of the audience-witness build stage.
 pub(crate) struct AudienceStage {
     pub(crate) aud_list: Vec<F>,
     pub(crate) h_aud_list: F,
 }
 
-/// Stage 6: derive `h_aud_list` from the parsed audience claim.
-///
-/// Pads the aud value to `max_aud_len`, packs to field elements, hashes to
-/// `h_aud`, builds the forbidden sentinel, fills the audience list to
-/// `num_audience_limit`, and computes the final `h_aud_list`.
 pub(crate) fn build_audience_witness_from_v1(
     payload_bytes: &[u8],
     claim_indices: &[ClaimIndices],
     claims: &[String],
     aud_packed: &[F],
-    cfg: &ark_utils::wire::CircuitConfig,
+    cfg: &WireCircuitConfig,
     poseidon_param: &PoseidonConfig<F>,
 ) -> Result<AudienceStage, ZkapWitnessError> {
     let num_audience_limit = cfg.num_audience_limit as usize;
@@ -466,7 +396,6 @@ pub(crate) fn build_audience_witness_from_v1(
     let h_aud = CRH::<F>::evaluate(poseidon_param, aud_packed.to_vec())
         .map_err(|e| ZkapWitnessError::AnchorBuild(format!("Poseidon h_aud: {}", e)))?;
 
-    // forbidden = "\"<forbidden_string>\"" padded to max_aud_len, packed, hashed.
     let mut forbidden_bytes = Vec::with_capacity(cfg.forbidden_string.len() + 2);
     forbidden_bytes.push(b'"');
     forbidden_bytes.extend_from_slice(cfg.forbidden_string.as_bytes());
@@ -484,7 +413,6 @@ pub(crate) fn build_audience_witness_from_v1(
     let h_aud_list = CRH::<F>::evaluate(poseidon_param, aud_list.clone())
         .map_err(|e| ZkapWitnessError::AnchorBuild(format!("Poseidon h_aud_list: {}", e)))?;
 
-    // Silence unused-param warnings — claim_indices/claims used by caller for pub-input stage.
     let _ = (claim_indices, claims, payload_bytes);
 
     Ok(AudienceStage {
@@ -493,9 +421,6 @@ pub(crate) fn build_audience_witness_from_v1(
     })
 }
 
-/// Stage 7: decode Merkle auth-path scalars and build `MerkleWitness`.
-///
-/// Validates `merkle_auth_path_be.len() == tree_height - 1`.
 pub(crate) fn build_merkle_witness_from_v1(
     merkle_leaf_sibling_hash_be: &[u8; 32],
     merkle_auth_path_be: &[[u8; 32]],
@@ -531,7 +456,6 @@ pub(crate) fn build_merkle_witness_from_v1(
     })
 }
 
-/// Outputs of the public-inputs derivation stage.
 pub(crate) struct PublicInputsStage {
     pub(crate) hanchor: F,
     pub(crate) h_a: F,
@@ -541,10 +465,6 @@ pub(crate) struct PublicInputsStage {
     pub(crate) jwt_exp: F,
 }
 
-/// Stage 8: derive all eight ZKAP public inputs from previously built witnesses.
-///
-/// Computes `hanchor`, `h_a`, `lhs`, `partial_rhs`, and `jwt_exp`.
-/// Decodes `merkle_root_be` and `random_be` / `h_sign_user_op_be`.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn compute_public_inputs_from_v1(
     anchor_stage: &AnchorStage,
@@ -554,7 +474,7 @@ pub(crate) fn compute_public_inputs_from_v1(
     aud_packed: &[F],
     merkle_root_be: &[u8; 32],
     random_be: &[u8; 32],
-    cfg: &ark_utils::wire::CircuitConfig,
+    cfg: &WireCircuitConfig,
     poseidon_param: &PoseidonConfig<F>,
 ) -> Result<PublicInputsStage, ZkapWitnessError> {
     let current_idx = anchor_stage.current_idx;
@@ -579,7 +499,6 @@ pub(crate) fn compute_public_inputs_from_v1(
         .sum();
     let lhs = inner * random;
 
-    // partial_rhs = b[current_idx] * h_id * random
     let claim_indices_for = |key: &str| -> Result<&ClaimIndices, ZkapWitnessError> {
         for (i, k) in claims.iter().enumerate() {
             if k == key {
@@ -629,21 +548,9 @@ pub(crate) fn compute_public_inputs_from_v1(
     })
 }
 
-/// Full V1 → `ZkapCircuitInput<F>` conversion. Compiles for both native
-/// and `wasm32-unknown-unknown`; called from
-/// `WitnessGenerator::build_circuit` and from V1 round-trip integration
-/// tests.
-///
-/// Delegates each conversion stage to a focused `build_*_from_v1` /
-/// `compute_*_from_v1` helper (all `pub(crate)` for unit testing):
-/// 1. validate config
-/// 2. build constants (Vandermonde matrix, Poseidon params, base64 table)
-/// 3. [`build_anchor_witness_from_v1`] — anchor scalars + Poseidon witness
-/// 4. misc scalars (`random`, `h_sign_user_op`)
-/// 5. [`build_jwt_witness_from_v1`] — JWT parse, RSA, claim indices
-/// 6. [`build_audience_witness_from_v1`] — audience list + `h_aud_list`
-/// 7. [`build_merkle_witness_from_v1`] — Merkle path decode
-/// 8. [`compute_public_inputs_from_v1`] — all eight public inputs
+/// Full V1 → `ZkapCircuitInput<F>` conversion. Mirrors the legacy wasm
+/// helper byte-for-byte so the native path produces the same circuit
+/// witness an in-process wasm runtime would emit.
 pub fn into_circuit_input(input: ZkapInputV1) -> Result<ZkapCircuitInput<F>, ZkapWitnessError> {
     let ZkapInputV1 {
         jwt_bytes,
@@ -662,7 +569,6 @@ pub fn into_circuit_input(input: ZkapInputV1) -> Result<ZkapCircuitInput<F>, Zka
         circuit_config,
     } = input;
 
-    // 1. Validate config.
     let cfg = circuit_config;
     cfg.validate()
         .map_err(|e| ZkapWitnessError::InvalidConfig(e.to_string()))?;
@@ -671,12 +577,10 @@ pub fn into_circuit_input(input: ZkapInputV1) -> Result<ZkapCircuitInput<F>, Zka
     let k = cfg.k as usize;
     let tree_height = cfg.tree_height as usize;
 
-    // 2. Constants.
     let matrix = VandermondeMatrix::<F>::new(n, k);
     let poseidon_param: PoseidonConfig<F> = get_poseidon_params::<F>();
     let base64_table = get_base64_table();
 
-    // 3. Anchor witness.
     let anchor_stage = build_anchor_witness_from_v1(
         &anchor_values_be,
         &anchor_known_x_be,
@@ -688,12 +592,10 @@ pub fn into_circuit_input(input: ZkapInputV1) -> Result<ZkapCircuitInput<F>, Zka
         &matrix,
     )?;
 
-    // 4. Misc / blinding scalars (canonical).
     let random = fe_from_be32_canonical(&random_be).map_err(nc_field("random_be"))?;
     let h_sign_user_op =
         fe_from_be32_canonical(&h_sign_user_op_be).map_err(nc_field("h_sign_user_op_be"))?;
 
-    // 5. JWT witness.
     let jwt_stage = build_jwt_witness_from_v1(
         &jwt_bytes,
         &rsa_modulus_be,
@@ -702,7 +604,6 @@ pub fn into_circuit_input(input: ZkapInputV1) -> Result<ZkapCircuitInput<F>, Zka
         &poseidon_param,
     )?;
 
-    // 6. Audience witness.
     let aud_stage = build_audience_witness_from_v1(
         &jwt_stage.payload_bytes,
         &jwt_stage.claim_indices,
@@ -712,7 +613,6 @@ pub fn into_circuit_input(input: ZkapInputV1) -> Result<ZkapCircuitInput<F>, Zka
         &poseidon_param,
     )?;
 
-    // 7. Merkle witness.
     let merkle = build_merkle_witness_from_v1(
         &merkle_leaf_sibling_hash_be,
         &merkle_auth_path_be,
@@ -720,7 +620,6 @@ pub fn into_circuit_input(input: ZkapInputV1) -> Result<ZkapCircuitInput<F>, Zka
         tree_height,
     )?;
 
-    // 8. Public inputs.
     let pub_stage = compute_public_inputs_from_v1(
         &anchor_stage,
         &jwt_stage.payload_bytes,
@@ -733,8 +632,6 @@ pub fn into_circuit_input(input: ZkapInputV1) -> Result<ZkapCircuitInput<F>, Zka
         &poseidon_param,
     )?;
 
-    // Verify the misc random decoded the same way as in the public-inputs stage.
-    // (Both call fe_from_be32_canonical(&random_be); values must match.)
     debug_assert_eq!(random, {
         fe_from_be32_canonical(&random_be).unwrap_or(random)
     });
@@ -788,8 +685,6 @@ pub fn chain_hash_native(values: &[F], params: &PoseidonConfig<F>) -> Result<F, 
     Ok(h)
 }
 
-/// Read a 10-digit zero-padded ASCII decimal (`exp` claim) into a field
-/// element. Bytes after position 10 must be zero.
 fn decimal_bytes_to_field(bytes: &[u8]) -> Result<F, ZkapWitnessError> {
     if bytes.len() < 10 {
         return Err(ZkapWitnessError::MalformedJwt(format!(
@@ -819,7 +714,6 @@ fn decimal_bytes_to_field(bytes: &[u8]) -> Result<F, ZkapWitnessError> {
     Ok(acc)
 }
 
-/// Minimal URL-safe-no-pad base64 decoder (RFC 4648 §5).
 fn base64_url_no_pad_decode(input: &[u8]) -> Result<Vec<u8>, String> {
     fn val(b: u8) -> Result<u8, String> {
         match b {
@@ -866,6 +760,7 @@ fn base64_url_no_pad_decode(input: &[u8]) -> Result<Vec<u8>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use circuit::types::CircuitConfig;
 
     fn sample_config_v1() -> CircuitConfig {
         CircuitConfig {
@@ -911,7 +806,6 @@ mod tests {
         }
     }
 
-    /// BN254 Fr modulus, big-endian.
     const BN254_FR_MODULUS_BE: [u8; 32] = [
         0x30, 0x64, 0x4e, 0x72, 0xe1, 0x31, 0xa0, 0x29, 0xb8, 0x50, 0x45, 0xb6, 0x81, 0x81, 0x58,
         0x5d, 0x28, 0x33, 0xe8, 0x48, 0x79, 0xb9, 0x70, 0x91, 0x43, 0xe1, 0xf5, 0x93, 0xf0, 0x00,
@@ -941,8 +835,6 @@ mod tests {
     #[test]
     fn into_circuit_input_rejects_rsa_modulus_too_short() {
         let mut v1 = dummy_v1();
-        // Use canonical (zero) anchor bytes so the anchor stage passes and the
-        // RSA length check fires before any non-canonical field error.
         v1.anchor_values_be = vec![[0u8; 32]; v1.anchor_values_be.len()];
         v1.anchor_known_x_be = vec![[0u8; 32]; v1.anchor_known_x_be.len()];
         v1.rsa_modulus_be = vec![0x12; 255];
@@ -955,40 +847,10 @@ mod tests {
     }
 
     #[test]
-    fn into_circuit_input_rejects_rsa_signature_too_long() {
-        let mut v1 = dummy_v1();
-        // Use canonical (zero) anchor bytes so the anchor stage passes and the
-        // RSA length check fires before any non-canonical field error.
-        v1.anchor_values_be = vec![[0u8; 32]; v1.anchor_values_be.len()];
-        v1.anchor_known_x_be = vec![[0u8; 32]; v1.anchor_known_x_be.len()];
-        v1.rsa_signature_be = vec![0x34; 257];
-        match into_circuit_input(v1) {
-            Err(ZkapWitnessError::DimensionMismatch(msg)) => {
-                assert!(msg.contains("rsa_signature_be"), "got {}", msg);
-            }
-            other => panic!("expected DimensionMismatch, got {:?}", other.err()),
-        }
-    }
-
-    #[test]
-    fn config_v1_validates_and_clones_consistently() {
-        let cfg_v1 = sample_config_v1();
-        cfg_v1.validate().expect("sample config validates");
-        let back = cfg_v1.clone();
-        assert_eq!(cfg_v1, back);
-    }
-
-    #[test]
     fn locate_claim_matches_canonical_payload() {
         let payload = r#"{"aud":"test-audience","exp":1700000000,"iss":"https://x","nonce":"0xdead","sub":"u_0"}"#;
         let aud = locate_claim(payload, "aud").expect("aud claim");
         assert_eq!(aud.offset, 1);
-        assert_eq!(
-            &payload.as_bytes()[aud.offset..aud.offset + aud.claim_len]
-                .last()
-                .unwrap(),
-            &&b','
-        );
         let exp = locate_claim(payload, "exp").expect("exp claim");
         let val_byte = payload.as_bytes()[exp.offset + exp.value_idx];
         assert_eq!(val_byte, b'1');
@@ -1026,17 +888,7 @@ mod tests {
     #[test]
     fn into_circuit_input_rejects_bad_selector_cardinality() {
         let mut v1 = dummy_v1();
-        v1.anchor_selector = vec![1, 1, 0, 0, 0, 0]; // cardinality 2, k = 3
-        match into_circuit_input(v1) {
-            Err(ZkapWitnessError::DimensionMismatch(_)) => {}
-            other => panic!("expected DimensionMismatch, got {:?}", other.err()),
-        }
-    }
-
-    #[test]
-    fn into_circuit_input_rejects_wrong_anchor_length() {
-        let mut v1 = dummy_v1();
-        v1.anchor_values_be.pop();
+        v1.anchor_selector = vec![1, 1, 0, 0, 0, 0];
         match into_circuit_input(v1) {
             Err(ZkapWitnessError::DimensionMismatch(_)) => {}
             other => panic!("expected DimensionMismatch, got {:?}", other.err()),

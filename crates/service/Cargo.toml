@@ -24,6 +24,11 @@ ark-crypto-primitives = { workspace = true }
 ark-bn254             = { workspace = true }
 log = { workspace = true }
 hex = { workspace = true }
+# Always-on: `manifest` module needs sha2 (ceremony chain_hash,
+# compute_circuit_tag) and must stay proof-feature-independent so light
+# bindings can depend on it cheaply. The runtime cost of pulling sha2
+# unconditionally is negligible.
+sha2 = { workspace = true }
 
 # --- Proof-only dependencies (optional, heavy) ---
 zkap-evm-verifier     = { workspace = true, optional = true }
@@ -35,16 +40,12 @@ ark-relations         = { workspace = true, optional = true }
 ark-serialize         = { workspace = true, optional = true }
 memmap2               = { workspace = true, optional = true }
 blake2                = { workspace = true, optional = true }
-sha2                  = { workspace = true, optional = true }
 rand                  = { workspace = true, optional = true }
-ark-ar1cs-format       = { workspace = true, optional = true }
-ark-ar1cs-prover       = { workspace = true, optional = true }
-ark-ar1cs-wasm-witness = { workspace = true, optional = true }
-ark-ar1cs-wtns         = { workspace = true, optional = true }
-ark-ar1cs-zkey         = { workspace = true, optional = true }
-
-wasmi    = { workspace = true, optional = true }
-postcard = { workspace = true, optional = true }
+# Native prove flow — Commit 4 of the 2026-05 ark-ar1cs boundary
+# migration. The `ark-ar1cs` root crate exposes `prove`,
+# `synthesize_full_assignment`, and the `format::ArcsFile` envelope
+# that `ArtifactSet` loads from `circuit.ar1cs`.
+ark-ar1cs              = { workspace = true, optional = true }
 
 [dev-dependencies]
 signature = "2"
@@ -61,11 +62,10 @@ postcard = { workspace = true }
 name = "zkap_service"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
-# NB: the `groth16_proof` example targets the legacy hex/Base64
-# `RawProofRequest::new` shape and predates the wasm-witness runtime.
-# Rewriting it for the V1-byte API requires bundling a paired
-# `.wasm` artifact at example-run time; tracked as a follow-up. The
-# example file is preserved as a reference until that rewrite lands.
+# `crates/service/examples/` is empty today. The end-to-end exercise
+# of `service::Prover::prove` lives in
+# `crates/service/tests/native_prove_e2e.rs` (signature guards) and
+# the slow `circuit::tests::groth16_integration` suite.
 
 [features]
 default = ["proof"]
@@ -79,22 +79,9 @@ proof = [
     "dep:ark-serialize",
     "dep:memmap2",
     "dep:blake2",
-    "dep:sha2",
     "dep:rand",
-    "dep:ark-ar1cs-format",
-    "dep:ark-ar1cs-prover",
-    "dep:ark-ar1cs-wasm-witness",
-    "dep:ark-ar1cs-wtns",
-    "dep:ark-ar1cs-zkey",
-    "dep:postcard",
-    "runtime-wasmi",
+    "dep:ark-ar1cs",
 ]
-runtime-wasmi    = ["dep:wasmi"]
-runtime-wasmtime = []  # reserved, unimplemented (see plan §10.2)
-# `use-optimized` previously gated the streaming Groth16 prover; the
-# wasm-witness runtime path obsoletes streaming so the feature is now a
-# no-op alias kept for source-compat with downstream Cargo invocations.
-use-optimized = ["proof"]
 print-trace = ["circuit/print-trace"]
 
 # Example temporarily disabled — see comment above the [features] block.

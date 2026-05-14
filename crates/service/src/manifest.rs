@@ -1,20 +1,29 @@
-//! `manifest.json` v1 schema + builder for the setup deployment bundle.
+//! `manifest.json` v1 schema + builder for the post-migration CRS bundle.
 //!
-//! The schema and the Stage 1 vs Stage 2 contract live in plan
-//! `2026-05-12-deployment-bundle-spec.md` §4 / §7. The `Ceremony`
-//! provenance variant stays serialisable so Stage 2 output parses
-//! against the same schema; Stage 1 never emits it.
+//! Reshaped against the 2026-05 ark-ar1cs boundary migration target.
+//! The schema lists `artifacts.{ar1cs, pk, vk, pvk, evm_verifier,
+//! circuit_config}` — every other slot the manifest used to carry has
+//! been removed.
+//!
+//! The Stage 1 vs Stage 2 trust contract carries over verbatim:
+//! `Phase2Attestation` / `PtauRef` stay serialisable so Stage 2 output
+//! parses against the same schema, but the Stage 1 binary never emits
+//! the `Ceremony` provenance variant.
+//!
+//! This module is intentionally **proof-feature-independent** so hosts
+//! that consume the manifest without pulling Groth16 (e.g. lightweight
+//! binding builds) can depend on it cheaply.
 
 use serde::{Deserialize, Serialize};
-use std::path::Path;
 
 /// Top-level manifest written to `<output>/manifest.json`.
 ///
 /// All hashes are lowercase hex (no `0x` prefix). `manifest_version`
-/// is `"1"` for the schema documented in plan §7.
+/// is `"1"` for the schema documented in the migration cheatsheet
+/// (`docs/migration-2026-05.md`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Manifest {
-    /// Schema version — `"1"` for the Stage 1 layout.
+    /// Schema version — `"1"` for the post-migration layout.
     pub manifest_version: String,
     /// Human-readable circuit identifier (e.g. `"zkap-main-v1"`).
     pub circuit_id: String,
@@ -24,15 +33,14 @@ pub struct Manifest {
     pub curve: String,
     /// Proof system identifier (`"groth16"` for the current pipeline).
     pub proof_system: String,
-    /// 64-char hex of the 32-byte `ar1cs_blake3` constant baked into both
-    /// `circuit.arzkey` (header bytes 16..48) and the wasm artifact
-    /// (`embedded_ar1cs_blake3` export). The host pair-checks these three
-    /// values; they MUST match.
+    /// 64-char hex of the 32-byte `body_blake3` of `circuit.ar1cs`. Callers
+    /// must compare against `arcs.body_blake3()` of the loaded artifact
+    /// before invoking the prover (see
+    /// `zkap_service::artifact::ArtifactSet::load`).
     pub ar1cs_blake3: String,
     /// Circuit shape (`num_instance`, `num_witness`, `num_constraints`).
     pub shape: Shape,
-    /// Public-input names in the order the circuit allocates them. MUST
-    /// match `zkap_witness_wasm::ZKAP_PUBLIC_INPUT_NAMES`.
+    /// Public-input names in the order the circuit allocates them.
     pub public_input_names: Vec<String>,
     /// Per-artifact metadata (path / sha256 / size / kind).
     pub artifacts: Artifacts,
@@ -62,26 +70,34 @@ pub struct Shape {
     pub num_constraints: u64,
 }
 
-/// Per-artifact metadata block. Core artifacts are required; `evm_verifier`
-/// is `Option` because the Solidity output is `--skip-evm-verifier`-able in
-/// future PRs.
+/// Per-artifact metadata block.
+///
+/// Required artifacts are the four core files (`ar1cs`, `pk`, `vk`,
+/// `pvk`) plus the `circuit_config`. `evm_verifier` stays `Option` so
+/// hosts that drop the Solidity output still parse the manifest.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Artifacts {
-    /// `circuit.arzkey` (R1CS matrices + proving key, one file).
-    pub arzkey: ArtifactEntry,
-    /// `zkap_witness_wasm.opt.wasm` witness generator.
-    pub wasm: ArtifactEntry,
-    /// `vk.key` (verifying key in uncompressed binary form).
+    /// `circuit.ar1cs` — R1CS matrices in ark-ar1cs canonical envelope.
+    pub ar1cs: ArtifactEntry,
+    /// `pk.bin` — proving key (arkworks `CanonicalSerialize` uncompressed).
+    pub pk: ArtifactEntry,
+    /// `vk.bin` — verifying key (arkworks `CanonicalSerialize` uncompressed).
     pub vk: ArtifactEntry,
-    /// `Groth16Verifier.sol` (optional — `--skip-evm-verifier` in follow-up PR).
+    /// `pvk.bin` — prepared verifying key (arkworks `CanonicalSerialize`
+    /// uncompressed). Round-trip locked by the
+    /// `pvk_serialization::prepared_verifying_key_round_trips_uncompressed`
+    /// test.
+    pub pvk: ArtifactEntry,
+    /// `Groth16Verifier.sol` (optional; skipped by future
+    /// `--skip-evm-verifier` flag).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub evm_verifier: Option<ArtifactEntry>,
     /// `config.json` (domain-typed circuit hyperparameters).
     pub circuit_config: ArtifactEntry,
 }
 
-/// A single artifact entry — path, sha256 hex, size in bytes, kind, and
-/// optional wasm ABI / schema metadata.
+/// A single artifact entry — relative path, sha256 hex, size in bytes,
+/// kind, and optional schema metadata.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ArtifactEntry {
     /// File name relative to the manifest's directory.
@@ -92,9 +108,6 @@ pub struct ArtifactEntry {
     pub size: u64,
     /// Classification — `"core"` / `"domain"` / `"domain-optional"`.
     pub kind: String,
-    /// Wasm ABI (only set for the wasm artifact).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub abi: Option<WasmAbi>,
     /// Schema owner pointer (e.g. `"npm:@baerae/zkap-zkp@^1"`) for the
     /// `circuit_config` artifact.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -102,17 +115,6 @@ pub struct ArtifactEntry {
     /// Schema reference (e.g. `"ZkapCircuitConfigV1"`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub schema_ref: Option<String>,
-}
-
-/// Wasm ABI metadata — only attached to the wasm artifact.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct WasmAbi {
-    /// ABI version — Stage 1 emits `1`.
-    pub version: u32,
-    /// Required exports. Stage 1 lists `wasm_alloc`, `wasm_free`,
-    /// `embedded_ar1cs_blake3`, `witness_generator` (same set verified by
-    /// `zkap_cli::verify_wasm_exports`).
-    pub exports: Vec<String>,
 }
 
 /// Provenance of the randomness used during `Groth16::setup`.
@@ -156,9 +158,6 @@ pub struct PtauRef {
 }
 
 /// A single Phase 2 contribution attestation.
-///
-/// Maps 1:1 to `ceremony-core-engine` `MPCParameters::contribute()` /
-/// `verify_contribution()` output. Stage 1 binary never emits one.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Phase2Attestation {
     /// Free-form contributor identifier (e.g. `"alice"`).
@@ -218,13 +217,6 @@ pub struct BuildMetadata {
 
 /// Derive the [`ToxicWasteDisclosure`] block from the chosen
 /// [`SetupProvenance`].
-///
-/// Stage 1 (`OsRng` / `Seed`) emits `single-host` / `operator must be
-/// trusted`. Stage 2 (`Ceremony`) emits `ceremony-1-of-n` / `1-of-N
-/// honest` and hashes the attestation chain into `destroy_log` (the
-/// hash is the sha256 of the concatenated `contribution_hash` values,
-/// in order — a stable summary the host can pin without re-fetching
-/// every attestation).
 pub fn derive_toxic_waste_disclosure(p: &SetupProvenance) -> ToxicWasteDisclosure {
     match p {
         SetupProvenance::OsRng | SetupProvenance::Seed { .. } => ToxicWasteDisclosure {
@@ -258,27 +250,19 @@ fn chain_hash(chain: &[Phase2Attestation]) -> String {
 /// Which artifact slot a builder entry targets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArtifactKey {
-    /// `circuit.arzkey`.
-    Arzkey,
-    /// `zkap_witness_wasm.opt.wasm`.
-    Wasm,
-    /// `vk.key`.
+    /// `circuit.ar1cs`.
+    Ar1cs,
+    /// `pk.bin`.
+    Pk,
+    /// `vk.bin`.
     Vk,
+    /// `pvk.bin`.
+    Pvk,
     /// `Groth16Verifier.sol` (optional).
     EvmVerifier,
     /// `config.json`.
     CircuitConfig,
 }
-
-/// Required artifact exports for the wasm bundle. Mirrors
-/// `crates/cli/src/bin/generate_setup.rs::REQUIRED_EXPORTS` so a builder
-/// using [`ManifestBuilder::with_artifact`] always lists the same set.
-pub const REQUIRED_EXPORTS: &[&str] = &[
-    "wasm_alloc",
-    "wasm_free",
-    "embedded_ar1cs_blake3",
-    "witness_generator",
-];
 
 /// Reason a [`ManifestBuilder::build`] call failed.
 #[derive(Debug, thiserror::Error)]
@@ -294,10 +278,9 @@ pub enum BuilderError {
 /// Incremental builder for [`Manifest`].
 ///
 /// Required setters: `with_ar1cs_blake3`, `with_shape`,
-/// `with_public_input_names`, `with_artifact` (for each of arzkey / wasm /
-/// vk / circuit_config), `with_setup_provenance`, `with_build`. The
-/// `evm_verifier` artifact is optional. Missing required pieces cause
-/// [`build`](Self::build) to return [`BuilderError`].
+/// `with_public_input_names`, `with_artifact` (for each of `ar1cs`,
+/// `pk`, `vk`, `pvk`, `circuit_config`), `with_setup_provenance`,
+/// `with_build`. The `evm_verifier` artifact is optional.
 #[derive(Debug, Default)]
 pub struct ManifestBuilder {
     circuit_id: String,
@@ -305,9 +288,10 @@ pub struct ManifestBuilder {
     ar1cs_blake3: Option<String>,
     shape: Option<Shape>,
     public_input_names: Option<Vec<String>>,
-    arzkey: Option<ArtifactEntry>,
-    wasm: Option<ArtifactEntry>,
+    ar1cs: Option<ArtifactEntry>,
+    pk: Option<ArtifactEntry>,
     vk: Option<ArtifactEntry>,
+    pvk: Option<ArtifactEntry>,
     evm_verifier: Option<ArtifactEntry>,
     circuit_config_artifact: Option<ArtifactEntry>,
     setup_provenance: Option<SetupProvenance>,
@@ -340,7 +324,7 @@ impl ManifestBuilder {
         self
     }
 
-    /// Set `public_input_names` (caller supplies the wasm export list).
+    /// Set `public_input_names` (caller supplies the wire-protocol export list).
     pub fn with_public_input_names(mut self, names: Vec<String>) -> Self {
         self.public_input_names = Some(names);
         self
@@ -349,9 +333,10 @@ impl ManifestBuilder {
     /// Place `entry` into the slot identified by `key`.
     pub fn with_artifact(mut self, key: ArtifactKey, entry: ArtifactEntry) -> Self {
         match key {
-            ArtifactKey::Arzkey => self.arzkey = Some(entry),
-            ArtifactKey::Wasm => self.wasm = Some(entry),
+            ArtifactKey::Ar1cs => self.ar1cs = Some(entry),
+            ArtifactKey::Pk => self.pk = Some(entry),
             ArtifactKey::Vk => self.vk = Some(entry),
+            ArtifactKey::Pvk => self.pvk = Some(entry),
             ArtifactKey::EvmVerifier => self.evm_verifier = Some(entry),
             ArtifactKey::CircuitConfig => self.circuit_config_artifact = Some(entry),
         }
@@ -372,8 +357,6 @@ impl ManifestBuilder {
     }
 
     /// Consume the builder and produce a [`Manifest`].
-    ///
-    /// Fails with [`BuilderError`] when a required field is missing.
     pub fn build(self) -> Result<Manifest, BuilderError> {
         let setup_provenance = self
             .setup_provenance
@@ -394,9 +377,10 @@ impl ManifestBuilder {
                 .public_input_names
                 .ok_or(BuilderError::MissingField("public_input_names"))?,
             artifacts: Artifacts {
-                arzkey: self.arzkey.ok_or(BuilderError::MissingArtifact("arzkey"))?,
-                wasm: self.wasm.ok_or(BuilderError::MissingArtifact("wasm"))?,
+                ar1cs: self.ar1cs.ok_or(BuilderError::MissingArtifact("ar1cs"))?,
+                pk: self.pk.ok_or(BuilderError::MissingArtifact("pk"))?,
                 vk: self.vk.ok_or(BuilderError::MissingArtifact("vk"))?,
+                pvk: self.pvk.ok_or(BuilderError::MissingArtifact("pvk"))?,
                 evm_verifier: self.evm_verifier,
                 circuit_config: self
                     .circuit_config_artifact
@@ -410,19 +394,9 @@ impl ManifestBuilder {
     }
 }
 
-/// Read bytes 16..48 of an `.arzkey` header and return them as a 64-char
-/// lowercase hex string.
-///
-/// Thin wrapper over [`crate::read_arzkey_blake3`] that converts the
-/// `[u8; 32]` output to a `String` (the form [`Manifest::ar1cs_blake3`]
-/// uses).
-pub fn read_arzkey_blake3_hex(path: &Path) -> String {
-    hex::encode(crate::read_arzkey_blake3(path))
-}
-
 /// `{circuit_id}__{first_8_hex_of_sha256(cfg_canonical_bytes)}`.
 ///
-/// Used for both the dist subdirectory name (PR #2 follow-up) and the
+/// Used for both the dist subdirectory name and the
 /// `manifest.circuit_tag` field. The tag pins a hyperparam variant: two
 /// configs with different `CircuitConfig` produce different tags.
 pub fn compute_circuit_tag(circuit_id: &str, cfg_canonical_bytes: &[u8]) -> String {
@@ -434,12 +408,6 @@ pub fn compute_circuit_tag(circuit_id: &str, cfg_canonical_bytes: &[u8]) -> Stri
 
 /// Serialise a `serde_json::Value` with keys sorted ascending at every
 /// depth — i.e. emit canonical JSON bytes that hash deterministically.
-///
-/// `serde_json::Value::Object` is already backed by a `BTreeMap` when the
-/// `preserve_order` feature is off (the default workspace setting), so a
-/// plain `serde_json::to_vec` is already key-sorted. This helper exists
-/// so callers can build a `Value` from an arbitrary `Serialize` and get
-/// the same guarantee without reaching into serde internals.
 pub fn canonical_json_bytes(value: &serde_json::Value) -> Vec<u8> {
     serde_json::to_vec(value).expect("serde_json::Value always serialises")
 }
@@ -448,13 +416,12 @@ pub fn canonical_json_bytes(value: &serde_json::Value) -> Vec<u8> {
 mod tests {
     use super::*;
 
-    fn sample_artifact(path: &str, kind: &str) -> ArtifactEntry {
+    fn sample_entry(path: &str, kind: &str) -> ArtifactEntry {
         ArtifactEntry {
             path: path.into(),
             sha256: "ab".repeat(32),
             size: 1024,
             kind: kind.into(),
-            abi: None,
             schema_owner: None,
             schema_ref: None,
         }
@@ -484,31 +451,20 @@ mod tests {
                 "lhs".into(),
                 "h_aud_list".into(),
             ])
-            .with_artifact(
-                ArtifactKey::Arzkey,
-                sample_artifact("circuit.arzkey", "core"),
-            )
-            .with_artifact(
-                ArtifactKey::Wasm,
-                ArtifactEntry {
-                    abi: Some(WasmAbi {
-                        version: 1,
-                        exports: REQUIRED_EXPORTS.iter().map(|s| s.to_string()).collect(),
-                    }),
-                    ..sample_artifact("zkap_witness_wasm.opt.wasm", "core")
-                },
-            )
-            .with_artifact(ArtifactKey::Vk, sample_artifact("vk.key", "core"))
+            .with_artifact(ArtifactKey::Ar1cs, sample_entry("circuit.ar1cs", "core"))
+            .with_artifact(ArtifactKey::Pk, sample_entry("pk.bin", "core"))
+            .with_artifact(ArtifactKey::Vk, sample_entry("vk.bin", "core"))
+            .with_artifact(ArtifactKey::Pvk, sample_entry("pvk.bin", "core"))
             .with_artifact(
                 ArtifactKey::EvmVerifier,
-                sample_artifact("Groth16Verifier.sol", "domain-optional"),
+                sample_entry("Groth16Verifier.sol", "domain-optional"),
             )
             .with_artifact(
                 ArtifactKey::CircuitConfig,
                 ArtifactEntry {
                     schema_owner: Some("npm:@baerae/zkap-zkp@^1".into()),
                     schema_ref: Some("ZkapCircuitConfigV1".into()),
-                    ..sample_artifact("config.json", "domain")
+                    ..sample_entry("config.json", "domain")
                 },
             )
             .with_setup_provenance(SetupProvenance::OsRng)
@@ -517,9 +473,8 @@ mod tests {
             .expect("builder must succeed with full payload")
     }
 
-    /// Acceptance (US-S1): `Manifest → serde_json bytes → Manifest`
-    /// preserves every field. Catches drift between the struct layout
-    /// and the serde derives.
+    /// Acceptance: `Manifest → serde_json bytes → Manifest` preserves every
+    /// field. Catches drift between the struct layout and the serde derives.
     #[test]
     fn manifest_round_trip_via_serde() {
         let original = sample_manifest();
@@ -528,9 +483,7 @@ mod tests {
         assert_eq!(original, back);
     }
 
-    /// Acceptance (US-S1): the `kind` discriminator is kebab-case, not the
-    /// Rust variant name. The host-side SDK keys off `"os-rng"` /
-    /// `"seed"` / `"ceremony"`, so the rename is load-bearing.
+    /// Acceptance: the `kind` discriminator is kebab-case.
     #[test]
     fn setup_provenance_kind_is_kebab_case() {
         let v = serde_json::to_value(SetupProvenance::OsRng).unwrap();
@@ -542,16 +495,16 @@ mod tests {
         assert_eq!(v["kind"], "seed");
     }
 
-    /// Acceptance (US-S5): builder fails with `MissingField` /
-    /// `MissingArtifact` when a required input is absent.
+    /// Acceptance: builder fails with a clear error when a required input
+    /// is absent.
     #[test]
     fn builder_rejects_incomplete_payload() {
         let err = ManifestBuilder::new("x", "y").build().unwrap_err();
         assert!(matches!(err, BuilderError::MissingField(_)));
     }
 
-    /// Acceptance (US-S5): `derive_toxic_waste_disclosure` returns the
-    /// Stage 1 single-host disclosure for `OsRng` and `Seed`, and the
+    /// Acceptance: `derive_toxic_waste_disclosure` returns the Stage 1
+    /// single-host disclosure for `OsRng` and `Seed`, and the
     /// ceremony-1-of-n disclosure for `Ceremony`.
     #[test]
     fn toxic_waste_disclosure_follows_provenance() {
@@ -579,8 +532,8 @@ mod tests {
         assert!(d.destroy_log.is_some());
     }
 
-    /// Acceptance (US-S4): `compute_circuit_tag` is stable and tracks the
-    /// canonical bytes of the config — different bytes give different tags.
+    /// Acceptance: `compute_circuit_tag` is stable and tracks the canonical
+    /// bytes of the config.
     #[test]
     fn compute_circuit_tag_is_deterministic() {
         let a = compute_circuit_tag("zkap-main-v1", b"{}");
@@ -588,8 +541,23 @@ mod tests {
         assert_eq!(a, b);
         let c = compute_circuit_tag("zkap-main-v1", b"{\"x\":1}");
         assert_ne!(a, c);
-        // Tag layout: `{id}__{8hex}`.
         let suffix = a.strip_prefix("zkap-main-v1__").expect("prefix");
         assert_eq!(suffix.len(), 8);
+    }
+
+    /// Acceptance: the post-migration schema lists every required
+    /// artifact slot. The schema is statically typed
+    /// ([`Artifacts`]) so absence of retired slots is structural;
+    /// only the positive presence check is asserted here.
+    #[test]
+    fn schema_lists_every_required_artifact_slot() {
+        let v = serde_json::to_value(sample_manifest()).unwrap();
+        let artifacts = v["artifacts"].as_object().expect("artifacts object");
+        for required in ["ar1cs", "pk", "vk", "pvk", "circuit_config"] {
+            assert!(
+                artifacts.contains_key(required),
+                "artifacts.{required} must be present in the new schema"
+            );
+        }
     }
 }

@@ -40,7 +40,7 @@ RAYON_NUM_THREADS=4 cargo run -p zkap-service --example groth16_proof --release
 
 ### Disk
 
-CRS files (`pk.key`) can be large. The pre-built artifacts in `dist/` give an indication of expected sizes:
+CRS files (`pk.bin`) can be large. The pre-built artifacts in `dist/` give an indication of expected sizes:
 
 ```bash
 ls -lh dist/*/
@@ -53,7 +53,6 @@ Proof output (`ProofComponents`) is compact: 3 elliptic curve points (2 G1 + 1 G
 | Technique | How | Effect |
 |-----------|-----|--------|
 | Release mode | `--release` flag | **Required.** Debug mode is orders of magnitude slower |
-| Streaming prover | `use-optimized` Cargo feature | Reduces peak memory during proving (designed for iOS/mobile) |
 | Rayon thread count | `RAYON_NUM_THREADS=N` env var | Tune parallelism for your hardware |
 | Smaller config | Reduce `max_jwt_b64_len`, `tree_height`, `n` | Fewer constraints = faster setup and proving |
 | Pre-built CRS | Use `dist/` artifacts | Skip trusted setup entirely |

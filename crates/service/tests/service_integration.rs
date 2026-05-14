@@ -140,21 +140,32 @@ fn test_setup_creates_all_artifacts() {
 
     setup(&params, &tmp_dir, &mut rand::rngs::OsRng, None).expect("setup() failed");
 
-    // All 5 required files must exist
-    assert!(tmp_dir.join("pk.key").exists(), "pk.key missing");
-    assert!(tmp_dir.join("vk.key").exists(), "vk.key missing");
-    assert!(tmp_dir.join("pvk.key").exists(), "pvk.key missing");
+    // Post-migration (Commit 2 of the 2026-05 ark-ar1cs boundary plan)
+    // setup output: six core files. `manifest.json` is written by the
+    // CLI (`generate_setup`), not by `service::setup`.
+    assert!(
+        tmp_dir.join("circuit.ar1cs").exists(),
+        "circuit.ar1cs missing"
+    );
+    assert!(tmp_dir.join("pk.bin").exists(), "pk.bin missing");
+    assert!(tmp_dir.join("vk.bin").exists(), "vk.bin missing");
+    assert!(tmp_dir.join("pvk.bin").exists(), "pvk.bin missing");
     assert!(
         tmp_dir.join("Groth16Verifier.sol").exists(),
         "Groth16Verifier.sol missing"
     );
     assert!(tmp_dir.join("config.json").exists(), "config.json missing");
 
-    // manifest.json must NOT be created
+    // manifest.json is the CLI's responsibility — service::setup must
+    // not produce it.
     assert!(
         !tmp_dir.join("manifest.json").exists(),
-        "manifest.json should not be created"
+        "manifest.json must be CLI-owned, not written by service::setup"
     );
+
+    // The bundle layout is enforced structurally by
+    // `scripts/check-bundle-layout.sh` (CI gate); no need to enumerate
+    // retired filenames here.
 
     let _ = std::fs::remove_dir_all(&tmp_dir);
 }
@@ -186,36 +197,53 @@ fn test_setup_config_json_round_trip() {
     let _ = std::fs::remove_dir_all(&tmp_dir);
 }
 
+/// Acceptance: after Commit 5 of the 2026-05 ark-ar1cs boundary
+/// migration there is no in-crate verify wrapper — callers obtain a
+/// borrow of the bundled `PreparedVerifyingKey` and pass it straight
+/// to `Groth16::verify_proof`. This test pins the pattern.
 #[test]
 #[ignore]
-fn test_setup_and_verify() {
-    use zkap_service::{ProofComponents, setup, verify};
+fn test_setup_and_verify_via_arkworks_direct() {
+    use ark_bn254::{Fq, Fq2, G1Affine, G2Affine};
+    use ark_groth16::{Groth16, Proof};
+    use circuit::types::{BN254, F};
+    use zkap_service::setup;
 
     let params = test_config();
-    let tmp_dir = std::env::temp_dir().join("zkap-test-setup-verify");
+    let tmp_dir = std::env::temp_dir().join("zkap-test-setup-verify-direct");
     let _ = std::fs::remove_dir_all(&tmp_dir);
 
     let setup_output =
         setup(&params, &tmp_dir, &mut rand::rngs::OsRng, None).expect("setup() failed");
 
-    // VK should have the right number of public inputs
+    // VK should have the right number of public inputs.
     assert!(setup_output.public_input_count() > 0);
 
-    // Verify with dummy proof/inputs should fail gracefully (not panic)
-    let ctx = setup_output.verifying_context();
-    let dummy_proof = ProofComponents {
-        a: ["0".to_string(), "0".to_string()],
-        b: [
-            "0".to_string(),
-            "0".to_string(),
-            "0".to_string(),
-            "0".to_string(),
-        ],
-        c: ["0".to_string(), "0".to_string()],
+    // A zero-valued affine point + zero instance vector is not a real
+    // proof, but it exercises the canonical call path
+    // (`Groth16::verify_proof` against the bundled `PreparedVerifyingKey`).
+    let dummy_proof: Proof<BN254> = Proof {
+        a: G1Affine::new_unchecked(Fq::from(0u64), Fq::from(0u64)),
+        b: G2Affine::new_unchecked(
+            Fq2::new(Fq::from(0u64), Fq::from(0u64)),
+            Fq2::new(Fq::from(0u64), Fq::from(0u64)),
+        ),
+        c: G1Affine::new_unchecked(Fq::from(0u64), Fq::from(0u64)),
     };
-    let dummy_inputs = vec!["0".to_string(); 8];
-    let result = verify(&ctx, &dummy_proof, &dummy_inputs);
-    assert!(result.is_ok() || result.is_err());
+    let dummy_inputs: Vec<F> = vec![F::from(0u64); 8];
+
+    let pvk = setup_output.prepared_verifying_key();
+    let result = Groth16::<BN254>::verify_proof(pvk, &dummy_proof, &dummy_inputs);
+    // The arkworks verifier may either return Ok(false) or an error
+    // for a malformed pairing input; both outcomes confirm the call
+    // path is wired up. What we must NOT see is a panic or an
+    // accidental Ok(true) on garbage.
+    if let Ok(verified) = result {
+        assert!(
+            !verified,
+            "Groth16::verify_proof must not accept a zeroed dummy proof"
+        );
+    }
 
     let _ = std::fs::remove_dir_all(&tmp_dir);
 }

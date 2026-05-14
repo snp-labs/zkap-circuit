@@ -32,8 +32,8 @@ pub const PAD_CHAR: char = '\0';
 /// type. PR1 of L4 absorption then moved that type from
 /// `zkap-input-types` into `ark-utils::wire` so it co-locates with its
 /// `field_codec`. `String` and `Vec<u8>` share the same
-/// `CanonicalSerialize` byte output, so `.arzkey` byte compatibility
-/// is preserved.
+/// `CanonicalSerialize` byte output, so the on-disk byte stream stays
+/// stable across the consolidation.
 pub use ark_utils::wire::CircuitConfig;
 
 const LAMBDA: usize = 2048; // 2048 bits

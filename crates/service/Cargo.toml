@@ -41,14 +41,11 @@ ark-serialize         = { workspace = true, optional = true }
 memmap2               = { workspace = true, optional = true }
 blake2                = { workspace = true, optional = true }
 rand                  = { workspace = true, optional = true }
-ark-ar1cs-format       = { workspace = true, optional = true }
-ark-ar1cs-prover       = { workspace = true, optional = true }
-ark-ar1cs-wasm-witness = { workspace = true, optional = true }
-ark-ar1cs-wtns         = { workspace = true, optional = true }
-ark-ar1cs-zkey         = { workspace = true, optional = true }
-
-wasmi    = { workspace = true, optional = true }
-postcard = { workspace = true, optional = true }
+# Native prove flow — Commit 4 of the 2026-05 ark-ar1cs boundary
+# migration. The `ark-ar1cs` root crate exposes `prove`,
+# `synthesize_full_assignment`, and the `format::ArcsFile` envelope
+# that `ArtifactSet` loads from `circuit.ar1cs`.
+ark-ar1cs              = { workspace = true, optional = true }
 
 [dev-dependencies]
 signature = "2"
@@ -84,20 +81,8 @@ proof = [
     "dep:memmap2",
     "dep:blake2",
     "dep:rand",
-    "dep:ark-ar1cs-format",
-    "dep:ark-ar1cs-prover",
-    "dep:ark-ar1cs-wasm-witness",
-    "dep:ark-ar1cs-wtns",
-    "dep:ark-ar1cs-zkey",
-    "dep:postcard",
-    "runtime-wasmi",
+    "dep:ark-ar1cs",
 ]
-runtime-wasmi    = ["dep:wasmi"]
-runtime-wasmtime = []  # reserved, unimplemented (see plan §10.2)
-# `use-optimized` previously gated the streaming Groth16 prover; the
-# wasm-witness runtime path obsoletes streaming so the feature is now a
-# no-op alias kept for source-compat with downstream Cargo invocations.
-use-optimized = ["proof"]
 print-trace = ["circuit/print-trace"]
 
 # Example temporarily disabled — see comment above the [features] block.

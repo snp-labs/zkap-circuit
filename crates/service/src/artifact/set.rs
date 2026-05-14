@@ -1,12 +1,12 @@
-//! [`ArtifactSet`] — the in-memory bundle of `(pk, vk, pvk, arcs)` and
-//! the two caller-facing loaders.
+//! [`ArtifactSet`] — the in-memory bundle of `(pk, vk, pvk, arcs, cfg)`
+//! and the two caller-facing loaders.
 
 use std::path::Path;
 
-use ark_ar1cs_format::ArcsFile;
+use ark_ar1cs::format::ArcsFile;
 use ark_groth16::{PreparedVerifyingKey, ProvingKey, VerifyingKey};
 use ark_serialize::CanonicalDeserialize;
-use circuit::types::{BN254, F};
+use circuit::types::{BN254, CircuitConfig, F};
 use sha2::{Digest, Sha256};
 
 use super::error::ArtifactError;
@@ -26,6 +26,8 @@ pub struct ArtifactSet {
     pub pvk: PreparedVerifyingKey<BN254>,
     /// `.ar1cs` body — loaded from `circuit.ar1cs`.
     pub arcs: ArcsFile<F>,
+    /// Circuit configuration — loaded from `config.json`.
+    pub cfg: CircuitConfig,
 }
 
 impl ArtifactSet {
@@ -41,7 +43,14 @@ impl ArtifactSet {
         let vk = load_canonical::<VerifyingKey<BN254>>(dir, &manifest.artifacts.vk, "vk")?;
         let pvk =
             load_canonical::<PreparedVerifyingKey<BN254>>(dir, &manifest.artifacts.pvk, "pvk")?;
-        Ok(Self { pk, vk, pvk, arcs })
+        let cfg = load_circuit_config(dir, &manifest.artifacts.circuit_config)?;
+        Ok(Self {
+            pk,
+            vk,
+            pvk,
+            arcs,
+            cfg,
+        })
     }
 
     /// Load every artifact from the hard-coded post-migration layout
@@ -65,9 +74,51 @@ impl ArtifactSet {
         let pk = load_canonical_raw::<ProvingKey<BN254>>(&dir.join("pk.bin"), "pk")?;
         let vk = load_canonical_raw::<VerifyingKey<BN254>>(&dir.join("vk.bin"), "vk")?;
         let pvk = load_canonical_raw::<PreparedVerifyingKey<BN254>>(&dir.join("pvk.bin"), "pvk")?;
+        let cfg = load_circuit_config_raw(&dir.join("config.json"))?;
 
-        Ok(Self { pk, vk, pvk, arcs })
+        Ok(Self {
+            pk,
+            vk,
+            pvk,
+            arcs,
+            cfg,
+        })
     }
+}
+
+fn load_circuit_config(
+    dir: &Path,
+    entry: &ArtifactEntry,
+) -> Result<CircuitConfig, ArtifactError> {
+    let path = dir.join(&entry.path);
+    let bytes = std::fs::read(&path).map_err(|e| ArtifactError::Io {
+        path: path.clone(),
+        source: e,
+    })?;
+    let sha_hex = sha256_hex(&bytes);
+    if sha_hex != entry.sha256 {
+        return Err(ArtifactError::HashMismatch {
+            field: "artifacts.circuit_config.sha256",
+            expected: entry.sha256.clone(),
+            got: sha_hex,
+        });
+    }
+    parse_circuit_config(&bytes)
+}
+
+fn load_circuit_config_raw(path: &Path) -> Result<CircuitConfig, ArtifactError> {
+    let bytes = std::fs::read(path).map_err(|e| ArtifactError::Io {
+        path: path.to_path_buf(),
+        source: e,
+    })?;
+    parse_circuit_config(&bytes)
+}
+
+fn parse_circuit_config(bytes: &[u8]) -> Result<CircuitConfig, ArtifactError> {
+    serde_json::from_slice::<CircuitConfig>(bytes).map_err(|e| ArtifactError::Deserialize {
+        what: "circuit_config",
+        message: format!("{e}"),
+    })
 }
 
 fn load_arcs(

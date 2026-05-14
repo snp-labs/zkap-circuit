@@ -27,7 +27,7 @@
 use std::io::Cursor;
 use std::path::Path;
 
-use ark_ar1cs_format::ArcsFile;
+use ark_ar1cs::format::ArcsFile;
 use ark_serialize::CanonicalSerialize;
 use circuit::types::{CircuitConfig, F};
 use zkap_evm_verifier::SolidityContractGenerator;

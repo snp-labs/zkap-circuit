@@ -1,23 +1,14 @@
-//! ZKAP proof generation service — wasm-witness-runtime variant
-//! (transitional Commit 3 state).
+//! ZKAP setup and verify helpers.
 //!
-//! The host-facing entry point is [`prove`], which:
-//! 1. validates the [`ProofRequest`](crate::witness::ProofRequest)
-//!    against the circuit shape via [`crate::witness::build_input`],
-//! 2. dispatches each input through the wasm witness-generator runtime,
-//! 3. runs `ark_ar1cs_prover::prove` against the matching `.arzkey`.
-//!
-//! The wasm runtime call path is the transitional Commit 3 state; the
-//! native prove flow (Commit 4) will replace it with
-//! [`crate::witness::into_circuit_input`] + `ark_ar1cs::prove`. The
-//! request type itself is already migrated: artifact paths flow through
-//! [`prove`]'s explicit `pk_path` / `wasm_path` parameters, not through
-//! the request struct.
+//! After Commit 4 of the 2026-05 ark-ar1cs boundary migration the
+//! proving entry point lives in [`crate::prover`]
+//! ([`crate::prover::Prover`] / [`crate::prover::prove_from_unverified_paths`]).
+//! This module is now the home for the trusted-setup function
+//! [`setup`] (writes the CRS bundle) and the legacy
+//! [`verify`]/[`VerifyingContext`] surface, which the migration plan
+//! removes in Commit 5.
 
-pub mod generator;
-pub mod runtime;
-
-use ark_ar1cs_format::{ArcsFile, CurveId};
+use ark_ar1cs::format::{ArcsFile, ConstraintMatrices, CurveId};
 use ark_crypto_primitives::snark::CircuitSpecificSetupSNARK;
 #[allow(unused_imports)]
 use ark_crypto_primitives::snark::SNARK;
@@ -28,14 +19,11 @@ use ark_relations::gr1cs::{
 use circuit::types::{BN254, BNP, CG, CircuitConfig, F};
 use circuit::zkap::ZkapCircuit;
 use rand::{CryptoRng, RngCore};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-use crate::dto::{ProofComponents, ZkapProofResult};
+use crate::dto::ProofComponents;
 use crate::error::ApplicationError;
-use crate::witness::ProofRequest;
 use ark_utils::hex_decimal_to_field;
-
-use self::generator::ProofGenerator;
 
 /// Opaque handle to a Groth16 prepared verifying key.
 pub struct VerifyingContext(pub(crate) PreparedVerifyingKey<BN254>);
@@ -59,9 +47,10 @@ pub struct SetupShape {
 /// Output of [`setup`].
 ///
 /// Holds every artifact the post-migration CRS bundle needs:
-/// `pk`, `vk`, `pvk` (uncompressed `CanonicalSerialize` targets) and
-/// `arcs` (R1CS body for `circuit.ar1cs`). [`crate::artifact::ArtifactSet`]
-/// mirrors the same shape on the read side.
+/// `pk`, `vk`, `pvk` (uncompressed `CanonicalSerialize` targets),
+/// `arcs` (R1CS body for `circuit.ar1cs`), and the [`CircuitConfig`]
+/// the keys were built against — the same shape
+/// [`crate::artifact::ArtifactSet`] mirrors on the read side.
 pub struct SetupOutput {
     pub(crate) pk: ProvingKey<BN254>,
     pub(crate) vk: VerifyingKey<BN254>,
@@ -75,6 +64,10 @@ pub struct SetupOutput {
     /// [`ConstraintSystem`] used to extract the R1CS matrices, so the
     /// counts always match the `circuit.ar1cs` payload.
     pub shape: SetupShape,
+    /// The [`CircuitConfig`] used to synthesize `pk`/`vk`/`arcs`. Kept
+    /// here so [`Self::into_artifact_set`] can hand a `Prover` the
+    /// same config without re-reading `config.json`.
+    pub(crate) cfg: CircuitConfig,
 }
 
 impl SetupOutput {
@@ -103,9 +96,9 @@ impl SetupOutput {
     /// in memory, without going through disk.
     ///
     /// Useful for tests and in-process flows that want to feed the
-    /// freshly-built `pk`/`vk`/`pvk`/`arcs` straight into a future
-    /// `Prover::from_artifact` (Commit 4) call. Production callers should
-    /// instead persist via [`setup`] and re-load through
+    /// freshly-built `pk`/`vk`/`pvk`/`arcs` straight into a
+    /// [`crate::prover::Prover::from_artifact`] call. Production callers
+    /// should instead persist via [`setup`] and re-load through
     /// [`crate::artifact::ArtifactSet::load`] so the manifest hash check
     /// is exercised on every prove batch.
     pub fn into_artifact_set(self) -> crate::artifact::ArtifactSet {
@@ -114,6 +107,7 @@ impl SetupOutput {
             vk: self.vk,
             pvk: self.pvk,
             arcs: self.arcs,
+            cfg: self.cfg,
         }
     }
 }
@@ -199,7 +193,7 @@ pub fn setup(
         num_constraints: cs_setup.num_constraints() as u64,
     };
 
-    let matrices = ark_ar1cs_format::ConstraintMatrices::from_cs(&cs_setup).map_err(|e| {
+    let matrices = ConstraintMatrices::from_cs(&cs_setup).map_err(|e| {
         ApplicationError::InvalidFormat(format!("Failed to extract R1CS matrices: {e:?}"))
     })?;
     let arcs = ArcsFile::from_matrices(CurveId::Bn254, &matrices);
@@ -210,40 +204,11 @@ pub fn setup(
         pvk,
         arcs,
         shape,
+        cfg: params.clone(),
     };
     crate::crs::persist_setup_output(&output, params, output_dir, &output.arcs)?;
 
     Ok(output)
-}
-
-/// Generate Groth16 proofs from a native-path [`ProofRequest`] via the
-/// (still wasm-backed) witness-generator runtime.
-///
-/// The request itself carries no artifact paths — `pk_path` and
-/// `wasm_path` are explicit parameters so the post-migration call site
-/// can swap the wasm runtime for the native prover (Commit 4) without
-/// reshaping the request struct again.
-pub fn prove(
-    params: &CircuitConfig,
-    req: ProofRequest,
-    pk_path: PathBuf,
-    wasm_path: PathBuf,
-) -> Result<ZkapProofResult, ApplicationError> {
-    log::info!("[ZKAP-v3] Step 1: Building V1 inputs from ProofRequest...");
-    let inputs = crate::witness::build_input(&req, params)?;
-
-    log::info!(
-        "[ZKAP-v3] Step 2: Generating {} proofs via wasm runtime...",
-        inputs.len()
-    );
-    let generator = ProofGenerator::new(pk_path, wasm_path);
-    let output = generator.generate(&inputs)?;
-    log::info!(
-        "[ZKAP-v3] Step 2 completed: {} proofs generated",
-        output.proofs.len()
-    );
-
-    Ok((output.proofs, output.public_inputs).into())
 }
 
 /// Verify a single Groth16 proof against an opaque verifying context.

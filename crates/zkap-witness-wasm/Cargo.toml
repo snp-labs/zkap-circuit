@@ -51,27 +51,20 @@ getrandom = { version = "0.2", features = ["js"] }
 
 [dev-dependencies]
 # Path-based via `[workspace.dependencies]`; see the matching note on the
-# top-level `[dependencies]` block.
+# top-level `[dependencies]` block. The `_wtns` / `_zkey` / `_prover` /
+# `wasmtime` / `zkap-service` dev-deps that used to back the deleted
+# `tests/wasm_to_prove.rs` are gone — they returned to the workspace
+# graph in Commit 7 when the wasm crate itself is removed.
 ark-ar1cs-wtns   = { workspace = true }
-ark-ar1cs-zkey   = { workspace = true }
-ark-ar1cs-prover = { workspace = true }
 ark-ar1cs-format = { workspace = true }
-# Pulled into dev-deps so wasm_to_prove integration tests can drive
-# zkap_service::prove (the host-side ar1cs_blake3 fail-fast check
-# lives there). dev-only, no impact on the wasm artifact.
-zkap-service     = { path = "../service" }
 postcard         = { version = "1", default-features = false, features = ["alloc"] }
 
-# wasmtime: minimal feature set (cranelift JIT + runtime; no CLI/wat).
-wasmtime = { version = "44", default-features = false, features = ["cranelift", "runtime"] }
-
-# Arkworks deps used by the integration test fixture (groth16 setup,
-# circuit synthesis, RSA-signed JWT generation).
+# Arkworks deps used by the remaining `v1_round_trip.rs` /
+# `input_builder_drift.rs` test suites.
 ark-bn254             = { workspace = true }
 ark-ec                = { workspace = true }
 ark-ff                = { workspace = true, features = ["std"] }
 ark-relations         = { workspace = true }
-ark-groth16           = { workspace = true }
 ark-crypto-primitives = { workspace = true, features = ["crh", "merkle_tree", "constraints"] }
 ark-std               = { workspace = true }
 ark-utils             = { workspace = true, features = ["field-serde"] }

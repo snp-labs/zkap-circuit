@@ -56,7 +56,7 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::PathBuf;
 
-use ark_ar1cs_format::ArcsFile;
+use ark_ar1cs::format::ArcsFile;
 use ark_relations::gr1cs::{
     ConstraintSynthesizer, ConstraintSystem, OptimizationGoal, SynthesisMode,
 };
@@ -317,7 +317,7 @@ fn synthesize_and_inspect(cfg: &CircuitConfig) -> (usize, usize, usize, String) 
     let num_w = cs.num_witness_variables();
     let num_i = cs.num_instance_variables();
 
-    let matrices = ark_ar1cs_format::ConstraintMatrices::from_cs(&cs)
+    let matrices = ark_ar1cs::format::ConstraintMatrices::from_cs(&cs)
         .expect("ConstraintMatrices::from_cs failed after finalize()");
 
     // Deterministic R1CS matrix hash.

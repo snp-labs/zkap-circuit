@@ -14,7 +14,7 @@
 //! `manifest.json`:
 //!
 //! - [`read_arcs_blake3`] — open `circuit.ar1cs` via
-//!   [`ark_ar1cs_format::ArcsFile`], return the 32-byte canonical
+//!   [`ark_ar1cs::format::ArcsFile`], return the 32-byte canonical
 //!   `body_blake3()`. Replaces the pre-migration `read_arzkey_blake3`
 //!   helper that read bytes 16..48 of an `.arzkey` envelope.
 //! - [`read_arcs_blake3_hex`] — `read_arcs_blake3` as a 64-char hex
@@ -72,7 +72,7 @@ pub fn write_json_or_exit<T: Serialize>(path: &str, data: &T) {
 /// `body_blake3()` — the 32-byte hash that pins the R1CS body's
 /// identity.
 ///
-/// Calls [`ark_ar1cs_format::ArcsFile::read`] internally so the body's
+/// Calls [`ark_ar1cs::format::ArcsFile::read`] internally so the body's
 /// self-consistency is validated as a side effect: a malformed
 /// `.ar1cs` aborts with a clear error before any hash is returned.
 ///
@@ -86,7 +86,7 @@ pub fn read_arcs_blake3(path: &Path) -> [u8; 32] {
             e
         ))
     });
-    let arcs = ark_ar1cs_format::ArcsFile::<F>::read(&mut file).unwrap_or_else(|e| {
+    let arcs = ark_ar1cs::format::ArcsFile::<F>::read(&mut file).unwrap_or_else(|e| {
         die(format!(
             "Failed to parse circuit.ar1cs '{}': {}",
             path.display(),

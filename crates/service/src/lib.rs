@@ -9,8 +9,10 @@
 //!
 //! **`proof` feature (default):**
 //! - [`setup`] — trusted setup: generates proving/verifying keys and writes them to disk
-//! - [`prove`] — generate Groth16 zero-knowledge proofs (takes [`ProofRequest`])
-//! - [`verify`] — verify Groth16 proofs (takes [`VerifyingContext`])
+//! - [`Prover`] / [`prove_from_unverified_paths`] — native Groth16 prover
+//!   (takes [`ProofRequest`])
+//! - [`verify`] — verify Groth16 proofs (takes [`VerifyingContext`]);
+//!   removed in Commit 5 of the 2026-05 ark-ar1cs boundary migration
 //! - [`jwt`] — JWT payload claim parsing ([`jwt::parser::parse_claim_from_str`])
 //!
 //! Solidity on-chain verifier codegen lives in the sibling crate
@@ -20,8 +22,6 @@
 //! internally.
 //! - DTOs: [`ProofComponents`], [`SharedPublicInputs`], [`PerProofPublicInputs`], [`ZkapProofResult`]
 //! - Keys: [`SetupOutput`], [`VerifyingContext`], [`SharedFields`], [`PerJwtFields`]
-//!
-//! **Note on `use-optimized` feature**: an alias for `proof`, kept for source compatibility.
 
 // Crate-internal `missing_docs` warning, not a `#[deny]`. Phase 7 / H5
 // staged path: clears the zkap-service baseline (39 service warnings +
@@ -33,17 +33,6 @@
 // outstanding warnings — `00-workspace-hygiene.md` §H5 baseline).
 // The workspace-wide flip happens once gadget hits zero at this gate.
 #![warn(missing_docs)]
-
-// Feature-matrix guards — fail loudly on unsupported combinations.
-//
-// `runtime-wasmtime` is reserved but has zero implementation; activating it
-// silently would leave the wasmi backend running, which is misleading.
-#[cfg(feature = "runtime-wasmtime")]
-compile_error!("`runtime-wasmtime` is not yet implemented; use `runtime-wasmi` instead");
-
-// `proof` requires exactly one runtime backend.
-#[cfg(all(feature = "proof", not(feature = "runtime-wasmi")))]
-compile_error!("`proof` feature requires a runtime backend; enable `runtime-wasmi`");
 
 pub(crate) mod anchor_host;
 pub(crate) mod dto;
@@ -64,14 +53,13 @@ pub mod jwt;
 #[cfg(feature = "proof")]
 pub mod proof;
 
-// Native witness-shaping path — pure, wasm-free. Lives at the same
-// feature tier as `proof` because it pulls `circuit::ZkapCircuit` /
-// `circuit::witness::ZkapCircuitInput`, which are only useful in the
-// proving direction. The post-migration native prover (Commit 4)
-// consumes this module; the legacy wasm runtime keeps its own copy of
-// the conversion logic until Commit 7 removes the wasm crate.
+// Native witness-shaping path — pure, wasm-free.
 #[cfg(feature = "proof")]
 pub mod witness;
+
+// Native ark-ar1cs prover — canonical post-migration entry point.
+#[cfg(feature = "proof")]
+pub mod prover;
 
 use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;
 use circuit::types::F;
@@ -119,8 +107,12 @@ pub use hash::{generate_aud_hash, generate_hash, generate_leaf_hash};
 #[cfg(feature = "proof")]
 pub use dto::{PerProofPublicInputs, ProofComponents, SharedPublicInputs, ZkapProofResult};
 #[cfg(feature = "proof")]
+pub use artifact::{ArtifactError, ArtifactSet};
+#[cfg(feature = "proof")]
 pub use proof::{SetupOutput, SetupShape, VerifyingContext};
 #[cfg(feature = "proof")]
-pub use proof::{prove, setup, verify};
+pub use proof::{setup, verify};
+#[cfg(feature = "proof")]
+pub use prover::{Prover, prove_from_unverified_paths};
 #[cfg(feature = "proof")]
 pub use witness::{PerJwtFields, ProofRequest, SharedFields};

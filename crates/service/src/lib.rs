@@ -11,9 +11,14 @@
 //! - [`setup`] — trusted setup: generates proving/verifying keys and writes them to disk
 //! - [`Prover`] / [`prove_from_unverified_paths`] — native Groth16 prover
 //!   (takes [`ProofRequest`])
-//! - [`verify`] — verify Groth16 proofs (takes [`VerifyingContext`]);
-//!   removed in Commit 5 of the 2026-05 ark-ar1cs boundary migration
 //! - [`jwt`] — JWT payload claim parsing ([`jwt::parser::parse_claim_from_str`])
+//!
+//! Proof verification is intentionally **not** wrapped by this crate
+//! after Commit 5 of the 2026-05 ark-ar1cs boundary migration: callers
+//! borrow the prepared verifying key from
+//! [`SetupOutput::prepared_verifying_key`] (or from a `Prover` /
+//! [`ArtifactSet`]) and feed it directly to
+//! `ark_groth16::Groth16::verify_proof`.
 //!
 //! Solidity on-chain verifier codegen lives in the sibling crate
 //! [`zkap-evm-verifier`](../zkap_evm_verifier/index.html); call
@@ -21,7 +26,7 @@
 //! directly. The bundled `Groth16Verifier.sol` produced by [`setup`] uses it
 //! internally.
 //! - DTOs: [`ProofComponents`], [`SharedPublicInputs`], [`PerProofPublicInputs`], [`ZkapProofResult`]
-//! - Keys: [`SetupOutput`], [`VerifyingContext`], [`SharedFields`], [`PerJwtFields`]
+//! - Keys: [`SetupOutput`], [`SharedFields`], [`PerJwtFields`]
 
 // Crate-internal `missing_docs` warning, not a `#[deny]`. Phase 7 / H5
 // staged path: clears the zkap-service baseline (39 service warnings +
@@ -105,13 +110,11 @@ pub use hash::{generate_aud_hash, generate_hash, generate_leaf_hash};
 
 // Public API (proof feature only)
 #[cfg(feature = "proof")]
-pub use dto::{PerProofPublicInputs, ProofComponents, SharedPublicInputs, ZkapProofResult};
-#[cfg(feature = "proof")]
 pub use artifact::{ArtifactError, ArtifactSet};
 #[cfg(feature = "proof")]
-pub use proof::{SetupOutput, SetupShape, VerifyingContext};
+pub use dto::{PerProofPublicInputs, ProofComponents, SharedPublicInputs, ZkapProofResult};
 #[cfg(feature = "proof")]
-pub use proof::{setup, verify};
+pub use proof::{SetupOutput, SetupShape, setup};
 #[cfg(feature = "proof")]
 pub use prover::{Prover, prove_from_unverified_paths};
 #[cfg(feature = "proof")]

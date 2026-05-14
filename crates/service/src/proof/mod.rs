@@ -1,12 +1,13 @@
-//! ZKAP setup and verify helpers.
+//! ZKAP trusted-setup entry point.
 //!
 //! After Commit 4 of the 2026-05 ark-ar1cs boundary migration the
 //! proving entry point lives in [`crate::prover`]
 //! ([`crate::prover::Prover`] / [`crate::prover::prove_from_unverified_paths`]).
-//! This module is now the home for the trusted-setup function
-//! [`setup`] (writes the CRS bundle) and the legacy
-//! [`verify`]/[`VerifyingContext`] surface, which the migration plan
-//! removes in Commit 5.
+//! Commit 5 then removed the in-crate verify wrapper — callers verify
+//! proofs by calling `Groth16::verify_proof` directly against the
+//! `vk` / `pvk` exposed on [`Prover`] (or
+//! [`crate::artifact::ArtifactSet`]). This module is now the home of
+//! only the [`setup`] function.
 
 use ark_ar1cs::format::{ArcsFile, ConstraintMatrices, CurveId};
 use ark_crypto_primitives::snark::CircuitSpecificSetupSNARK;
@@ -21,12 +22,7 @@ use circuit::zkap::ZkapCircuit;
 use rand::{CryptoRng, RngCore};
 use std::path::Path;
 
-use crate::dto::ProofComponents;
 use crate::error::ApplicationError;
-use ark_utils::hex_decimal_to_field;
-
-/// Opaque handle to a Groth16 prepared verifying key.
-pub struct VerifyingContext(pub(crate) PreparedVerifyingKey<BN254>);
 
 /// Constraint-system shape produced by [`setup`].
 ///
@@ -71,16 +67,14 @@ pub struct SetupOutput {
 }
 
 impl SetupOutput {
-    /// Returns the prepared verifying-key handle that [`verify`] consumes.
-    /// Cloning is cheap (the underlying `PreparedVerifyingKey` is `Arc`-free
-    /// but small and fully owned).
+    /// Returns the bundled prepared verifying key.
     ///
-    /// **Note (migration-window):** `verify` and `VerifyingContext` are
-    /// removed in Commit 5 of the 2026-05 boundary migration. After that
-    /// commit callers should call arkworks `Groth16::verify_proof`
-    /// directly.
-    pub fn verifying_context(&self) -> VerifyingContext {
-        VerifyingContext(self.pvk.clone())
+    /// The in-crate verify wrapper was retired in Commit 5 of the
+    /// 2026-05 ark-ar1cs boundary migration; callers that need to
+    /// verify a proof in-process hand this borrow straight to
+    /// `ark_groth16::Groth16::verify_proof`.
+    pub fn prepared_verifying_key(&self) -> &PreparedVerifyingKey<BN254> {
+        &self.pvk
     }
 
     /// Returns `gamma_abc_g1.len()` — i.e., the number of public inputs
@@ -209,19 +203,4 @@ pub fn setup(
     crate::crs::persist_setup_output(&output, params, output_dir, &output.arcs)?;
 
     Ok(output)
-}
-
-/// Verify a single Groth16 proof against an opaque verifying context.
-pub fn verify(
-    ctx: &VerifyingContext,
-    proof: &ProofComponents,
-    public_inputs: &[String],
-) -> Result<bool, ApplicationError> {
-    let ark_proof = proof.to_ark_proof()?;
-    let ark_inputs: Vec<F> = public_inputs
-        .iter()
-        .map(|s| hex_decimal_to_field::<F>(s).map_err(ApplicationError::from))
-        .collect::<Result<_, _>>()?;
-    Groth16::<BN254>::verify_proof(&ctx.0, &ark_proof, &ark_inputs)
-        .map_err(|e| ApplicationError::InvalidFormat(format!("Proof verification failed: {}", e)))
 }

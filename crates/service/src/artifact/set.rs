@@ -86,10 +86,7 @@ impl ArtifactSet {
     }
 }
 
-fn load_circuit_config(
-    dir: &Path,
-    entry: &ArtifactEntry,
-) -> Result<CircuitConfig, ArtifactError> {
+fn load_circuit_config(dir: &Path, entry: &ArtifactEntry) -> Result<CircuitConfig, ArtifactError> {
     let path = dir.join(&entry.path);
     let bytes = std::fs::read(&path).map_err(|e| ArtifactError::Io {
         path: path.clone(),

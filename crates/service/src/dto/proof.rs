@@ -1,8 +1,6 @@
 //! Proof generation DTOs
 
-use ark_bn254::{Fq, Fq2, G1Affine, G2Affine};
 use ark_groth16::Proof;
-use ark_utils::hex_decimal_to_field;
 use circuit::types::{BN254, F};
 
 use zkap_evm_verifier::Solidity;
@@ -33,32 +31,6 @@ impl From<&Proof<BN254>> for ProofComponents {
             b: [b[0].clone(), b[1].clone(), b[2].clone(), b[3].clone()],
             c: [c[0].clone(), c[1].clone()],
         }
-    }
-}
-
-impl ProofComponents {
-    /// Reconstruct a [`Proof<BN254>`] from string components.
-    ///
-    /// Used internally by [`crate::proof::verify`] to convert back to arkworks types
-    /// without requiring callers to depend on `ark_groth16` directly.
-    pub(crate) fn to_ark_proof(&self) -> Result<Proof<BN254>, crate::error::ApplicationError> {
-        let parse = |s: &str| -> Result<Fq, crate::error::ApplicationError> {
-            hex_decimal_to_field::<Fq>(s).map_err(crate::error::ApplicationError::from)
-        };
-
-        // Parse a (G1Affine): [ax, ay]
-        let a = G1Affine::new(parse(&self.a[0])?, parse(&self.a[1])?);
-
-        // Parse b (G2Affine): [bx_c1, bx_c0, by_c1, by_c0]
-        // to_solidity() on Fp2 outputs [c1, c0], so index 0 = c1, index 1 = c0
-        let bx = Fq2::new(parse(&self.b[1])?, parse(&self.b[0])?); // new(c0, c1)
-        let by = Fq2::new(parse(&self.b[3])?, parse(&self.b[2])?);
-        let b = G2Affine::new(bx, by);
-
-        // Parse c (G1Affine): [cx, cy]
-        let c = G1Affine::new(parse(&self.c[0])?, parse(&self.c[1])?);
-
-        Ok(Proof { a, b, c })
     }
 }
 

@@ -53,9 +53,11 @@ impl Prover {
         }
     }
 
-    /// Borrow the bundled Groth16 verifying key — useful when callers
-    /// want to run `Groth16::verify_proof` directly without going
-    /// through the (Commit-5-removable) `crate::proof::verify` wrapper.
+    /// Borrow the bundled Groth16 verifying key — hand directly to
+    /// `ark_groth16::Groth16::verify_proof` for in-process verification.
+    /// The verify wrapper that used to wrap this borrow inside an opaque
+    /// handle was retired in Commit 5 of the 2026-05 ark-ar1cs boundary
+    /// migration.
     pub fn verifying_key(&self) -> &VerifyingKey<BN254> {
         &self.vk
     }
@@ -111,10 +113,10 @@ impl Prover {
                 ))
             })?;
 
-            let proof =
-                ar1cs_prove::<BN254, R>(&self.pk, &self.arcs, &full_assignment, rng).map_err(
-                    |e| ApplicationError::ProofGenerationFailed(format!("ark_ar1cs::prove: {e}")),
-                )?;
+            let proof = ar1cs_prove::<BN254, R>(&self.pk, &self.arcs, &full_assignment, rng)
+                .map_err(|e| {
+                    ApplicationError::ProofGenerationFailed(format!("ark_ar1cs::prove: {e}"))
+                })?;
 
             // Canonical 8-element instance layout — see
             // `ZkapProofResult::from((proofs, public_inputs))` in

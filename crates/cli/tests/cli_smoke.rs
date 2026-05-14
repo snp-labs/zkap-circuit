@@ -6,10 +6,12 @@
 //! `zkap_service::generate_aud_hash` / `generate_leaf_hash` are already
 //! covered by service crate tests.
 //!
-//! `generate_crs` is intentionally not covered here because its
+//! `generate_setup` is intentionally not covered here because its
 //! `zkap_service::setup` call runs the full Groth16 trusted setup, which
 //! is far too heavy for a smoke test. A separate slow-test bin exercise
-//! belongs in a dedicated integration suite.
+//! belongs in a dedicated integration suite. The pre-migration sibling
+//! `generate_crs` was removed in Commit 2 of the 2026-05 ark-ar1cs
+//! boundary migration.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;

@@ -140,21 +140,36 @@ fn test_setup_creates_all_artifacts() {
 
     setup(&params, &tmp_dir, &mut rand::rngs::OsRng, None).expect("setup() failed");
 
-    // All 5 required files must exist
-    assert!(tmp_dir.join("pk.key").exists(), "pk.key missing");
-    assert!(tmp_dir.join("vk.key").exists(), "vk.key missing");
-    assert!(tmp_dir.join("pvk.key").exists(), "pvk.key missing");
+    // Post-migration (Commit 2 of the 2026-05 ark-ar1cs boundary plan)
+    // setup output: six core files. `manifest.json` is written by the
+    // CLI (`generate_setup`), not by `service::setup`.
+    assert!(
+        tmp_dir.join("circuit.ar1cs").exists(),
+        "circuit.ar1cs missing"
+    );
+    assert!(tmp_dir.join("pk.bin").exists(), "pk.bin missing");
+    assert!(tmp_dir.join("vk.bin").exists(), "vk.bin missing");
+    assert!(tmp_dir.join("pvk.bin").exists(), "pvk.bin missing");
     assert!(
         tmp_dir.join("Groth16Verifier.sol").exists(),
         "Groth16Verifier.sol missing"
     );
     assert!(tmp_dir.join("config.json").exists(), "config.json missing");
 
-    // manifest.json must NOT be created
+    // manifest.json is the CLI's responsibility — service::setup must
+    // not produce it.
     assert!(
         !tmp_dir.join("manifest.json").exists(),
-        "manifest.json should not be created"
+        "manifest.json must be CLI-owned, not written by service::setup"
     );
+
+    // Legacy artifacts must NOT reappear after the boundary migration.
+    for legacy in ["pk.arzkey", "pk.key", "vk.key", "pvk.key"] {
+        assert!(
+            !tmp_dir.join(legacy).exists(),
+            "legacy artifact {legacy} must not be produced after Commit 2"
+        );
+    }
 
     let _ = std::fs::remove_dir_all(&tmp_dir);
 }

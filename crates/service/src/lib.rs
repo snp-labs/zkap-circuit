@@ -50,6 +50,13 @@ pub(crate) mod dto;
 pub mod error;
 pub(crate) mod hash;
 
+// Manifest schema — proof-feature-independent. Hosts that consume the
+// manifest without pulling ark-groth16 (lightweight bindings, manifest
+// inspectors, dev tools) can depend on the module cheaply.
+pub mod manifest;
+
+#[cfg(feature = "proof")]
+pub mod artifact;
 #[cfg(feature = "proof")]
 pub(crate) mod crs;
 #[cfg(feature = "proof")]

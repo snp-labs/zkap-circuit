@@ -5,11 +5,16 @@
 //!
 //! ## Gate layers
 //!
-//! - **L1.1 / Tier A** — `arzkey.header.ar1cs_blake3` (32 bytes). Definitive
+//! - **L1.1 / Tier A** — `circuit.ar1cs::body_blake3()` (32 bytes). Definitive
 //!   gate: R1CS matrix generation is deterministic in `SynthesisMode::Setup`
 //!   with no RNG dependency. Three fixtures — F1 is always-run, F2/F3 are
 //!   `#[ignore]` because they call `service::setup` which uses `OsRng` for
 //!   the full Groth16 PK generation (~120–150 s each on debug builds).
+//!   Post-migration (Commit 2 of the 2026-05 ark-ar1cs boundary plan)
+//!   `service::setup` no longer writes `pk.arzkey`; the body_blake3 is
+//!   computed from `circuit.ar1cs` directly. Golden values are
+//!   byte-equivalent because the pre-migration envelope header was always
+//!   populated from `arcs.body_blake3()` at write time.
 //!
 //! - **L1.2/L1.3/L1.4 / Tier D** — `cs.num_constraints()`,
 //!   `cs.num_witness_variables()`, `cs.num_instance_variables()` goldens for
@@ -35,9 +40,10 @@
 //!
 //! ## Caveat on Tier A
 //!
-//! `service::setup` uses `OsRng` for the `ProvingKey` body. The PK region
-//! of `.arzkey` is non-deterministic, so Tier A compares only the 32-byte
-//! `ar1cs_blake3` header field, not the full file.
+//! `service::setup` uses `OsRng` for the `ProvingKey` body. `pk.bin` is
+//! therefore non-deterministic across runs, so Tier A compares only the
+//! 32-byte `body_blake3` of `circuit.ar1cs` (which is deterministic in
+//! `SynthesisMode::Setup`), not the full `pk.bin`.
 //!
 //! ## Golden capture method
 //!
@@ -50,7 +56,7 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::PathBuf;
 
-use ark_ar1cs_zkey::ArzkeyHeader;
+use ark_ar1cs_format::ArcsFile;
 use ark_relations::gr1cs::{
     ConstraintSynthesizer, ConstraintSystem, OptimizationGoal, SynthesisMode,
 };
@@ -358,6 +364,12 @@ fn unique_tmp_dir(label: &str) -> PathBuf {
 // ─── Tier A — ar1cs_blake3 (L1.1) ────────────────────────────────────────────
 
 /// F1 Tier A (always run). Original fixture from PR0 — golden MUST stay constant.
+///
+/// Reads `circuit.ar1cs` (post-migration bundle layout, Commit 2 of the
+/// 2026-05 ark-ar1cs boundary migration) and recomputes `body_blake3()`.
+/// The value is byte-equivalent to the pre-migration
+/// `pk.arzkey` header bytes 16..48 because the envelope's `ar1cs_blake3`
+/// was always populated from `arcs.body_blake3()` at write time.
 #[test]
 fn tier_a_ar1cs_blake3_f1() {
     let tmp_dir = unique_tmp_dir("tier_a_f1");
@@ -367,16 +379,16 @@ fn tier_a_ar1cs_blake3_f1() {
     setup(&cfg, &tmp_dir, &mut rand::rngs::OsRng, None)
         .expect("service::setup must succeed for F1 config");
 
-    let arzkey_path = tmp_dir.join("pk.arzkey");
-    let file = File::open(&arzkey_path).expect("pk.arzkey must exist after setup");
+    let arcs_path = tmp_dir.join("circuit.ar1cs");
+    let file = File::open(&arcs_path).expect("circuit.ar1cs must exist after setup");
     let mut reader = BufReader::new(file);
-    let header = ArzkeyHeader::read(&mut reader).expect("ArzkeyHeader must parse");
-    let actual_hex = hex::encode(header.ar1cs_blake3);
+    let arcs = ArcsFile::<F>::read(&mut reader).expect("circuit.ar1cs must parse as ArcsFile<F>");
+    let actual_hex = hex::encode(arcs.body_blake3());
     let _ = std::fs::remove_dir_all(&tmp_dir);
 
     assert_eq!(
         actual_hex, GOLDEN_AR1CS_BLAKE3_F1,
-        "L1.1 break — F1 `arzkey.header.ar1cs_blake3` differs from golden.\n\
+        "L1.1 break — F1 `circuit.ar1cs::body_blake3` differs from golden.\n\
          baseline: {GOLDEN_AR1CS_BLAKE3_F1}\n\
          actual:   {actual_hex}"
     );
@@ -393,11 +405,11 @@ fn tier_a_ar1cs_blake3_f2() {
     setup(&cfg, &tmp_dir, &mut rand::rngs::OsRng, None)
         .expect("service::setup must succeed for F2 config");
 
-    let arzkey_path = tmp_dir.join("pk.arzkey");
-    let file = File::open(&arzkey_path).expect("pk.arzkey must exist after setup");
+    let arcs_path = tmp_dir.join("circuit.ar1cs");
+    let file = File::open(&arcs_path).expect("circuit.ar1cs must exist after setup");
     let mut reader = BufReader::new(file);
-    let header = ArzkeyHeader::read(&mut reader).expect("ArzkeyHeader must parse");
-    let actual_hex = hex::encode(header.ar1cs_blake3);
+    let arcs = ArcsFile::<F>::read(&mut reader).expect("circuit.ar1cs must parse as ArcsFile<F>");
+    let actual_hex = hex::encode(arcs.body_blake3());
     let _ = std::fs::remove_dir_all(&tmp_dir);
 
     // Print for golden capture on first run; thereafter assert equality.
@@ -411,7 +423,7 @@ fn tier_a_ar1cs_blake3_f2() {
     }
     assert_eq!(
         actual_hex, GOLDEN_AR1CS_BLAKE3_F2,
-        "L1.1 break — F2 `arzkey.header.ar1cs_blake3` differs from golden.\n\
+        "L1.1 break — F2 `circuit.ar1cs::body_blake3` differs from golden.\n\
          baseline: {GOLDEN_AR1CS_BLAKE3_F2}\n\
          actual:   {actual_hex}"
     );
@@ -428,11 +440,11 @@ fn tier_a_ar1cs_blake3_f3() {
     setup(&cfg, &tmp_dir, &mut rand::rngs::OsRng, None)
         .expect("service::setup must succeed for F3 config");
 
-    let arzkey_path = tmp_dir.join("pk.arzkey");
-    let file = File::open(&arzkey_path).expect("pk.arzkey must exist after setup");
+    let arcs_path = tmp_dir.join("circuit.ar1cs");
+    let file = File::open(&arcs_path).expect("circuit.ar1cs must exist after setup");
     let mut reader = BufReader::new(file);
-    let header = ArzkeyHeader::read(&mut reader).expect("ArzkeyHeader must parse");
-    let actual_hex = hex::encode(header.ar1cs_blake3);
+    let arcs = ArcsFile::<F>::read(&mut reader).expect("circuit.ar1cs must parse as ArcsFile<F>");
+    let actual_hex = hex::encode(arcs.body_blake3());
     let _ = std::fs::remove_dir_all(&tmp_dir);
 
     println!("F3 ar1cs_blake3: {actual_hex}");
@@ -445,7 +457,7 @@ fn tier_a_ar1cs_blake3_f3() {
     }
     assert_eq!(
         actual_hex, GOLDEN_AR1CS_BLAKE3_F3,
-        "L1.1 break — F3 `arzkey.header.ar1cs_blake3` differs from golden.\n\
+        "L1.1 break — F3 `circuit.ar1cs::body_blake3` differs from golden.\n\
          baseline: {GOLDEN_AR1CS_BLAKE3_F3}\n\
          actual:   {actual_hex}"
     );

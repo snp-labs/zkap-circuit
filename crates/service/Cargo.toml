@@ -24,6 +24,11 @@ ark-crypto-primitives = { workspace = true }
 ark-bn254             = { workspace = true }
 log = { workspace = true }
 hex = { workspace = true }
+# Always-on: `manifest` module needs sha2 (ceremony chain_hash,
+# compute_circuit_tag) and must stay proof-feature-independent so light
+# bindings can depend on it cheaply. The runtime cost of pulling sha2
+# unconditionally is negligible.
+sha2 = { workspace = true }
 
 # --- Proof-only dependencies (optional, heavy) ---
 zkap-evm-verifier     = { workspace = true, optional = true }
@@ -35,7 +40,6 @@ ark-relations         = { workspace = true, optional = true }
 ark-serialize         = { workspace = true, optional = true }
 memmap2               = { workspace = true, optional = true }
 blake2                = { workspace = true, optional = true }
-sha2                  = { workspace = true, optional = true }
 rand                  = { workspace = true, optional = true }
 ark-ar1cs-format       = { workspace = true, optional = true }
 ark-ar1cs-prover       = { workspace = true, optional = true }
@@ -79,7 +83,6 @@ proof = [
     "dep:ark-serialize",
     "dep:memmap2",
     "dep:blake2",
-    "dep:sha2",
     "dep:rand",
     "dep:ark-ar1cs-format",
     "dep:ark-ar1cs-prover",

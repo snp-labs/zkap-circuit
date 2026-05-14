@@ -1,10 +1,33 @@
-//! `generate_setup` — Groth16 trusted setup + paired wasm artifact +
-//! v1 `manifest.json`. See plan
-//! `2026-05-12-deployment-bundle-spec.md` §4/§5/§7 for the schema and
-//! Stage 1 vs Stage 2 contract. RNG is `OsRng` by default; pass
-//! `--rng-seed <hex> --allow-test-only` for the deterministic
-//! `ChaCha20Rng` path. `SOURCE_DATE_EPOCH` pins `built_at` for
-//! byte-reproducible runs.
+//! `generate_setup` — Groth16 trusted setup + post-migration
+//! `manifest.json`.
+//!
+//! Writes the seven-file post-migration CRS bundle:
+//!
+//!   1. `circuit.ar1cs`       (R1CS body in ark-ar1cs canonical envelope)
+//!   2. `pk.bin`              (`ProvingKey<Bn254>` uncompressed)
+//!   3. `vk.bin`              (`VerifyingKey<Bn254>` uncompressed)
+//!   4. `pvk.bin`             (`PreparedVerifyingKey<Bn254>` uncompressed)
+//!   5. `Groth16Verifier.sol` (Solidity on-chain verifier)
+//!   6. `config.json`         (`CircuitConfig` JSON)
+//!   7. `manifest.json`       (`zkap_service::manifest::Manifest` v1)
+//!
+//! Items 1–6 come from `zkap_service::setup()`; this binary produces
+//! item 7 from the build metadata it owns (build commit, rustc, RFC3339
+//! `built_at`).
+//!
+//! RNG is `OsRng` by default; pass `--rng-seed <hex> --allow-test-only`
+//! for the deterministic `ChaCha20Rng` path. `SOURCE_DATE_EPOCH` pins
+//! `built_at` for byte-reproducible runs.
+//!
+//! ## What this binary no longer does
+//!
+//! The pre-migration `generate_setup` chained a full
+//! `wasm32-unknown-unknown` build of `zkap-witness-wasm`, ran
+//! `wasm-opt -Oz`, verified four ABI exports, and renamed
+//! `pk.arzkey → circuit.arzkey`. The 2026-05 ark-ar1cs boundary removes
+//! the wasm witness substrate; native witness generation lives in
+//! `zkap_service::witness` (Commit 3) and the prover loads a separate
+//! `pk.bin` + `circuit.ar1cs` pair.
 
 use clap::Parser;
 use rand::RngCore;
@@ -14,21 +37,17 @@ use rand_chacha::rand_core::SeedableRng;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use zkap_cli::{
-    ArtifactEntry, ArtifactKey, BuildMetadata, ManifestBuilder, REQUIRED_EXPORTS, SetupProvenance,
-    WasmAbi, built_at_now, canonical_json_bytes, compute_circuit_tag, die, load_config_or_exit,
-    read_arzkey_blake3, read_arzkey_blake3_hex, sha256_hex, verify_wasm_exports,
+    ArtifactEntry, ArtifactKey, BuildMetadata, ManifestBuilder, SetupProvenance, built_at_now,
+    canonical_json_bytes, compute_circuit_tag, die, load_config_or_exit, read_arcs_blake3_hex,
+    sha256_hex,
 };
 use zkap_service::setup;
 
-/// Default wasm size gate, in MiB.
-const SIZE_LIMIT_MIB_DEFAULT: u64 = 8;
-
 /// ZKAP public-input names in the order the circuit allocates them.
 ///
-/// MUST stay in lockstep with `zkap_witness_wasm::ZKAP_PUBLIC_INPUT_NAMES`
-/// (`crates/zkap-witness-wasm/src/lib.rs`). Drift between the two lists
-/// is observable when the host SDK compares
-/// `manifest.public_input_names` against the wasm export.
+/// Mirrors the canonical public-input ordering that downstream verifiers
+/// rely on. Drift between this list and the circuit's
+/// `CircuitPublicInputs::to_vec` is a host-side instance-vector bug.
 const ZKAP_PUBLIC_INPUT_NAMES: &[&str] = &[
     "hanchor",
     "h_a",
@@ -42,7 +61,7 @@ const ZKAP_PUBLIC_INPUT_NAMES: &[&str] = &[
 
 #[derive(Parser)]
 #[command(
-    about = "Generate Groth16 CRS, the paired wasm witness-generator artifact, and a manifest.json bundle"
+    about = "Generate the post-migration Groth16 CRS bundle (circuit.ar1cs, pk.bin, vk.bin, pvk.bin, Groth16Verifier.sol, config.json, manifest.json)"
 )]
 struct Cli {
     /// Path to the JSON config file.
@@ -79,14 +98,6 @@ struct Cli {
     /// to `git rev-parse HEAD` when unset.
     #[arg(long)]
     build_commit: Option<String>,
-
-    /// Skip wasm-opt size optimization (binaryen not installed).
-    #[arg(long)]
-    skip_wasm_opt: bool,
-
-    /// Hard size gate for the final wasm artifact, in MiB.
-    #[arg(long, default_value_t = SIZE_LIMIT_MIB_DEFAULT)]
-    wasm_size_limit_mib: u64,
 }
 
 fn main() {
@@ -105,85 +116,31 @@ fn main() {
     let canonical_cfg_bytes = canonical_json_bytes(&cfg_value);
     let circuit_tag = compute_circuit_tag(&cli.circuit_id, &canonical_cfg_bytes);
 
-    println!("[1/6] Groth16 trusted setup → {}", out.display());
+    println!("[1/2] Groth16 trusted setup → {}", out.display());
     let setup_output = setup(&params, &out, rng_box.as_mut(), None)
         .unwrap_or_else(|e| die(format!("setup failed: {e}")));
 
-    let arzkey = out.join("circuit.arzkey");
-    std::fs::rename(out.join("pk.arzkey"), &arzkey)
-        .unwrap_or_else(|e| die(format!("rename pk.arzkey → circuit.arzkey: {e}")));
-    let arzkey_blake3 = read_arzkey_blake3(&arzkey);
-    let arzkey_canonical = arzkey
-        .canonicalize()
-        .unwrap_or_else(|e| die(format!("canonicalize arzkey '{}': {e}", arzkey.display())));
+    // `circuit.ar1cs` / `pk.bin` / `vk.bin` / `pvk.bin` /
+    // `Groth16Verifier.sol` / `config.json` are written by `setup()`.
+    // Build the manifest from the resulting files.
+    let arcs_path = out.join("circuit.ar1cs");
+    let pk_path = out.join("pk.bin");
+    let vk_path = out.join("vk.bin");
+    let pvk_path = out.join("pvk.bin");
+    let evm_path = out.join("Groth16Verifier.sol");
+    let cfg_path = out.join("config.json");
 
-    println!("[2/6] cargo build -p zkap-witness-wasm --target wasm32-unknown-unknown --release");
-    let workspace_root = locate_workspace_root();
-    let status = Command::new(env!("CARGO"))
-        .args([
-            "build",
-            "-p",
-            "zkap-witness-wasm",
-            "--target",
-            "wasm32-unknown-unknown",
-            "--release",
-        ])
-        .env("AR1CS_WITNESS_ARZKEY_PATH", &arzkey_canonical)
-        .current_dir(&workspace_root)
-        .status()
-        .unwrap_or_else(|e| die(format!("cargo build spawn failed: {e}")));
-    if !status.success() {
-        die(format!(
-            "cargo wasm32 build failed (exit {:?})",
-            status.code()
-        ));
-    }
-    let raw_wasm =
-        workspace_root.join("target/wasm32-unknown-unknown/release/zkap_witness_wasm.wasm");
-    if !raw_wasm.exists() {
-        die(format!(
-            "expected cargo to produce '{}' but it is missing",
-            raw_wasm.display()
-        ));
-    }
-
-    println!("[3/6] wasm-opt -Oz");
-    let final_wasm = out.join("zkap_witness_wasm.opt.wasm");
-    if cli.skip_wasm_opt {
-        eprintln!("INFO: --skip-wasm-opt set; copying raw wasm without -Oz.");
-        std::fs::copy(&raw_wasm, &final_wasm)
-            .unwrap_or_else(|e| die(format!("copy raw wasm: {e}")));
-    } else {
-        run_wasm_opt(&raw_wasm, &final_wasm);
-    }
-
-    println!("[4/6] size gate {} MiB", cli.wasm_size_limit_mib);
-    let size = std::fs::metadata(&final_wasm)
-        .unwrap_or_else(|e| die(format!("stat final wasm: {e}")))
-        .len();
-    let limit = cli.wasm_size_limit_mib * 1024 * 1024;
-    if size > limit {
-        die(format!(
-            "wasm {size} bytes > limit {limit} ({} MiB)",
-            cli.wasm_size_limit_mib
-        ));
-    }
-
-    println!("[5/6] export verification");
-    verify_wasm_exports(&final_wasm, REQUIRED_EXPORTS)
-        .unwrap_or_else(|e| die(format!("export verify failed: {e}")));
-
-    let wasm_sha = sha256_hex(&final_wasm).unwrap_or_else(|e| die(format!("sha256: {e}")));
-
-    println!("[6/6] manifest.json emit");
+    println!("[2/2] manifest.json emit");
+    let ar1cs_blake3 = read_arcs_blake3_hex(&arcs_path);
     let build_commit = cli
         .build_commit
         .clone()
         .or_else(git_head_commit)
         .unwrap_or_else(|| "unknown".into());
     let built_at = built_at_now().unwrap_or_else(|e| die(e));
+
     let manifest = ManifestBuilder::new(cli.circuit_id.clone(), circuit_tag.clone())
-        .with_ar1cs_blake3(read_arzkey_blake3_hex(&arzkey))
+        .with_ar1cs_blake3(ar1cs_blake3.clone())
         .with_shape(
             setup_output.shape.num_instance,
             setup_output.shape.num_witness,
@@ -196,48 +153,37 @@ fn main() {
                 .collect(),
         )
         .with_artifact(
-            ArtifactKey::Arzkey,
-            make_artifact_entry(&arzkey, "circuit.arzkey", "core", None, None, None),
+            ArtifactKey::Ar1cs,
+            make_entry(&arcs_path, "circuit.ar1cs", "core", None, None),
         )
         .with_artifact(
-            ArtifactKey::Wasm,
-            ArtifactEntry {
-                abi: Some(WasmAbi {
-                    version: 1,
-                    exports: REQUIRED_EXPORTS.iter().map(|s| s.to_string()).collect(),
-                }),
-                ..make_artifact_entry_with_sha(
-                    "zkap_witness_wasm.opt.wasm",
-                    wasm_sha.clone(),
-                    size,
-                    "core",
-                    None,
-                    None,
-                )
-            },
+            ArtifactKey::Pk,
+            make_entry(&pk_path, "pk.bin", "core", None, None),
         )
         .with_artifact(
             ArtifactKey::Vk,
-            make_artifact_entry(&out.join("vk.key"), "vk.key", "core", None, None, None),
+            make_entry(&vk_path, "vk.bin", "core", None, None),
+        )
+        .with_artifact(
+            ArtifactKey::Pvk,
+            make_entry(&pvk_path, "pvk.bin", "core", None, None),
         )
         .with_artifact(
             ArtifactKey::EvmVerifier,
-            make_artifact_entry(
-                &out.join("Groth16Verifier.sol"),
+            make_entry(
+                &evm_path,
                 "Groth16Verifier.sol",
                 "domain-optional",
-                None,
                 None,
                 None,
             ),
         )
         .with_artifact(
             ArtifactKey::CircuitConfig,
-            make_artifact_entry(
-                &out.join("config.json"),
+            make_entry(
+                &cfg_path,
                 "config.json",
                 "domain",
-                None,
                 Some("npm:@baerae/zkap-zkp@^1".into()),
                 Some("ZkapCircuitConfigV1".into()),
             ),
@@ -262,12 +208,7 @@ fn main() {
     println!("✓ generate_setup OK");
     println!("  output dir    : {}", out.display());
     println!("  circuit_tag   : {circuit_tag}");
-    println!(
-        "  wasm size     : {size} bytes (limit {} MiB)",
-        cli.wasm_size_limit_mib
-    );
-    println!("  wasm sha256   : {wasm_sha}");
-    println!("  ar1cs_blake3  : {}", hex::encode(arzkey_blake3));
+    println!("  ar1cs_blake3  : {ar1cs_blake3}");
     println!(
         "  setup_provenance: {}",
         match &manifest.setup_provenance {
@@ -276,58 +217,31 @@ fn main() {
             SetupProvenance::Ceremony { .. } => "ceremony",
         }
     );
-    println!("  artifacts     : manifest.json, circuit.arzkey, pk.key, vk.key, pvk.key,");
-    println!("                  Groth16Verifier.sol, config.json,");
-    println!("                  zkap_witness_wasm.opt.wasm");
+    println!(
+        "  artifacts     : circuit.ar1cs, pk.bin, vk.bin, pvk.bin,\n                  Groth16Verifier.sol, config.json, manifest.json"
+    );
 }
 
 /// Build an [`ArtifactEntry`] by hashing `disk_path` and reading its size.
-/// `path` is the file name recorded in the manifest (relative to the
-/// bundle dir), and `disk_path` is where the file currently lives.
-fn make_artifact_entry(
+fn make_entry(
     disk_path: &Path,
-    path: &str,
+    relative_path: &str,
     kind: &str,
-    abi: Option<WasmAbi>,
     schema_owner: Option<String>,
     schema_ref: Option<String>,
 ) -> ArtifactEntry {
-    let sha = sha256_hex(disk_path).unwrap_or_else(|e| die(format!("sha256({path}): {e}")));
+    let sha =
+        sha256_hex(disk_path).unwrap_or_else(|e| die(format!("sha256({relative_path}): {e}")));
     let size = std::fs::metadata(disk_path)
-        .unwrap_or_else(|e| die(format!("stat({path}): {e}")))
+        .unwrap_or_else(|e| die(format!("stat({relative_path}): {e}")))
         .len();
-    make_artifact_entry_with_sha(path, sha, size, kind, schema_owner, schema_ref).with_abi(abi)
-}
-
-/// Variant of [`make_artifact_entry`] used when sha256 + size are already
-/// computed (avoids a second pass over the file).
-fn make_artifact_entry_with_sha(
-    path: &str,
-    sha256: String,
-    size: u64,
-    kind: &str,
-    schema_owner: Option<String>,
-    schema_ref: Option<String>,
-) -> ArtifactEntry {
     ArtifactEntry {
-        path: path.into(),
-        sha256,
+        path: relative_path.into(),
+        sha256: sha,
         size,
         kind: kind.into(),
-        abi: None,
         schema_owner,
         schema_ref,
-    }
-}
-
-/// Wire `abi` onto an existing entry using the struct-update shorthand.
-trait WithAbi {
-    fn with_abi(self, abi: Option<WasmAbi>) -> Self;
-}
-impl WithAbi for ArtifactEntry {
-    fn with_abi(mut self, abi: Option<WasmAbi>) -> Self {
-        self.abi = abi;
-        self
     }
 }
 
@@ -360,8 +274,7 @@ fn decode_seed_hex(s: &str) -> Result<[u8; 32], String> {
     Ok(out)
 }
 
-/// `git rev-parse HEAD`, or `None` when git is unavailable or the working
-/// directory is not a git repo.
+/// `git rev-parse HEAD`, or `None` when git is unavailable.
 fn git_head_commit() -> Option<String> {
     let output = Command::new("git")
         .args(["rev-parse", "HEAD"])
@@ -373,47 +286,4 @@ fn git_head_commit() -> Option<String> {
     }
     let raw = String::from_utf8(output.stdout).ok()?;
     Some(raw.trim().to_string())
-}
-
-/// Workspace root: `crates/cli/..` `/..` (CARGO_MANIFEST_DIR points at
-/// `crates/cli`).
-fn locate_workspace_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("crates/cli has parent")
-        .parent()
-        .expect("crates/ has parent")
-        .to_path_buf()
-}
-
-/// Run `wasm-opt -Oz` with the same feature flags as
-/// `crates/zkap-witness-wasm/build-wasm.sh`. On `ErrorKind::NotFound`
-/// (binaryen not installed) the raw wasm is copied with a stderr
-/// warning — every other failure is fatal so silent skips do not slip
-/// past CI.
-fn run_wasm_opt(input: &Path, output: &Path) {
-    let status = Command::new("wasm-opt")
-        .args([
-            "-Oz",
-            "--enable-bulk-memory",
-            "--enable-mutable-globals",
-            "--enable-nontrapping-float-to-int",
-            "--enable-sign-ext",
-            "--enable-reference-types",
-            "--enable-multivalue",
-        ])
-        .arg(input)
-        .arg("-o")
-        .arg(output)
-        .status();
-    match status {
-        Ok(s) if s.success() => (),
-        Ok(s) => die(format!("wasm-opt exited {:?}", s.code())),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            eprintln!("WARN: wasm-opt not on PATH; copying raw wasm without -Oz.");
-            eprintln!("      Install binaryen for production builds (`brew install binaryen`).");
-            std::fs::copy(input, output).unwrap_or_else(|e| die(format!("copy raw wasm: {e}")));
-        }
-        Err(e) => die(format!("wasm-opt spawn: {e}")),
-    }
 }

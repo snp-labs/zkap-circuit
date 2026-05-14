@@ -2652,6 +2652,7 @@ dependencies = [
 name = "zkap-cli"
 version = "0.1.0"
 dependencies = [
+ "ark-ar1cs-format",
  "circuit",
  "clap",
  "hex",
@@ -2662,7 +2663,6 @@ dependencies = [
  "sha2",
  "thiserror",
  "time",
- "wasmparser",
  "zkap-service",
 ]
 

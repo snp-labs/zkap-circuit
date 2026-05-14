@@ -56,13 +56,23 @@ pub struct SetupShape {
 }
 
 /// Output of [`setup`].
+///
+/// Holds every artifact the post-migration CRS bundle needs:
+/// `pk`, `vk`, `pvk` (uncompressed `CanonicalSerialize` targets) and
+/// `arcs` (R1CS body for `circuit.ar1cs`). [`crate::artifact::ArtifactSet`]
+/// mirrors the same shape on the read side.
 pub struct SetupOutput {
     pub(crate) pk: ProvingKey<BN254>,
     pub(crate) vk: VerifyingKey<BN254>,
     pub(crate) pvk: PreparedVerifyingKey<BN254>,
+    /// `.ar1cs` body extracted alongside the proving/verifying keys.
+    /// Used by [`crate::crs::persist_setup_output`] to emit
+    /// `circuit.ar1cs` and by CLI tooling to compute the manifest's
+    /// `ar1cs_blake3` field.
+    pub arcs: ArcsFile<F>,
     /// Constraint-system shape — populated from the synthesized
     /// [`ConstraintSystem`] used to extract the R1CS matrices, so the
-    /// counts always match the `.arzkey` payload.
+    /// counts always match the `circuit.ar1cs` payload.
     pub shape: SetupShape,
 }
 
@@ -70,6 +80,11 @@ impl SetupOutput {
     /// Returns the prepared verifying-key handle that [`verify`] consumes.
     /// Cloning is cheap (the underlying `PreparedVerifyingKey` is `Arc`-free
     /// but small and fully owned).
+    ///
+    /// **Note (migration-window):** `verify` and `VerifyingContext` are
+    /// removed in Commit 5 of the 2026-05 boundary migration. After that
+    /// commit callers should call arkworks `Groth16::verify_proof`
+    /// directly.
     pub fn verifying_context(&self) -> VerifyingContext {
         VerifyingContext(self.pvk.clone())
     }
@@ -81,6 +96,24 @@ impl SetupOutput {
     /// who want that count should subtract 1.
     pub fn public_input_count(&self) -> usize {
         self.pvk.vk.gamma_abc_g1.len()
+    }
+
+    /// Convert this [`SetupOutput`] into a [`crate::artifact::ArtifactSet`]
+    /// in memory, without going through disk.
+    ///
+    /// Useful for tests and in-process flows that want to feed the
+    /// freshly-built `pk`/`vk`/`pvk`/`arcs` straight into a future
+    /// `Prover::from_artifact` (Commit 4) call. Production callers should
+    /// instead persist via [`setup`] and re-load through
+    /// [`crate::artifact::ArtifactSet::load`] so the manifest hash check
+    /// is exercised on every prove batch.
+    pub fn into_artifact_set(self) -> crate::artifact::ArtifactSet {
+        crate::artifact::ArtifactSet {
+            pk: self.pk,
+            vk: self.vk,
+            pvk: self.pvk,
+            arcs: self.arcs,
+        }
     }
 }
 
@@ -170,8 +203,14 @@ pub fn setup(
     })?;
     let arcs = ArcsFile::from_matrices(CurveId::Bn254, &matrices);
 
-    let output = SetupOutput { pk, vk, pvk, shape };
-    crate::crs::persist_setup_output(&output, params, output_dir, arcs)?;
+    let output = SetupOutput {
+        pk,
+        vk,
+        pvk,
+        arcs,
+        shape,
+    };
+    crate::crs::persist_setup_output(&output, params, output_dir, &output.arcs)?;
 
     Ok(output)
 }

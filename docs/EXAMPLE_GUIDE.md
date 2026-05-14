@@ -62,52 +62,67 @@ The example exercises all 7 public API functions of `zkap-service`:
 | Step | API Function(s) | What Happens |
 |------|-----------------|--------------|
 | 1 | `CircuitConfig::from(RawCircuitConfig)` | Build circuit parameters: N=6 total credentials, K=3 threshold, tree height 4 |
-| 2 | **`setup()`** | Groth16 trusted setup — generates pk.key, vk.key, pvk.key, Groth16Verifier.sol, config.json |
+| 2 | **`setup()`** | Groth16 trusted setup — generates the 7-file bundle (`circuit.ar1cs`, `pk.bin`, `vk.bin`, `pvk.bin`, `Groth16Verifier.sol`, `config.json`, plus `manifest.json` from the CLI) |
 | 3 | **`generate_hash()`** | Compute nonce = Poseidon(h_sign_user_op, random). Also generates 3 RSA-2048 key pairs and signs JWTs |
 | 4 | **`generate_leaf_hash()`** | Compute Merkle leaf hash for each (issuer, RSA public key) pair, then build the Merkle tree |
 | 5 | **`generate_anchor()`** + **`generate_hash()`** | Generate threshold anchor from N secrets (K real + N-K dummy), then chain-hash into hanchor |
-| 6 | **`generate_aud_hash()`** + **`prove()`** | Compute audience hashes, assemble `RawProofRequest`, generate K Groth16 proofs |
-| 7 | **`verify()`** | Verify each proof against public inputs. Also demonstrates that a tampered proof fails |
+| 6 | **`generate_aud_hash()`** + **`Prover::prove()`** | Compute audience hashes, assemble `ProofRequest`, generate K Groth16 proofs via `ArtifactSet::load` → `Prover::from_artifact` → `Prover::prove` |
+| 7 | `Groth16::<Bn254>::verify_proof` | Verify each proof against public inputs by handing the bundled `PreparedVerifyingKey` borrow to `ark_groth16::Groth16::verify_proof`. Also demonstrates that a tampered proof fails |
 
 ## Understanding the Input Flow
 
-Each input to `RawProofRequest` comes from a specific preparation step:
+The `ProofRequest` carries no artifact paths; the bundle reaches the
+prover through `ArtifactSet::load(manifest, dir)`. Each field of the
+request comes from a specific preparation step:
 
 ```
-  setup()
-    └→ pk_path                    (path to pk.key)
+  setup() / cli generate_setup
+    └→ dist/<shape>/{circuit.ar1cs, pk.bin, vk.bin, pvk.bin,
+                     Groth16Verifier.sol, config.json, manifest.json}
+       (loaded by `ArtifactSet::load(manifest, dir)`)
 
   RSA key generation + JWT signing
-    ├→ jwts                       (K signed JWT strings)
-    └→ pk_ops                     (K RSA moduli, Base64)
+    ├→ per_jwt[i].jwt_bytes
+    ├→ per_jwt[i].rsa_modulus_be       (RSA-2048 modulus, 256 BE bytes)
+    └→ per_jwt[i].rsa_signature_be     (RSA-2048 signature, 256 BE bytes)
 
   generate_leaf_hash() → Merkle tree
-    ├→ merkle_paths               (K authentication paths)
-    ├→ leaf_indices               (K leaf positions)
-    └→ root                       (Merkle root)
+    ├→ per_jwt[i].merkle_leaf_sibling_hash_be
+    ├→ per_jwt[i].merkle_auth_path_be  (tree_height - 1 entries)
+    ├→ per_jwt[i].merkle_leaf_idx
+    └→ shared.merkle_root_be           (Merkle root, 32 BE bytes)
 
   generate_anchor() + generate_hash()
-    ├→ anchor_evals               (N-K+1 polynomial evaluations)
-    └→ hanchor                    (chain hash of anchor_evals)
+    ├→ shared.anchor_values_be         (n - k + 1 evaluations, 32 BE bytes each)
+    ├→ shared.anchor_known_x_be        (k known x values)
+    ├→ shared.anchor_selector          (n bytes, cardinality = k)
+    └→ per_jwt[i].anchor_current_idx
 
   Application-specific
-    ├→ user_op_hash               (UserOperation binding)
-    └→ random                     (blinding factor)
-
-  generate_aud_hash()
-    └→ aud_hash_list              (per-audience hashes)
+    ├→ shared.h_sign_user_op_be        (UserOperation binding)
+    └→ shared.random_be                (blinding factor, must be non-zero)
 ```
 
 ## Using Pre-built CRS
 
-The example runs `setup()` each time, but for repeated use you can skip the
-trusted setup by using pre-built CRS artifacts in `dist/`:
+The example runs `setup()` each time, but for repeated use you can
+skip the trusted setup by loading the pre-built bundle from `dist/`:
 
-- `dist/1of1/` — single-signer configuration (N=1, K=1)
-- `dist/3of3/` — three-of-three configuration (N=3, K=3)
+- `dist/1-of-1/` — single-signer configuration (N=1, K=1)
+- `dist/3-of-3/` — three-of-three configuration (N=3, K=3)
 
-Load the config and point `pk_path` to the pre-built `pk.key` file instead of
-calling `setup()`.
+```rust
+use std::path::Path;
+use zkap_service::{ArtifactSet, Prover};
+use zkap_service::manifest::Manifest;
+
+let dir = Path::new("dist/1-of-1");
+let manifest_bytes = std::fs::read(dir.join("manifest.json"))?;
+let manifest: Manifest = serde_json::from_slice(&manifest_bytes)?;
+let set = ArtifactSet::load(&manifest, dir)?;          // single trust gate
+let prover = Prover::from_artifact(set);
+let proofs = prover.prove(&request, &mut rand::rngs::OsRng)?;
+```
 
 ## Next Steps
 

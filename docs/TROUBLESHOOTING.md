@@ -31,7 +31,7 @@ cargo run -p zkap-service --example groth16_proof --release
 
 ### `All input vectors must have length K=...`
 
-**Cause:** `RawProofRequest` vector field lengths do not match `config.k`.
+**Cause:** `ProofRequest` vector field lengths do not match `config.k`.
 **Fix:** Ensure `jwts`, `pk_ops`, `merkle_paths`, and `leaf_indices` all have exactly K entries.
 
 ### `Invalid anchor_evals length: expected ..., got ...`
@@ -58,7 +58,7 @@ cargo run -p zkap-service --example groth16_proof --release
 **Fix:** Check each of these in order:
 
 1. **JSON quote mismatch** — The circuit extracts JWT claim values with surrounding `"` characters. All hash inputs must match. See [JSON Quote Gotcha](#json-quote-gotcha) below.
-2. **Merkle root mismatch** — The `root` in `RawProofRequest` must match the tree built from `generate_leaf_hash()` results.
+2. **Merkle root mismatch** — The `root` in `ProofRequest` must match the tree built from `generate_leaf_hash()` results.
 3. **hanchor mismatch** — `hanchor` must be the chain hash of `anchor_evals` computed via `generate_hash()`.
 4. **Audience hash mismatch** — `aud_hash_list` must come from `generate_aud_hash().individual`.
 5. **Config mismatch** — The `CircuitConfig` passed to `prove()` must be identical to the one used in `setup()`.

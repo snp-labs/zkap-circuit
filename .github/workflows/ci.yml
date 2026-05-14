@@ -15,7 +15,7 @@ env:
   # phantom dep-graph errors (e.g. "ark-serialize multiple instances" from a
   # cache built before a git+rev pin update). Local clean builds pass; bumping
   # here forces a fresh cache key on the next CI run.
-  CACHE_BUST: "v2"
+  CACHE_BUST: "v3"
 
 jobs:
   clippy:
@@ -34,13 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      # wasm_to_prove integration tests rebuild zkap-witness-wasm for
-      # wasm32-unknown-unknown inside the test fixture, so the Test job
-      # toolchain needs that target installed (the test sets
-      # AR1CS_WITNESS_ARZKEY_PATH itself per-run).
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-        with:
-          targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
       - uses: taiki-e/install-action@c070f87102a1c75b3183910f391c1cb887fe13c8 # v2
         with:
@@ -114,84 +108,24 @@ jobs:
       - name: zkap-service | default (proof)
         run: cargo check -p zkap-service
 
-  wasm32-build:
-    # Kept alongside `generate-setup-smoke`: this job is the fast-signal lane for
-    # wasm32 compile regressions (synthetic dummy .arzkey, ~seconds with cache).
-    # `generate-setup-smoke` is the full-chain lane (real arzkey + wasm-opt +
-    # size/export/pair gates, ~30s+). Two lanes intentionally cover different
-    # regression classes — see `.omc/plans/2026-05-11-generate-setup-workflow-migration.html`.
-    name: wasm32 build (zkap-witness-wasm)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
-      - name: Add wasm32 target
-        run: rustup target add wasm32-unknown-unknown
-      # build.rs requires AR1CS_WITNESS_ARZKEY_PATH for wasm32 target to embed
-      # the ar1cs_blake3 pair-identity constant. In CI we provide a synthetic
-      # 48-byte arzkey (magic + zero blake3) so the build compiles cleanly;
-      # the embedded constant is a CI-only placeholder — production wasm builds
-      # must supply the real paired .arzkey via this env var.
-      - name: Create synthetic CI arzkey
-        run: |
-          python3 -c "
-          magic = b'ARZKEY'
-          header = magic + b'\x01' + b'\x00' + b'\x00' * 8 + b'\x00' * 32
-          with open('/tmp/ci_dummy.arzkey', 'wb') as f:
-              f.write(header)
-          print('Created synthetic arzkey:', len(header), 'bytes')
-          "
-      - name: Build zkap-witness-wasm (wasm32-unknown-unknown)
-        run: cargo build -p zkap-witness-wasm --target wasm32-unknown-unknown --release
-        env:
-          AR1CS_WITNESS_ARZKEY_PATH: /tmp/ci_dummy.arzkey
-      - name: Report wasm artifact size
-        run: |
-          WASM=target/wasm32-unknown-unknown/release/zkap_witness_wasm.wasm
-          SIZE=$(wc -c < "$WASM" | tr -d ' ')
-          echo "wasm size: ${SIZE} bytes"
-          # Hard gate: must be under 8 MiB (matches build-wasm.sh)
-          python3 - <<EOF
-          size = ${SIZE}
-          limit = 8 * 1024 * 1024
-          mib = size / 1048576
-          print(f"wasm size: {size} bytes ({mib:.3f} MiB) / limit 8 MiB")
-          if size > limit:
-              raise SystemExit(f"wasm size {size} bytes exceeds 8 MiB gate ({limit} bytes)")
-          print(f"Size gate OK")
-          EOF
-
   generate-setup-smoke:
-    # Runs the same invocation as release.yml's generate-keys job at PR
-    # time, regression-guarding the full chain:
-    # cli::generate_setup → zkap_service::setup → arzkey rename → cargo
-    # wasm32 build → wasm-opt → size gate → export verification →
-    # pairing verification. The previous name `generate-crs-smoke`
-    # covered only `generate_crs` and did not exercise the wasm side.
-    # See `.omc/plans/2026-05-11-generate-setup-workflow-migration.html`.
+    # Drives `cargo run --bin generate_setup` against `example.json` and
+    # verifies the post-migration 7-file CRS bundle layout
+    # (`circuit.ar1cs`, `pk.bin`, `vk.bin`, `pvk.bin`,
+    # `Groth16Verifier.sol`, `config.json`, `manifest.json`). Pairs with
+    # the `migration-boundary` job, which runs the same
+    # `check-bundle-layout.sh` against the in-tree `dist/` artifacts.
     #
-    # The `circuit/integration-tests` feature on `cargo run` mirrors the
-    # release-job invocation form (Phase 5 / C13). The feature itself is
-    # a marker that gates `crates/circuit/tests/groth16_integration.rs`,
-    # not runtime code, so it has no effect on the bin's output — but
-    # keeping the form aligned means a regression in either workflow
-    # surfaces in the other.
-    #
-    # Phase 7 / P7-ci-concurrency (Phase 6 critic M2 + WM (a)(b)):
+    # Phase 7 / P7-ci-concurrency:
     # - `concurrency:` cancels in-progress runs of this job for the
-    #   same ref so rapid pushes don't queue ~22s × ~1 GiB-on-disk
-    #   smoke runs that the next push would invalidate anyway.
+    #   same ref so rapid pushes don't queue smoke runs that the next
+    #   push would invalidate anyway.
     # - `timeout-minutes:` gives the job a hard ceiling so a hung
-    #   `cargo run` (e.g. arzkey writer stalls, ar1cs panics in a
-    #   way that doesn't drop the process) cannot consume a full
-    #   6-hour runner slot.
+    #   `cargo run` cannot consume a full 6-hour runner slot.
     # - The size cap on `/tmp/ci-crs` is a defence-in-depth check
-    #   against an `n,k` regression that explodes pk.arzkey: the
-    #   Phase 6 measurement at the committed shape was ~1 GiB, so
-    #   2 GiB is a 2× safety margin that still catches a
-    #   parameter-blow-up well before the runner runs out of disk.
-    #   The new wasm artifact is ≤ 8 MiB and does not change the disk math.
+    #   against an `n,k` regression that explodes pk.bin: 2 GiB is a
+    #   2× safety margin over the committed shape that still catches
+    #   parameter blow-ups well before the runner runs out of disk.
     name: generate_setup (PR smoke)
     needs: test
     runs-on: ubuntu-latest
@@ -203,10 +137,6 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
-      - name: Add wasm32 target
-        run: rustup target add wasm32-unknown-unknown
-      - name: Install binaryen
-        run: sudo apt-get update && sudo apt-get install -y binaryen
       - name: Run generate_setup against example.json
         run: |
           mkdir -p /tmp/ci-crs
@@ -214,32 +144,11 @@ jobs:
             --bin generate_setup -- \
             --config example.json --output /tmp/ci-crs \
             --circuit-id zkap-main-v1
-      - name: Verify 7-file V1 layout
-        run: |
-          set -euo pipefail
-          for f in circuit.arzkey pk.key vk.key pvk.key \
-                   Groth16Verifier.sol config.json zkap_witness_wasm.opt.wasm; do
-            test -s "/tmp/ci-crs/$f" \
-              || { echo "ERROR: missing/empty /tmp/ci-crs/$f"; exit 1; }
-          done
-          grep -q "library Groth16Verifier {" /tmp/ci-crs/Groth16Verifier.sol
-      - name: Verify pair contract
-        # Same verification as release.yml Step 1 — keeps both workflows in sync.
-        run: |
-          set -euo pipefail
-          ARZKEY_HEX=$(xxd -s 16 -l 32 -p /tmp/ci-crs/circuit.arzkey | tr -d '\n')
-          if ! LC_ALL=C grep -aFq "$(printf %s "${ARZKEY_HEX}" | xxd -r -p)" \
-               /tmp/ci-crs/zkap_witness_wasm.opt.wasm; then
-            echo "ERROR: wasm not paired with circuit.arzkey"; exit 1
-          fi
-          echo "pair contract verified (ar1cs_blake3=${ARZKEY_HEX})"
+      - name: Verify 7-file post-migration bundle layout
+        run: bash scripts/check-bundle-layout.sh /tmp/ci-crs
       - name: CRS artifact size cap
-        # Phase 7 / P7-ci-concurrency (WM (b)): defence-in-depth
-        # against an `n,k` regression that explodes pk.arzkey. The
-        # Phase 6 measurement at the committed shape was ~1 GiB, so
-        # 2 GiB (2 097 152 KiB) is a 2× safety margin that still
-        # catches a parameter-blow-up well before the runner runs
-        # out of disk.
+        # Defence-in-depth against an `n,k` regression that explodes
+        # pk.bin: 2 GiB (2 097 152 KiB) ceiling.
         run: |
           set -euo pipefail
           USED_KIB=$(du -sk /tmp/ci-crs | awk '{print $1}')
@@ -249,6 +158,26 @@ jobs:
             echo "ERROR: /tmp/ci-crs exceeds 2 GiB cap (${USED_KIB} KiB > ${LIMIT_KIB} KiB)"
             exit 1
           fi
+
+  migration-boundary:
+    # Required gate: enforces that the 2026-05 ark-ar1cs boundary
+    # migration removals stay removed. `check-removed-api.sh` greps
+    # the working tree for retired symbols / paths / crate names.
+    # The companion `check-bundle-layout.sh` is exercised in
+    # `generate-setup-smoke` against the freshly-generated
+    # `/tmp/ci-crs` bundle (and again in `release.yml` against
+    # `output/keys`); `dist/` is `.gitignored`, so a checkout-only
+    # invocation here would never have a target to inspect.
+    name: Migration boundary scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Install ripgrep
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+      - name: scripts/check-removed-api.sh
+        run: bash scripts/check-removed-api.sh
+      - name: scripts/check-bundle-layout.sh (syntax)
+        run: bash -n scripts/check-bundle-layout.sh
 
   rustdoc:
     # Phase 8 / P8-arkutils-doc-link-audit (Phase 7 critic MINOR #3) seeded
@@ -277,13 +206,9 @@ jobs:
         run: cargo doc -p ark-utils --no-deps --all-features
       - name: Rustdoc (gadget, default features)
         run: cargo doc -p gadget --no-deps
-      # Phase 9 / P9-gadget-rustdoc-matrix-extension (Phase 9 critic
-      # MINOR #1): without partial-feature coverage, a `[`foo`]` link
-      # gated by feature A that resolves to an item gated by feature B
-      # would silently break under `--features A` alone (default + full
-      # both pass: default has no docs, full has both gates open). The
-      # combinations below mirror the `feature-matrix` job (lines 98-103)
-      # so partial-feature broken links surface at PR time.
+      # Phase 9 / P9-gadget-rustdoc-matrix-extension: combinations
+      # below mirror the `feature-matrix` job so partial-feature
+      # broken links surface at PR time.
       - name: Rustdoc (gadget, hashes-poseidon)
         run: cargo doc -p gadget --no-deps --features hashes-poseidon
       - name: Rustdoc (gadget, anchor)

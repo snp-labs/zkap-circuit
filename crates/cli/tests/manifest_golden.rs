@@ -9,9 +9,7 @@
 //! setup is ~2 minutes; the byte-reproducibility property the migration
 //! plan asks for is fully exercised at the `ManifestBuilder` boundary.
 //!
-//! The pre-migration schema had `artifacts.{arzkey, wasm}` entries and
-//! a `WasmAbi` block. Those are removed in the 2026-05 ark-ar1cs
-//! boundary migration (Commit 2); the post-migration schema covers
+//! The post-migration schema covers
 //! `artifacts.{ar1cs, pk, vk, pvk, evm_verifier, circuit_config}`.
 
 use zkap_cli::{
@@ -156,9 +154,11 @@ fn manifest_stage1_smoke_fields_present() {
     );
 }
 
-/// Acceptance: the post-migration schema lists every core artifact under
-/// its new path. Catches accidental reintroduction of the legacy
-/// `.arzkey` / `.wasm` entries.
+/// Acceptance: the post-migration schema lists every core artifact
+/// under its new path. The schema is statically typed so the negative
+/// "no retired keys" assertion would be redundant — the only keys
+/// present are the ones [`Artifacts`](zkap_service::manifest::Artifacts)
+/// declares.
 #[test]
 fn manifest_post_migration_artifact_layout() {
     let manifest = build_sample("2026-05-12T00:00:00Z".into());
@@ -169,12 +169,6 @@ fn manifest_post_migration_artifact_layout() {
         assert!(
             artifacts.contains_key(required),
             "post-migration manifest must include artifacts.{required}",
-        );
-    }
-    for legacy in ["arzkey", "wasm"] {
-        assert!(
-            !artifacts.contains_key(legacy),
-            "legacy artifacts.{legacy} must NOT appear in post-migration manifest",
         );
     }
 

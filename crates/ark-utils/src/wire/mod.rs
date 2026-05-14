@@ -7,8 +7,8 @@
 //! disabling `wire` does not pull `ark-serialize` either.
 //!
 //! Single source of truth for the semantic [`ZkapInputV1`] payload that
-//! the host hands to the wasm witness-generator and that the wasm side
-//! decodes via postcard.
+//! the host hands to the native witness builder
+//! (`zkap_service::witness::input::into_circuit_input`).
 //!
 //! These types live in `ark_utils::wire` (this module). `ark-utils`
 //! itself is `circuit`/`gadget`-free, so any host-side caller depending
@@ -17,8 +17,8 @@
 //! circuit / gadget compile graph.
 //!
 //! The full encoding contract — field order, BE/LE rules, length
-//! prefixes, the `WitnessGenerator::CIRCUIT_ID` lockstep requirement —
-//! lives in `zkap-witness-wasm::input` (the conversion-side companion).
+//! prefixes, and the circuit-identifier lockstep requirement — lives
+//! alongside the conversion code in `zkap_service::witness::input`.
 //! Bumping anything here is a wire-format break.
 
 pub mod circuit_config;

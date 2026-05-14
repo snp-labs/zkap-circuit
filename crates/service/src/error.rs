@@ -68,8 +68,8 @@ pub enum ApplicationError {
     #[error("Parse error: {0}")]
     ParseError(String),
 
-    /// Groth16 prover, witness generator, or arzkey/arwtns I/O failed
-    /// during proof generation; the string carries the upstream description.
+    /// Groth16 prover or witness construction failed during proof
+    /// generation; the string carries the upstream description.
     #[error("Proof generation failed: {0}")]
     ProofGenerationFailed(String),
 

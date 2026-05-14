@@ -7,13 +7,6 @@ members = [
     "crates/gadget",
     "crates/service",
     "crates/zkap-evm-verifier",
-    # `zkap-witness-wasm` stays on disk for the Commit 7 cleanup but is
-    # excluded from the workspace build: it depends on the legacy
-    # `ark-ar1cs-{format,wasm-witness,wtns}` crates, which were fused
-    # into the `ark-ar1cs` root crate in the bumped pin used by Commit 4
-    # of the 2026-05 ark-ar1cs boundary migration. The directory and
-    # source files remain so they can be deleted atomically in Commit 7.
-    # "crates/zkap-witness-wasm",
 ]
 
 [workspace.package]
@@ -51,16 +44,11 @@ gadget                    = { path = "crates/gadget", default-features = false }
 circuit                   = { path = "crates/circuit" }
 zkap-service              = { path = "crates/service" }
 zkap-evm-verifier         = { path = "crates/zkap-evm-verifier" }
-# Commit 4 of the 2026-05 ark-ar1cs boundary migration bumps the
-# upstream rev to `b003a7d`, which:
-#   * fuses the previous `ark-ar1cs-{format,prover,zkey}` crates into
-#     a single `ark-ar1cs` root crate (with `prove`,
-#     `synthesize_full_assignment`, and the `format` submodule),
-#   * drops `ark-ar1cs-wtns`, `ark-ar1cs-wasm-witness`, the `.arzkey`
-#     envelope, and the `from_setup_output` helper.
-# `ark-ar1cs-build` ships the build-time matrix exporter used by the
-# upstream's own tests; the zkap-circuit consumers (service, cli) only
-# need the runtime root crate.
+# `ark-ar1cs` exposes the post-migration prover surface: `prove`,
+# `synthesize_full_assignment`, and the `format` submodule
+# (`ArcsFile`, `ConstraintMatrices`, `CurveId`). Pinned to the upstream
+# rev whose workspace fuses `format` / `prover` / `zkey` into the
+# single root crate.
 ark-ar1cs = { git = "https://github.com/baerae-zkap/ark-ar1cs", rev = "b003a7d8ec39becd489e2266eb336df34e11a463" }
 
 # Kept for `ark-utils` (still uses postcard for V1 wire serialization).

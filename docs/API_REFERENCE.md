@@ -111,7 +111,7 @@ assert_eq!(result.individual.len(), config.num_audience_limit as usize);
 assert!(result.combined.starts_with("0x"));
 ```
 
-**Lifecycle context:** Used in Step 6. Pass `result.individual` as `aud_hash_list` in `RawProofRequest`.
+**Lifecycle context:** Used in Step 6. Pass `result.individual` as the audience-hash list when assembling the per-JWT byte buffers that flow into `ProofRequest`.
 
 ---
 
@@ -219,10 +219,12 @@ These functions are only available when the `proof` feature is enabled (it is en
 pub fn setup(
     params: &CircuitConfig,
     output_dir: &Path,
+    rng: &mut dyn rand::RngCore,
+    ptau: Option<&Path>,
 ) -> Result<SetupOutput, ApplicationError>
 ```
 
-Perform Groth16 trusted setup and persist all artifacts to `output_dir`.
+Perform Groth16 trusted setup and persist the 7-file CRS bundle to `output_dir`.
 
 **Parameters:**
 
@@ -230,86 +232,92 @@ Perform Groth16 trusted setup and persist all artifacts to `output_dir`.
 |------|------|-------------|
 | `params` | `&CircuitConfig` | Circuit configuration |
 | `output_dir` | `&Path` | Directory to write CRS artifacts |
+| `rng` | `&mut dyn RngCore` | Caller-supplied randomness (`OsRng` in production, `ChaCha20Rng` from a fixed seed for reproducible CI runs) |
+| `ptau` | `Option<&Path>` | Stage-2 placeholder; always `None` today, returns an explicit error if `Some(_)` |
 
-**Output files:**
+**Output files** (6 written by `setup` itself; `manifest.json` is added by the `generate_setup` CLI binary):
 
 | File | Contents |
 |------|----------|
-| `pk.key` | Proving key (uncompressed binary) |
-| `vk.key` | Verifying key (uncompressed binary) |
-| `pvk.key` | Prepared verifying key (uncompressed binary) |
+| `circuit.ar1cs` | R1CS matrices in ark-ar1cs canonical envelope (`ArcsFile`) |
+| `pk.bin` | Proving key — arkworks `CanonicalSerialize` uncompressed |
+| `vk.bin` | Verifying key — arkworks `CanonicalSerialize` uncompressed |
+| `pvk.bin` | Prepared verifying key — arkworks `CanonicalSerialize` uncompressed |
 | `Groth16Verifier.sol` | Solidity on-chain verifier contract |
 | `config.json` | Input `params` serialized as JSON |
 
-**Returns:** [`SetupOutput`](#setupoutput) for immediate use with `prove()` and `verify()`.
+**Returns:** [`SetupOutput`](#setupoutput) for immediate use (e.g. through `SetupOutput::into_artifact_set()` → `Prover::from_artifact`).
 
 **Errors:**
-- `InvalidFormat` — Groth16 setup failed.
+- `InvalidFormat` — Groth16 setup failed, or `ptau = Some(_)`.
 
-**Lifecycle context:** Step 2 — run once per configuration. For pre-built keys, see `dist/` in the repository root.
+**Lifecycle context:** Step 2 — run once per configuration. For pre-built bundles, see `dist/` in the repository root.
 
 ---
 
-### `prove`
+### `Prover` (native ar1cs prove flow)
 
 ```rust
-pub fn prove(
-    params: &CircuitConfig,
-    raw: RawProofRequest,
-) -> Result<ZkapProofResult, ApplicationError>
+pub struct Prover { /* pk, vk, pvk, arcs, cfg */ }
+
+impl Prover {
+    pub fn from_artifact(set: ArtifactSet) -> Self;
+
+    pub fn prove<R: Rng + CryptoRng>(
+        &self,
+        req: &ProofRequest,
+        rng: &mut R,
+    ) -> Result<ZkapProofResult, ApplicationError>;
+
+    pub fn verifying_key(&self) -> &VerifyingKey<BN254>;
+    pub fn prepared_verifying_key(&self) -> &PreparedVerifyingKey<BN254>;
+    pub fn circuit_config(&self) -> &CircuitConfig;
+}
 ```
 
-Generate Groth16 proofs via a 4-step internal pipeline:
+Canonical post-migration prove entry point. Internally chains:
 
-1. **Validate & parse** — `RawProofRequest` → `ProofRequest`: checks vector lengths, parses field elements and JWT tokens.
-2. **Build context** — Constructs anchor and audience contexts.
-3. **Build circuit inputs** — Assembles one `ZkapCircuitInput` per JWT token.
-4. **Generate proofs** — Runs `Groth16::prove` for each circuit input.
+1. `witness::build_input(&req, &self.cfg)` → `Vec<ZkapInputV1>`
+2. `witness::into_circuit_input(v1)` → `ZkapCircuitInput<F>`
+3. `ZkapCircuit::from_input(circuit_input)` → `ConstraintSynthesizer`
+4. `ark_ar1cs::synthesize_full_assignment(circuit)` → `[F::ONE, instance…, witness…]`
+5. `ark_ar1cs::prove(&self.pk, &self.arcs, &full_assignment, rng)` → `Proof<BN254>`
 
-**Parameters:**
-
-| Name | Type | Description |
-|------|------|-------------|
-| `params` | `&CircuitConfig` | Circuit configuration (must match the one used in `setup()`) |
-| `raw` | `RawProofRequest` | See [`RawProofRequest`](#rawproofrequest) |
+**Trust gating** lives entirely in [`ArtifactSet::load`](#artifactsetload). `Prover::prove` performs no manifest lookup, no `arcs.body_blake3` recompute, and no sha256 re-check. The `Manifest`/`hash` validation is the loader's job; `Prover` trusts the set that built it.
 
 **Returns:** [`ZkapProofResult`](#zkapproofresult) containing K proofs and public inputs.
 
 **Errors:**
-- `InvalidFormat` — Vector length mismatch (e.g. `jwts.len() != K`), invalid field element string, JWT parsing failure.
-- `ProofGenerationFailed` — Groth16 proving failed (constraint not satisfied, proving key mismatch).
+- `InvalidFormat` — `ProofRequest` shape mismatch surfaced through `ZkapWitnessError` (anchor cardinality, RSA length, JWT decode, …).
+- `ProofGenerationFailed` — `synthesize_full_assignment` failed or `ark_ar1cs::prove` rejected the assignment at R1CS preflight.
 
-**Lifecycle context:** Step 6 — the core proof generation call.
+**Non-canonical shortcut:**
+
+```rust
+pub fn prove_from_unverified_paths<R: Rng + CryptoRng>(
+    bundle_dir: &Path,
+    req: &ProofRequest,
+    rng: &mut R,
+) -> Result<ZkapProofResult, ApplicationError>;
+```
+
+Loads `pk.bin`, `vk.bin`, `pvk.bin`, `circuit.ar1cs`, `config.json` from `bundle_dir` via [`ArtifactSet::load_unverified`](#artifactset) (no manifest hash gating) and forwards to `Prover::from_artifact` + `Prover::prove`. **Tests / dev tools only**; production callers MUST use `ArtifactSet::load(manifest, dir)` + `Prover::from_artifact` + `Prover::prove`.
 
 ---
 
-### `verify`
+### Verifying a proof
+
+There is no `zkap_service::verify` wrapper — call `ark_groth16::Groth16::verify_proof` directly:
 
 ```rust
-pub fn verify(
-    ctx: &VerifyingContext,
-    proof: &ProofComponents,
-    public_inputs: &[String],
-) -> Result<bool, ApplicationError>
+use ark_groth16::Groth16;
+use circuit::types::BN254;
+
+let pvk = prover.prepared_verifying_key();          // or set.pvk, or setup_output.prepared_verifying_key()
+let proof: Proof<BN254>          = /* from Prover::prove via dto reconstruction */;
+let public_inputs: Vec<F>        = /* per-proof 8-element instance vector */;
+let ok = Groth16::<BN254>::verify_proof(pvk, &proof, &public_inputs)?;
 ```
-
-Verify a single Groth16 proof against public inputs.
-
-**Parameters:**
-
-| Name | Type | Description |
-|------|------|-------------|
-| `ctx` | `&VerifyingContext` | From `SetupOutput::verifying_context()` |
-| `proof` | `&ProofComponents` | A single proof from `ZkapProofResult::proofs` |
-| `public_inputs` | `&[String]` | 8-element hex string array. Use `ZkapProofResult::public_inputs_for(index)` to construct |
-
-**Returns:** `true` if valid, `false` if invalid.
-
-**Errors:**
-- `ParseError` — A public input string could not be parsed as a field element.
-- `InvalidFormat` — Verifier internal failure.
-
-**Lifecycle context:** Step 7 — verify each of the K proofs individually.
 
 ---
 
@@ -346,30 +354,37 @@ Runtime circuit parameters. Load from JSON via `load_circuit_config()` or constr
 
 ---
 
-### `RawProofRequest`
+### `ProofRequest` / `SharedFields` / `PerJwtFields`
 
-Unvalidated proof request received from the outside world. All fields are strings for cross-platform compatibility.
+Native-path proof request — carries **no** artifact paths. The post-migration request describes only the credentials being proven; the CRS bundle reaches the prover through [`ArtifactSet::load`](#artifactsetload) (canonical) or `ArtifactSet::load_unverified` (non-canonical shortcut).
 
-| Field | Type | Cardinality | Description |
-|-------|------|-------------|-------------|
-| `pk_path` | `PathBuf` | 1 | Path to proving key file (pk.key from `setup()`) |
-| `jwts` | `Vec<String>` | K | JWT token strings |
-| `pk_ops` | `Vec<String>` | K | RSA public key moduli (Base64-encoded) |
-| `merkle_paths` | `Vec<Vec<String>>` | K | Merkle authentication paths (field-element strings) |
-| `leaf_indices` | `Vec<u64>` | K | Merkle leaf indices |
-| `root` | `String` | 1 | Merkle root (hex or decimal field-element string) |
-| `anchor_evals` | `Vec<String>` | N-K+1 | Anchor polynomial evaluations from `generate_anchor()` |
-| `hanchor` | `String` | 1 | Chain hash of `anchor_evals` via `generate_hash()` |
-| `user_op_hash` | `String` | 1 | Signed UserOperation hash (hex or decimal) |
-| `random` | `String` | 1 | Blinding factor (hex or decimal, must be non-zero) |
-| `aud_hash_list` | `Vec<String>` | variable | Per-audience hashes from `generate_aud_hash().individual` |
+```rust
+pub struct ProofRequest {
+    pub shared: SharedFields,
+    pub per_jwt: Vec<PerJwtFields>,
+}
 
-**Methods:**
+pub struct SharedFields {
+    pub random_be: [u8; 32],
+    pub h_sign_user_op_be: [u8; 32],
+    pub anchor_values_be: Vec<[u8; 32]>,       // len = n - k + 1
+    pub anchor_known_x_be: Vec<[u8; 32]>,      // len = k
+    pub anchor_selector: Vec<u8>,              // len = n, cardinality = k
+    pub merkle_root_be: [u8; 32],
+}
 
-| Method | Returns | Description |
-|--------|---------|-------------|
-| `new(...)` | `Self` | Construct from all fields (no validation) |
-| `token_count()` | `usize` | Number of JWT tokens |
+pub struct PerJwtFields {
+    pub jwt_bytes: Vec<u8>,
+    pub rsa_modulus_be: Vec<u8>,               // exactly 256 bytes
+    pub rsa_signature_be: Vec<u8>,             // exactly 256 bytes
+    pub anchor_current_idx: u64,
+    pub merkle_leaf_sibling_hash_be: [u8; 32],
+    pub merkle_auth_path_be: Vec<[u8; 32]>,    // len = tree_height - 1
+    pub merkle_leaf_idx: u64,
+}
+```
+
+`ProofRequest::validate(k, n)` re-applies the shape invariants; the same checks run again inside `witness::build_input` and `witness::into_circuit_input` defensively.
 
 ---
 
@@ -387,18 +402,43 @@ JWT claim triple for anchor generation. Implements `serde::Serialize` + `Deseria
 
 ### `SetupOutput`
 
-Output of `setup()`. Not serializable — use the persisted key files for storage.
+Output of `setup()`. Not serializable — use the persisted bundle files for storage. Convert to an [`ArtifactSet`](#artifactsetload) in-memory via `SetupOutput::into_artifact_set()` to feed `Prover::from_artifact` without going through disk.
 
 | Method | Returns | Description |
 |--------|---------|-------------|
-| `verifying_context()` | `VerifyingContext` | Opaque handle for `verify()` |
+| `prepared_verifying_key()` | `&PreparedVerifyingKey<BN254>` | Borrow for direct `Groth16::verify_proof` calls |
 | `public_input_count()` | `usize` | Number of public inputs in the verifying key (includes constant "1" element) |
+| `into_artifact_set()` | `ArtifactSet` | Hand `(pk, vk, pvk, arcs, cfg)` straight to `Prover::from_artifact` |
 
 ---
 
-### `VerifyingContext`
+### `ArtifactSet::load`
 
-Opaque handle wrapping a Groth16 prepared verifying key. Obtained from `SetupOutput::verifying_context()`. Not serializable — intended for in-process use only.
+```rust
+pub struct ArtifactSet {
+    pub pk:   ProvingKey<BN254>,
+    pub vk:   VerifyingKey<BN254>,
+    pub pvk:  PreparedVerifyingKey<BN254>,
+    pub arcs: ArcsFile<F>,
+    pub cfg:  CircuitConfig,
+}
+
+impl ArtifactSet {
+    pub fn load(manifest: &Manifest, dir: &Path) -> Result<Self, ArtifactError>;
+    pub fn load_unverified(dir: &Path)            -> Result<Self, ArtifactError>;
+}
+```
+
+Manifest-validated CRS bundle loader. `load(manifest, dir)` is the **single trust gate** for the prove path; it asserts:
+
+* `ArcsFile::read(circuit.ar1cs)` succeeds.
+* `arcs.body_blake3() == manifest.ar1cs_blake3`.
+* `sha256(circuit.ar1cs / pk.bin / vk.bin / pvk.bin / config.json) == manifest.artifacts.<slot>.sha256`.
+* If `manifest.artifacts.evm_verifier` is `Some`, `sha256(Groth16Verifier.sol) == manifest.artifacts.evm_verifier.sha256`.
+
+Any disagreement returns `ArtifactError::HashMismatch { field, expected, got }` with the failing manifest path named in `field`.
+
+`load_unverified(dir)` is the non-canonical, caller-trusted shortcut: it reads the same files but runs **no** sha256 / `ar1cs_blake3` / `evm_verifier` validation. Use only in tests, dev tools, and caller-trusted environments.
 
 ---
 
@@ -486,8 +526,7 @@ Top-level error enum. All public functions return this type.
 
 | Feature | Default | Effect |
 |---------|---------|--------|
-| `proof` | **on** | Enables `setup`, `prove`, `verify` and heavyweight arkworks dependencies |
-| `use-optimized` | off | Streaming prover for memory-constrained environments (e.g. iOS) |
+| `proof` | **on** | Enables `setup`, `Prover`, `ArtifactSet`, and the heavyweight `ark-ar1cs` / `ark-groth16` dependencies |
 
 Without `proof`: only hash/anchor functions, data types, and `load_circuit_config` are available. Use this for platforms where proof generation happens server-side.
 

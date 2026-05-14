@@ -163,13 +163,9 @@ fn test_setup_creates_all_artifacts() {
         "manifest.json must be CLI-owned, not written by service::setup"
     );
 
-    // Legacy artifacts must NOT reappear after the boundary migration.
-    for legacy in ["pk.arzkey", "pk.key", "vk.key", "pvk.key"] {
-        assert!(
-            !tmp_dir.join(legacy).exists(),
-            "legacy artifact {legacy} must not be produced after Commit 2"
-        );
-    }
+    // The bundle layout is enforced structurally by
+    // `scripts/check-bundle-layout.sh` (CI gate); no need to enumerate
+    // retired filenames here.
 
     let _ = std::fs::remove_dir_all(&tmp_dir);
 }

@@ -56,13 +56,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      # wasm_to_prove integration tests rebuild zkap-witness-wasm for
-      # wasm32-unknown-unknown inside the test fixture, so the Test job
-      # toolchain needs that target installed (the test sets
-      # AR1CS_WITNESS_ARZKEY_PATH itself per-run). Mirrors `ci.yml`.
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-        with:
-          targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
       - uses: taiki-e/install-action@c070f87102a1c75b3183910f391c1cb887fe13c8 # v2
         with:
@@ -78,24 +72,15 @@ jobs:
       - run: cargo nextest run --profile ci --cargo-profile release-tests --workspace
 
   generate-keys:
-    # Phase 8 / P8-release-yml-symmetry (Phase 7 critic MINOR #4):
-    # mirror the defence-in-depth guards from `ci.yml`'s
-    # `generate-crs-smoke` job onto the tag-cut path that emits the
-    # actual release artifacts. tag-cut is precisely where an
-    # n,k-regression that explodes pk.arzkey would do the most damage
-    # (release runner exhaustion, partial artifact upload), so the
-    # guards belong here at least as much as on the PR-side smoke.
-    # - `concurrency:` is keyed by (ref, shape) so a re-tagged release
-    #   (or a `workflow_dispatch` re-trigger) cancels superseded runs
-    #   per shape without the two matrix legs cancelling each other.
-    # - `timeout-minutes:` is 30 to absorb the larger `tree_height=15`
-    #   release shapes; PR-side smoke stays at the tighter 10-minute
-    #   ceiling because it runs the smaller smoke shape only.
-    # - The size cap on `output/keys` is a 2 GiB ceiling per shape.
-    #   The committed release shapes (1-of-1 and 3-of-3) are well
-    #   under this; the cap is a tripwire for a parameter regression
-    #   blowing pk.arzkey past the runner disk budget.
-    name: Generate Proving Keys (${{ matrix.shape }})
+    # Mirrors the defence-in-depth guards from `ci.yml`'s
+    # `generate-setup-smoke` job onto the tag-cut path that emits the
+    # actual release artifacts. The 2026-05 ark-ar1cs boundary
+    # migration replaced the legacy `circuit.arzkey + wasm` pair with
+    # the post-migration 7-file bundle (`circuit.ar1cs`, `pk.bin`,
+    # `vk.bin`, `pvk.bin`, `Groth16Verifier.sol`, `config.json`,
+    # `manifest.json`); the manifest is the single trust gate for
+    # downstream consumers.
+    name: Generate CRS bundle (${{ matrix.shape }})
     needs: test
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -113,39 +98,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
 
-      # Phase 9 follow-up: replace generate_crs (legacy 6-file output) with
-      # generate_setup (V1 7-file output incl. paired wasm). The wasm artifact
-      # is required for the prove path; without it, the release tarball is
-      # incomplete and consumers must build wasm separately (and end up with
-      # a dummy-arzkey-paired wasm that aborts at runtime).
-      - name: Add wasm32 target
-        run: rustup target add wasm32-unknown-unknown
-
-      - name: Install binaryen (wasm-opt)
-        # ubuntu-latest does not ship binaryen by default. apt cache is
-        # refreshed by the GitHub-hosted runner ~24h; package fetch is ~10s.
-        run: sudo apt-get update && sudo apt-get install -y binaryen
-
-      - name: Generate CRS + wasm bundle
+      - name: Generate CRS bundle
         run: cargo run --release --features circuit/integration-tests
           --bin generate_setup --
           --config configs/release/${{ matrix.shape }}.json --output output/keys
           --circuit-id zkap-main-${{ matrix.shape }}
 
-      - name: Verify pair contract
-        # arzkey bytes 16..48 == wasm.embedded_ar1cs_blake3 (generate_setup
-        # already prints the same hex to stdout, but we re-verify here for
-        # release-path evidence).
-        run: |
-          set -euo pipefail
-          ARZKEY_HEX=$(xxd -s 16 -l 32 -p output/keys/circuit.arzkey | tr -d '\n')
-          test "${#ARZKEY_HEX}" -eq 64 || { echo "ERROR: arzkey blake3 length"; exit 1; }
-          if ! LC_ALL=C grep -aFq "$(printf %s "${ARZKEY_HEX}" | xxd -r -p)" \
-               output/keys/zkap_witness_wasm.opt.wasm; then
-            echo "ERROR: wasm does not contain the arzkey ar1cs_blake3 bytes"
-            exit 1
-          fi
-          echo "pair contract verified (ar1cs_blake3=${ARZKEY_HEX})"
+      - name: Verify post-migration 7-file layout
+        run: bash scripts/check-bundle-layout.sh output/keys
 
       - name: CRS artifact size cap
         # 2 GiB (2 097 152 KiB) per-shape ceiling. Catches a parameter

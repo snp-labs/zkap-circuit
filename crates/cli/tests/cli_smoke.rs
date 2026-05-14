@@ -9,9 +9,7 @@
 //! `generate_setup` is intentionally not covered here because its
 //! `zkap_service::setup` call runs the full Groth16 trusted setup, which
 //! is far too heavy for a smoke test. A separate slow-test bin exercise
-//! belongs in a dedicated integration suite. The pre-migration sibling
-//! `generate_crs` was removed in Commit 2 of the 2026-05 ark-ar1cs
-//! boundary migration.
+//! belongs in a dedicated integration suite.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;

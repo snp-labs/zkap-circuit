@@ -23,9 +23,11 @@ const _: fn() = || {
     assert_send_sync::<ZkapInputV1>();
 };
 
-/// Semantic V1 wire format. See `zkap-witness-wasm::input` module docs for
-/// the full encoding contract — every change to field order, BE/LE, or
-/// variable-vs-fixed length requires a `WitnessGenerator::CIRCUIT_ID` bump.
+/// Semantic V1 wire format. See
+/// `zkap_service::witness::input::into_circuit_input` for the
+/// conversion-side companion — every change to field order, BE/LE, or
+/// variable-vs-fixed length is a wire-format break and must be paired
+/// with a circuit-identifier bump.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ZkapInputV1 {
     /// Full JWT as raw ASCII bytes — the canonical
@@ -77,7 +79,8 @@ pub struct ZkapInputV1 {
     pub merkle_leaf_idx: u64,
 
     /// Circuit shape parameters. Bumping any shape value requires
-    /// regenerating the `.arzkey` and rebuilding the wasm.
+    /// regenerating the CRS bundle (`pk.bin` / `vk.bin` / `pvk.bin`
+    /// + the `circuit.ar1cs` envelope).
     pub circuit_config: CircuitConfig,
 }
 

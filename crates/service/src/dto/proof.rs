@@ -129,7 +129,7 @@ impl From<(Vec<Proof<BN254>>, Vec<Vec<F>>)> for ZkapProofResult {
             };
         }
 
-        // arwtns instance layout (8 elements per proof):
+        // Canonical 8-element instance layout (per proof):
         //   [hanchor(0), h_a(1), root(2), h_sign_user_op(3),
         //    jwt_exp(4), verification_rhs(5), lhs(6), h_aud_list(7)]
         // shared values are taken from the first proof — they are constant across the batch.

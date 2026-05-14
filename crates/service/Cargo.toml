@@ -62,11 +62,10 @@ postcard = { workspace = true }
 name = "zkap_service"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
-# NB: the `groth16_proof` example targets the legacy hex/Base64
-# `RawProofRequest::new` shape and predates the wasm-witness runtime.
-# Rewriting it for the V1-byte API requires bundling a paired
-# `.wasm` artifact at example-run time; tracked as a follow-up. The
-# example file is preserved as a reference until that rewrite lands.
+# `crates/service/examples/` is empty today. The end-to-end exercise
+# of `service::Prover::prove` lives in
+# `crates/service/tests/native_prove_e2e.rs` (signature guards) and
+# the slow `circuit::tests::groth16_integration` suite.
 
 [features]
 default = ["proof"]

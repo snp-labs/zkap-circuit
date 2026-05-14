@@ -13,8 +13,9 @@
 //!         → ark_ar1cs::prove(&pk, &arcs, &full_assignment, rng)
 //! ```
 //!
-//! No wasm runtime, no `.arzkey` / `.arwtns` envelope, no postcard
-//! witness blob. The single non-canonical shortcut
+//! Pure native flow — the host loads the manifest-validated CRS
+//! bundle and the prover runs in-process. The single non-canonical
+//! shortcut
 //! [`prove_from_unverified_paths`] exists for tests and caller-trusted
 //! environments; production callers MUST use
 //! [`crate::artifact::ArtifactSet::load`] + [`Prover::from_artifact`] +

@@ -2,13 +2,12 @@
 //! post-migration prove flow.
 //!
 //! Lands as part of Commit 3 of the 2026-05 ark-ar1cs boundary
-//! migration. The request carries **no** artifact paths — `pk_path`,
-//! `vk_path`, `pvk_path`, `ar1cs_path`, `manifest_path`, `wasm_path`,
-//! and `wasm_bytes` are all out. Post-migration call sites pass the
-//! artifact bundle (e.g. via `ArtifactSet`) to the prover separately,
-//! so a [`ProofRequest`] is a pure description of the credentials
-//! being proven and the field elements that compose the public-input
-//! vector.
+//! migration. The request carries **no** artifact paths — every
+//! pre-migration field that pointed at on-disk bytes is gone.
+//! Post-migration call sites pass the artifact bundle (e.g. via
+//! `ArtifactSet`) to the prover separately, so a [`ProofRequest`]
+//! is a pure description of the credentials being proven and the
+//! field elements that compose the public-input vector.
 
 use ark_utils::wire::ZkapInputV1;
 use circuit::types::CircuitConfig;

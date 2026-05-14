@@ -18,16 +18,6 @@
 //! RNG is `OsRng` by default; pass `--rng-seed <hex> --allow-test-only`
 //! for the deterministic `ChaCha20Rng` path. `SOURCE_DATE_EPOCH` pins
 //! `built_at` for byte-reproducible runs.
-//!
-//! ## What this binary no longer does
-//!
-//! The pre-migration `generate_setup` chained a full
-//! `wasm32-unknown-unknown` build of `zkap-witness-wasm`, ran
-//! `wasm-opt -Oz`, verified four ABI exports, and renamed
-//! `pk.arzkey → circuit.arzkey`. The 2026-05 ark-ar1cs boundary removes
-//! the wasm witness substrate; native witness generation lives in
-//! `zkap_service::witness` (Commit 3) and the prover loads a separate
-//! `pk.bin` + `circuit.ar1cs` pair.
 
 use clap::Parser;
 use rand::RngCore;

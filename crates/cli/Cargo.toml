@@ -29,8 +29,9 @@ time = { workspace = true }
 name = "zkap_cli"
 path = "src/lib.rs"
 
-# `generate_crs` was removed in the 2026-05 ark-ar1cs boundary migration
-# (Commit 2). `generate_setup` is the canonical superset.
+# `generate_setup` is the canonical CLI binary; pre-migration setup
+# binaries were retired in the 2026-05 ark-ar1cs boundary migration
+# (Commit 2).
 
 [[bin]]
 name = "generate_hash"

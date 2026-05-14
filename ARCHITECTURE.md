@@ -9,117 +9,78 @@ zkap-circuit is a Rust library for generating Groth16 zero-knowledge proofs that
 ```
                        zkap-service ─────────────→ circuit ──→ gadget ──→ ark-utils
                             │                          ↑          ↑
-                            │                          │          └─→ arkworks
-                            ├──→ zkap-input-types      │
-                            │       (V1 wire types)    │
-                            ├──→ ark-ar1cs-format      │
-                            ├──→ ark-ar1cs-zkey        │
-                            ├──→ ark-ar1cs-wtns        │
-                            └──→ ark-ar1cs-prover      │
-                                                       │
-        zkap-witness-wasm ─────────────────────────────┤
-        (wasm32 witness-generator binary)              │
-            │                                          │
-            ├──→ ark-ar1cs-wasm-witness                │
-            ├──→ ark-ar1cs-format                      │
-            ├──→ zkap-input-types                      │
-            └──→ circuit + gadget ──────────────────── ┘
-
-             cli ──→ zkap-service
+                            ├──→ ark-ar1cs              │          └─→ arkworks
+                            │       (root crate;        │
+                            │        prove,             │
+                            │        synthesize_full_   │
+                            │        assignment,        │
+                            │        format::ArcsFile)  │
+                            └──→ ark-groth16            │
+                                                        │
+                            cli ──→ zkap-service ───────┘
 ```
 
-- **ark-utils**: Base layer (R1CS helpers, field arithmetic, EVM codegen)
-- **gadget**: Circuit gadgets (feature-gated): SHA256, Poseidon, RSA, base64, Merkle tree, anchor, matrix
-- **circuit**: Main ZkapCircuit, CircuitConfig, witness types, R1CS constraints
-- **zkap-input-types**: V1 wire-format types (`ZkapInputV1`, `ZkapCircuitConfigV1`, canonical 32-byte BE field codec). Carries no `circuit`/`gadget` dependency so hosts can construct V1 payloads without the full circuit compile graph.
-- **zkap-witness-wasm**: ZKAP-specific witness-generator artifact (compiled to `wasm32-unknown-unknown`). Consumes a postcard-encoded `ZkapInputV1`, reconstructs `ZkapCircuit::from_input` on the wasm side, and emits an `.arwtns` blob. Pairs with a `.arzkey` via the embedded `ar1cs_blake3`.
-- **zkap-service**: Proof generation orchestration, public API. Loads the host-side `.arzkey`, reads the witness-generator wasm bytes, runs a host-side `ar1cs_blake3` fail-fast pair check, then drives the `ark-ar1cs` prover (`prove(.arzkey, .arwtns) → Groth16 Proof`).
-- **cli**: Binary utilities (CRS generation, hash utilities)
-- **ark-ar1cs-** crates: Circuit-agnostic byte interface (matrices `.ar1cs`, setup output `.arzkey`, witness `.arwtns`, prover, generic wasm-witness substrate). Imported as path dependencies from `../ark-ar1cs/crates/...` and bound to this repo's circuit identity by `ar1cs_blake3`.
+- **ark-utils**: Base layer (R1CS helpers, field arithmetic, EVM codegen, V1 wire types in `ark_utils::wire`).
+- **gadget**: Circuit gadgets (feature-gated): SHA256, Poseidon, RSA, base64, Merkle tree, anchor, matrix.
+- **circuit**: Main `ZkapCircuit`, `CircuitConfig`, witness types, R1CS constraints. `ZkapCircuit::from_input` is the native constructor used by the `service::prover` flow.
+- **zkap-service**: Proof generation orchestration, public API. Owns the native witness path (`service::witness`), the manifest-validated artifact loader (`service::artifact::ArtifactSet::load`), the trusted setup (`service::setup`), and the native ar1cs prover (`service::prover::Prover`).
+- **cli**: Binary utilities — `generate_setup` (writes the 7-file CRS bundle) and `generate_hash` (standalone Poseidon hashing).
+- **ark-ar1cs**: Circuit-agnostic byte interface. Exposes `prove(pk, arcs, full_assignment, rng)`, `synthesize_full_assignment`, and the `format::ArcsFile` envelope. Imported as a single git+rev workspace dep.
 
 ## Crate Responsibilities
 
-**ark-utils** provides low-level R1CS constraint helpers (array selection, field arithmetic, comparison), packing/decomposition utilities for witness construction, and EVM bytecode codegen for public input verification. It has no zkap-specific logic—purely reusable constraint gadgetry.
+**ark-utils** provides low-level R1CS constraint helpers (array selection, field arithmetic, comparison), packing/decomposition utilities for witness construction, EVM bytecode codegen for public input verification, and the V1 wire types (`ZkapInputV1`, `CircuitConfig`) that the host populates without pulling in the circuit graph.
 
 **gadget** implements feature-gated ZK circuit gadgets: SHA256 hashing, Poseidon hashing with parameter caching, RSA-2048 signature verification, base64 decoding with table lookup, Merkle tree traversal using Poseidon, Vandermonde matrix operations for the anchor scheme, and bigint arithmetic for RSA. All gadgets are constraint-based (use `Var` types) and integrate with arkworks.
 
-**circuit** defines the main ZkapCircuit struct, CircuitConfig (runtime parameters like n/k/max_jwt_b64_len/tree_height), and witness types (JwtWitness, AnchorWitness, MerkleWitness, AudienceWitness). It orchestrates all gadgets into a single R1CS constraint system that proves JWT validity, threshold membership, issuer membership, and audience membership without exposing the JWT itself.
+**circuit** defines the main ZkapCircuit struct, CircuitConfig (runtime parameters like n/k/max_jwt_b64_len/tree_height), and witness types (`JwtWitness`, `AnchorWitness`, `MerkleWitness`, `AudienceWitness`). It orchestrates all gadgets into a single R1CS constraint system that proves JWT validity, threshold membership, issuer membership, and audience membership without exposing the JWT itself. `ZkapCircuit::from_input(ZkapCircuitInput<F>)` is the native constructor consumed by the service-side prover.
 
-**zkap-service** is the public API layer that orchestrates proof generation end-to-end. It parses JWTs, validates requests, builds circuit witness, invokes Groth16 proving/verification, and provides utilities for anchor generation and hash computation. The host-facing request type `RawProofRequest` is defined in `proof/request.rs`; response types (`ZkapProofResult` with `SharedPublicInputs` / `PerProofPublicInputs`, `AudHashResult`) live in `dto/` and are serializable for platform bindings.
+**zkap-service** is the public API layer that orchestrates proof generation end-to-end. It splits cleanly into:
+
+- `service::witness` — pure V1 input shaping. `ProofRequest`/`SharedFields`/`PerJwtFields` carry **no** artifact paths; `build_input` re-applies shape invariants and `into_circuit_input` converts each `ZkapInputV1` into a fully assigned `ZkapCircuitInput<F>`.
+- `service::artifact` — manifest-validated bundle loader. `ArtifactSet::load(manifest, dir)` is the **single trust gate**: it checks `arcs.body_blake3() == manifest.ar1cs_blake3` and the sha256 of every artifact (`circuit.ar1cs`, `pk.bin`, `vk.bin`, `pvk.bin`, `config.json`, optional `Groth16Verifier.sol`). `ArtifactSet::load_unverified` is the non-canonical, caller-trusted shortcut.
+- `service::prover` — the native `Prover` handle. `Prover::from_artifact(set)` takes ownership of the `ArtifactSet`; `Prover::prove(&request, rng)` chains `build_input → into_circuit_input → ZkapCircuit::from_input → ark_ar1cs::synthesize_full_assignment → ark_ar1cs::prove(&pk, &arcs, &full_assignment, rng)`. The prover performs no manifest lookup, no `body_blake3` recompute, and no sha256 re-check — trust gating is the loader's job.
+- `service::proof::setup` — Groth16 trusted setup; persists the 7-file bundle (`crate::crs`).
 
 The crate is split into two build profiles via the `proof` Cargo feature (enabled by default):
-- **With `proof`** (default): full Groth16 proving stack, including `ark-groth16`, `ark-serialize`, `memmap2`, `jsonwebtoken`, and hash crates. Use for native server-side proof generation.
+- **With `proof`** (default): full Groth16 proving stack (`ark-groth16`, `ark-ar1cs`, `ark-serialize`, `memmap2`, hash crates). Use for native server-side proof generation.
 - **Without `proof`** (`default-features = false`): lightweight, WASM-compatible build. Only witness construction, DTOs, and data types are included. Proof generation functions are unavailable. Use for browser or mobile targets where proving happens server-side.
 
-**cli** provides two binary utilities: `generate_crs` for structured reference string generation and `generate_hash` for standalone Poseidon hash computation for testing and setup.
+In-process verification: callers borrow the `PreparedVerifyingKey` from `Prover::prepared_verifying_key()` (or `SetupOutput::prepared_verifying_key()`) and call `ark_groth16::Groth16::<Bn254>::verify_proof(pvk, &proof, &inputs)` directly. The previous in-crate `verify` wrapper was retired in the 2026-05 ark-ar1cs boundary migration.
+
+**cli** provides two binary utilities: `generate_setup` for trusted-setup CRS bundle generation (writes the 7-file layout) and `generate_hash` for standalone Poseidon hash computation.
 
 ## Data Flow
 
-A proof is generated end-to-end as follows (V1 byte API + wasm
-witness-generator runtime):
+A proof is generated end-to-end as follows (post-migration native ar1cs prove flow):
 
-1. **`RawProofRequest`** (raw bytes): The host (binding crates in
-   `zkap-zkp`, the `cli` binary, etc.) supplies a `RawProofRequest`
-   populated with raw byte buffers — BE-encoded 32-byte field
-   elements, full JWT byte buffers, RSA-2048 modulus / signature byte
-   strings — plus a `pk_path` pointing at a `.arzkey` and a
-   `wasm_path` pointing at the paired witness-generator `.wasm`.
-2. **Validation** (`proof/request.rs`): `RawProofRequest::validate(k, n)`
-   cross-checks per-JWT vector lengths, anchor cardinality
-   (`n - k + 1`), and selector length (`n`). Bad shapes are rejected
-   here, before any artifact is touched.
-3. **V1 payload assembly** (`proof/mod.rs`): `CircuitConfig` is
-   projected to wire-format `ZkapCircuitConfigV1`, and one
-   `ZkapInputV1` is built per JWT. `zkap-input-types` is the single
-   source of truth for the wire layout.
-4. **`ProofGenerator::generate`**:
-   1. `ArzkeyFile::read(pk_path)` (verifies the `.arzkey` envelope
-      Blake3 trailer + self-consistency
-      `arzkey.arcs().body_blake3() == header.ar1cs_blake3`).
-   2. `std::fs::read(wasm_path)` (reads the witness-generator wasm
-      bytes once into memory).
-   3. **Host-side `ar1cs_blake3` fail-fast pair check**: instantiate
-      the wasm runtime once, call `embedded_ar1cs_blake3()`, compare
-      to `arzkey.header.ar1cs_blake3`. Mismatch returns
-      `ApplicationError::InvalidFormat("ar1cs_blake3 mismatch: ...")`
-      *before* the per-proof loop runs. The wasm-side
-      `witness_generator` still enforces the same equality check
-      internally as defense in depth. This is **not** a complete
-      supply-chain defense against a malicious wasm — a hostile wasm
-      can lie about its embedded blake3.
-   4. For each input (per-proof allocator reset):
-      1. Instantiate a fresh `DefaultRuntime` over the wasm bytes.
-      2. `postcard::to_allocvec(&ZkapInputV1)`.
-      3. Drive the wasm `witness_generator` ABI export, passing
-         `arzkey.header.ar1cs_blake3` as the `host_blake3` parameter.
-         The wasm side runs `ZkapInputV1::into_circuit_input →
-         ZkapCircuit::from_input → generate_constraints` and emits
-         a serialized `ArwtnsFile` over linear memory.
-      4. `ArwtnsFile::read(wasm_output_bytes)` (envelope check).
-      5. `ark_ar1cs_prover::prove(&arzkey, &arwtns, &mut rng)`.
-         The prover runs `bind_check` (curve_id / `ar1cs_blake3` /
-         instance+witness count / arzkey self-consistency) +
-         `preflight::check_r1cs_satisfaction` before calling
-         `Groth16::create_proof_with_reduction_and_matrices`.
-5. **Output**: Solidity-compatible proof component strings and split
-   public-input lists per JWT (`ZkapProofResult` →
-   `ProofComponents`). Verifier can check against public inputs
-   without the JWT.
+1. **`ProofRequest`** (raw bytes): The host (binding crates in `zkap-zkp`, the `cli` binary, etc.) supplies a `ProofRequest` populated with raw byte buffers — BE-encoded 32-byte field elements, full JWT byte buffers, RSA-2048 modulus / signature byte strings. The request carries **no** artifact paths.
+2. **Trust gate** (`ArtifactSet::load(manifest, dir)`): Reads the seven on-disk bundle files, parses `circuit.ar1cs` via `ark_ar1cs::format::ArcsFile::read`, and verifies every hash claim in `manifest.json`:
+   - `arcs.body_blake3() == manifest.ar1cs_blake3`
+   - sha256 of each binary artifact == `manifest.artifacts.<slot>.sha256`
+   - Mismatch returns `ArtifactError::HashMismatch { field, expected, got }` and the prover never sees the bytes.
+3. **`Prover::from_artifact(set)`**: Takes ownership of the `(pk, vk, pvk, arcs, cfg)` bundle. No further validation runs inside the prover.
+4. **`Prover::prove(&request, rng)`** — per credential:
+   1. `witness::build_input(&req, &cfg)` → `Vec<ZkapInputV1>` (re-applies shape invariants).
+   2. `witness::into_circuit_input(v1)` → `ZkapCircuitInput<F>`.
+   3. `ZkapCircuit::from_input(circuit_input)` wraps it as a `ConstraintSynthesizer`.
+   4. `ark_ar1cs::synthesize_full_assignment::<_, F>(circuit)` returns the `[F::ONE, instance..., witness...]` vector.
+   5. `ark_ar1cs::prove::<BN254, R>(&pk, &arcs, &full_assignment, rng)` produces the Groth16 proof. The function runs an internal R1CS preflight (`Az ⊙ Bz == Cz`) before calling `Groth16::create_proof_with_reduction_and_matrices`.
+5. **Output**: Solidity-compatible proof component strings and split public-input lists per JWT (`ZkapProofResult` → `ProofComponents`). Verifier checks against public inputs without the JWT, either on-chain (`Groth16Verifier.sol`) or via `Groth16::<BN254>::verify_proof(pvk, &proof, &inputs)` in process.
 
 ### Artifact identity binding
 
-| Artifact         | Producer                                                | Consumer                                | Identity field                                                                  |
-|------------------|---------------------------------------------------------|-----------------------------------------|---------------------------------------------------------------------------------|
-| `.ar1cs`         | `setup()` → `cs.to_matrices()` → `ArcsFile::from_matrices` | embedded inside `.arzkey`               | Blake3 of canonical body                                                        |
-| `.arzkey`        | `setup()` → `crs.rs` → `ArzkeyFile::from_setup_output`     | `ProofGenerator::load_arzkey`           | `header.ar1cs_blake3`                                                           |
-| `circuit.wasm`   | `crates/zkap-witness-wasm` `build-wasm.sh` (build.rs reads `AR1CS_WITNESS_ARZKEY_PATH` and bakes `EMBEDDED_AR1CS_BLAKE3`) | `ProofGenerator::generate` (loaded as bytes, instantiated by `DefaultRuntime`) | `EMBEDDED_AR1CS_BLAKE3`                                                         |
-| `.arwtns`        | wasm `witness_generator` export                            | `ark_ar1cs_prover::prove`               | `header.ar1cs_blake3` (set from the host-supplied `host_blake3` parameter)      |
+| Artifact         | Producer                                                   | Consumer                            | Identity claim                                        |
+|------------------|------------------------------------------------------------|-------------------------------------|-------------------------------------------------------|
+| `circuit.ar1cs`  | `setup()` → `ConstraintMatrices::from_cs` → `ArcsFile::from_matrices` | `ArtifactSet::load` (parses + checks `body_blake3`) | `manifest.ar1cs_blake3` (32-byte blake3 of canonical body) |
+| `pk.bin`         | `setup()` → `ProvingKey::serialize_uncompressed`            | `ArtifactSet::load` (sha256-checked) | `manifest.artifacts.pk.sha256`                         |
+| `vk.bin`         | `setup()` → `VerifyingKey::serialize_uncompressed`          | `ArtifactSet::load` (sha256-checked) | `manifest.artifacts.vk.sha256`                         |
+| `pvk.bin`        | `setup()` → `PreparedVerifyingKey::serialize_uncompressed`  | `ArtifactSet::load` (sha256-checked) | `manifest.artifacts.pvk.sha256`                        |
+| `config.json`    | `setup()` (mirrors the `CircuitConfig` argument)            | `ArtifactSet::load` (sha256-checked, then parsed) | `manifest.artifacts.circuit_config.sha256`              |
+| `Groth16Verifier.sol` | `setup()` → `zkap_evm_verifier::SolidityContractGenerator` (optional) | `ArtifactSet::load` (sha256-checked when `Some`) | `manifest.artifacts.evm_verifier.sha256`                |
+| `manifest.json`  | `cli::generate_setup` (CLI-owned)                           | The trust input itself              | (signs every other artifact above)                     |
 
-`ar1cs_blake3` is the single sanctioned cross-binding mechanism: the
-same 32-byte hash appears as `arzkey.header.ar1cs_blake3`,
-`EMBEDDED_AR1CS_BLAKE3` baked into the `.wasm`, and
-`arwtns.header.ar1cs_blake3`. Any pairwise drift is rejected
-structurally before the SNARK runs.
+`manifest.json` is the deployment trust boundary: any byte change in any other artifact, with the manifest unchanged, fails `ArtifactSet::load`. Conversely, a manifest claim that disagrees with the on-disk byte is rejected with the failing slot named in the error.
 
 ## Key Design Decisions
 
@@ -127,33 +88,37 @@ structurally before the SNARK runs.
 
 **Poseidon Hash for Anchor Scheme**: The threshold anchor scheme uses Poseidon hashing with a Vandermonde matrix approach rather than traditional threshold cryptography. This is efficient in-circuit (Poseidon is field-arithmetic-optimized) and allows non-interactive threshold proofs. Parameters are cached globally via OnceLock to avoid recomputation.
 
-**Service Crate Flat Module Structure**: Service modules (proof, anchor, hash, jwt, dto) are organized by responsibility, not by data type. Each module handles its own DTOs and logic: `proof/` manages RawProofRequest → ZkapInputV1 → (wasm) → ArwtnsFile → Proof, `anchor/` handles Poseidon anchor generation, `hash/` provides standalone hash utilities, and `jwt/` parses and extracts witnesses. This avoids deep nesting and keeps request/response handling colocated with orchestration logic.
+**Manifest as the single trust gate**: All hash validation lives in `ArtifactSet::load(manifest, dir)`. `Prover::prove` re-validates nothing; this means every prove batch implicitly trusts whatever the loader returned, and any tamper test against the loader is the only place hash gating needs verification. The non-canonical `ArtifactSet::load_unverified` and `prove_from_unverified_paths` helpers exist for tests/dev tools and are documented in-line as bypassing the gate.
 
-**OnceLock Cached Poseidon Parameters**: Poseidon configuration is expensive to construct. It is computed once lazily via OnceLock::get_or_init and shared across all modules (service::poseidon_params()). This eliminates redundant computation and is thread-safe.
+**Service Module Layout**: Service modules are split by responsibility. `witness/` shapes V1 input (no path fields, no wasm runtime, no postcard). `artifact/` is the manifest-validated loader. `prover/` chains the native ark-ar1cs flow. `proof/` keeps only the trusted-setup `setup` function and the persisted CRS bundle helpers.
+
+**OnceLock Cached Poseidon Parameters**: Poseidon configuration is expensive to construct. It is computed once lazily via `OnceLock::get_or_init` and shared across all modules (`service::poseidon_params()`). This eliminates redundant computation and is thread-safe.
 
 ## Service Module Map
 
 ```
 service/src/
-├── proof/         Prove, verify, setup orchestration
-│   ├── mod.rs         prove/verify/setup entry points + V1 payload assembly
-│   ├── request.rs     RawProofRequest validation
-│   ├── runtime/       wasmi backend driving the witness-generator wasm
-│   └── generator.rs   Groth16 proving (per-proof allocator reset)
-├── anchor/        Poseidon anchor generation for threshold schemes
-│   ├── mod.rs         AnchorConfig
-│   ├── poseidon.rs    generate_anchor (k-of-N aggregation, returns Vec<String>)
-│   └── types.rs       Secret type
-├── hash/          Standalone Poseidon hash utilities
-│   └── mod.rs         generate_hash, generate_aud_hash, generate_leaf_hash
-├── jwt/           JWT parsing
-│   ├── mod.rs
-│   └── parser.rs      Parse JWT header/payload/signature
-├── dto/           Platform-agnostic data transfer objects
-│   ├── proof.rs       ProofComponents, SharedPublicInputs, PerProofPublicInputs, ZkapProofResult
-│   └── hash.rs        AudHashResult
-├── crs.rs         CRS persistence (writes pk.arzkey [V1 prove path],
-│                  pk.key/vk.key/pvk.key [legacy], Groth16Verifier.sol, config.json)
-├── error.rs       ApplicationError enum (parse, validation, constraint failures)
-└── lib.rs         Public API (prove, verify, setup, generate_anchor, generate_hash)
+├── witness/         Native witness-shaping path (no wasm, no postcard)
+│   ├── mod.rs           Module entry / re-exports
+│   ├── error.rs         ZkapWitnessError
+│   ├── input.rs         into_circuit_input, build_main_circuit (V1 → ZkapCircuitInput)
+│   └── request.rs       ProofRequest / SharedFields / PerJwtFields, build_input
+├── artifact/        Manifest-validated bundle loader (single trust gate)
+│   ├── mod.rs           Module entry / re-exports
+│   ├── error.rs         ArtifactError (incl. HashMismatch { field, expected, got })
+│   └── set.rs           ArtifactSet::load + ArtifactSet::load_unverified
+├── prover/          Native ark-ar1cs prover entry point
+│   ├── mod.rs           Module entry / re-exports
+│   └── prove.rs         Prover, prove_from_unverified_paths
+├── proof/           Trusted setup
+│   └── mod.rs           setup() + SetupOutput + SetupShape
+├── anchor_host/     Poseidon anchor generation for threshold schemes
+├── hash/            Standalone Poseidon hash utilities
+├── jwt/             JWT parsing
+├── dto/             Platform-agnostic DTOs (ProofComponents, ZkapProofResult, ...)
+├── manifest.rs      Manifest schema + ManifestBuilder
+├── crs.rs           CRS persistence — writes the 7-file bundle
+├── error.rs         ApplicationError enum
+└── lib.rs           Public API (setup, Prover, prove_from_unverified_paths,
+                                  ArtifactSet, ProofRequest, ...)
 ```

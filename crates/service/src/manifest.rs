@@ -1,11 +1,9 @@
 //! `manifest.json` v1 schema + builder for the post-migration CRS bundle.
 //!
-//! Relocated from `crates/cli/src/manifest.rs` and reshaped to match the
-//! 2026-05 ark-ar1cs boundary migration:
-//!
-//! - `artifacts.arzkey` is gone (no `.arzkey` envelope).
-//! - `artifacts.wasm` + `WasmAbi` are gone (no wasm witness substrate).
-//! - `artifacts.{ar1cs, pk, vk, pvk}` replace the envelope entry.
+//! Reshaped against the 2026-05 ark-ar1cs boundary migration target.
+//! The schema lists `artifacts.{ar1cs, pk, vk, pvk, evm_verifier,
+//! circuit_config}` — every other slot the manifest used to carry has
+//! been removed.
 //!
 //! The Stage 1 vs Stage 2 trust contract carries over verbatim:
 //! `Phase2Attestation` / `PtauRef` stay serialisable so Stage 2 output
@@ -547,19 +545,14 @@ mod tests {
         assert_eq!(suffix.len(), 8);
     }
 
-    /// Acceptance: the new schema lacks the legacy `arzkey`/`wasm`/`WasmAbi`
-    /// entries by construction. Catches a regression where the rename slips
-    /// back into the codebase.
+    /// Acceptance: the post-migration schema lists every required
+    /// artifact slot. The schema is statically typed
+    /// ([`Artifacts`]) so absence of retired slots is structural;
+    /// only the positive presence check is asserted here.
     #[test]
-    fn schema_has_no_legacy_wasm_or_arzkey_fields() {
+    fn schema_lists_every_required_artifact_slot() {
         let v = serde_json::to_value(sample_manifest()).unwrap();
         let artifacts = v["artifacts"].as_object().expect("artifacts object");
-        for legacy in ["arzkey", "wasm"] {
-            assert!(
-                !artifacts.contains_key(legacy),
-                "legacy artifacts.{legacy} must not be present in post-migration manifest"
-            );
-        }
         for required in ["ar1cs", "pk", "vk", "pvk", "circuit_config"] {
             assert!(
                 artifacts.contains_key(required),

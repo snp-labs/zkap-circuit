@@ -18,11 +18,10 @@
 //! (`generate_setup`) — it carries build/commit metadata that the
 //! service does not own.
 //!
-//! ## What is no longer written
-//!
-//! - `pk.arzkey` (envelope removed with the ark-ar1cs boundary migration).
-//! - `pk.key`, `vk.key`, `pvk.key` (renamed to `.bin` per Q3 decision).
-//! - `zkap_witness_wasm.opt.wasm` (wasm witness substrate removed).
+//! Earlier filenames and the wasm witness substrate that pre-dated the
+//! 2026-05 ark-ar1cs boundary migration are no longer written; the
+//! seven entries above are the entire bundle contract enforced by
+//! `scripts/check-bundle-layout.sh`.
 
 use std::io::Cursor;
 use std::path::Path;

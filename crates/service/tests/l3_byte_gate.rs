@@ -11,10 +11,9 @@
 //!   `#[ignore]` because they call `service::setup` which uses `OsRng` for
 //!   the full Groth16 PK generation (~120–150 s each on debug builds).
 //!   Post-migration (Commit 2 of the 2026-05 ark-ar1cs boundary plan)
-//!   `service::setup` no longer writes `pk.arzkey`; the body_blake3 is
-//!   computed from `circuit.ar1cs` directly. Golden values are
-//!   byte-equivalent because the pre-migration envelope header was always
-//!   populated from `arcs.body_blake3()` at write time.
+//!   `service::setup` writes the `circuit.ar1cs` envelope and the
+//!   `body_blake3` is computed from it directly via
+//!   `ArcsFile::body_blake3()`.
 //!
 //! - **L1.2/L1.3/L1.4 / Tier D** — `cs.num_constraints()`,
 //!   `cs.num_witness_variables()`, `cs.num_instance_variables()` goldens for
@@ -366,10 +365,8 @@ fn unique_tmp_dir(label: &str) -> PathBuf {
 /// F1 Tier A (always run). Original fixture from PR0 — golden MUST stay constant.
 ///
 /// Reads `circuit.ar1cs` (post-migration bundle layout, Commit 2 of the
-/// 2026-05 ark-ar1cs boundary migration) and recomputes `body_blake3()`.
-/// The value is byte-equivalent to the pre-migration
-/// `pk.arzkey` header bytes 16..48 because the envelope's `ar1cs_blake3`
-/// was always populated from `arcs.body_blake3()` at write time.
+/// 2026-05 ark-ar1cs boundary migration) and recomputes
+/// `body_blake3()` directly from the canonical envelope.
 #[test]
 fn tier_a_ar1cs_blake3_f1() {
     let tmp_dir = unique_tmp_dir("tier_a_f1");

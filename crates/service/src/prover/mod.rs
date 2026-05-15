@@ -22,6 +22,7 @@
 //! [`Prover::prove`] so the manifest trust gate is exercised on every
 //! prove batch.
 
+pub(crate) mod adapter;
 mod prove;
 
 pub use prove::{Prover, prove_from_unverified_paths};

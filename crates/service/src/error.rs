@@ -147,6 +147,18 @@ pub enum ApplicationError {
         /// Number of secrets the caller supplied.
         got: usize,
     },
+
+    /// An input on the prove API failed boundary validation (length, format,
+    /// or decoding). `field` is a dotted path into the [`crate::ProveRequest`]
+    /// (e.g. `"credentials[2].rsa_modulus_b64"`); `message` carries the
+    /// upstream description.
+    #[error("invalid prove request at {field}: {message}")]
+    InvalidProveRequest {
+        /// Dotted field path into the failing [`crate::ProveRequest`].
+        field: String,
+        /// Upstream parser / validator description.
+        message: String,
+    },
 }
 
 impl From<AnchorError> for ApplicationError {

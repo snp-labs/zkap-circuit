@@ -2,8 +2,9 @@
 //! prove flow.
 //!
 //! These cover the public API contract (`Prover::from_artifact` +
-//! `Prover::prove`, plus the non-canonical `prove_from_unverified_paths`
-//! shortcut) at the seam level. A full end-to-end happy-path proof
+//! `Prover::prove`, plus the non-canonical
+//! `prove_from_unverified_paths_for_testing` shortcut) at the seam
+//! level. A full end-to-end happy-path proof
 //! that satisfies every R1CS constraint requires a hand-built JWT +
 //! RSA + anchor fixture (~800 lines) and lives in the slower
 //! `circuit::tests::groth16_integration` suite; replicating it here

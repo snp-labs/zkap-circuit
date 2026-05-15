@@ -5,7 +5,8 @@
 //! Run with: `cargo test -p zkap-service --test service_integration -- --ignored`
 
 use zkap_service::{
-    CircuitConfig, Secret, generate_anchor, generate_aud_hash, generate_hash, generate_leaf_hash,
+    AudienceHashRequest, CircuitConfig, HashRequest, IssuerKeyHashRequest, Secret, generate_anchor,
+    generate_audience_hashes, generate_issuer_key_hash, generate_poseidon_hash,
 };
 
 fn test_config() -> CircuitConfig {
@@ -52,37 +53,84 @@ fn test_anchor_generation_and_hash_pipeline() {
     assert_eq!(anchor.len(), (params.n - params.k + 1) as usize);
 
     // Hash the anchor elements — outputs are 0x-prefixed hex strings
-    let h = generate_hash(anchor).unwrap();
-    assert!(h.starts_with("0x"), "hash should be 0x-prefixed hex: {}", h);
+    let resp = generate_poseidon_hash(HashRequest {
+        field_elements: anchor,
+    })
+    .unwrap();
+    assert!(
+        resp.hash.starts_with("0x"),
+        "hash should be 0x-prefixed hex: {}",
+        resp.hash
+    );
 }
 
 #[test]
-fn test_aud_hash_and_leaf_hash_consistency() {
+fn test_audience_and_issuer_key_hash_consistency() {
+    use base64::Engine;
+
     let params = test_config();
 
     let aud_list = vec!["test-audience".to_string(), "second-aud".to_string()];
-    let aud_result = generate_aud_hash(&params, aud_list.clone()).unwrap();
+    let aud_result = generate_audience_hashes(
+        &params,
+        AudienceHashRequest {
+            audiences: aud_list.clone(),
+        },
+    )
+    .unwrap();
 
     // Same input → same output
-    let aud_result2 = generate_aud_hash(&params, aud_list).unwrap();
-    assert_eq!(aud_result.individual, aud_result2.individual);
-    assert_eq!(aud_result.combined, aud_result2.combined);
-
-    // Fields length should equal num_audience_limit
+    let aud_result2 = generate_audience_hashes(
+        &params,
+        AudienceHashRequest {
+            audiences: aud_list,
+        },
+    )
+    .unwrap();
+    assert_eq!(aud_result.audience_hashes, aud_result2.audience_hashes);
     assert_eq!(
-        aud_result.individual.len(),
+        aud_result.audience_list_hash,
+        aud_result2.audience_list_hash
+    );
+
+    // Per-audience array length equals num_audience_limit (padded with
+    // forbidden_string).
+    assert_eq!(
+        aud_result.audience_hashes.len(),
         params.num_audience_limit as usize
     );
 
-    // All outputs are 0x-prefixed hex
-    assert!(aud_result.combined.starts_with("0x"));
+    // All outputs are 0x-prefixed hex.
+    assert!(aud_result.audience_list_hash.starts_with("0x"));
 
-    // Generate leaf hash with a minimal PK — deterministic
-    let pk_b64 = "AQAB";
-    let leaf1 = generate_leaf_hash(&params, "https://accounts.google.com", pk_b64).unwrap();
-    let leaf2 = generate_leaf_hash(&params, "https://accounts.google.com", pk_b64).unwrap();
-    assert_eq!(leaf1, leaf2);
-    assert!(leaf1.starts_with("0x"));
+    // Issuer-key Merkle leaf — RSA-2048 modulus is 256 bytes; the bit
+    // pattern is irrelevant for the host-side hash flow.
+    let modulus_bytes = {
+        let mut v = vec![0xAB; 256];
+        v[0] = 0xC0;
+        v[255] = 0x01;
+        v
+    };
+    let rsa_modulus_b64 = base64::engine::general_purpose::STANDARD.encode(modulus_bytes);
+
+    let leaf1 = generate_issuer_key_hash(
+        &params,
+        IssuerKeyHashRequest {
+            issuer: "https://accounts.google.com".into(),
+            rsa_modulus_b64: rsa_modulus_b64.clone(),
+        },
+    )
+    .unwrap();
+    let leaf2 = generate_issuer_key_hash(
+        &params,
+        IssuerKeyHashRequest {
+            issuer: "https://accounts.google.com".into(),
+            rsa_modulus_b64,
+        },
+    )
+    .unwrap();
+    assert_eq!(leaf1.hash, leaf2.hash);
+    assert!(leaf1.hash.starts_with("0x"));
 }
 
 #[test]

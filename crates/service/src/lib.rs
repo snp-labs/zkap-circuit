@@ -3,7 +3,9 @@
 //! # Public API
 //!
 //! **Always available:**
-//! - [`generate_hash`], [`generate_aud_hash`], [`generate_leaf_hash`] — Poseidon hashing
+//! - [`generate_poseidon_hash`], [`generate_audience_hashes`],
+//!   [`generate_issuer_key_hash`] — Poseidon hashing (Request/Response DTOs
+//!   live in the [`dto`] re-exports below)
 //! - [`generate_anchor`] — threshold anchor generation (see [`Secret`])
 //! - [`load_circuit_config`] — load [`CircuitConfig`] from JSON
 //!
@@ -105,8 +107,11 @@ pub use circuit::types;
 pub use anchor_host::poseidon::generate_anchor;
 pub use anchor_host::types::Secret;
 pub use circuit::types::CircuitConfig;
-pub use dto::AudHashResult;
-pub use hash::{generate_aud_hash, generate_hash, generate_leaf_hash};
+pub use dto::{
+    AudienceHashRequest, AudienceHashResponse, HashRequest, HashResponse, IssuerKeyHashRequest,
+    IssuerKeyHashResponse,
+};
+pub use hash::{generate_audience_hashes, generate_issuer_key_hash, generate_poseidon_hash};
 
 // Public API (proof feature only)
 #[cfg(feature = "proof")]

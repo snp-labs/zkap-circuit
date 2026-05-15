@@ -29,8 +29,8 @@
 /// **`hanchor` is not a request input.** It is the sequential Poseidon
 /// chain hash of `anchor` and is computed internally by the adapter; the
 /// caller cannot pick a `hanchor` inconsistent with `anchor`. The
-/// response's [`SharedPublicInputs::hanchor`] exposes the computed value
-/// for verifier use.
+/// response's `SharedPublicInputs::hanchor` field exposes the computed
+/// value for verifier use.
 ///
 /// **Shape invariants** (validated at the boundary; failures surface as
 /// [`crate::error::ApplicationError::InvalidProveRequest`]):

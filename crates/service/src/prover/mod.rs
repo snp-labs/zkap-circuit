@@ -16,7 +16,7 @@
 //!
 //! Pure native flow — the host loads the manifest-validated CRS
 //! bundle and the prover runs in-process. The single non-canonical
-//! shortcut [`prove_from_unverified_paths_for_testing`] (gated behind
+//! shortcut `prove_from_unverified_paths_for_testing` (gated behind
 //! the `dev-unverified-artifacts` Cargo feature) exists for tests and
 //! caller-trusted environments; production builds do not compile it.
 //! Production callers MUST use

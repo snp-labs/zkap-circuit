@@ -15,7 +15,7 @@
 //! Mismatches abort with [`ArtifactError::HashMismatch`].
 //!
 //! When the `dev-unverified-artifacts` Cargo feature is enabled,
-//! [`ArtifactSet::load_without_manifest_verification_for_testing`]
+//! `ArtifactSet::load_without_manifest_verification_for_testing`
 //! is exposed as the **non-canonical** sibling for tests, tools, and
 //! caller-trusted environments. It does not consult a manifest and
 //! trusts the on-disk layout verbatim; production builds never see

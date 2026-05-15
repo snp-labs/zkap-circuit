@@ -1,4 +1,5 @@
-//! Native [`Prover`] handle + `prove_from_unverified_paths` shortcut.
+//! Native [`Prover`] handle + the feature-gated
+//! `prove_from_unverified_paths_for_testing` shortcut.
 //!
 //! See the module-level docs in [`crate::prover`] for the canonical
 //! call sequence. The prover internally chains
@@ -30,8 +31,9 @@ use crate::witness::{ProofRequest, build_input, into_circuit_input};
 /// Native ZKAP prover backed by `ark_ar1cs::prove`.
 ///
 /// Construct via [`Prover::from_artifact`] after obtaining a
-/// manifest-verified [`ArtifactSet`] (canonical) or via
-/// [`prove_from_unverified_paths`] (non-canonical shortcut for tests).
+/// manifest-verified [`ArtifactSet`] (canonical) or via the
+/// `prove_from_unverified_paths_for_testing` shortcut (non-canonical,
+/// `dev-unverified-artifacts` feature only).
 pub struct Prover {
     pk: ProvingKey<BN254>,
     vk: VerifyingKey<BN254>,
@@ -45,7 +47,7 @@ impl Prover {
     ///
     /// The set was produced by [`ArtifactSet::load`] (canonical) or —
     /// when the `dev-unverified-artifacts` Cargo feature is enabled —
-    /// [`ArtifactSet::load_without_manifest_verification_for_testing`]
+    /// `ArtifactSet::load_without_manifest_verification_for_testing`
     /// (non-canonical, tests only). `from_artifact` takes ownership;
     /// no further hash validation happens inside [`Self::prove`].
     pub fn from_artifact(set: ArtifactSet) -> Self {
@@ -78,19 +80,19 @@ impl Prover {
     /// Run the native prove flow over every JWT credential in `request`.
     ///
     /// The call pipeline:
-    /// 1. The boundary adapter [`prove_request_to_internal`] validates
-    ///    [`ProveRequest`] shape against the bundled [`CircuitConfig`],
-    ///    decodes every hex/base64 field, and composes the internal
-    ///    [`ProofRequest`].
-    /// 2. [`Self::prove_internal`] performs the constraint synthesis and
-    ///    [`ark_ar1cs::prove`] call per credential, using a fresh
-    ///    [`OsRng`] for the proof-side randomness.
+    /// 1. The boundary adapter (`crate::prover::adapter::prove_request_to_internal`)
+    ///    validates [`ProveRequest`] shape against the bundled
+    ///    [`CircuitConfig`], decodes every hex/base64 field, and
+    ///    composes the internal witness request type.
+    /// 2. The crate-internal `prove_internal` performs the constraint
+    ///    synthesis and [`ark_ar1cs::prove`] call per credential, using
+    ///    a fresh [`OsRng`] for the proof-side randomness.
     ///
     /// Returns one Groth16 proof per credential, along with the
     /// per-batch shared public inputs and the per-credential `jwt_exp`
     /// / `verification_rhs` parallel columns. The internal generic-RNG
-    /// path ([`Self::prove_internal`]) stays `pub(crate)` for use by
-    /// the in-tree `#[cfg(test)]` modules that need deterministic
+    /// path (`Self::prove_internal`, `pub(crate)`) is used by the
+    /// in-tree `#[cfg(test)]` modules that need deterministic
     /// reproducibility; the public API only exposes the entropy-driven
     /// form to keep the zero-knowledge property intact.
     ///
@@ -102,7 +104,7 @@ impl Prover {
     /// `circuit_config` / `evm_verifier`. The loader
     /// ([`ArtifactSet::load`]) is the **single** trust gate; production
     /// callers MUST use it (or — under the `dev-unverified-artifacts`
-    /// feature — the [`prove_from_unverified_paths_for_testing`]
+    /// feature — the `prove_from_unverified_paths_for_testing`
     /// non-canonical shortcut for caller-trusted paths only). Any
     /// reintroduction of manifest / hash validation inside this method
     /// would be a duplication of the loader's job and a policy break;
@@ -188,7 +190,7 @@ impl Prover {
 ///
 /// Loads `pk.bin`, `vk.bin`, `pvk.bin`, `circuit.ar1cs`, and
 /// `config.json` from `bundle_dir` via
-/// [`ArtifactSet::load_without_manifest_verification_for_testing`]
+/// `ArtifactSet::load_without_manifest_verification_for_testing`
 /// and forwards to [`Prover::from_artifact`] + [`Prover::prove`].
 ///
 /// Gated behind the `dev-unverified-artifacts` Cargo feature.

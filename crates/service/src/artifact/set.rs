@@ -17,7 +17,7 @@ use crate::manifest::{ArtifactEntry, Manifest};
 /// Populated either by [`ArtifactSet::load`] (manifest-validated,
 /// canonical) or — when the `dev-unverified-artifacts` feature is
 /// enabled —
-/// [`ArtifactSet::load_without_manifest_verification_for_testing`]
+/// `ArtifactSet::load_without_manifest_verification_for_testing`
 /// (non-canonical, tests only).
 pub struct ArtifactSet {
     /// Groth16 proving key — loaded from `pk.bin`.

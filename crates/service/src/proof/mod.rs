@@ -6,7 +6,7 @@
 //! feature also `crate::prover::prove_from_unverified_paths_for_testing`).
 //! Commit 5 then removed the in-crate verify wrapper — callers verify
 //! proofs by calling `Groth16::verify_proof` directly against the
-//! `vk` / `pvk` exposed on [`Prover`] (or
+//! `vk` / `pvk` exposed on [`crate::prover::Prover`] (or
 //! [`crate::artifact::ArtifactSet`]). This module is now the home of
 //! only the [`setup`] function.
 

@@ -16,3 +16,9 @@ pub use hash::*;
 pub use proof::*;
 #[cfg(feature = "proof")]
 pub use prove::{ProveCredential, ProveRequest};
+
+// `dto/proof.rs` exports `ProofComponents`, `SharedPublicInputs`, and
+// `ProveResponse`. The earlier `ZkapProofResult` / `PerProofPublicInputs`
+// types were removed when the response was reshaped into parallel
+// `Vec<String>` `jwt_exp` / `verification_rhs` columns alongside
+// `shared_public_inputs` (US-003 of the prove API redesign).

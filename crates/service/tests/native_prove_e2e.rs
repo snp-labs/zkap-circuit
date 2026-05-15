@@ -110,7 +110,7 @@ fn prover_prove_signature_is_no_manifest_no_paths() {
         prover: &Prover,
         req: &ProofRequest,
         rng: &mut R,
-    ) -> Result<zkap_service::ZkapProofResult, zkap_service::error::ApplicationError> {
+    ) -> Result<zkap_service::ProveResponse, zkap_service::error::ApplicationError> {
         prover.prove(req, rng)
     }
     let _ = _check::<StdRng>;
@@ -125,7 +125,7 @@ fn prove_from_unverified_paths_signature_is_dir_only() {
         dir: &Path,
         req: &ProofRequest,
         rng: &mut R,
-    ) -> Result<zkap_service::ZkapProofResult, zkap_service::error::ApplicationError> {
+    ) -> Result<zkap_service::ProveResponse, zkap_service::error::ApplicationError> {
         prove_from_unverified_paths(dir, req, rng)
     }
     let _ = _check::<StdRng>;

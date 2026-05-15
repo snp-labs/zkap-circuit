@@ -19,7 +19,7 @@ use circuit::types::{BN254, BNP, CG, CircuitConfig, F};
 use circuit::zkap::ZkapCircuit;
 
 use crate::artifact::ArtifactSet;
-use crate::dto::ZkapProofResult;
+use crate::dto::ProveResponse;
 use crate::error::ApplicationError;
 use crate::witness::{ProofRequest, build_input, into_circuit_input};
 
@@ -106,7 +106,7 @@ impl Prover {
         &self,
         req: &ProofRequest,
         rng: &mut R,
-    ) -> Result<ZkapProofResult, ApplicationError>
+    ) -> Result<ProveResponse, ApplicationError>
     where
         R: Rng + CryptoRng,
     {
@@ -168,7 +168,7 @@ pub fn prove_from_unverified_paths<R>(
     bundle_dir: &Path,
     req: &ProofRequest,
     rng: &mut R,
-) -> Result<ZkapProofResult, ApplicationError>
+) -> Result<ProveResponse, ApplicationError>
 where
     R: Rng + CryptoRng,
 {

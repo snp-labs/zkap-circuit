@@ -28,7 +28,7 @@
 //! `<VerifyingKey<E> as zkap_evm_verifier::SolidityContractGenerator>::generate_solidity`
 //! directly. The bundled `Groth16Verifier.sol` produced by [`setup`] uses it
 //! internally.
-//! - DTOs: [`ProofComponents`], [`SharedPublicInputs`], [`PerProofPublicInputs`], [`ZkapProofResult`]
+//! - DTOs: [`ProofComponents`], [`SharedPublicInputs`], [`ProveResponse`]
 //! - Keys: [`SetupOutput`], [`SharedFields`], [`PerJwtFields`]
 
 // Crate-internal `missing_docs` warning, not a `#[deny]`. Phase 7 / H5
@@ -117,7 +117,7 @@ pub use hash::{generate_audience_hashes, generate_issuer_key_hash, generate_pose
 #[cfg(feature = "proof")]
 pub use artifact::{ArtifactError, ArtifactSet};
 #[cfg(feature = "proof")]
-pub use dto::{PerProofPublicInputs, ProofComponents, SharedPublicInputs, ZkapProofResult};
+pub use dto::{ProofComponents, ProveResponse, SharedPublicInputs};
 #[cfg(feature = "proof")]
 pub use proof::{SetupOutput, SetupShape, setup};
 #[cfg(feature = "proof")]

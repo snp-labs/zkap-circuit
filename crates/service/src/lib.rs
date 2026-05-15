@@ -102,9 +102,11 @@ pub mod jwt;
 #[cfg(feature = "proof")]
 pub mod proof;
 
-// Native witness-shaping path — pure, wasm-free.
+// Native witness-shaping path — pure, wasm-free. Crate-internal only:
+// boundary callers reach this through [`ProveRequest`] and never see
+// the raw `SharedFields` / `PerJwtFields` shapes.
 #[cfg(feature = "proof")]
-pub mod witness;
+pub(crate) mod witness;
 
 // Native ark-ar1cs prover — canonical post-migration entry point.
 #[cfg(feature = "proof")]
@@ -165,5 +167,3 @@ pub use proof::{SetupOutput, SetupShape, setup};
 pub use prover::Prover;
 #[cfg(feature = "dev-unverified-artifacts")]
 pub use prover::prove_from_unverified_paths_for_testing;
-#[cfg(feature = "proof")]
-pub use witness::{PerJwtFields, ProofRequest, SharedFields};

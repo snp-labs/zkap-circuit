@@ -10,6 +10,7 @@
 //! **not** re-validate the manifest, `arcs.body_blake3()`, or any
 //! `pk` / `vk` hash.
 
+#[cfg(feature = "dev-unverified-artifacts")]
 use std::path::Path;
 
 use ark_ar1cs::format::ArcsFile;
@@ -42,10 +43,11 @@ pub struct Prover {
 impl Prover {
     /// Build a [`Prover`] from a manifest-verified [`ArtifactSet`].
     ///
-    /// The set was produced by [`ArtifactSet::load`] (canonical) or
-    /// [`ArtifactSet::load_unverified`] (non-canonical, tests only).
-    /// `from_artifact` takes ownership; no further hash validation
-    /// happens inside [`Self::prove`].
+    /// The set was produced by [`ArtifactSet::load`] (canonical) or —
+    /// when the `dev-unverified-artifacts` Cargo feature is enabled —
+    /// [`ArtifactSet::load_without_manifest_verification_for_testing`]
+    /// (non-canonical, tests only). `from_artifact` takes ownership;
+    /// no further hash validation happens inside [`Self::prove`].
     pub fn from_artifact(set: ArtifactSet) -> Self {
         Self {
             pk: set.pk,
@@ -99,9 +101,9 @@ impl Prover {
     /// re-verify any `sha256` hash on `pk` / `vk` / `pvk` /
     /// `circuit_config` / `evm_verifier`. The loader
     /// ([`ArtifactSet::load`]) is the **single** trust gate; production
-    /// callers MUST use it (or the
-    /// [`prove_from_unverified_paths`] non-canonical shortcut for
-    /// caller-trusted paths only — see its rustdoc warning). Any
+    /// callers MUST use it (or — under the `dev-unverified-artifacts`
+    /// feature — the [`prove_from_unverified_paths_for_testing`]
+    /// non-canonical shortcut for caller-trusted paths only). Any
     /// reintroduction of manifest / hash validation inside this method
     /// would be a duplication of the loader's job and a policy break;
     /// the absence is enforced by the `artifact_set_load` integration
@@ -186,22 +188,28 @@ impl Prover {
 ///
 /// Loads `pk.bin`, `vk.bin`, `pvk.bin`, `circuit.ar1cs`, and
 /// `config.json` from `bundle_dir` via
-/// [`ArtifactSet::load_unverified`] and forwards to
-/// [`Prover::from_artifact`] + [`Prover::prove`]. Use only in tests,
+/// [`ArtifactSet::load_without_manifest_verification_for_testing`]
+/// and forwards to [`Prover::from_artifact`] + [`Prover::prove`].
+///
+/// Gated behind the `dev-unverified-artifacts` Cargo feature.
+/// Production builds never compile this code; opt in only in tests,
 /// dev tools, and caller-trusted environments where bundle integrity
-/// is established out of band. The function name's `_unverified`
+/// is established out of band. The function name's `_for_testing`
 /// suffix and this rustdoc warning exist precisely so production
 /// review can flag any call site as a policy violation.
-pub fn prove_from_unverified_paths(
+#[cfg(feature = "dev-unverified-artifacts")]
+pub fn prove_from_unverified_paths_for_testing(
     bundle_dir: &Path,
     request: &ProveRequest,
 ) -> Result<ProveResponse, ApplicationError> {
-    let set = ArtifactSet::load_unverified(bundle_dir).map_err(|e| {
-        ApplicationError::InvalidFormat(format!(
-            "ArtifactSet::load_unverified({}) failed: {e}",
-            bundle_dir.display()
-        ))
-    })?;
+    let set = ArtifactSet::load_without_manifest_verification_for_testing(bundle_dir).map_err(
+        |e| {
+            ApplicationError::InvalidFormat(format!(
+                "ArtifactSet::load_without_manifest_verification_for_testing({}) failed: {e}",
+                bundle_dir.display()
+            ))
+        },
+    )?;
     let prover = Prover::from_artifact(set);
     prover.prove(request)
 }

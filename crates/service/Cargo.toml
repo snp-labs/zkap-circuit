@@ -82,6 +82,12 @@ proof = [
     "dep:rand",
     "dep:ark-ar1cs",
 ]
+# Compile-time opt-in for the non-canonical loaders / prove entry
+# points that bypass the manifest trust gate
+# (`ArtifactSet::load_without_manifest_verification_for_testing`,
+# `prove_from_unverified_paths_for_testing`). Disabled by default —
+# production builds never see these symbols.
+dev-unverified-artifacts = ["proof"]
 print-trace = ["circuit/print-trace"]
 
 # Example temporarily disabled — see comment above the [features] block.

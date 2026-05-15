@@ -12,8 +12,9 @@
 //!
 //! **`proof` feature (default):**
 //! - [`setup`] — trusted setup: generates proving/verifying keys and writes them to disk
-//! - [`Prover`] / [`prove_from_unverified_paths`] — native Groth16 prover
-//!   (takes [`ProofRequest`])
+//! - [`Prover`] — native Groth16 prover (takes [`ProveRequest`]). The
+//!   non-canonical `prove_from_unverified_paths_for_testing` shortcut
+//!   is exposed only under the `dev-unverified-artifacts` feature.
 //! - [`jwt`] — JWT payload claim parsing ([`jwt::parser::parse_claim_from_str`])
 //!
 //! Proof verification is intentionally **not** wrapped by this crate
@@ -28,8 +29,48 @@
 //! `<VerifyingKey<E> as zkap_evm_verifier::SolidityContractGenerator>::generate_solidity`
 //! directly. The bundled `Groth16Verifier.sol` produced by [`setup`] uses it
 //! internally.
-//! - DTOs: [`ProofComponents`], [`SharedPublicInputs`], [`ProveResponse`]
-//! - Keys: [`SetupOutput`], [`SharedFields`], [`PerJwtFields`]
+//! - Request DTOs: [`ProveRequest`], [`ProveCredential`]
+//! - Response DTOs: [`ProveResponse`], [`ProofComponents`], [`SharedPublicInputs`]
+//! - Setup output: [`SetupOutput`]
+//!
+//! ## Prove flow (visual reference)
+//!
+//! ```text
+//! ┌──────────────────────────────────────────────────────────────────┐
+//! │ EXTERNAL CALLER                                                  │
+//! │   ProveRequest {                                                 │
+//! │     random, h_sign_user_op, anchor[*], merkle_root,              │
+//! │     credentials: [ProveCredential; k]                            │
+//! │   }   (hanchor NOT in request — derived from anchor)             │
+//! └──────────────────────────────┬───────────────────────────────────┘
+//!                                │ Prover::prove(&req)
+//!                                ▼
+//! ┌──────────────────────────────────────────────────────────────────┐
+//! │ adapter::prove_request_to_internal                               │
+//! │   1. shape validation (lengths + leaf-idx bound)                 │
+//! │   2. decode shared field strings (hex/decimal)                   │
+//! │   3. per-credential: parse JWT → derive x → decode bytes         │
+//! │   4. derive selector + per-credential current_idx                │
+//! │   5. compose internal ProofRequest { SharedFields, [PerJwtFields]}│
+//! └──────────────────────────────┬───────────────────────────────────┘
+//!                                │
+//!                                ▼
+//! ┌──────────────────────────────────────────────────────────────────┐
+//! │ Prover::prove_internal (OsRng inside `prove`)                    │
+//! │   build_input → into_circuit_input → ZkapCircuit::from_input     │
+//! │   → synthesize_full_assignment → ark_ar1cs::prove                │
+//! └──────────────────────────────┬───────────────────────────────────┘
+//!                                │
+//!                                ▼
+//! ┌──────────────────────────────────────────────────────────────────┐
+//! │ ProveResponse { proofs, shared_public_inputs,                    │
+//! │                 jwt_exp[*], verification_rhs[*] }                │
+//! └──────────────────────────────────────────────────────────────────┘
+//! ```
+//!
+//! `ArtifactSet::load(manifest, dir)` is the trust boundary — manifest
+//! hash validation happens before `Prover::prove` runs, and `Prover::prove`
+//! does not re-verify any hash.
 
 // Crate-internal `missing_docs` warning, not a `#[deny]`. Phase 7 / H5
 // staged path: clears the zkap-service baseline (39 service warnings +
@@ -121,6 +162,8 @@ pub use dto::{ProofComponents, ProveCredential, ProveRequest, ProveResponse, Sha
 #[cfg(feature = "proof")]
 pub use proof::{SetupOutput, SetupShape, setup};
 #[cfg(feature = "proof")]
-pub use prover::{Prover, prove_from_unverified_paths};
+pub use prover::Prover;
+#[cfg(feature = "dev-unverified-artifacts")]
+pub use prover::prove_from_unverified_paths_for_testing;
 #[cfg(feature = "proof")]
 pub use witness::{PerJwtFields, ProofRequest, SharedFields};

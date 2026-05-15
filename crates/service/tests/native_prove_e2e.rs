@@ -13,23 +13,26 @@
 //!
 //! * Compile-time: [`Prover::prove`] takes only `(&self, &ProveRequest)`
 //!   — no `&Manifest`, no path arguments, no `&CircuitConfig`, no rng.
-//! * Compile-time: [`prove_from_unverified_paths`] takes
-//!   `(&Path, &ProveRequest)`.
+//! * Compile-time (under `dev-unverified-artifacts`):
+//!   [`prove_from_unverified_paths_for_testing`] takes `(&Path, &ProveRequest)`.
 //! * Runtime: `service::setup` → [`SetupOutput::into_artifact_set`] →
 //!   [`Prover::from_artifact`] succeeds without manifest involvement.
-//! * Runtime: [`Prover::prove`] reaches the witness layer (synthesises
-//!   constraints and only fails on R1CS preflight) on a shape-valid
-//!   placeholder request, proving the wiring through
+//! * Runtime (under `dev-unverified-artifacts`): [`Prover::prove`]
+//!   reaches the witness layer (synthesises constraints and only fails
+//!   on R1CS preflight) on a shape-valid placeholder request, proving
+//!   the wiring through
 //!   `adapter::prove_request_to_internal → build_input →
 //!   into_circuit_input → ZkapCircuit::from_input →
 //!   synthesize_full_assignment → ark_ar1cs::prove` is intact.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use zkap_service::{
-    ArtifactSet, CircuitConfig, ProveCredential, ProveRequest, Prover,
-    prove_from_unverified_paths, setup,
-};
+use zkap_service::{ArtifactSet, CircuitConfig, ProveRequest, Prover, setup};
+
+#[cfg(feature = "dev-unverified-artifacts")]
+use std::path::Path;
+#[cfg(feature = "dev-unverified-artifacts")]
+use zkap_service::{ProveCredential, prove_from_unverified_paths_for_testing};
 
 fn test_config() -> CircuitConfig {
     CircuitConfig {
@@ -62,6 +65,7 @@ fn test_config() -> CircuitConfig {
 /// the witness layer, and the witness layer (or the R1CS preflight)
 /// then rejects them. Useful only for `#[ignore]` smoke tests that
 /// confirm the seam is wired up.
+#[cfg(feature = "dev-unverified-artifacts")]
 fn placeholder_prove_request(cfg: &CircuitConfig) -> ProveRequest {
     let k = cfg.k as usize;
     let anchor_len = (cfg.n - cfg.k + 1) as usize;
@@ -95,6 +99,7 @@ fn placeholder_prove_request(cfg: &CircuitConfig) -> ProveRequest {
 /// - header decodes to `{"alg":"RS256","typ":"JWT"}`
 /// - payload decodes to a minimal JSON object containing `aud`, `iss`, `sub` as strings
 /// - signature decodes to 256 bytes of 0xAA (RSA-2048 length, junk content)
+#[cfg(feature = "dev-unverified-artifacts")]
 fn placeholder_jwt() -> String {
     use base64::Engine;
     let header_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD
@@ -131,16 +136,18 @@ fn prover_prove_signature_is_no_manifest_no_paths_no_rng() {
     let _ = _check;
 }
 
-/// Compile-time guard: [`prove_from_unverified_paths`] takes a single
-/// directory path (the post-migration bundle layout) and a
-/// [`ProveRequest`] — and emphatically not a `&Manifest` or an rng.
+/// Compile-time guard: [`prove_from_unverified_paths_for_testing`]
+/// takes a single directory path (the post-migration bundle layout)
+/// and a [`ProveRequest`] — and emphatically not a `&Manifest` or an
+/// rng. Only exposed under the `dev-unverified-artifacts` feature.
+#[cfg(feature = "dev-unverified-artifacts")]
 #[test]
-fn prove_from_unverified_paths_signature_is_dir_only() {
+fn prove_from_unverified_paths_for_testing_signature_is_dir_only() {
     fn _check(
         dir: &Path,
         req: &ProveRequest,
     ) -> Result<zkap_service::ProveResponse, zkap_service::error::ApplicationError> {
-        prove_from_unverified_paths(dir, req)
+        prove_from_unverified_paths_for_testing(dir, req)
     }
     let _ = _check;
 }
@@ -179,17 +186,19 @@ fn prover_from_artifact_set_in_memory_round_trip() {
 /// not the proof's validity).
 ///
 /// `#[ignore]` for the same trusted-setup latency reason as
-/// [`prover_from_artifact_set_in_memory_round_trip`].
+/// [`prover_from_artifact_set_in_memory_round_trip`]. Only exposed
+/// under the `dev-unverified-artifacts` feature.
+#[cfg(feature = "dev-unverified-artifacts")]
 #[test]
 #[ignore = "slow: drives the full Groth16 setup via service::setup (~4-5s F1 config)"]
-fn prove_from_unverified_paths_reaches_witness_layer() {
+fn prove_from_unverified_paths_for_testing_reaches_witness_layer() {
     let cfg = test_config();
     let out_dir = unique_tmp_dir("unverified_paths");
     let _ = setup(&cfg, &out_dir, &mut ark_std::rand::rngs::OsRng, None)
         .expect("service::setup must succeed");
 
     let req = placeholder_prove_request(&cfg);
-    let result = prove_from_unverified_paths(&out_dir, &req);
+    let result = prove_from_unverified_paths_for_testing(&out_dir, &req);
     // Placeholder JWT + zeroed anchor scalars do not yield a consistent
     // selector and cannot satisfy the R1CS, so the call must fail —
     // either in the adapter (no valid selector found) or inside the

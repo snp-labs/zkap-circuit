@@ -15,8 +15,10 @@ use crate::manifest::{ArtifactEntry, Manifest};
 /// In-memory bundle of every CRS artifact a `Prover` needs.
 ///
 /// Populated either by [`ArtifactSet::load`] (manifest-validated,
-/// canonical) or [`ArtifactSet::load_unverified`] (non-canonical, tests
-/// only).
+/// canonical) or — when the `dev-unverified-artifacts` feature is
+/// enabled —
+/// [`ArtifactSet::load_without_manifest_verification_for_testing`]
+/// (non-canonical, tests only).
 pub struct ArtifactSet {
     /// Groth16 proving key — loaded from `pk.bin`.
     pub pk: ProvingKey<BN254>,
@@ -80,10 +82,18 @@ impl ArtifactSet {
     /// callers MUST use [`ArtifactSet::load`].** No `sha256` check, no
     /// `ar1cs_blake3` comparison, no `evm_verifier` check — only the
     /// minimal parse / `CanonicalDeserialize` errors surface from this
-    /// path. Use only in tests, dev tools, and caller-trusted
-    /// environments where bundle integrity has been established out
-    /// of band.
-    pub fn load_unverified(dir: &Path) -> Result<Self, ArtifactError> {
+    /// path.
+    ///
+    /// Gated behind the `dev-unverified-artifacts` Cargo feature.
+    /// Production builds never compile this code; opt in only in
+    /// tests, dev tools, and caller-trusted environments where bundle
+    /// integrity has been established out of band. The explicit
+    /// `_for_testing` suffix exists so production review can flag any
+    /// call site as a policy violation.
+    #[cfg(feature = "dev-unverified-artifacts")]
+    pub fn load_without_manifest_verification_for_testing(
+        dir: &Path,
+    ) -> Result<Self, ArtifactError> {
         let arcs_path = dir.join("circuit.ar1cs");
         let arcs_bytes = std::fs::read(&arcs_path).map_err(|e| ArtifactError::Io {
             path: arcs_path.clone(),
@@ -124,6 +134,7 @@ fn load_circuit_config(dir: &Path, entry: &ArtifactEntry) -> Result<CircuitConfi
     parse_circuit_config(&bytes)
 }
 
+#[cfg(feature = "dev-unverified-artifacts")]
 fn load_circuit_config_raw(path: &Path) -> Result<CircuitConfig, ArtifactError> {
     let bytes = std::fs::read(path).map_err(|e| ArtifactError::Io {
         path: path.to_path_buf(),
@@ -206,6 +217,7 @@ fn load_canonical<T: CanonicalDeserialize>(
     })
 }
 
+#[cfg(feature = "dev-unverified-artifacts")]
 fn load_canonical_raw<T: CanonicalDeserialize>(
     path: &Path,
     what: &'static str,

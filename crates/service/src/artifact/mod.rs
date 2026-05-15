@@ -14,10 +14,12 @@
 //! of every binary artifact against the corresponding manifest entry.
 //! Mismatches abort with [`ArtifactError::HashMismatch`].
 //!
-//! [`ArtifactSet::load_unverified`] is the **non-canonical** sibling for
-//! tests, tools, and caller-trusted environments. It does not consult a
-//! manifest and trusts the on-disk layout verbatim. Production callers
-//! MUST prefer [`ArtifactSet::load`].
+//! When the `dev-unverified-artifacts` Cargo feature is enabled,
+//! [`ArtifactSet::load_without_manifest_verification_for_testing`]
+//! is exposed as the **non-canonical** sibling for tests, tools, and
+//! caller-trusted environments. It does not consult a manifest and
+//! trusts the on-disk layout verbatim; production builds never see
+//! the symbol. Production callers MUST prefer [`ArtifactSet::load`].
 //!
 //! The `Prover` handle and the proving entry points themselves arrive in
 //! Commit 3 (witness/full_assignment) and Commit 4 (prove flow); this

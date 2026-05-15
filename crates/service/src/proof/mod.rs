@@ -2,7 +2,8 @@
 //!
 //! After Commit 4 of the 2026-05 ark-ar1cs boundary migration the
 //! proving entry point lives in [`crate::prover`]
-//! ([`crate::prover::Prover`] / [`crate::prover::prove_from_unverified_paths`]).
+//! ([`crate::prover::Prover`]; under the `dev-unverified-artifacts`
+//! feature also `crate::prover::prove_from_unverified_paths_for_testing`).
 //! Commit 5 then removed the in-crate verify wrapper — callers verify
 //! proofs by calling `Groth16::verify_proof` directly against the
 //! `vk` / `pvk` exposed on [`Prover`] (or

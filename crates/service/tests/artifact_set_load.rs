@@ -306,14 +306,14 @@ fn artifact_set_load_trust_boundary() {
     //
     // Tamper `Groth16Verifier.sol` rather than `pk.bin`: the canonical
     // load path sha256-checks the EVM verifier (so a tampered byte
-    // surfaces as `artifacts.evm_verifier.sha256` mismatch), while
-    // `ArtifactSet::load_unverified` does not touch the file at all
-    // (the unverified path only reads `circuit.ar1cs`, `pk.bin`,
-    // `vk.bin`, `pvk.bin`, `config.json`). That keeps the contract
-    // crisp: `load` rejects via `HashMismatch`, `load_unverified` is
-    // silent — same coverage as the F1-shape original, without
-    // risking a `CanonicalDeserialize` failure on a flipped `pk.bin`
-    // byte.
+    // surfaces as `artifacts.evm_verifier.sha256` mismatch), while the
+    // non-canonical loader (gated behind `dev-unverified-artifacts`)
+    // does not touch the file at all (the unverified path only reads
+    // `circuit.ar1cs`, `pk.bin`, `vk.bin`, `pvk.bin`, `config.json`).
+    // That keeps the contract crisp: `load` rejects via `HashMismatch`;
+    // the unverified loader, when compiled in, is silent — same
+    // coverage as the F1-shape original, without risking a
+    // `CanonicalDeserialize` failure on a flipped `pk.bin` byte.
     let sol_path = dir.join("Groth16Verifier.sol");
     let mut bytes = std::fs::read(&sol_path).expect("read Groth16Verifier.sol");
     let last = bytes.len() - 1;
@@ -325,8 +325,10 @@ fn artifact_set_load_trust_boundary() {
         .expect("ArtifactSet::load must reject a tampered Groth16Verifier.sol");
     assert_hash_mismatch_on("artifacts.evm_verifier.sha256", err);
 
-    ArtifactSet::load_unverified(&dir)
-        .expect("ArtifactSet::load_unverified must not validate the tampered EVM verifier byte");
+    #[cfg(feature = "dev-unverified-artifacts")]
+    ArtifactSet::load_without_manifest_verification_for_testing(&dir).expect(
+        "ArtifactSet::load_without_manifest_verification_for_testing must not validate the tampered EVM verifier byte",
+    );
 
     let _ = std::fs::remove_dir_all(&dir);
 }

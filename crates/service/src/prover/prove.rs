@@ -2,8 +2,9 @@
 //!
 //! See the module-level docs in [`crate::prover`] for the canonical
 //! call sequence. The prover internally chains
-//! `build_input → into_circuit_input → ZkapCircuit::from_input →
-//! synthesize_full_assignment → ark_ar1cs::prove`. Trust gating
+//! `prove_request_to_internal → build_input → into_circuit_input →
+//! ZkapCircuit::from_input → synthesize_full_assignment →
+//! ark_ar1cs::prove`. Trust gating
 //! ([`crate::artifact::ArtifactSet::load`] sha256 / `ar1cs_blake3`
 //! checks) is the loader's responsibility — `Prover::prove` does
 //! **not** re-validate the manifest, `arcs.body_blake3()`, or any
@@ -14,13 +15,15 @@ use std::path::Path;
 use ark_ar1cs::format::ArcsFile;
 use ark_ar1cs::{prove as ar1cs_prove, synthesize_full_assignment};
 use ark_groth16::{PreparedVerifyingKey, ProvingKey, VerifyingKey};
+use ark_std::rand::rngs::OsRng;
 use ark_std::rand::{CryptoRng, Rng};
 use circuit::types::{BN254, BNP, CG, CircuitConfig, F};
 use circuit::zkap::ZkapCircuit;
 
 use crate::artifact::ArtifactSet;
-use crate::dto::ProveResponse;
+use crate::dto::{ProveRequest, ProveResponse};
 use crate::error::ApplicationError;
+use crate::prover::adapter::prove_request_to_internal;
 use crate::witness::{ProofRequest, build_input, into_circuit_input};
 
 /// Native ZKAP prover backed by `ark_ar1cs::prove`.
@@ -55,9 +58,6 @@ impl Prover {
 
     /// Borrow the bundled Groth16 verifying key — hand directly to
     /// `ark_groth16::Groth16::verify_proof` for in-process verification.
-    /// The verify wrapper that used to wrap this borrow inside an opaque
-    /// handle was retired in Commit 5 of the 2026-05 ark-ar1cs boundary
-    /// migration.
     pub fn verifying_key(&self) -> &VerifyingKey<BN254> {
         &self.vk
     }
@@ -73,19 +73,24 @@ impl Prover {
         &self.cfg
     }
 
-    /// Run the native prove flow over every JWT credential in `req`.
+    /// Run the native prove flow over every JWT credential in `request`.
     ///
-    /// The flow per credential:
-    /// 1. [`build_input`] reshapes the request into a `Vec<ZkapInputV1>`
-    ///    (re-applies the shape invariants).
-    /// 2. [`into_circuit_input`] converts each payload into a fully
-    ///    assigned `ZkapCircuitInput<F>`.
-    /// 3. [`ZkapCircuit::from_input`] wraps it in a
-    ///    `ConstraintSynthesizer` ready for assignment extraction.
-    /// 4. [`synthesize_full_assignment`] returns the prover-shaped
-    ///    `[F::ONE, instance..., witness...]` vector.
-    /// 5. [`ar1cs_prove`] produces the Groth16 proof against `self.pk`
-    ///    and `self.arcs`.
+    /// The call pipeline:
+    /// 1. The boundary adapter [`prove_request_to_internal`] validates
+    ///    [`ProveRequest`] shape against the bundled [`CircuitConfig`],
+    ///    decodes every hex/base64 field, and composes the internal
+    ///    [`ProofRequest`].
+    /// 2. [`Self::prove_internal`] performs the constraint synthesis and
+    ///    [`ark_ar1cs::prove`] call per credential, using a fresh
+    ///    [`OsRng`] for the proof-side randomness.
+    ///
+    /// Returns one Groth16 proof per credential, along with the
+    /// per-batch shared public inputs and the per-credential `jwt_exp`
+    /// / `verification_rhs` parallel columns. The internal generic-RNG
+    /// path ([`Self::prove_internal`]) stays `pub(crate)` for use by
+    /// the in-tree `#[cfg(test)]` modules that need deterministic
+    /// reproducibility; the public API only exposes the entropy-driven
+    /// form to keep the zero-knowledge property intact.
     ///
     /// # Trust boundary
     ///
@@ -102,7 +107,30 @@ impl Prover {
     /// the absence is enforced by the `artifact_set_load` integration
     /// test (`crates/service/tests/artifact_set_load.rs`) against the
     /// loader.
-    pub fn prove<R>(
+    pub fn prove(&self, request: &ProveRequest) -> Result<ProveResponse, ApplicationError> {
+        let internal = prove_request_to_internal(request, &self.cfg)?;
+        let mut rng = OsRng;
+        self.prove_internal(&internal, &mut rng)
+    }
+
+    /// Crate-internal generic-RNG prove path.
+    ///
+    /// The flow per credential:
+    /// 1. [`build_input`] reshapes the request into a `Vec<ZkapInputV1>`.
+    /// 2. [`into_circuit_input`] converts each payload into a fully
+    ///    assigned `ZkapCircuitInput<F>`.
+    /// 3. [`ZkapCircuit::from_input`] wraps it in a
+    ///    `ConstraintSynthesizer` ready for assignment extraction.
+    /// 4. [`synthesize_full_assignment`] returns the prover-shaped
+    ///    `[F::ONE, instance..., witness...]` vector.
+    /// 5. [`ar1cs_prove`] produces the Groth16 proof against `self.pk`
+    ///    and `self.arcs`.
+    ///
+    /// Kept `pub(crate)` so in-tree `#[cfg(test)]` modules that need
+    /// deterministic reproducibility can drive a seeded RNG without
+    /// exposing seed-injection on the public surface (which would
+    /// undermine zero-knowledge for downstream callers).
+    pub(crate) fn prove_internal<R>(
         &self,
         req: &ProofRequest,
         rng: &mut R,
@@ -131,7 +159,7 @@ impl Prover {
                 })?;
 
             // Canonical 8-element instance layout — see
-            // `ZkapProofResult::from((proofs, public_inputs))` in
+            // `ProveResponse::from((proofs, public_inputs))` in
             // `crate::dto::proof` for the per-proof / shared split.
             let pub_vec = vec![
                 pub_inputs.hanchor,
@@ -164,14 +192,10 @@ impl Prover {
 /// is established out of band. The function name's `_unverified`
 /// suffix and this rustdoc warning exist precisely so production
 /// review can flag any call site as a policy violation.
-pub fn prove_from_unverified_paths<R>(
+pub fn prove_from_unverified_paths(
     bundle_dir: &Path,
-    req: &ProofRequest,
-    rng: &mut R,
-) -> Result<ProveResponse, ApplicationError>
-where
-    R: Rng + CryptoRng,
-{
+    request: &ProveRequest,
+) -> Result<ProveResponse, ApplicationError> {
     let set = ArtifactSet::load_unverified(bundle_dir).map_err(|e| {
         ApplicationError::InvalidFormat(format!(
             "ArtifactSet::load_unverified({}) failed: {e}",
@@ -179,5 +203,5 @@ where
         ))
     })?;
     let prover = Prover::from_artifact(set);
-    prover.prove(req, rng)
+    prover.prove(request)
 }

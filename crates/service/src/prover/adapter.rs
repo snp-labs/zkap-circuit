@@ -20,13 +20,6 @@
 //!   construction in the unit tests below.
 //! - **C11**: The tree-height bounds check uses [`u64::checked_shl`] to avoid
 //!   overflow when `tree_height >= 64`.
-//!
-//! The adapter is not yet called from [`crate::prover::Prover::prove`] —
-//! that swap lands in US-004 of the prove-API redesign plan. Until then the
-//! module is intentionally `pub(crate)` + `#[allow(dead_code)]` so the
-//! workspace `-D warnings` gate stays green.
-
-#![allow(dead_code)]
 
 use ark_utils::codec::field::fe_to_be32;
 use ark_utils::codec::string::hex_decimal_to_field;

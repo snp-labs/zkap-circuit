@@ -117,7 +117,7 @@ pub use hash::{generate_audience_hashes, generate_issuer_key_hash, generate_pose
 #[cfg(feature = "proof")]
 pub use artifact::{ArtifactError, ArtifactSet};
 #[cfg(feature = "proof")]
-pub use dto::{ProofComponents, ProveResponse, SharedPublicInputs};
+pub use dto::{ProofComponents, ProveCredential, ProveRequest, ProveResponse, SharedPublicInputs};
 #[cfg(feature = "proof")]
 pub use proof::{SetupOutput, SetupShape, setup};
 #[cfg(feature = "proof")]

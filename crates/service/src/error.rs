@@ -14,7 +14,12 @@ use thiserror::Error;
 /// Top-level error type for the zkap-service layer.
 ///
 /// Consumer-facing variants are named by concern, not by internal crate origin.
+///
+/// `#[non_exhaustive]` so that adding new typed variants (e.g. anchor- or
+/// audience-specific failures) is not a breaking change for downstream
+/// `match` sites.
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum ApplicationError {
     /// Input could not be parsed against the expected format (JSON shape,
     /// length, or CircuitConfig invariants). The string carries the upstream
@@ -130,6 +135,18 @@ pub enum ApplicationError {
     /// catch-all from the hash-API surface.
     #[error("hash computation failed: {0}")]
     HashFailed(String),
+
+    /// The number of supplied anchor secrets does not match the matrix row
+    /// count `n` declared in [`circuit::types::CircuitConfig`]. Returned by
+    /// [`crate::generate_anchor`] when
+    /// `request.secrets.len() != config.n`.
+    #[error("anchor dimension mismatch: expected {expected} secrets, got {got}")]
+    AnchorDimensionMismatch {
+        /// Number of secrets the circuit configuration requires (`config.n`).
+        expected: usize,
+        /// Number of secrets the caller supplied.
+        got: usize,
+    },
 }
 
 impl From<AnchorError> for ApplicationError {

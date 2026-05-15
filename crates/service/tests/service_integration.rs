@@ -5,8 +5,9 @@
 //! Run with: `cargo test -p zkap-service --test service_integration -- --ignored`
 
 use zkap_service::{
-    AudienceHashRequest, CircuitConfig, HashRequest, IssuerKeyHashRequest, Secret, generate_anchor,
-    generate_audience_hashes, generate_issuer_key_hash, generate_poseidon_hash,
+    AnchorSecret, AudienceHashRequest, CircuitConfig, GenerateAnchorRequest, HashRequest,
+    IssuerKeyHashRequest, generate_anchor, generate_audience_hashes, generate_issuer_key_hash,
+    generate_poseidon_hash,
 };
 
 fn test_config() -> CircuitConfig {
@@ -39,28 +40,45 @@ fn test_config() -> CircuitConfig {
 fn test_anchor_generation_and_hash_pipeline() {
     let params = test_config();
 
-    let secrets: Vec<Secret> = (0..params.n)
-        .map(|i| Secret {
-            sub: format!("user_{}", i),
-            iss: "https://accounts.google.com".to_string(),
-            aud: "test-audience".to_string(),
+    let secrets: Vec<AnchorSecret> = (0..params.n)
+        .map(|i| AnchorSecret {
+            subject: format!("user_{}", i),
+            issuer: "https://accounts.google.com".to_string(),
+            audience: "test-audience".to_string(),
         })
         .collect();
 
-    let anchor = generate_anchor(&params, secrets).unwrap();
+    let resp = generate_anchor(&params, GenerateAnchorRequest { secrets }).unwrap();
 
     // Anchor should have n - k + 1 elements
-    assert_eq!(anchor.len(), (params.n - params.k + 1) as usize);
+    assert_eq!(
+        resp.anchor_evaluations.len(),
+        (params.n - params.k + 1) as usize
+    );
+    assert!(resp.hanchor.starts_with("0x"));
+    for ev in &resp.anchor_evaluations {
+        assert!(ev.starts_with("0x"));
+    }
 
-    // Hash the anchor elements — outputs are 0x-prefixed hex strings
-    let resp = generate_poseidon_hash(HashRequest {
-        field_elements: anchor,
+    // Hanchor cross-check: chain-hashing the evaluations via the public
+    // `generate_poseidon_hash` (`H(v[0])`, then `H(prev, v[i])`) yields the
+    // same `hanchor` value the service produces internally — proving the
+    // service's built-in chain hash matches the documented recipe.
+    let mut chained = generate_poseidon_hash(HashRequest {
+        field_elements: vec![resp.anchor_evaluations[0].clone()],
     })
-    .unwrap();
-    assert!(
-        resp.hash.starts_with("0x"),
-        "hash should be 0x-prefixed hex: {}",
-        resp.hash
+    .unwrap()
+    .hash;
+    for ev in resp.anchor_evaluations.iter().skip(1) {
+        chained = generate_poseidon_hash(HashRequest {
+            field_elements: vec![chained, ev.clone()],
+        })
+        .unwrap()
+        .hash;
+    }
+    assert_eq!(
+        chained, resp.hanchor,
+        "service hanchor must equal the public chain-hash recipe"
     );
 }
 
@@ -137,42 +155,58 @@ fn test_audience_and_issuer_key_hash_consistency() {
 fn test_anchor_deterministic_with_same_secrets() {
     let params = test_config();
 
-    let secrets: Vec<Secret> = (0..params.n)
-        .map(|i| Secret {
-            sub: format!("user_{}", i),
-            iss: "issuer".to_string(),
-            aud: "aud".to_string(),
+    let secrets: Vec<AnchorSecret> = (0..params.n)
+        .map(|i| AnchorSecret {
+            subject: format!("user_{}", i),
+            issuer: "issuer".to_string(),
+            audience: "aud".to_string(),
         })
         .collect();
 
-    let anchor1 = generate_anchor(&params, secrets.clone()).unwrap();
-    let anchor2 = generate_anchor(&params, secrets).unwrap();
-    assert_eq!(anchor1, anchor2);
+    let r1 = generate_anchor(
+        &params,
+        GenerateAnchorRequest {
+            secrets: secrets.clone(),
+        },
+    )
+    .unwrap();
+    let r2 = generate_anchor(&params, GenerateAnchorRequest { secrets }).unwrap();
+    assert_eq!(r1.anchor_evaluations, r2.anchor_evaluations);
+    assert_eq!(r1.hanchor, r2.hanchor);
 }
 
 #[test]
 fn test_anchor_different_secrets_different_output() {
     let params = test_config();
 
-    let secrets_a: Vec<Secret> = (0..params.n)
-        .map(|i| Secret {
-            sub: format!("alice_{}", i),
-            iss: "issuer".to_string(),
-            aud: "aud".to_string(),
+    let secrets_a: Vec<AnchorSecret> = (0..params.n)
+        .map(|i| AnchorSecret {
+            subject: format!("alice_{}", i),
+            issuer: "issuer".to_string(),
+            audience: "aud".to_string(),
         })
         .collect();
 
-    let secrets_b: Vec<Secret> = (0..params.n)
-        .map(|i| Secret {
-            sub: format!("bob_{}", i),
-            iss: "issuer".to_string(),
-            aud: "aud".to_string(),
+    let secrets_b: Vec<AnchorSecret> = (0..params.n)
+        .map(|i| AnchorSecret {
+            subject: format!("bob_{}", i),
+            issuer: "issuer".to_string(),
+            audience: "aud".to_string(),
         })
         .collect();
 
-    let anchor_a = generate_anchor(&params, secrets_a).unwrap();
-    let anchor_b = generate_anchor(&params, secrets_b).unwrap();
-    assert_ne!(anchor_a, anchor_b);
+    let r_a = generate_anchor(
+        &params,
+        GenerateAnchorRequest { secrets: secrets_a },
+    )
+    .unwrap();
+    let r_b = generate_anchor(
+        &params,
+        GenerateAnchorRequest { secrets: secrets_b },
+    )
+    .unwrap();
+    assert_ne!(r_a.anchor_evaluations, r_b.anchor_evaluations);
+    assert_ne!(r_a.hanchor, r_b.hanchor);
 }
 
 // ============ Slow tests (require CRS) ============

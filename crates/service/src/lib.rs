@@ -6,7 +6,8 @@
 //! - [`generate_poseidon_hash`], [`generate_audience_hashes`],
 //!   [`generate_issuer_key_hash`] — Poseidon hashing (Request/Response DTOs
 //!   live in the [`dto`] re-exports below)
-//! - [`generate_anchor`] — threshold anchor generation (see [`Secret`])
+//! - [`generate_anchor`] — threshold anchor generation (Request/Response DTOs
+//!   re-exported below; see [`AnchorSecret`])
 //! - [`load_circuit_config`] — load [`CircuitConfig`] from JSON
 //!
 //! **`proof` feature (default):**
@@ -105,11 +106,10 @@ pub use circuit::types;
 
 // Public API (always available)
 pub use anchor_host::poseidon::generate_anchor;
-pub use anchor_host::types::Secret;
 pub use circuit::types::CircuitConfig;
 pub use dto::{
-    AudienceHashRequest, AudienceHashResponse, HashRequest, HashResponse, IssuerKeyHashRequest,
-    IssuerKeyHashResponse,
+    AnchorSecret, AudienceHashRequest, AudienceHashResponse, GenerateAnchorRequest,
+    GenerateAnchorResponse, HashRequest, HashResponse, IssuerKeyHashRequest, IssuerKeyHashResponse,
 };
 pub use hash::{generate_audience_hashes, generate_issuer_key_hash, generate_poseidon_hash};
 

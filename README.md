@@ -100,7 +100,7 @@ gadget = { git = "https://github.com/snp-labs/zkap-circuit", features = ["full"]
 use std::path::Path;
 use zkap_service::{
     generate_anchor, generate_aud_hash, generate_hash, generate_leaf_hash,
-    load_circuit_config, Secret,
+    load_circuit_config, AnchorSecret, GenerateAnchorRequest,
 };
 
 // Load circuit parameters from a JSON config file.

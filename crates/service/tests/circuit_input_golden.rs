@@ -102,9 +102,8 @@ fn fixture_jwt() -> String {
     use base64::Engine;
     let header_b64 =
         base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(br#"{"alg":"RS256","typ":"JWT"}"#);
-    let payload_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(
-        br#"{"aud":"a","exp":1700000000,"iss":"i","nonce":"n","sub":"s"}"#,
-    );
+    let payload_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .encode(br#"{"aud":"a","exp":1700000000,"iss":"i","nonce":"n","sub":"s"}"#);
     let sig_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode([0xAAu8; 256]);
     format!("{}.{}.{}", header_b64, payload_b64, sig_b64)
 }
@@ -122,8 +121,7 @@ fn fixture_request(cfg: &CircuitConfig) -> ProveRequest {
     let tree_height = cfg.tree_height as usize;
 
     let zero_fe = "0x00".to_string();
-    let rsa_modulus_b64 =
-        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode([0xCDu8; 256]);
+    let rsa_modulus_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode([0xCDu8; 256]);
 
     ProveRequest {
         random: zero_fe.clone(),

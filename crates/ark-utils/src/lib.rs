@@ -8,7 +8,7 @@
 //!   helpers in `codec::affine`).
 //! - [`r1cs`] — R1CS gadgets (`comparison`, `packing`, `select`, `slice`,
 //!   `uint32`) — all gated behind the `r1cs` feature.
-//! - [`io`] — uncompressed key-file loader; gated behind the `io` feature.
+//! - `io` — uncompressed key-file loader; gated behind the `io` feature.
 //! - [`error`] — re-exports of the per-module error types for callers that
 //!   prefer a single import root (`ark_utils::error::ConvertError`, etc.).
 //!

@@ -92,13 +92,12 @@ fn locate_claim(payload: &str, key: &str) -> Result<ClaimIndices, ApplicationErr
     };
     let bytes = payload.as_bytes();
 
-    let key_pos =
-        payload
-            .find(&needle)
-            .ok_or_else(|| ApplicationError::InvalidProveRequest {
-                field: "jwt.payload".into(),
-                message: format!("claim `{}` not found in JWT payload", key),
-            })?;
+    let key_pos = payload
+        .find(&needle)
+        .ok_or_else(|| ApplicationError::InvalidProveRequest {
+            field: "jwt.payload".into(),
+            message: format!("claim `{}` not found in JWT payload", key),
+        })?;
 
     let mut p = key_pos + needle.len();
     while p < bytes.len() && bytes[p].is_ascii_whitespace() {
@@ -338,11 +337,12 @@ pub(crate) fn build_jwt_stage(
             message: format!("payload base64 decode failed: {}", e),
         }
     })?;
-    let payload_str =
-        core::str::from_utf8(&payload_bytes).map_err(|e| ApplicationError::InvalidProveRequest {
+    let payload_str = core::str::from_utf8(&payload_bytes).map_err(|e| {
+        ApplicationError::InvalidProveRequest {
             field: format!("{}.jwt_bytes", field_path),
             message: format!("payload not UTF-8: {}", e),
-        })?;
+        }
+    })?;
 
     let mut claim_indices: Vec<ClaimIndices> = Vec::with_capacity(cfg.claims.len());
     for key in &cfg.claims {
@@ -364,13 +364,12 @@ pub(crate) fn build_jwt_stage(
         e: vec![0x01, 0x00, 0x01],
     };
 
-    let sig_bytes_decoded =
-        base64_url_no_pad_decode(sig_b64.as_bytes()).map_err(|e| {
-            ApplicationError::InvalidProveRequest {
-                field: format!("{}.jwt_bytes", field_path),
-                message: format!("signature base64 decode failed: {}", e),
-            }
-        })?;
+    let sig_bytes_decoded = base64_url_no_pad_decode(sig_b64.as_bytes()).map_err(|e| {
+        ApplicationError::InvalidProveRequest {
+            field: format!("{}.jwt_bytes", field_path),
+            message: format!("signature base64 decode failed: {}", e),
+        }
+    })?;
     if sig_bytes_decoded != rsa_signature_bytes {
         return Err(ApplicationError::InvalidProveRequest {
             field: format!("{}.rsa_signature_bytes", field_path),
@@ -614,11 +613,10 @@ fn chain_hash_native(values: &[F], params: &PoseidonConfig<F>) -> Result<F, Appl
             message: "chain_hash on empty anchor".into(),
         });
     }
-    let mut h = CRH::<F>::evaluate(params, [values[0]])
-        .map_err(|_| ApplicationError::PoseidonHashError)?;
+    let mut h =
+        CRH::<F>::evaluate(params, [values[0]]).map_err(|_| ApplicationError::PoseidonHashError)?;
     for v in &values[1..] {
-        h = CRH::<F>::evaluate(params, [h, *v])
-            .map_err(|_| ApplicationError::PoseidonHashError)?;
+        h = CRH::<F>::evaluate(params, [h, *v]).map_err(|_| ApplicationError::PoseidonHashError)?;
     }
     Ok(h)
 }
@@ -763,7 +761,10 @@ mod tests {
                 assert!(field.contains("anchor_values"), "got field {}", field);
                 assert!(message.contains("n - k + 1"), "got msg {}", message);
             }
-            other => panic!("expected InvalidProveRequest for anchor_values, got {:?}", other.err()),
+            other => panic!(
+                "expected InvalidProveRequest for anchor_values, got {:?}",
+                other.err()
+            ),
         }
     }
 
@@ -819,11 +820,7 @@ mod tests {
             &poseidon_param,
         ) {
             Err(ApplicationError::InvalidProveRequest { field, message }) => {
-                assert!(
-                    field.contains("rsa_modulus_bytes"),
-                    "got field {}",
-                    field
-                );
+                assert!(field.contains("rsa_modulus_bytes"), "got field {}", field);
                 assert!(message.contains("256 bytes"), "got msg {}", message);
             }
             other => panic!(

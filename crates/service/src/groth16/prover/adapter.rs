@@ -19,9 +19,9 @@ use ark_utils::codec::string::hex_decimal_to_field;
 use circuit::types::{CircuitConfig, F};
 use gadget::base64::decode_any_base64;
 
+use super::RSA_2048_BYTES;
 use crate::dto::ProveRequest;
 use crate::error::ApplicationError;
-use super::RSA_2048_BYTES;
 
 /// Wire-decoded fields shared across every JWT in a K-credential batch.
 ///
@@ -370,7 +370,11 @@ mod tests {
         // Shared anchor + merkle_root field round-trip to F.
         for (i, s) in req.anchor.iter().enumerate() {
             let fe = hex_decimal_to_field::<F>(s).unwrap();
-            assert_eq!(shared.anchor_values[i], fe, "anchor[{}] should round-trip", i);
+            assert_eq!(
+                shared.anchor_values[i], fe,
+                "anchor[{}] should round-trip",
+                i
+            );
         }
         let root_fe = hex_decimal_to_field::<F>(&req.merkle_root).unwrap();
         assert_eq!(shared.merkle_root, root_fe);

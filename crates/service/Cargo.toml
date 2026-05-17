@@ -30,22 +30,24 @@ hex = { workspace = true }
 # unconditionally is negligible.
 sha2 = { workspace = true }
 
-# --- Proof-only dependencies (optional, heavy) ---
-zkap-evm-verifier     = { workspace = true, optional = true }
-ark-ec                = { workspace = true, optional = true }
-ark-groth16           = { workspace = true, optional = true }
-ark-poly              = { workspace = true, optional = true }
-ark-r1cs-std          = { workspace = true, optional = true }
-ark-relations         = { workspace = true, optional = true }
-ark-serialize         = { workspace = true, optional = true }
-memmap2               = { workspace = true, optional = true }
-blake2                = { workspace = true, optional = true }
-rand                  = { workspace = true, optional = true }
+# --- Proof / Groth16 dependencies (always-on after the 2026-05
+#     binding-friendly refactor; previously gated behind the `proof`
+#     Cargo feature). ---
+zkap-evm-verifier     = { workspace = true }
+ark-ec                = { workspace = true }
+ark-groth16           = { workspace = true }
+ark-poly              = { workspace = true }
+ark-r1cs-std          = { workspace = true }
+ark-relations         = { workspace = true }
+ark-serialize         = { workspace = true }
+memmap2               = { workspace = true }
+blake2                = { workspace = true }
+rand                  = { workspace = true }
 # Native prove flow — Commit 4 of the 2026-05 ark-ar1cs boundary
 # migration. The `ark-ar1cs` root crate exposes `prove`,
 # `synthesize_full_assignment`, and the `format::ArcsFile` envelope
 # that `ArtifactSet` loads from `circuit.ar1cs`.
-ark-ar1cs              = { workspace = true, optional = true }
+ark-ar1cs              = { workspace = true }
 
 [dev-dependencies]
 signature = "2"
@@ -56,38 +58,19 @@ hex = { workspace = true }
 sha2 = { workspace = true }
 ark-relations = { workspace = true }
 circuit = { workspace = true }
-postcard = { workspace = true }
 
 [lib]
 name = "zkap_service"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 # `crates/service/examples/` is empty today. The end-to-end exercise
-# of `service::Prover::prove` lives in
+# of `service::prove` lives in
 # `crates/service/tests/native_prove_e2e.rs` (signature guards) and
 # the slow `circuit::tests::groth16_integration` suite.
 
 [features]
-default = ["proof"]
-proof = [
-    "dep:zkap-evm-verifier",
-    "dep:ark-ec",
-    "dep:ark-groth16",
-    "dep:ark-poly",
-    "dep:ark-r1cs-std",
-    "dep:ark-relations",
-    "dep:ark-serialize",
-    "dep:memmap2",
-    "dep:blake2",
-    "dep:rand",
-    "dep:ark-ar1cs",
-]
-# Compile-time opt-in for the non-canonical loaders / prove entry
-# points that bypass the manifest trust gate
-# (`ArtifactSet::load_without_manifest_verification_for_testing`,
-# `prove_from_unverified_paths_for_testing`). Disabled by default —
-# production builds never see these symbols.
-dev-unverified-artifacts = ["proof"]
+# `proof` and `dev-unverified-artifacts` features were removed in the
+# 2026-05 binding-friendly refactor. Heavy ark-* deps are always-on.
 print-trace = ["circuit/print-trace"]
 
 # Example temporarily disabled — see comment above the [features] block.

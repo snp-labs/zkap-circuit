@@ -71,7 +71,7 @@ pub struct SharedPublicInputs {
     pub h_aud_list: String,
 }
 
-/// Response from [`crate::Prover::prove`].
+/// Response from [`crate::prove`].
 ///
 /// Per-credential public inputs are exposed as parallel `Vec`s
 /// (`jwt_exp[i]` and `verification_rhs[i]` belong to the proof at
@@ -79,7 +79,7 @@ pub struct SharedPublicInputs {
 /// `0x`-prefixed lowercase big-endian hex.
 ///
 /// **Length invariants** (always satisfied by a successful
-/// [`crate::Prover::prove`] call):
+/// [`crate::prove`] call):
 /// - `proofs.len() == jwt_exp.len() == verification_rhs.len() == config.k`.
 ///
 /// Use [`Self::public_inputs_for`] to reconstruct the ordered 8-element

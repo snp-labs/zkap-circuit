@@ -2,25 +2,26 @@
 //!
 //! # Public API
 //!
-//! **Always available:**
+//! All entry points are always-on after the 2026-05 binding-friendly
+//! refactor (the `proof` and `dev-unverified-artifacts` Cargo features
+//! were removed; heavy ark-* deps are now unconditional).
+//!
 //! - [`generate_poseidon_hash`], [`generate_audience_hashes`],
 //!   [`generate_issuer_key_hash`] — Poseidon hashing (Request/Response DTOs
-//!   live in the [`dto`] re-exports below)
+//!   live in the `dto` re-exports below)
 //! - [`generate_anchor`] — threshold anchor generation (Request/Response DTOs
 //!   re-exported below; see [`AnchorSecret`])
 //! - [`load_circuit_config`] — load [`CircuitConfig`] from JSON
-//!
-//! **`proof` feature (default):**
 //! - [`setup`] — trusted setup: generates proving/verifying keys and writes them to disk
-//! - [`Prover`] — native Groth16 prover (takes [`ProveRequest`]). The
-//!   non-canonical `prove_from_unverified_paths_for_testing` shortcut
-//!   is exposed only under the `dev-unverified-artifacts` feature.
+//! - [`prove`] — native Groth16 prover free function (takes
+//!   `&ArtifactSet` + [`ProveRequest`]; mirrors the `generate_anchor`
+//!   shape).
 //! - [`jwt`] — JWT payload claim parsing ([`jwt::parser::parse_claim_from_str`])
 //!
 //! Proof verification is intentionally **not** wrapped by this crate
 //! after Commit 5 of the 2026-05 ark-ar1cs boundary migration: callers
 //! borrow the prepared verifying key from
-//! [`SetupOutput::prepared_verifying_key`] (or from a `Prover` /
+//! [`SetupOutput::prepared_verifying_key`] (or from an
 //! [`ArtifactSet`]) and feed it directly to
 //! `ark_groth16::Groth16::verify_proof`.
 //!
@@ -41,24 +42,34 @@
 //! │   ProveRequest {                                                 │
 //! │     random, h_sign_user_op, anchor[*], merkle_root,              │
 //! │     credentials: [ProveCredential; k]                            │
-//! │   }   (hanchor NOT in request — derived from anchor)             │
+//! │   }                                                              │
 //! └──────────────────────────────┬───────────────────────────────────┘
-//!                                │ Prover::prove(&req)
+//!                                │ prove(&set, &req)
 //!                                ▼
 //! ┌──────────────────────────────────────────────────────────────────┐
-//! │ adapter::prove_request_to_internal                               │
-//! │   1. shape validation (lengths + leaf-idx bound)                 │
-//! │   2. decode shared field strings (hex/decimal)                   │
-//! │   3. per-credential: parse JWT → derive x → decode bytes         │
-//! │   4. derive selector + per-credential current_idx                │
-//! │   5. compose internal ProofRequest { SharedFields, [PerJwtFields]}│
+//! │ adapter::prove_request_to_decoded                                │
+//! │   1. cfg.validate()                                              │
+//! │   2. shape validation (lengths + leaf-idx bound)                 │
+//! │   3. decode shared field strings (hex/decimal → F)               │
+//! │   4. per-credential: base64-decode RSA/sig, merkle path → F      │
+//! │   → (SharedDecoded, Vec<CredentialDecoded>)                      │
 //! └──────────────────────────────┬───────────────────────────────────┘
 //!                                │
 //!                                ▼
 //! ┌──────────────────────────────────────────────────────────────────┐
-//! │ Prover::prove_internal (OsRng inside `prove`)                    │
-//! │   build_input → into_circuit_input → ZkapCircuit::from_input     │
-//! │   → synthesize_full_assignment → ark_ar1cs::prove                │
+//! │ prove() body                                                     │
+//! │   pre-batch:                                                     │
+//! │     parse JWTs → derive_x_from_secret → x_list                   │
+//! │     derive_selector_from_x_list_and_anchor → selector            │
+//! │     one_positions[i] = i-th 1-position of selector               │
+//! │   per credential:                                                │
+//! │     circuit_input::build_anchor_stage                            │
+//! │     circuit_input::build_jwt_stage                               │
+//! │     circuit_input::build_audience_stage                          │
+//! │     circuit_input::build_merkle_witness                          │
+//! │     circuit_input::compute_public_inputs                         │
+//! │     ZkapCircuit::from_input → synthesize_full_assignment         │
+//! │     → ark_ar1cs::prove                                           │
 //! └──────────────────────────────┬───────────────────────────────────┘
 //!                                │
 //!                                ▼
@@ -69,21 +80,27 @@
 //! ```
 //!
 //! `ArtifactSet::load(manifest, dir)` is the trust boundary — manifest
-//! hash validation happens before `Prover::prove` runs, and `Prover::prove`
+//! hash validation happens before [`prove`] runs, and [`prove`]
 //! does not re-verify any hash.
+//!
+//! ### Drift safeguard
+//!
+//! Compile-checked guard against accidental signature drift on the
+//! canonical `prove` entry point. Updates to this signature must update
+//! the diagram above (and the flow doc in
+//! `crates/service/src/groth16/prover/mod.rs`).
+//!
+//! ```ignore
+//! use zkap_service::{ArtifactSet, ProveRequest, ProveResponse, prove};
+//! use zkap_service::error::ApplicationError;
+//! let _: fn(&ArtifactSet, &ProveRequest) -> Result<ProveResponse, ApplicationError> = prove;
+//! ```
 
-// Crate-internal `missing_docs` warning, not a `#[deny]`. Phase 7 / H5
-// staged path: clears the zkap-service baseline (39 service warnings +
-// 9 ark-utils warnings that surface only under the `field-serde`
-// feature combination zkap-service activates — see
-// `00-workspace-hygiene.md` §6 v3 H5 baseline drift note) and locks in
-// the floor without depending on a workspace-wide `[lints.rust]
-// missing_docs = "warn"` (which would still block on gadget's 213
-// outstanding warnings — `00-workspace-hygiene.md` §H5 baseline).
-// The workspace-wide flip happens once gadget hits zero at this gate.
+// Crate-internal `missing_docs` warning, not a `#[deny]`. Workspace-wide
+// flip is deferred until gadget reaches zero missing-docs warnings.
 #![warn(missing_docs)]
 
-pub(crate) mod anchor_host;
+pub(crate) mod anchor;
 pub(crate) mod dto;
 pub mod error;
 pub(crate) mod hash;
@@ -93,24 +110,19 @@ pub(crate) mod hash;
 // inspectors, dev tools) can depend on the module cheaply.
 pub mod manifest;
 
-#[cfg(feature = "proof")]
 pub mod artifact;
-#[cfg(feature = "proof")]
 pub(crate) mod crs;
-#[cfg(feature = "proof")]
 pub mod jwt;
-#[cfg(feature = "proof")]
-pub mod proof;
 
-// Native witness-shaping path — pure, wasm-free. Crate-internal only:
-// boundary callers reach this through [`ProveRequest`] and never see
-// the raw `SharedFields` / `PerJwtFields` shapes.
-#[cfg(feature = "proof")]
-pub(crate) mod witness;
-
-// Native ark-ar1cs prover — canonical post-migration entry point.
-#[cfg(feature = "proof")]
-pub mod prover;
+// Groth16 lifecycle parent — `pub(crate)` so module-qualified paths
+// `zkap_service::setup::*` / `zkap_service::groth16::*` are intentionally
+// gone (BREAKING change). External callers must use the top-level
+// re-exports below (`zkap_service::{setup, prove, SetupOutput, ...}`).
+// Hosts the wire-decoder (adapter), per-credential stage builders
+// (circuit_input), and the ar1cs orchestrator (prove). Boundary callers
+// reach the SNARK layer through `ProveRequest` and never see raw
+// F-decoded bundles.
+pub(crate) mod groth16;
 
 use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;
 use circuit::types::F;
@@ -148,7 +160,7 @@ pub fn load_circuit_config(
 pub use circuit::types;
 
 // Public API (always available)
-pub use anchor_host::poseidon::generate_anchor;
+pub use anchor::poseidon::generate_anchor;
 pub use circuit::types::CircuitConfig;
 pub use dto::{
     AnchorSecret, AudienceHashRequest, AudienceHashResponse, GenerateAnchorRequest,
@@ -156,14 +168,8 @@ pub use dto::{
 };
 pub use hash::{generate_audience_hashes, generate_issuer_key_hash, generate_poseidon_hash};
 
-// Public API (proof feature only)
-#[cfg(feature = "proof")]
+// Public API (proof + setup surface — always available after the 2026-05 refactor)
 pub use artifact::{ArtifactError, ArtifactSet};
-#[cfg(feature = "proof")]
 pub use dto::{ProofComponents, ProveCredential, ProveRequest, ProveResponse, SharedPublicInputs};
-#[cfg(feature = "proof")]
-pub use proof::{SetupOutput, SetupShape, setup};
-#[cfg(feature = "proof")]
-pub use prover::Prover;
-#[cfg(feature = "dev-unverified-artifacts")]
-pub use prover::prove_from_unverified_paths_for_testing;
+pub use groth16::prover::prove;
+pub use groth16::setup::{SetupOutput, SetupShape, setup};

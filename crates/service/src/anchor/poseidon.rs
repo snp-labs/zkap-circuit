@@ -76,9 +76,12 @@ pub fn generate_anchor(
 /// Sequential Poseidon chain hash matching the in-circuit `hanchor` recipe:
 /// `H(v[0])`, then `H(prev, v[i])` for `i in 1..len`.
 ///
-/// Inlined here (rather than reusing `witness::input::chain_hash_native`) so
-/// that [`generate_anchor`] remains compilable without the `proof` feature
-/// (`witness/input.rs` is `proof`-gated).
+/// Inlined here (rather than reusing
+/// `crate::groth16::prover::circuit_input::chain_hash_native`) so this
+/// module's anchor-generation path stays independent of the Groth16
+/// prove subtree. The duplication is intentional — both copies share the
+/// same `H(v[0])` / `H(prev, v[i])` recipe and any algorithm change must
+/// be mirrored in both call sites.
 fn chain_hash_anchor(values: &[F], params: &PoseidonConfig<F>) -> Result<F, ApplicationError> {
     if values.is_empty() {
         return Err(ApplicationError::HashFailed(

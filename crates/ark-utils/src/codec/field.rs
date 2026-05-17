@@ -1,11 +1,10 @@
 //! Canonical field-element codecs.
 //!
 //! Centralizes the byte-level encodings of `PrimeField` values used by
-//! the V1 wire format (`crate::wire`, gated on the `wire` feature) and by
-//! service-level DTOs:
+//! the host-side witness builder and by service-level DTOs:
 //!
 //! - [`fe_to_be32`] / [`fe_from_be32_canonical`] — strict 32-byte
-//!   big-endian round-trip used by the V1 wire format.
+//!   big-endian round-trip.
 //! - [`field_to_hex`] — `0x`-prefixed big-endian hex serialization used
 //!   by service-level DTOs and the EVM verifier interface.
 //!

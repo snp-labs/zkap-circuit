@@ -86,15 +86,13 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
-      # ark-utils: 4 combos (H4)
+      # ark-utils: 3 combos (H4) — `wire` feature retired with ZkapInputV1
       - name: ark-utils | no-default-features
         run: cargo check -p ark-utils --no-default-features
-      - name: ark-utils | wire
-        run: cargo check -p ark-utils --no-default-features --features wire
       - name: ark-utils | r1cs
         run: cargo check -p ark-utils --no-default-features --features r1cs
-      - name: ark-utils | r1cs,wire,field-serde,io (full)
-        run: cargo check -p ark-utils --no-default-features --features r1cs,wire,field-serde,io
+      - name: ark-utils | r1cs,field-serde,io (full)
+        run: cargo check -p ark-utils --no-default-features --features r1cs,field-serde,io
       # gadget: 3 combos (H4)
       - name: gadget | crypto
         run: cargo check -p gadget --no-default-features --features crypto
@@ -102,10 +100,11 @@ jobs:
         run: cargo check -p gadget --no-default-features --features crypto,base64
       - name: gadget | crypto,base64,rsa (full)
         run: cargo check -p gadget --no-default-features --features crypto,base64,rsa
-      # zkap-service: 2 combos — replaces former single-combo features job (H4)
+      # zkap-service: 2 combos — `proof` feature retired; --no-default-features
+      # is now identical to default but keep both as a guard against future drift.
       - name: zkap-service | no-default-features
         run: cargo check -p zkap-service --no-default-features
-      - name: zkap-service | default (proof)
+      - name: zkap-service | default
         run: cargo check -p zkap-service
 
   generate-setup-smoke:

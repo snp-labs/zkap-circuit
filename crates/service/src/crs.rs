@@ -32,7 +32,7 @@ use circuit::types::{CircuitConfig, F};
 use zkap_evm_verifier::SolidityContractGenerator;
 
 use crate::error::ApplicationError;
-use crate::setup::SetupOutput;
+use crate::groth16::setup::SetupOutput;
 
 // ── Internal API (called by setup()) ─────────────────────────────────────────
 
@@ -41,7 +41,7 @@ use crate::setup::SetupOutput;
 ///
 /// Creates `output_dir` if it does not already exist, then writes six
 /// files (see module-level table). Called internally by
-/// [`crate::setup::setup`].
+/// [`crate::groth16::setup::setup`].
 pub(crate) fn persist_setup_output(
     setup: &SetupOutput,
     config: &CircuitConfig,

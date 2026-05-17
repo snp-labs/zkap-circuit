@@ -29,9 +29,9 @@ use gadget::{
 
 use ark_utils::codec::field::fe_from_be32_canonical;
 
-use crate::prover::witness::RSA_2048_BYTES;
-use crate::prover::witness::error::ZkapWitnessError;
-use crate::prover::witness::request::{PerJwtFields, SharedFields};
+use super::RSA_2048_BYTES;
+use super::witness_error::ZkapWitnessError;
+use super::witness_request::{PerJwtFields, SharedFields};
 
 const BN254_LIMB_WIDTH: usize = 31;
 

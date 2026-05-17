@@ -9,7 +9,7 @@
 //! is a pure description of the credentials being proven and the
 //! field elements that compose the public-input vector.
 
-use crate::prover::witness::error::ZkapWitnessError;
+use super::witness_error::ZkapWitnessError;
 
 /// Fields shared across every JWT in a K-credential batch.
 #[derive(Debug, Clone)]
@@ -53,7 +53,7 @@ pub struct PerJwtFields {
 /// witness shaping.
 ///
 /// Shape invariants (re-checked by [`Self::validate`] and the deeper
-/// [`crate::prover::witness::input::into_circuit_input`] conversion):
+/// [`crate::groth16::prover::witness_input::into_circuit_input`] conversion):
 ///
 /// * `shared.anchor_values_be.len() == n - k + 1`
 /// * `shared.anchor_known_x_be.len() == k`

@@ -1,4 +1,4 @@
-//! Boundary adapter: [`ProveRequest`] → [`crate::prover::witness::WitnessRequest`].
+//! Boundary adapter: [`ProveRequest`] → [`crate::groth16::prover::witness_request::WitnessRequest`].
 //!
 //! Validates the request's shape against `CircuitConfig`, decodes every
 //! string-encoded field element via [`ark_utils::codec::string::hex_decimal_to_field`],
@@ -33,10 +33,7 @@ use crate::anchor::poseidon::{derive_selector_from_x_list_and_anchor, derive_x_f
 use crate::dto::{AnchorSecret, ProveCredential, ProveRequest};
 use crate::error::ApplicationError;
 use crate::jwt::parser::parse_claim_from_str;
-use crate::prover::witness::{PerJwtFields, SharedFields, WitnessRequest};
-
-/// RSA-2048 modulus / signature byte length.
-const RSA_2048_BYTES: usize = 256;
+use super::{PerJwtFields, RSA_2048_BYTES, SharedFields, WitnessRequest};
 
 /// Convert an external [`ProveRequest`] into the internal witness
 /// [`WitnessRequest`].

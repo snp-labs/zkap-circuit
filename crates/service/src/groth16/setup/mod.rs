@@ -1,7 +1,7 @@
 //! ZKAP trusted-setup entry point.
 //!
 //! After Commit 4 of the 2026-05 ark-ar1cs boundary migration the
-//! proving entry point lives in [`crate::prover`]
+//! proving entry point lives in [`crate::groth16::prover`]
 //! ([`crate::prove`]).
 //! Commit 5 then removed the in-crate verify wrapper — callers verify
 //! proofs by calling `Groth16::verify_proof` directly against the
@@ -51,7 +51,7 @@ pub struct SetupOutput {
     pub(crate) vk: VerifyingKey<BN254>,
     pub(crate) pvk: PreparedVerifyingKey<BN254>,
     /// `.ar1cs` body extracted alongside the proving/verifying keys.
-    /// Used by [`crate::crs::persist_setup_output`] to emit
+    /// Used by `crate::crs::persist_setup_output` to emit
     /// `circuit.ar1cs` and by CLI tooling to compute the manifest's
     /// `ar1cs_blake3` field.
     pub arcs: ArcsFile<F>,

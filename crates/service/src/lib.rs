@@ -8,7 +8,7 @@
 //!
 //! - [`generate_poseidon_hash`], [`generate_audience_hashes`],
 //!   [`generate_issuer_key_hash`] — Poseidon hashing (Request/Response DTOs
-//!   live in the [`dto`] re-exports below)
+//!   live in the `dto` re-exports below)
 //! - [`generate_anchor`] — threshold anchor generation (Request/Response DTOs
 //!   re-exported below; see [`AnchorSecret`])
 //! - [`load_circuit_config`] — load [`CircuitConfig`] from JSON
@@ -97,13 +97,15 @@ pub mod manifest;
 pub mod artifact;
 pub(crate) mod crs;
 pub mod jwt;
-pub mod setup;
 
-// Native ark-ar1cs prover — canonical post-migration entry point.
+// Groth16 lifecycle parent — `pub(crate)` so module-qualified paths
+// `zkap_service::setup::*` / `zkap_service::prover::*` are intentionally
+// gone (BREAKING change). External callers must use the top-level
+// re-exports below (`zkap_service::{setup, prove, SetupOutput, ...}`).
 // Hosts the witness-shaping path as a sub-module; boundary callers
 // reach that layer through [`ProveRequest`] and never see the raw
 // `SharedFields` / `PerJwtFields` shapes.
-pub mod prover;
+pub(crate) mod groth16;
 
 use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;
 use circuit::types::F;
@@ -152,5 +154,5 @@ pub use hash::{generate_audience_hashes, generate_issuer_key_hash, generate_pose
 // Public API (proof + setup surface — always available after the 2026-05 refactor)
 pub use artifact::{ArtifactError, ArtifactSet};
 pub use dto::{ProofComponents, ProveCredential, ProveRequest, ProveResponse, SharedPublicInputs};
-pub use prover::prove;
-pub use setup::{SetupOutput, SetupShape, setup};
+pub use groth16::prover::prove;
+pub use groth16::setup::{SetupOutput, SetupShape, setup};

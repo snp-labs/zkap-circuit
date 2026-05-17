@@ -1,7 +1,7 @@
 //! Native [`prove`] free function — host-facing entry point for the
 //! ark-ar1cs Groth16 prove flow.
 //!
-//! See the module-level docs in [`crate::prover`] for the canonical
+//! See the module-level docs in [`crate::groth16::prover`] for the canonical
 //! call sequence. `prove` chains
 //! `prove_request_to_internal → into_circuit_input →
 //! ZkapCircuit::from_input → synthesize_full_assignment →
@@ -19,8 +19,8 @@ use circuit::zkap::ZkapCircuit;
 use crate::artifact::ArtifactSet;
 use crate::dto::{ProveRequest, ProveResponse};
 use crate::error::ApplicationError;
-use crate::prover::adapter::prove_request_to_internal;
-use crate::prover::witness::into_circuit_input;
+use super::adapter::prove_request_to_internal;
+use super::into_circuit_input;
 
 /// Run the native ar1cs Groth16 prove flow over every JWT credential
 /// in `request`, against the artifact bundle in `artifact`.
@@ -35,12 +35,12 @@ use crate::prover::witness::into_circuit_input;
 /// The call pipeline:
 ///
 /// 1. The boundary adapter
-///    ([`crate::prover::adapter::prove_request_to_internal`]) validates
-///    [`ProveRequest`] shape against the bundled [`CircuitConfig`],
+///    (`prove_request_to_internal`) validates
+///    [`ProveRequest`] shape against the bundled [`crate::CircuitConfig`],
 ///    decodes every hex/base64 field, parses each JWT for `sub` / `iss`
 ///    / `aud`, derives the per-credential anchor `x`, and composes the
 ///    internal witness request.
-/// 2. Per credential: [`into_circuit_input`] converts the shared +
+/// 2. Per credential: `into_circuit_input` converts the shared +
 ///    per-JWT bundle into a fully assigned `ZkapCircuitInput<F>`;
 ///    [`ZkapCircuit::from_input`] wraps it in a `ConstraintSynthesizer`;
 ///    [`synthesize_full_assignment`] returns the prover-shaped
@@ -49,7 +49,7 @@ use crate::prover::witness::into_circuit_input;
 ///    `artifact.arcs`.
 /// 3. The collected proofs + parallel public-input vectors are folded
 ///    into a [`ProveResponse`] via the `From<(Vec<Proof>, Vec<Vec<F>>)>`
-///    impl in [`crate::dto::proof`].
+///    impl in `crate::dto::proof`.
 ///
 /// A fresh [`OsRng`] is constructed inside this function and reused
 /// across every credential in the batch. The public API does not

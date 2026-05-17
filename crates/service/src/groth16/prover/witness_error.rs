@@ -1,6 +1,6 @@
 //! Errors raised by the native witness builder.
 //!
-//! Lives alongside [`crate::prover::witness::input`] so callers that
+//! Lives alongside [`crate::groth16::prover::witness_input`] so callers that
 //! perform the `WitnessRequest → ZkapCircuitInput<F>` conversion
 //! in-process get a precise diagnostic surface for shape, encoding,
 //! and JWT-parse failures.

@@ -105,7 +105,7 @@ pub fn generate_audience_hashes(
 ///
 /// `request.issuer` is padded to `config.max_iss_len` bytes with the circuit
 /// pad character. `request.rsa_modulus_b64` must base64-decode to exactly
-/// [`RSA_2048_MODULUS_BYTES`] (256) bytes; other lengths return
+/// `RSA_2048_MODULUS_BYTES` (256) bytes; other lengths return
 /// [`ApplicationError::InvalidRsaModulus`]. The RSA public exponent is fixed
 /// at 65537 in-circuit and is sourced from
 /// `gadget::constants::RSA_DEFAULT_EXPONENT_B64` rather than being accepted

@@ -103,8 +103,8 @@ fn placeholder_prove_request(cfg: &CircuitConfig) -> ProveRequest {
 #[cfg(feature = "dev-unverified-artifacts")]
 fn placeholder_jwt() -> String {
     use base64::Engine;
-    let header_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD
-        .encode(br#"{"alg":"RS256","typ":"JWT"}"#);
+    let header_b64 =
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(br#"{"alg":"RS256","typ":"JWT"}"#);
     let payload_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD
         .encode(br#"{"aud":"a","iss":"i","sub":"s","exp":1700000000}"#);
     let sig_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode([0xAA_u8; 256]);

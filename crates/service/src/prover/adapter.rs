@@ -29,9 +29,7 @@ use gadget::base64::decode_any_base64;
 use gadget::matrix::VandermondeMatrix;
 
 use crate::anchor_host::AnchorConfig;
-use crate::anchor_host::poseidon::{
-    derive_selector_from_x_list_and_anchor, derive_x_from_secret,
-};
+use crate::anchor_host::poseidon::{derive_selector_from_x_list_and_anchor, derive_x_from_secret};
 use crate::dto::{AnchorSecret, ProveCredential, ProveRequest};
 use crate::error::ApplicationError;
 use crate::jwt::parser::parse_claim_from_str;
@@ -78,15 +76,15 @@ pub(crate) fn prove_request_to_internal(
         });
     }
     // checked_shl avoids overflow at tree_height >= 64 (codex C11).
-    let max_leaf_idx_exclusive = 1u64
-        .checked_shl(cfg.tree_height as u32)
-        .ok_or_else(|| ApplicationError::InvalidProveRequest {
+    let max_leaf_idx_exclusive = 1u64.checked_shl(cfg.tree_height as u32).ok_or_else(|| {
+        ApplicationError::InvalidProveRequest {
             field: "tree_height".into(),
             message: format!(
                 "tree_height={} is too large for u64 leaf-index range",
                 cfg.tree_height
             ),
-        })?;
+        }
+    })?;
     for (i, cred) in request.credentials.iter().enumerate() {
         if cred.merkle_path.len() != th {
             return Err(ApplicationError::InvalidProveRequest {
@@ -123,8 +121,7 @@ pub(crate) fn prove_request_to_internal(
     let random_be = fe_to_be32(&random_fe);
     let h_sign_user_op_be = fe_to_be32(&h_sign_user_op_fe);
     let merkle_root_be = fe_to_be32(&merkle_root_fe);
-    let anchor_values_be: Vec<[u8; 32]> =
-        anchor_fields.iter().map(fe_to_be32).collect();
+    let anchor_values_be: Vec<[u8; 32]> = anchor_fields.iter().map(fe_to_be32).collect();
 
     // 3. Per-credential decoding
     let poseidon_params = crate::poseidon_params();
@@ -272,34 +269,23 @@ fn decode_field_string(s: &str, field_path: &str) -> Result<F, ApplicationError>
 /// Decode the last segment of a `header.payload.signature` JWT compact
 /// serialization. Validates segment count and produces a 256-byte RSA-2048
 /// signature.
-fn decode_jwt_signature_segment(
-    jwt: &str,
-    cred_idx: usize,
-) -> Result<Vec<u8>, ApplicationError> {
+fn decode_jwt_signature_segment(jwt: &str, cred_idx: usize) -> Result<Vec<u8>, ApplicationError> {
     let parts: Vec<&str> = jwt.split('.').collect();
     if parts.len() != 3 {
         return Err(ApplicationError::InvalidProveRequest {
             field: format!("credentials[{}].jwt", cred_idx),
-            message: format!(
-                "expected 3 dot-separated JWT segments, got {}",
-                parts.len()
-            ),
+            message: format!("expected 3 dot-separated JWT segments, got {}", parts.len()),
         });
     }
-    let sig_bytes = decode_any_base64(parts[2]).map_err(|e| {
-        ApplicationError::InvalidProveRequest {
+    let sig_bytes =
+        decode_any_base64(parts[2]).map_err(|e| ApplicationError::InvalidProveRequest {
             field: format!("credentials[{}].jwt.signature", cred_idx),
             message: format!("base64 decode failed: {}", e),
-        }
-    })?;
+        })?;
     if sig_bytes.len() != RSA_2048_BYTES {
         return Err(ApplicationError::InvalidProveRequest {
             field: format!("credentials[{}].jwt.signature", cred_idx),
-            message: format!(
-                "expected {} bytes, got {}",
-                RSA_2048_BYTES,
-                sig_bytes.len()
-            ),
+            message: format!("expected {} bytes, got {}", RSA_2048_BYTES, sig_bytes.len()),
         });
     }
     Ok(sig_bytes)
@@ -316,18 +302,14 @@ fn parse_jwt_claims_triple(
     if parts.len() != 3 {
         return Err(ApplicationError::InvalidProveRequest {
             field: format!("credentials[{}].jwt", cred_idx),
-            message: format!(
-                "expected 3 dot-separated JWT segments, got {}",
-                parts.len()
-            ),
+            message: format!("expected 3 dot-separated JWT segments, got {}", parts.len()),
         });
     }
-    let payload_bytes = decode_any_base64(parts[1]).map_err(|e| {
-        ApplicationError::InvalidProveRequest {
+    let payload_bytes =
+        decode_any_base64(parts[1]).map_err(|e| ApplicationError::InvalidProveRequest {
             field: format!("credentials[{}].jwt.payload", cred_idx),
             message: format!("base64 decode failed: {}", e),
-        }
-    })?;
+        })?;
     let payload_str = core::str::from_utf8(&payload_bytes).map_err(|e| {
         ApplicationError::InvalidProveRequest {
             field: format!("credentials[{}].jwt.payload", cred_idx),
@@ -354,12 +336,11 @@ fn extract_string_claim(
     key: &str,
     cred_idx: usize,
 ) -> Result<String, ApplicationError> {
-    let claim = parse_claim_from_str(payload, key).map_err(|e| {
-        ApplicationError::InvalidProveRequest {
+    let claim =
+        parse_claim_from_str(payload, key).map_err(|e| ApplicationError::InvalidProveRequest {
             field: format!("credentials[{}].jwt", cred_idx),
             message: format!("claim `{}`: {}", key, e),
-        }
-    })?;
+        })?;
     let value = claim.value;
     if value.len() < 2 || !value.starts_with('"') || !value.ends_with('"') {
         return Err(ApplicationError::InvalidProveRequest {
@@ -440,7 +421,9 @@ mod tests {
     }
 
     fn merkle_path(th: usize, base: u8) -> Vec<String> {
-        (0..th).map(|i| hex_fe(base.wrapping_add(i as u8))).collect()
+        (0..th)
+            .map(|i| hex_fe(base.wrapping_add(i as u8)))
+            .collect()
     }
 
     /// Build a happy-path ProveRequest with k credentials and an anchor
@@ -516,7 +499,12 @@ mod tests {
         assert_eq!(internal.shared.anchor_known_x_be.len(), k);
         assert_eq!(internal.shared.anchor_selector.len(), n);
         assert_eq!(
-            internal.shared.anchor_selector.iter().filter(|&&b| b == 1).count(),
+            internal
+                .shared
+                .anchor_selector
+                .iter()
+                .filter(|&&b| b == 1)
+                .count(),
             k
         );
     }
@@ -594,10 +582,7 @@ mod tests {
             assert_eq!(internal.per_jwt[i].merkle_auth_path_be.len(), th - 1);
             for (j, s) in cred.merkle_path[1..].iter().enumerate() {
                 let fe = hex_decimal_to_field::<F>(s).unwrap();
-                assert_eq!(
-                    fe_to_be32(&fe),
-                    internal.per_jwt[i].merkle_auth_path_be[j]
-                );
+                assert_eq!(fe_to_be32(&fe), internal.per_jwt[i].merkle_auth_path_be[j]);
             }
         }
     }
@@ -610,8 +595,7 @@ mod tests {
 
         for (i, cred) in req.credentials.iter().enumerate() {
             let parts: Vec<&str> = cred.jwt.split('.').collect();
-            let sig_bytes =
-                general_purpose::URL_SAFE_NO_PAD.decode(parts[2]).unwrap();
+            let sig_bytes = general_purpose::URL_SAFE_NO_PAD.decode(parts[2]).unwrap();
             assert_eq!(sig_bytes.len(), RSA_2048_BYTES);
             assert_eq!(internal.per_jwt[i].rsa_signature_be, sig_bytes);
         }
@@ -626,7 +610,10 @@ mod tests {
             Err(ApplicationError::InvalidProveRequest { field, .. }) => {
                 assert_eq!(field, "anchor[2]");
             }
-            other => panic!("expected InvalidProveRequest for anchor[2], got {:?}", other),
+            other => panic!(
+                "expected InvalidProveRequest for anchor[2], got {:?}",
+                other
+            ),
         }
     }
 

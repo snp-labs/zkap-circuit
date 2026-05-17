@@ -204,14 +204,13 @@ pub fn prove_from_unverified_paths_for_testing(
     bundle_dir: &Path,
     request: &ProveRequest,
 ) -> Result<ProveResponse, ApplicationError> {
-    let set = ArtifactSet::load_without_manifest_verification_for_testing(bundle_dir).map_err(
-        |e| {
+    let set =
+        ArtifactSet::load_without_manifest_verification_for_testing(bundle_dir).map_err(|e| {
             ApplicationError::InvalidFormat(format!(
                 "ArtifactSet::load_without_manifest_verification_for_testing({}) failed: {e}",
                 bundle_dir.display()
             ))
-        },
-    )?;
+        })?;
     let prover = Prover::from_artifact(set);
     prover.prove(request)
 }

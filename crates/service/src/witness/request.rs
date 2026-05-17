@@ -312,8 +312,8 @@ mod tests {
         let cfg = cfg_n6_k3();
         let mut req = populated_request(&cfg);
         req.shared.anchor_values_be.pop();
-        let err = build_input(&req, &cfg)
-            .expect_err("build_input must reject pop'd anchor_values_be");
+        let err =
+            build_input(&req, &cfg).expect_err("build_input must reject pop'd anchor_values_be");
         let msg = format!("{}", err);
         assert!(
             msg.contains("anchor_values_be"),

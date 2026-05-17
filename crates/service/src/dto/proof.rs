@@ -178,12 +178,7 @@ mod tests {
     fn sample_proof_components() -> ProofComponents {
         ProofComponents {
             a: ["0x01".into(), "0x02".into()],
-            b: [
-                "0x03".into(),
-                "0x04".into(),
-                "0x05".into(),
-                "0x06".into(),
-            ],
+            b: ["0x03".into(), "0x04".into(), "0x05".into(), "0x06".into()],
             c: ["0x07".into(), "0x08".into()],
         }
     }

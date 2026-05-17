@@ -195,16 +195,8 @@ fn test_anchor_different_secrets_different_output() {
         })
         .collect();
 
-    let r_a = generate_anchor(
-        &params,
-        GenerateAnchorRequest { secrets: secrets_a },
-    )
-    .unwrap();
-    let r_b = generate_anchor(
-        &params,
-        GenerateAnchorRequest { secrets: secrets_b },
-    )
-    .unwrap();
+    let r_a = generate_anchor(&params, GenerateAnchorRequest { secrets: secrets_a }).unwrap();
+    let r_b = generate_anchor(&params, GenerateAnchorRequest { secrets: secrets_b }).unwrap();
     assert_ne!(r_a.anchor_evaluations, r_b.anchor_evaluations);
     assert_ne!(r_a.hanchor, r_b.hanchor);
 }

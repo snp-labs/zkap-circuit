@@ -79,10 +79,7 @@ pub fn generate_anchor(
 /// Inlined here (rather than reusing `witness::input::chain_hash_native`) so
 /// that [`generate_anchor`] remains compilable without the `proof` feature
 /// (`witness/input.rs` is `proof`-gated).
-fn chain_hash_anchor(
-    values: &[F],
-    params: &PoseidonConfig<F>,
-) -> Result<F, ApplicationError> {
+fn chain_hash_anchor(values: &[F], params: &PoseidonConfig<F>) -> Result<F, ApplicationError> {
     if values.is_empty() {
         return Err(ApplicationError::HashFailed(
             "chain_hash on empty anchor".into(),
@@ -271,10 +268,7 @@ mod tests {
             })
             .collect();
         let resp = generate_anchor(&cfg, GenerateAnchorRequest { secrets }).unwrap();
-        assert_eq!(
-            resp.anchor_evaluations.len(),
-            (cfg.n - cfg.k + 1) as usize
-        );
+        assert_eq!(resp.anchor_evaluations.len(), (cfg.n - cfg.k + 1) as usize);
         assert!(resp.hanchor.starts_with("0x"));
         for ev in &resp.anchor_evaluations {
             assert!(ev.starts_with("0x"));

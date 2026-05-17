@@ -28,9 +28,7 @@ const RSA_2048_MODULUS_BYTES: usize = 256;
 /// failures return [`ApplicationError::InvalidFieldElement`] carrying the
 /// 0-based input index. The Poseidon output is rendered as a `0x`-prefixed
 /// lowercase big-endian hex string.
-pub fn generate_poseidon_hash(
-    request: HashRequest,
-) -> Result<HashResponse, ApplicationError> {
+pub fn generate_poseidon_hash(request: HashRequest) -> Result<HashResponse, ApplicationError> {
     let poseidon_params = crate::poseidon_params();
 
     let fields: Vec<F> = request
@@ -121,11 +119,7 @@ pub fn generate_issuer_key_hash(
 
     let poseidon_params = crate::poseidon_params();
 
-    let iss_limbs = str_to_limbs(
-        &request.issuer,
-        config.max_iss_len as usize,
-        PAD_CHAR as u8,
-    );
+    let iss_limbs = str_to_limbs(&request.issuer, config.max_iss_len as usize, PAD_CHAR as u8);
 
     let n_decoded = decode_any_base64(&request.rsa_modulus_b64)
         .map_err(|e| ApplicationError::InvalidBase64(format!("rsa_modulus_b64: {}", e)))?;
@@ -137,9 +131,10 @@ pub fn generate_issuer_key_hash(
         )));
     }
 
-    let e_decoded = decode_any_base64(gadget::constants::RSA_DEFAULT_EXPONENT_B64).map_err(|e| {
-        ApplicationError::InvalidBase64(format!("internal RSA exponent constant: {}", e))
-    })?;
+    let e_decoded =
+        decode_any_base64(gadget::constants::RSA_DEFAULT_EXPONENT_B64).map_err(|e| {
+            ApplicationError::InvalidBase64(format!("internal RSA exponent constant: {}", e))
+        })?;
 
     let pk_obj = PublicKey {
         n: n_decoded,
@@ -461,8 +456,16 @@ mod tests {
         };
         match generate_issuer_key_hash(&params, req) {
             Err(ApplicationError::InvalidRsaModulus(msg)) => {
-                assert!(msg.contains("256"), "expected length detail in error: {}", msg);
-                assert!(msg.contains("128"), "expected observed-length in error: {}", msg);
+                assert!(
+                    msg.contains("256"),
+                    "expected length detail in error: {}",
+                    msg
+                );
+                assert!(
+                    msg.contains("128"),
+                    "expected observed-length in error: {}",
+                    msg
+                );
             }
             other => panic!("expected InvalidRsaModulus, got {:?}", other),
         }

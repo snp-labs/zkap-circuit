@@ -71,7 +71,6 @@ impl ArtifactSet {
             cfg,
         })
     }
-
 }
 
 fn load_circuit_config(dir: &Path, entry: &ArtifactEntry) -> Result<CircuitConfig, ArtifactError> {

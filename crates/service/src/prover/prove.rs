@@ -3,7 +3,7 @@
 //!
 //! See the module-level docs in [`crate::prover`] for the canonical
 //! call sequence. `prove` chains
-//! `prove_request_to_internal → build_input → into_circuit_input →
+//! `prove_request_to_internal → into_circuit_input →
 //! ZkapCircuit::from_input → synthesize_full_assignment →
 //! ark_ar1cs::prove`. Trust gating
 //! ([`crate::artifact::ArtifactSet::load`] sha256 / `ar1cs_blake3`
@@ -20,7 +20,7 @@ use crate::artifact::ArtifactSet;
 use crate::dto::{ProveRequest, ProveResponse};
 use crate::error::ApplicationError;
 use crate::prover::adapter::prove_request_to_internal;
-use crate::witness::{build_input, into_circuit_input};
+use crate::prover::witness::into_circuit_input;
 
 /// Run the native ar1cs Groth16 prove flow over every JWT credential
 /// in `request`, against the artifact bundle in `artifact`.
@@ -40,9 +40,8 @@ use crate::witness::{build_input, into_circuit_input};
 ///    decodes every hex/base64 field, parses each JWT for `sub` / `iss`
 ///    / `aud`, derives the per-credential anchor `x`, and composes the
 ///    internal witness request.
-/// 2. Per credential: [`build_input`] reshapes the request into a
-///    `Vec<ZkapInputV1>`; [`into_circuit_input`] converts each payload
-///    into a fully assigned `ZkapCircuitInput<F>`;
+/// 2. Per credential: [`into_circuit_input`] converts the shared +
+///    per-JWT bundle into a fully assigned `ZkapCircuitInput<F>`;
 ///    [`ZkapCircuit::from_input`] wraps it in a `ConstraintSynthesizer`;
 ///    [`synthesize_full_assignment`] returns the prover-shaped
 ///    `[F::ONE, instance..., witness...]` vector; [`ar1cs_prove`]
@@ -83,13 +82,13 @@ pub fn prove(
     request: &ProveRequest,
 ) -> Result<ProveResponse, ApplicationError> {
     let internal = prove_request_to_internal(request, &artifact.cfg)?;
-    let inputs = build_input(&internal, &artifact.cfg)?;
+    internal.validate(artifact.cfg.k as usize, artifact.cfg.n as usize)?;
     let mut rng = OsRng;
-    let mut proofs = Vec::with_capacity(inputs.len());
-    let mut public_input_vectors: Vec<Vec<F>> = Vec::with_capacity(inputs.len());
+    let mut proofs = Vec::with_capacity(internal.per_jwt.len());
+    let mut public_input_vectors: Vec<Vec<F>> = Vec::with_capacity(internal.per_jwt.len());
 
-    for v1 in inputs {
-        let circuit_input = into_circuit_input(v1)?;
+    for per_jwt in internal.per_jwt.iter() {
+        let circuit_input = into_circuit_input(&internal.shared, per_jwt, &artifact.cfg)?;
         let pub_inputs = circuit_input.public_inputs.clone();
         let circuit: ZkapCircuit<CG, BNP> = ZkapCircuit::<CG, BNP>::from_input(circuit_input);
 

@@ -163,13 +163,13 @@ fn artifact_set_in_memory_round_trip() {
 /// **Limitation (acknowledged):** placeholder JWT + zeroed anchor
 /// scalars can fail in
 /// `prover::adapter::prove_request_to_internal` (selector derivation
-/// at `adapter.rs:196`) BEFORE reaching `build_input` /
-/// `into_circuit_input` / `synthesize_full_assignment` /
-/// `ar1cs_prove`. This test therefore proves only that *something
-/// downstream of the public `prove` API* rejects the request — it
-/// does NOT prove that the witness / circuit / ar1cs layers were
-/// actually exercised. A stronger "reaches-witness-layer" assertion
-/// requires a real anchor + JWT fixture (see plan §8 Follow-up #5).
+/// at `adapter.rs:196`) BEFORE reaching `into_circuit_input` /
+/// `synthesize_full_assignment` / `ar1cs_prove`. This test therefore
+/// proves only that *something downstream of the public `prove` API*
+/// rejects the request — it does NOT prove that the witness / circuit
+/// / ar1cs layers were actually exercised. A stronger
+/// "reaches-witness-layer" assertion requires a real anchor + JWT
+/// fixture (see plan §8 Follow-up #5).
 ///
 /// Replaces the deleted `prove_from_unverified_paths_for_testing_reaches_witness_layer`
 /// which had the same limitation. The intent is regression coverage

@@ -67,11 +67,10 @@ pub struct CircuitPublicInputs<F: PrimeField> {
     /// Inner-product `<a, anchor> * random` — instance index 6. Per-proof
     /// at this layer (every `CircuitPublicInputs` instance carries its own
     /// `lhs` field), but identical across all proofs in a batch by
-    /// construction — `zkap-witness-wasm`'s `to_zkap_input_v1` populates
-    /// each proof's `lhs` from the same shared `random` and `<a, anchor>`,
-    /// so the on-chain verifier observes a single batch-shared value that
-    /// closes the dot-product against the union of per-proof
-    /// [`Self::partial_rhs`] values.
+    /// construction — every credential's `lhs` is derived from the same
+    /// batch-shared `random` and `<a, anchor>`, so the on-chain verifier
+    /// observes a single batch-shared value that closes the dot-product
+    /// against the union of per-proof [`Self::partial_rhs`] values.
     pub lhs: F,
     /// Poseidon commitment to the audience allow-list — instance index 7.
     /// Pins the proof to a specific aud-list shape without disclosing the

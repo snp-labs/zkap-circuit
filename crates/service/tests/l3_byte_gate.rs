@@ -27,8 +27,6 @@
 //!
 //! - **Tier B** — `CircuitConfig::serialize_compressed` byte golden. Fast.
 //!
-//! - **Tier C** — `ZkapInputV1` postcard golden. Fast.
-//!
 //! ## Fixture params
 //!
 //! | Fixture | n | k | tree_height | notes |
@@ -60,7 +58,6 @@ use ark_relations::gr1cs::{
     ConstraintSynthesizer, ConstraintSystem, OptimizationGoal, SynthesisMode,
 };
 use ark_serialize::CanonicalSerialize;
-use ark_utils::wire::ZkapInputV1;
 use circuit::types::{BNP, CG, F};
 use circuit::zkap::ZkapCircuit;
 use sha2::{Digest, Sha256};
@@ -143,31 +140,6 @@ fn circuit_config_f3() -> CircuitConfig {
     }
 }
 
-fn zkap_input_v1_for(cfg: &CircuitConfig) -> ZkapInputV1 {
-    ZkapInputV1 {
-        jwt_bytes: b"hdr.payload.sig".to_vec(),
-        rsa_modulus_be: vec![0x12; 256],
-        rsa_signature_be: vec![0x34; 256],
-        random_be: [0x11; 32],
-        h_sign_user_op_be: [0x22; 32],
-        anchor_values_be: vec![[0x33; 32]; (cfg.n - cfg.k + 1) as usize],
-        anchor_known_x_be: vec![[0x44; 32]; cfg.k as usize],
-        anchor_selector: {
-            let mut sel = vec![0u8; cfg.n as usize];
-            for item in sel.iter_mut().take(cfg.k as usize) {
-                *item = 1;
-            }
-            sel
-        },
-        anchor_current_idx: 0,
-        merkle_root_be: [0x55; 32],
-        merkle_leaf_sibling_hash_be: [0x66; 32],
-        merkle_auth_path_be: vec![[0x77; 32]; (cfg.tree_height - 1) as usize],
-        merkle_leaf_idx: 0,
-        circuit_config: cfg.clone(),
-    }
-}
-
 // ─── Golden constants — Tier A (L1.1 / ar1cs_blake3) ─────────────────────────
 
 /// F1 Tier A — blake3 of canonical .ar1cs body (32 bytes).
@@ -211,52 +183,6 @@ const GOLDEN_CIRCUIT_CONFIG_F3: &str = concat!(
     "00000000000000050000000000000005000000000000000300000000000000617564030000",
     "000000000065787003000000000000006973730500000000000000",
     "6e6f6e636503000000000000007375620900000000000000666f7262696464656e",
-);
-
-// ─── Golden constants — Tier C (ZkapInputV1 postcard) ─────────────────────────
-
-/// F1 Tier C — 1039 bytes, captured at PR0.
-const GOLDEN_ZKAP_INPUT_V1_F1: &str = concat!(
-    "0f6864722e7061796c6f61642e7369678002",
-    "1212121212121212121212121212121212121212121212121212121212121212",
-    "1212121212121212121212121212121212121212121212121212121212121212",
-    "1212121212121212121212121212121212121212121212121212121212121212",
-    "1212121212121212121212121212121212121212121212121212121212121212",
-    "1212121212121212121212121212121212121212121212121212121212121212",
-    "1212121212121212121212121212121212121212121212121212121212121212",
-    "1212121212121212121212121212121212121212121212121212121212121212",
-    "12121212121212121212121212121212121212121212121212121212121212128002",
-    "3434343434343434343434343434343434343434343434343434343434343434",
-    "3434343434343434343434343434343434343434343434343434343434343434",
-    "3434343434343434343434343434343434343434343434343434343434343434",
-    "3434343434343434343434343434343434343434343434343434343434343434",
-    "3434343434343434343434343434343434343434343434343434343434343434",
-    "3434343434343434343434343434343434343434343434343434343434343434",
-    "3434343434343434343434343434343434343434343434343434343434343434",
-    "34343434343434343434343434343434343434343434343434343434343434",
-    "34",
-    "1111111111111111111111111111111111111111111111111111111111111111",
-    "2222222222222222222222222222222222222222222222222222222222222222",
-    "04",
-    "3333333333333333333333333333333333333333333333333333333333333333",
-    "3333333333333333333333333333333333333333333333333333333333333333",
-    "3333333333333333333333333333333333333333333333333333333333333333",
-    "3333333333333333333333333333333333333333333333333333333333333333",
-    "03",
-    "4444444444444444444444444444444444444444444444444444444444444444",
-    "4444444444444444444444444444444444444444444444444444444444444444",
-    "4444444444444444444444444444444444444444444444444444444444444444",
-    "0601010100000000",
-    "5555555555555555555555555555555555555555555555555555555555555555",
-    "6666666666666666666666666666666666666666666666666666666666666666",
-    "03",
-    "7777777777777777777777777777777777777777777777777777777777777777",
-    "7777777777777777777777777777777777777777777777777777777777777777",
-    "7777777777777777777777777777777777777777777777777777777777777777",
-    "00",
-    "800880059b01145d5d5d06030405",
-    "0503617564036578700369737305",
-    "6e6f6e63650373756209666f7262696464656e",
 );
 
 // ─── Golden constants — Tier D (cs.num_* goldens, L1.2/L1.3/L1.4) ─────────────
@@ -512,25 +438,6 @@ fn tier_b_circuit_config_canonical_f3() {
          baseline ({} bytes): {GOLDEN_CIRCUIT_CONFIG_F3}\n\
          actual   ({} bytes): {actual}",
         GOLDEN_CIRCUIT_CONFIG_F3.len() / 2,
-        buf.len(),
-    );
-}
-
-// ─── Tier C — ZkapInputV1 postcard encoding (schema drift) ────────────────────
-
-#[test]
-fn tier_c_zkap_input_v1_postcard_f1() {
-    let cfg = circuit_config_f1();
-    let v1 = zkap_input_v1_for(&cfg);
-    let buf = postcard::to_allocvec(&v1).expect("postcard::to_allocvec must succeed");
-    let actual = hex::encode(&buf);
-    assert_eq!(
-        actual,
-        GOLDEN_ZKAP_INPUT_V1_F1,
-        "L1 break — F1 ZkapInputV1 postcard drift.\n\
-         baseline ({} bytes): {GOLDEN_ZKAP_INPUT_V1_F1}\n\
-         actual   ({} bytes): {actual}",
-        GOLDEN_ZKAP_INPUT_V1_F1.len() / 2,
         buf.len(),
     );
 }

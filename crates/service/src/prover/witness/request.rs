@@ -9,10 +9,7 @@
 //! is a pure description of the credentials being proven and the
 //! field elements that compose the public-input vector.
 
-use ark_utils::wire::ZkapInputV1;
-use circuit::types::CircuitConfig;
-
-use crate::witness::error::ZkapWitnessError;
+use crate::prover::witness::error::ZkapWitnessError;
 
 /// Fields shared across every JWT in a K-credential batch.
 #[derive(Debug, Clone)]
@@ -52,34 +49,11 @@ pub struct PerJwtFields {
     pub merkle_leaf_idx: u64,
 }
 
-impl PerJwtFields {
-    /// Compose this per-JWT slice with the batch-shared fields and the
-    /// wire-format circuit config into a single [`ZkapInputV1`] payload.
-    pub fn to_zkap_input_v1(&self, shared: &SharedFields, cfg: &CircuitConfig) -> ZkapInputV1 {
-        ZkapInputV1 {
-            jwt_bytes: self.jwt_bytes.clone(),
-            rsa_modulus_be: self.rsa_modulus_be.clone(),
-            rsa_signature_be: self.rsa_signature_be.clone(),
-            random_be: shared.random_be,
-            h_sign_user_op_be: shared.h_sign_user_op_be,
-            anchor_values_be: shared.anchor_values_be.clone(),
-            anchor_known_x_be: shared.anchor_known_x_be.clone(),
-            anchor_selector: shared.anchor_selector.clone(),
-            anchor_current_idx: self.anchor_current_idx,
-            merkle_root_be: shared.merkle_root_be,
-            merkle_leaf_sibling_hash_be: self.merkle_leaf_sibling_hash_be,
-            merkle_auth_path_be: self.merkle_auth_path_be.clone(),
-            merkle_leaf_idx: self.merkle_leaf_idx,
-            circuit_config: cfg.clone(),
-        }
-    }
-}
-
 /// Native-path proof request: no artifact paths, ready for in-process
 /// witness shaping.
 ///
 /// Shape invariants (re-checked by [`Self::validate`] and the deeper
-/// [`crate::witness::input::into_circuit_input`] conversion):
+/// [`crate::prover::witness::input::into_circuit_input`] conversion):
 ///
 /// * `shared.anchor_values_be.len() == n - k + 1`
 /// * `shared.anchor_known_x_be.len() == k`
@@ -131,29 +105,10 @@ impl WitnessRequest {
     }
 }
 
-/// Build a `Vec<ZkapInputV1>` from a [`WitnessRequest`] and circuit config.
-///
-/// Validates the request shape against `(cfg.k, cfg.n)`, then composes
-/// one [`ZkapInputV1`] per JWT. Each output payload is ready to feed
-/// into [`crate::witness::input::into_circuit_input`] (native prove
-/// path) without any further preprocessing.
-pub fn build_input(
-    req: &WitnessRequest,
-    cfg: &CircuitConfig,
-) -> Result<Vec<ZkapInputV1>, ZkapWitnessError> {
-    let k = cfg.k as usize;
-    let n = cfg.n as usize;
-    req.validate(k, n)?;
-    Ok(req
-        .per_jwt
-        .iter()
-        .map(|jwt| jwt.to_zkap_input_v1(&req.shared, cfg))
-        .collect())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use circuit::types::CircuitConfig;
 
     fn empty_per_jwt() -> PerJwtFields {
         PerJwtFields {
@@ -267,58 +222,6 @@ mod tests {
             },
             per_jwt: (0..k).map(|_| populated_per_jwt(cfg)).collect(),
         }
-    }
-
-    /// `build_input` returns one [`ZkapInputV1`] per JWT and preserves
-    /// the request's `per_jwt.len()`. Moved from the
-    /// `tests/witness_build_input.rs` integration suite when
-    /// `mod witness` was demoted to `pub(crate)`.
-    #[test]
-    fn build_input_returns_one_v1_per_jwt() {
-        let cfg = cfg_n6_k3();
-        let req = populated_request(&cfg);
-        let expected_len = req.per_jwt.len();
-
-        let inputs = build_input(&req, &cfg).expect("build_input");
-        assert_eq!(inputs.len(), expected_len);
-        assert_eq!(inputs.len(), cfg.k as usize);
-    }
-
-    /// `build_input` propagates the shared / per-JWT byte values into
-    /// each [`ZkapInputV1`] payload. Moved from the integration suite.
-    #[test]
-    fn build_input_copies_shared_and_per_jwt_values() {
-        let cfg = cfg_n6_k3();
-        let req = populated_request(&cfg);
-
-        let inputs = build_input(&req, &cfg).expect("build_input");
-        for input in &inputs {
-            assert_eq!(input.random_be, req.shared.random_be);
-            assert_eq!(input.h_sign_user_op_be, req.shared.h_sign_user_op_be);
-            assert_eq!(input.merkle_root_be, req.shared.merkle_root_be);
-            assert_eq!(input.anchor_selector, req.shared.anchor_selector);
-            assert_eq!(input.circuit_config.n, cfg.n);
-            assert_eq!(input.circuit_config.k, cfg.k);
-        }
-    }
-
-    /// `build_input` rejects an inconsistent request shape via the
-    /// same `DimensionMismatch` channel
-    /// [`WitnessRequest::validate`] uses. Moved from the integration
-    /// suite — surfaces the boundary via `build_input` rather than
-    /// directly calling `validate`.
-    #[test]
-    fn build_input_rejects_inconsistent_shape() {
-        let cfg = cfg_n6_k3();
-        let mut req = populated_request(&cfg);
-        req.shared.anchor_values_be.pop();
-        let err =
-            build_input(&req, &cfg).expect_err("build_input must reject pop'd anchor_values_be");
-        let msg = format!("{}", err);
-        assert!(
-            msg.contains("anchor_values_be"),
-            "expected error to mention anchor_values_be, got: {msg}"
-        );
     }
 
     /// Compile-time check: [`WitnessRequest`] exposes only `shared` and

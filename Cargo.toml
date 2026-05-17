@@ -51,11 +51,6 @@ zkap-evm-verifier         = { path = "crates/zkap-evm-verifier" }
 # single root crate.
 ark-ar1cs = { git = "https://github.com/baerae-zkap/ark-ar1cs", rev = "b003a7d8ec39becd489e2266eb336df34e11a463" }
 
-# Kept for `ark-utils` (still uses postcard for V1 wire serialization).
-# zkap-service stopped depending on postcard in Commit 4 when the wasm
-# runtime path was retired.
-postcard = { version = "1", default-features = false, features = ["alloc"] }
-
 thiserror = { version = "2.0.12" }
 serde = { version = "1.0.227", features = ["derive"] }
 ark-groth16 = { version = "0.6" }  # default already includes parallel

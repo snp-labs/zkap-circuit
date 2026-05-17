@@ -1,21 +1,15 @@
 //! Errors raised by the native witness builder.
 //!
-//! Lives alongside [`crate::witness::input`] so callers that perform the
-//! `ZkapInputV1 → ZkapCircuitInput<F>` conversion in-process (post-migration
-//! native prove path) get the same diagnostic surface that the old wasm
-//! witness-generator exposed.
-//!
-//! These variants do **not** map to a `WitnessAbiCode`; that mapping is a
-//! wasm-side concern and remains in the legacy `zkap-witness-wasm` crate
-//! until its Commit 7 removal.
+//! Lives alongside [`crate::prover::witness::input`] so callers that
+//! perform the `WitnessRequest → ZkapCircuitInput<F>` conversion
+//! in-process get a precise diagnostic surface for shape, encoding,
+//! and JWT-parse failures.
 
 use thiserror::Error;
 
 use crate::error::ApplicationError;
 
-/// Failure modes raised by the native V1 ZKAP witness builder. Mirrors
-/// the variants exposed by the legacy `zkap-witness-wasm` thin layer so
-/// migration call sites keep the same diagnostic granularity.
+/// Failure modes raised by the native ZKAP witness builder.
 #[non_exhaustive]
 #[derive(Debug, Error)]
 pub enum ZkapWitnessError {

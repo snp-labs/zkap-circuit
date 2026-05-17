@@ -58,7 +58,6 @@ hex = { workspace = true }
 sha2 = { workspace = true }
 ark-relations = { workspace = true }
 circuit = { workspace = true }
-postcard = { workspace = true }
 
 [lib]
 name = "zkap_service"

@@ -58,7 +58,7 @@
 //!                                ▼
 //! ┌──────────────────────────────────────────────────────────────────┐
 //! │ prove() body (OsRng instantiated once, reused across batch)      │
-//! │   build_input → into_circuit_input → ZkapCircuit::from_input     │
+//! │   into_circuit_input → ZkapCircuit::from_input                   │
 //! │   → synthesize_full_assignment → ark_ar1cs::prove                │
 //! └──────────────────────────────┬───────────────────────────────────┘
 //!                                │
@@ -99,12 +99,10 @@ pub(crate) mod crs;
 pub mod jwt;
 pub mod setup;
 
-// Native witness-shaping path — pure, wasm-free. Crate-internal only:
-// boundary callers reach this through [`ProveRequest`] and never see
-// the raw `SharedFields` / `PerJwtFields` shapes.
-pub(crate) mod witness;
-
 // Native ark-ar1cs prover — canonical post-migration entry point.
+// Hosts the witness-shaping path as a sub-module; boundary callers
+// reach that layer through [`ProveRequest`] and never see the raw
+// `SharedFields` / `PerJwtFields` shapes.
 pub mod prover;
 
 use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;
@@ -154,5 +152,5 @@ pub use hash::{generate_audience_hashes, generate_issuer_key_hash, generate_pose
 // Public API (proof + setup surface — always available after the 2026-05 refactor)
 pub use artifact::{ArtifactError, ArtifactSet};
 pub use dto::{ProofComponents, ProveCredential, ProveRequest, ProveResponse, SharedPublicInputs};
-pub use setup::{SetupOutput, SetupShape, setup};
 pub use prover::prove;
+pub use setup::{SetupOutput, SetupShape, setup};

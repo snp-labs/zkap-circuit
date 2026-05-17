@@ -3,8 +3,8 @@
 //! Provides [`ZkapCircuit`](crate::zkap::ZkapCircuit), the main constraint
 //! synthesizer, along with all witness types ([`ZkapCircuitInput`],
 //! [`CircuitPublicInputs`], witness structs) and the shared
-//! [`CircuitConfig`](crate::types::CircuitConfig) parameter type (re-exported from
-//! `ark-utils::wire`).  This crate is a dependency of `zkap-service` and is not usually
+//! [`CircuitConfig`](crate::types::CircuitConfig) parameter type.
+//! This crate is a dependency of `zkap-service` and is not usually
 //! consumed directly by application code.
 
 // Crate-internal `missing_docs` warning, not a workspace deny. Phase 6

@@ -22,11 +22,12 @@ ark-std = { workspace = true }
 ark-crypto-primitives = { workspace = true, features = ["crh", "constraints", "prf", "merkle_tree"] }
 ark-bn254 = { workspace = true }
 ark-ed-on-bn254 = { workspace = true, features = ["r1cs"] }
-ark-serialize = { workspace = true }
+ark-serialize = { workspace = true, features = ["derive"] }
 
 serde = { workspace = true }
 serde_json = { workspace = true }
 hex = { workspace = true }
+thiserror = { workspace = true }
 
 [features]
 default = []

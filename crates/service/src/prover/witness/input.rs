@@ -1,21 +1,10 @@
-//! Native V1 → `ZkapCircuitInput<F>` conversion.
+//! Native `WitnessRequest` → `ZkapCircuitInput<F>` conversion.
 //!
-//! The wire types ([`ZkapInputV1`], [`CircuitConfig`]) live in
-//! `ark-utils::wire` and the field-element BE codec lives in
-//! `ark-utils::codec::field` — both modules are `circuit`/`gadget`-free.
-//! This module is the conversion-side companion: it pulls in the
-//! circuit-side types and turns a V1 payload into a fully assigned
-//! [`ZkapMainCircuit`] without any wasm dependency.
-//!
-//! The legacy `zkap-witness-wasm` crate continues to ship its own
-//! near-identical copy so the wasm artifact keeps building; this module
-//! is the native-prove-path equivalent and the long-term home of the
-//! logic after the wasm crate is removed in Commit 7 of the 2026-05
-//! ark-ar1cs boundary migration.
-//!
-//! Postcard wire decoding and any wasm-side ABI glue intentionally do
-//! **not** live here — see `crates/zkap-witness-wasm/src/input.rs` for
-//! the legacy ABI helpers.
+//! The field-element BE codec lives in `ark-utils::codec::field`; this
+//! module pulls in the circuit-side types and turns a borrowed
+//! [`SharedFields`] + [`PerJwtFields`] + [`CircuitConfig`] triple into
+//! a fully assigned [`ZkapCircuitInput<F>`] in a single in-process
+//! pass.
 
 use ark_crypto_primitives::{
     crh::{CRHScheme, poseidon::CRH},
@@ -25,7 +14,7 @@ use ark_crypto_primitives::{
 use ark_ff::{PrimeField, Zero};
 
 use circuit::token::ClaimIndices;
-use circuit::types::F;
+use circuit::types::{CircuitConfig, F};
 use circuit::witness::{
     AnchorWitness, AudienceWitness, CircuitConstants, CircuitPublicInputs, JwtWitness,
     MerkleWitness, MiscWitness, ZkapCircuitInput,
@@ -39,9 +28,10 @@ use gadget::{
 };
 
 use ark_utils::codec::field::fe_from_be32_canonical;
-use ark_utils::wire::{CircuitConfig as WireCircuitConfig, RSA_2048_BYTES, ZkapInputV1};
 
-use crate::witness::error::ZkapWitnessError;
+use crate::prover::witness::RSA_2048_BYTES;
+use crate::prover::witness::error::ZkapWitnessError;
+use crate::prover::witness::request::{PerJwtFields, SharedFields};
 
 const BN254_LIMB_WIDTH: usize = 31;
 
@@ -257,7 +247,7 @@ pub(crate) fn build_jwt_witness_from_v1(
     jwt_bytes: &[u8],
     rsa_modulus_be: &[u8],
     rsa_signature_be: &[u8],
-    cfg: &WireCircuitConfig,
+    cfg: &CircuitConfig,
     poseidon_param: &PoseidonConfig<F>,
 ) -> Result<JwtStage, ZkapWitnessError> {
     if rsa_modulus_be.len() != RSA_2048_BYTES {
@@ -375,7 +365,7 @@ pub(crate) fn build_audience_witness_from_v1(
     claim_indices: &[ClaimIndices],
     claims: &[String],
     aud_packed: &[F],
-    cfg: &WireCircuitConfig,
+    cfg: &CircuitConfig,
     poseidon_param: &PoseidonConfig<F>,
 ) -> Result<AudienceStage, ZkapWitnessError> {
     let num_audience_limit = cfg.num_audience_limit as usize;
@@ -461,7 +451,7 @@ pub(crate) fn compute_public_inputs_from_v1(
     aud_packed: &[F],
     merkle_root_be: &[u8; 32],
     random_be: &[u8; 32],
-    cfg: &WireCircuitConfig,
+    cfg: &CircuitConfig,
     poseidon_param: &PoseidonConfig<F>,
 ) -> Result<PublicInputsStage, ZkapWitnessError> {
     let current_idx = anchor_stage.current_idx;
@@ -535,28 +525,18 @@ pub(crate) fn compute_public_inputs_from_v1(
     })
 }
 
-/// Full V1 → `ZkapCircuitInput<F>` conversion. Mirrors the legacy wasm
-/// helper byte-for-byte so the native path produces the same circuit
-/// witness an in-process wasm runtime would emit.
-pub fn into_circuit_input(input: ZkapInputV1) -> Result<ZkapCircuitInput<F>, ZkapWitnessError> {
-    let ZkapInputV1 {
-        jwt_bytes,
-        rsa_modulus_be,
-        rsa_signature_be,
-        random_be,
-        h_sign_user_op_be,
-        anchor_values_be,
-        anchor_known_x_be,
-        anchor_selector,
-        anchor_current_idx,
-        merkle_root_be,
-        merkle_leaf_sibling_hash_be,
-        merkle_auth_path_be,
-        merkle_leaf_idx,
-        circuit_config,
-    } = input;
-
-    let cfg = circuit_config;
+/// Full `WitnessRequest` → `ZkapCircuitInput<F>` conversion.
+///
+/// Borrows the batch-shared fields, one per-JWT slice, and the
+/// circuit config. Validates the config's shape, decodes every BE
+/// field-element with canonical-encoding checks, parses the JWT,
+/// builds the anchor / merkle / audience witnesses, and assembles
+/// the fully assigned circuit input.
+pub fn into_circuit_input(
+    shared: &SharedFields,
+    per_jwt: &PerJwtFields,
+    cfg: &CircuitConfig,
+) -> Result<ZkapCircuitInput<F>, ZkapWitnessError> {
     cfg.validate()
         .map_err(|e| ZkapWitnessError::InvalidConfig(e.to_string()))?;
 
@@ -569,25 +549,25 @@ pub fn into_circuit_input(input: ZkapInputV1) -> Result<ZkapCircuitInput<F>, Zka
     let base64_table = get_base64_table();
 
     let anchor_stage = build_anchor_witness_from_v1(
-        &anchor_values_be,
-        &anchor_known_x_be,
-        &anchor_selector,
-        anchor_current_idx,
+        &shared.anchor_values_be,
+        &shared.anchor_known_x_be,
+        &shared.anchor_selector,
+        per_jwt.anchor_current_idx,
         n,
         k,
         &poseidon_param,
         &matrix,
     )?;
 
-    let random = fe_from_be32_canonical(&random_be).map_err(nc_field("random_be"))?;
+    let random = fe_from_be32_canonical(&shared.random_be).map_err(nc_field("random_be"))?;
     let h_sign_user_op =
-        fe_from_be32_canonical(&h_sign_user_op_be).map_err(nc_field("h_sign_user_op_be"))?;
+        fe_from_be32_canonical(&shared.h_sign_user_op_be).map_err(nc_field("h_sign_user_op_be"))?;
 
     let jwt_stage = build_jwt_witness_from_v1(
-        &jwt_bytes,
-        &rsa_modulus_be,
-        &rsa_signature_be,
-        &cfg,
+        &per_jwt.jwt_bytes,
+        &per_jwt.rsa_modulus_be,
+        &per_jwt.rsa_signature_be,
+        cfg,
         &poseidon_param,
     )?;
 
@@ -596,14 +576,14 @@ pub fn into_circuit_input(input: ZkapInputV1) -> Result<ZkapCircuitInput<F>, Zka
         &jwt_stage.claim_indices,
         &cfg.claims,
         &jwt_stage.aud_packed,
-        &cfg,
+        cfg,
         &poseidon_param,
     )?;
 
     let merkle = build_merkle_witness_from_v1(
-        &merkle_leaf_sibling_hash_be,
-        &merkle_auth_path_be,
-        merkle_leaf_idx,
+        &per_jwt.merkle_leaf_sibling_hash_be,
+        &per_jwt.merkle_auth_path_be,
+        per_jwt.merkle_leaf_idx,
         tree_height,
     )?;
 
@@ -613,18 +593,18 @@ pub fn into_circuit_input(input: ZkapInputV1) -> Result<ZkapCircuitInput<F>, Zka
         &jwt_stage.claim_indices,
         &cfg.claims,
         &jwt_stage.aud_packed,
-        &merkle_root_be,
-        &random_be,
-        &cfg,
+        &shared.merkle_root_be,
+        &shared.random_be,
+        cfg,
         &poseidon_param,
     )?;
 
     debug_assert_eq!(random, {
-        fe_from_be32_canonical(&random_be).unwrap_or(random)
+        fe_from_be32_canonical(&shared.random_be).unwrap_or(random)
     });
 
     Ok(ZkapCircuitInput {
-        params: cfg,
+        params: cfg.clone(),
         constants: CircuitConstants {
             vandermonde_matrix: matrix,
             poseidon_param,
@@ -644,7 +624,7 @@ pub fn into_circuit_input(input: ZkapInputV1) -> Result<ZkapCircuitInput<F>, Zka
         anchor: AnchorWitness {
             anchor: anchor_stage.anchor,
             a: anchor_stage.anchor_witness.a,
-            selector: anchor_selector,
+            selector: shared.anchor_selector.clone(),
             current_idx: anchor_stage.current_idx,
         },
         merkle,
@@ -747,7 +727,7 @@ fn base64_url_no_pad_decode(input: &[u8]) -> Result<Vec<u8>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use circuit::types::{BNP, CG, CircuitConfig};
+    use circuit::types::{BNP, CG};
     use circuit::zkap::ZkapCircuit;
 
     fn sample_config_v1() -> CircuitConfig {
@@ -774,23 +754,26 @@ mod tests {
         }
     }
 
-    fn dummy_v1() -> ZkapInputV1 {
-        let cfg = sample_config_v1();
-        ZkapInputV1 {
-            jwt_bytes: b"hdr.payload.sig".to_vec(),
-            rsa_modulus_be: vec![0x12; 256],
-            rsa_signature_be: vec![0x34; 256],
+    fn dummy_shared(cfg: &CircuitConfig) -> SharedFields {
+        SharedFields {
             random_be: [0x11; 32],
             h_sign_user_op_be: [0x22; 32],
             anchor_values_be: vec![[0x33; 32]; (cfg.n - cfg.k + 1) as usize],
             anchor_known_x_be: vec![[0x44; 32]; cfg.k as usize],
             anchor_selector: vec![1, 1, 1, 0, 0, 0],
-            anchor_current_idx: 0,
             merkle_root_be: [0x55; 32],
+        }
+    }
+
+    fn dummy_per_jwt(cfg: &CircuitConfig) -> PerJwtFields {
+        PerJwtFields {
+            jwt_bytes: b"hdr.payload.sig".to_vec(),
+            rsa_modulus_be: vec![0x12; 256],
+            rsa_signature_be: vec![0x34; 256],
+            anchor_current_idx: 0,
             merkle_leaf_sibling_hash_be: [0x66; 32],
             merkle_auth_path_be: vec![[0x77; 32]; (cfg.tree_height - 1) as usize],
             merkle_leaf_idx: 0,
-            circuit_config: cfg,
         }
     }
 
@@ -802,16 +785,16 @@ mod tests {
 
     #[test]
     fn into_circuit_input_rejects_non_canonical_random_be() {
-        let mut v1 = dummy_v1();
-        v1.random_be = BN254_FR_MODULUS_BE;
-        v1.anchor_values_be = vec![[0u8; 32]; v1.anchor_values_be.len()];
-        v1.anchor_known_x_be = vec![[0u8; 32]; v1.anchor_known_x_be.len()];
-        v1.merkle_root_be = [0u8; 32];
-        v1.merkle_leaf_sibling_hash_be = [0u8; 32];
-        v1.merkle_auth_path_be = vec![[0u8; 32]; v1.merkle_auth_path_be.len()];
-        v1.h_sign_user_op_be = [0u8; 32];
+        let cfg = sample_config_v1();
+        let mut shared = dummy_shared(&cfg);
+        let per_jwt = dummy_per_jwt(&cfg);
+        shared.random_be = BN254_FR_MODULUS_BE;
+        shared.anchor_values_be = vec![[0u8; 32]; shared.anchor_values_be.len()];
+        shared.anchor_known_x_be = vec![[0u8; 32]; shared.anchor_known_x_be.len()];
+        shared.merkle_root_be = [0u8; 32];
+        shared.h_sign_user_op_be = [0u8; 32];
 
-        match into_circuit_input(v1) {
+        match into_circuit_input(&shared, &per_jwt, &cfg) {
             Err(ZkapWitnessError::NonCanonicalField(msg)) => {
                 assert!(msg.contains("random_be"), "got {}", msg);
             }
@@ -822,11 +805,13 @@ mod tests {
 
     #[test]
     fn into_circuit_input_rejects_rsa_modulus_too_short() {
-        let mut v1 = dummy_v1();
-        v1.anchor_values_be = vec![[0u8; 32]; v1.anchor_values_be.len()];
-        v1.anchor_known_x_be = vec![[0u8; 32]; v1.anchor_known_x_be.len()];
-        v1.rsa_modulus_be = vec![0x12; 255];
-        match into_circuit_input(v1) {
+        let cfg = sample_config_v1();
+        let mut shared = dummy_shared(&cfg);
+        let mut per_jwt = dummy_per_jwt(&cfg);
+        shared.anchor_values_be = vec![[0u8; 32]; shared.anchor_values_be.len()];
+        shared.anchor_known_x_be = vec![[0u8; 32]; shared.anchor_known_x_be.len()];
+        per_jwt.rsa_modulus_be = vec![0x12; 255];
+        match into_circuit_input(&shared, &per_jwt, &cfg) {
             Err(ZkapWitnessError::DimensionMismatch(msg)) => {
                 assert!(msg.contains("rsa_modulus_be"), "got {}", msg);
             }
@@ -875,60 +860,50 @@ mod tests {
 
     #[test]
     fn into_circuit_input_rejects_bad_selector_cardinality() {
-        let mut v1 = dummy_v1();
-        v1.anchor_selector = vec![1, 1, 0, 0, 0, 0];
-        match into_circuit_input(v1) {
+        let cfg = sample_config_v1();
+        let mut shared = dummy_shared(&cfg);
+        let per_jwt = dummy_per_jwt(&cfg);
+        shared.anchor_selector = vec![1, 1, 0, 0, 0, 0];
+        match into_circuit_input(&shared, &per_jwt, &cfg) {
             Err(ZkapWitnessError::DimensionMismatch(_)) => {}
             other => panic!("expected DimensionMismatch, got {:?}", other.err()),
         }
     }
 
-    /// `build_input` → `into_circuit_input` chain propagates a wrong
-    /// `rsa_modulus_be` length as a [`ZkapWitnessError::DimensionMismatch`].
-    /// Moved from the `tests/witness_build_input.rs` integration suite
-    /// when `mod witness` was demoted to `pub(crate)`. Distinct from
-    /// [`into_circuit_input_rejects_rsa_modulus_too_short`] in that it
-    /// exercises both stages of the chain.
+    /// `into_circuit_input` propagates a wrong `rsa_modulus_be` length
+    /// as a [`ZkapWitnessError::DimensionMismatch`]. Distinct from
+    /// [`into_circuit_input_rejects_rsa_modulus_too_short`] in that
+    /// the surrounding fields are zeroed so only the rsa_modulus_be
+    /// length triggers the failure.
     #[test]
-    fn build_input_then_into_circuit_input_chain_propagates_dimension_mismatch() {
-        use crate::witness::request::{PerJwtFields, WitnessRequest, SharedFields, build_input};
-
+    fn into_circuit_input_propagates_rsa_modulus_dimension_mismatch() {
         let cfg = sample_config_v1();
         let n = cfg.n as usize;
         let k = cfg.k as usize;
-        let req = WitnessRequest {
-            shared: SharedFields {
-                random_be: [0u8; 32],
-                h_sign_user_op_be: [0u8; 32],
-                anchor_values_be: vec![[0u8; 32]; n - k + 1],
-                anchor_known_x_be: vec![[0u8; 32]; k],
-                anchor_selector: {
-                    let mut s = vec![0u8; n];
-                    for slot in s.iter_mut().take(k) {
-                        *slot = 1;
-                    }
-                    s
-                },
-                merkle_root_be: [0u8; 32],
+        let shared = SharedFields {
+            random_be: [0u8; 32],
+            h_sign_user_op_be: [0u8; 32],
+            anchor_values_be: vec![[0u8; 32]; n - k + 1],
+            anchor_known_x_be: vec![[0u8; 32]; k],
+            anchor_selector: {
+                let mut s = vec![0u8; n];
+                for slot in s.iter_mut().take(k) {
+                    *slot = 1;
+                }
+                s
             },
-            per_jwt: (0..k)
-                .map(|_| PerJwtFields {
-                    jwt_bytes: Vec::new(),
-                    rsa_modulus_be: vec![0u8; 256],
-                    rsa_signature_be: vec![0u8; 256],
-                    anchor_current_idx: 0,
-                    merkle_leaf_sibling_hash_be: [0u8; 32],
-                    merkle_auth_path_be: vec![[0u8; 32]; (cfg.tree_height - 1) as usize],
-                    merkle_leaf_idx: 0,
-                })
-                .collect(),
+            merkle_root_be: [0u8; 32],
         };
-
-        let mut inputs = build_input(&req, &cfg).expect("build_input");
-        // Wrong rsa_modulus_be length → DimensionMismatch from
-        // into_circuit_input.
-        inputs[0].rsa_modulus_be = vec![0u8; 255];
-        match into_circuit_input(inputs.remove(0)) {
+        let per_jwt = PerJwtFields {
+            jwt_bytes: Vec::new(),
+            rsa_modulus_be: vec![0u8; 255],
+            rsa_signature_be: vec![0u8; 256],
+            anchor_current_idx: 0,
+            merkle_leaf_sibling_hash_be: [0u8; 32],
+            merkle_auth_path_be: vec![[0u8; 32]; (cfg.tree_height - 1) as usize],
+            merkle_leaf_idx: 0,
+        };
+        match into_circuit_input(&shared, &per_jwt, &cfg) {
             Err(ZkapWitnessError::DimensionMismatch(msg)) => {
                 assert!(
                     msg.contains("rsa_modulus_be"),
@@ -940,11 +915,10 @@ mod tests {
     }
 
     /// `ZkapCircuit::from_input` is callable on a
-    /// [`ZkapCircuitInput<F>`] produced by service-side code. Moved
-    /// from `tests/witness_build_input.rs` — the seam check stays
-    /// under a second by feeding
+    /// [`ZkapCircuitInput<F>`] produced by service-side code. The seam
+    /// check stays under a second by feeding
     /// `ZkapCircuit::generate_mock_circuit`'s own input rather than
-    /// running the V1 → circuit conversion end to end.
+    /// running the `WitnessRequest` → circuit conversion end to end.
     #[test]
     fn zkap_circuit_from_input_native_constructor() {
         let cfg = sample_config_v1();

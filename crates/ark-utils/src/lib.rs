@@ -8,13 +8,11 @@
 //!   helpers in `codec::affine`).
 //! - [`r1cs`] — R1CS gadgets (`comparison`, `packing`, `select`, `slice`,
 //!   `uint32`) — all gated behind the `r1cs` feature.
-//! - [`wire`] — V1 wire-format types (`wire::ZkapInputV1`,
-//!   `wire::CircuitConfig`); gated behind the `wire` feature.
 //! - [`io`] — uncompressed key-file loader; gated behind the `io` feature.
 //! - [`error`] — re-exports of the per-module error types for callers that
 //!   prefer a single import root (`ark_utils::error::ConvertError`, etc.).
 //!
-//! Feature flags: `r1cs` (default), `field-serde`, `io`, `wire` (default).
+//! Feature flags: `r1cs` (default), `field-serde`, `io`.
 //!
 //! Error types are accessible via `ark_utils::error::*` or directly from the
 //! crate root (`ark_utils::ConvertError`, `ark_utils::FieldParseError`, etc.).
@@ -50,11 +48,6 @@ pub mod r1cs;
 // IO (feature = "io")
 #[cfg(feature = "io")]
 pub mod io;
-
-// V1 wire schema (feature = "wire") — absorbed from former
-// `zkap-input-types` crate. See `wire/mod.rs` head doc for context.
-#[cfg(feature = "wire")]
-pub mod wire;
 
 // Per-module error re-exports (kept as its own path so callers can
 // `use ark_utils::error::*;` without the conversion submodule).

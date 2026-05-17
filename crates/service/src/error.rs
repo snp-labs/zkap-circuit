@@ -179,7 +179,6 @@ impl From<ConvertError> for ApplicationError {
     }
 }
 
-#[cfg(feature = "proof")]
 impl From<crate::jwt::parser::TokenError> for ApplicationError {
     fn from(e: crate::jwt::parser::TokenError) -> Self {
         ApplicationError::ParseError(e.to_string())

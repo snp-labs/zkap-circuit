@@ -14,11 +14,8 @@ use crate::manifest::{ArtifactEntry, Manifest};
 
 /// In-memory bundle of every CRS artifact a `Prover` needs.
 ///
-/// Populated either by [`ArtifactSet::load`] (manifest-validated,
-/// canonical) or — when the `dev-unverified-artifacts` feature is
-/// enabled —
-/// `ArtifactSet::load_without_manifest_verification_for_testing`
-/// (non-canonical, tests only).
+/// Populated by [`ArtifactSet::load`] — the single manifest-validated
+/// trust gate for the prove flow.
 pub struct ArtifactSet {
     /// Groth16 proving key — loaded from `pk.bin`.
     pub pk: ProvingKey<BN254>,
@@ -54,7 +51,7 @@ impl ArtifactSet {
     /// the failing manifest field name carried in the `field` slot
     /// (e.g. `"ar1cs_blake3"`, `"artifacts.pk.sha256"`,
     /// `"artifacts.evm_verifier.sha256"`). The downstream
-    /// [`crate::prover::Prover::prove`] performs **no** additional hash
+    /// [`crate::prove`] performs **no** additional hash
     /// validation; trust gating lives entirely in this loader.
     pub fn load(manifest: &Manifest, dir: &Path) -> Result<Self, ArtifactError> {
         let arcs = load_arcs(dir, &manifest.artifacts.ar1cs, &manifest.ar1cs_blake3)?;
@@ -75,46 +72,6 @@ impl ArtifactSet {
         })
     }
 
-    /// Load every artifact from the hard-coded post-migration layout
-    /// **without** consulting a manifest.
-    ///
-    /// **non-canonical: bypasses manifest hash validation; production
-    /// callers MUST use [`ArtifactSet::load`].** No `sha256` check, no
-    /// `ar1cs_blake3` comparison, no `evm_verifier` check — only the
-    /// minimal parse / `CanonicalDeserialize` errors surface from this
-    /// path.
-    ///
-    /// Gated behind the `dev-unverified-artifacts` Cargo feature.
-    /// Production builds never compile this code; opt in only in
-    /// tests, dev tools, and caller-trusted environments where bundle
-    /// integrity has been established out of band. The explicit
-    /// `_for_testing` suffix exists so production review can flag any
-    /// call site as a policy violation.
-    #[cfg(feature = "dev-unverified-artifacts")]
-    pub fn load_without_manifest_verification_for_testing(
-        dir: &Path,
-    ) -> Result<Self, ArtifactError> {
-        let arcs_path = dir.join("circuit.ar1cs");
-        let arcs_bytes = std::fs::read(&arcs_path).map_err(|e| ArtifactError::Io {
-            path: arcs_path.clone(),
-            source: e,
-        })?;
-        let arcs = ArcsFile::<F>::read(&mut &arcs_bytes[..])
-            .map_err(|e| ArtifactError::ArcsFormat(format!("{e}")))?;
-
-        let pk = load_canonical_raw::<ProvingKey<BN254>>(&dir.join("pk.bin"), "pk")?;
-        let vk = load_canonical_raw::<VerifyingKey<BN254>>(&dir.join("vk.bin"), "vk")?;
-        let pvk = load_canonical_raw::<PreparedVerifyingKey<BN254>>(&dir.join("pvk.bin"), "pvk")?;
-        let cfg = load_circuit_config_raw(&dir.join("config.json"))?;
-
-        Ok(Self {
-            pk,
-            vk,
-            pvk,
-            arcs,
-            cfg,
-        })
-    }
 }
 
 fn load_circuit_config(dir: &Path, entry: &ArtifactEntry) -> Result<CircuitConfig, ArtifactError> {
@@ -131,15 +88,6 @@ fn load_circuit_config(dir: &Path, entry: &ArtifactEntry) -> Result<CircuitConfi
             got: sha_hex,
         });
     }
-    parse_circuit_config(&bytes)
-}
-
-#[cfg(feature = "dev-unverified-artifacts")]
-fn load_circuit_config_raw(path: &Path) -> Result<CircuitConfig, ArtifactError> {
-    let bytes = std::fs::read(path).map_err(|e| ArtifactError::Io {
-        path: path.to_path_buf(),
-        source: e,
-    })?;
     parse_circuit_config(&bytes)
 }
 
@@ -211,21 +159,6 @@ fn load_canonical<T: CanonicalDeserialize>(
         });
     }
 
-    T::deserialize_uncompressed(&bytes[..]).map_err(|e| ArtifactError::Deserialize {
-        what,
-        message: format!("{e}"),
-    })
-}
-
-#[cfg(feature = "dev-unverified-artifacts")]
-fn load_canonical_raw<T: CanonicalDeserialize>(
-    path: &Path,
-    what: &'static str,
-) -> Result<T, ArtifactError> {
-    let bytes = std::fs::read(path).map_err(|e| ArtifactError::Io {
-        path: path.to_path_buf(),
-        source: e,
-    })?;
     T::deserialize_uncompressed(&bytes[..]).map_err(|e| ArtifactError::Deserialize {
         what,
         message: format!("{e}"),

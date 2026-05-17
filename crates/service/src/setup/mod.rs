@@ -2,13 +2,11 @@
 //!
 //! After Commit 4 of the 2026-05 ark-ar1cs boundary migration the
 //! proving entry point lives in [`crate::prover`]
-//! ([`crate::prover::Prover`]; under the `dev-unverified-artifacts`
-//! feature also `crate::prover::prove_from_unverified_paths_for_testing`).
+//! ([`crate::prove`]).
 //! Commit 5 then removed the in-crate verify wrapper — callers verify
 //! proofs by calling `Groth16::verify_proof` directly against the
-//! `vk` / `pvk` exposed on [`crate::prover::Prover`] (or
-//! [`crate::artifact::ArtifactSet`]). This module is now the home of
-//! only the [`setup`] function.
+//! `vk` / `pvk` exposed on [`crate::artifact::ArtifactSet`]. This
+//! module is now the home of only the [`setup`] function.
 
 use ark_ar1cs::format::{ArcsFile, ConstraintMatrices, CurveId};
 use ark_crypto_primitives::snark::CircuitSpecificSetupSNARK;
@@ -62,8 +60,9 @@ pub struct SetupOutput {
     /// counts always match the `circuit.ar1cs` payload.
     pub shape: SetupShape,
     /// The [`CircuitConfig`] used to synthesize `pk`/`vk`/`arcs`. Kept
-    /// here so [`Self::into_artifact_set`] can hand a `Prover` the
-    /// same config without re-reading `config.json`.
+    /// here so [`Self::into_artifact_set`] can hand [`crate::prove`]
+    /// the same config (via the returned `ArtifactSet`) without
+    /// re-reading `config.json`.
     pub(crate) cfg: CircuitConfig,
 }
 
@@ -92,10 +91,10 @@ impl SetupOutput {
     ///
     /// Useful for tests and in-process flows that want to feed the
     /// freshly-built `pk`/`vk`/`pvk`/`arcs` straight into a
-    /// [`crate::prover::Prover::from_artifact`] call. Production callers
-    /// should instead persist via [`setup`] and re-load through
-    /// [`crate::artifact::ArtifactSet::load`] so the manifest hash check
-    /// is exercised on every prove batch.
+    /// [`crate::prove`] call. Production callers should instead
+    /// persist via [`setup`] and re-load through
+    /// [`crate::artifact::ArtifactSet::load`] so the manifest hash
+    /// check is exercised on every prove batch.
     pub fn into_artifact_set(self) -> crate::artifact::ArtifactSet {
         crate::artifact::ArtifactSet {
             pk: self.pk,

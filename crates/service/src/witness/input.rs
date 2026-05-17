@@ -891,12 +891,12 @@ mod tests {
     /// exercises both stages of the chain.
     #[test]
     fn build_input_then_into_circuit_input_chain_propagates_dimension_mismatch() {
-        use crate::witness::request::{PerJwtFields, ProofRequest, SharedFields, build_input};
+        use crate::witness::request::{PerJwtFields, WitnessRequest, SharedFields, build_input};
 
         let cfg = sample_config_v1();
         let n = cfg.n as usize;
         let k = cfg.k as usize;
-        let req = ProofRequest {
+        let req = WitnessRequest {
             shared: SharedFields {
                 random_be: [0u8; 32],
                 h_sign_user_op_be: [0u8; 32],

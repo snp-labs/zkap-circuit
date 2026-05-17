@@ -1,5 +1,5 @@
 //! Proof generation DTOs — host-facing request/response surface for
-//! [`crate::Prover::prove`].
+//! [`crate::prove`].
 //!
 //! Mirrors the `anchor` / `hash` module conventions: every BN254 Fr value
 //! crosses the boundary as a `String` (accepted as either `0x`-prefixed
@@ -9,7 +9,7 @@
 //! serialization. Response field-element strings are always emitted as
 //! `0x`-prefixed lowercase big-endian hex.
 
-/// Request for [`crate::Prover::prove`].
+/// Request for [`crate::prove`].
 ///
 /// **Top-level flattening**: no nested "shared" struct — batch-shared
 /// inputs sit at the top level alongside `credentials`. Per-credential

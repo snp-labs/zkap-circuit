@@ -1,11 +1,11 @@
-//! Native-path [`ProofRequest`] — host-facing surface for the
+//! Native-path [`WitnessRequest`] — host-facing surface for the
 //! post-migration prove flow.
 //!
 //! Lands as part of Commit 3 of the 2026-05 ark-ar1cs boundary
 //! migration. The request carries **no** artifact paths — every
 //! pre-migration field that pointed at on-disk bytes is gone.
 //! Post-migration call sites pass the artifact bundle (e.g. via
-//! `ArtifactSet`) to the prover separately, so a [`ProofRequest`]
+//! `ArtifactSet`) to the prover separately, so a [`WitnessRequest`]
 //! is a pure description of the credentials being proven and the
 //! field elements that compose the public-input vector.
 
@@ -86,14 +86,14 @@ impl PerJwtFields {
 /// * `shared.anchor_selector.len() == n`, cardinality = `k`
 /// * `per_jwt.len() == k`
 #[derive(Debug, Clone)]
-pub struct ProofRequest {
+pub struct WitnessRequest {
     /// Fields constant across all K credentials in this request.
     pub shared: SharedFields,
     /// Per-credential fields, one entry per JWT.
     pub per_jwt: Vec<PerJwtFields>,
 }
 
-impl ProofRequest {
+impl WitnessRequest {
     /// Validate the shared and per-JWT shapes against `params.k` /
     /// `params.n`. Catches host-side dimension bugs before the heavier
     /// `ZkapCircuitInput` conversion runs.
@@ -131,14 +131,14 @@ impl ProofRequest {
     }
 }
 
-/// Build a `Vec<ZkapInputV1>` from a [`ProofRequest`] and circuit config.
+/// Build a `Vec<ZkapInputV1>` from a [`WitnessRequest`] and circuit config.
 ///
 /// Validates the request shape against `(cfg.k, cfg.n)`, then composes
 /// one [`ZkapInputV1`] per JWT. Each output payload is ready to feed
 /// into [`crate::witness::input::into_circuit_input`] (native prove
 /// path) without any further preprocessing.
 pub fn build_input(
-    req: &ProofRequest,
+    req: &WitnessRequest,
     cfg: &CircuitConfig,
 ) -> Result<Vec<ZkapInputV1>, ZkapWitnessError> {
     let k = cfg.k as usize;
@@ -167,8 +167,8 @@ mod tests {
         }
     }
 
-    fn empty(k: usize, n: usize) -> ProofRequest {
-        ProofRequest {
+    fn empty(k: usize, n: usize) -> WitnessRequest {
+        WitnessRequest {
             shared: SharedFields {
                 random_be: [0u8; 32],
                 h_sign_user_op_be: [0u8; 32],
@@ -247,10 +247,10 @@ mod tests {
         }
     }
 
-    fn populated_request(cfg: &CircuitConfig) -> ProofRequest {
+    fn populated_request(cfg: &CircuitConfig) -> WitnessRequest {
         let n = cfg.n as usize;
         let k = cfg.k as usize;
-        ProofRequest {
+        WitnessRequest {
             shared: SharedFields {
                 random_be: [0u8; 32],
                 h_sign_user_op_be: [0u8; 32],
@@ -304,7 +304,7 @@ mod tests {
 
     /// `build_input` rejects an inconsistent request shape via the
     /// same `DimensionMismatch` channel
-    /// [`ProofRequest::validate`] uses. Moved from the integration
+    /// [`WitnessRequest::validate`] uses. Moved from the integration
     /// suite — surfaces the boundary via `build_input` rather than
     /// directly calling `validate`.
     #[test]
@@ -321,16 +321,16 @@ mod tests {
         );
     }
 
-    /// Compile-time check: [`ProofRequest`] exposes only `shared` and
+    /// Compile-time check: [`WitnessRequest`] exposes only `shared` and
     /// `per_jwt` — no artifact-path fields slipped through the
     /// post-migration rename. If any such field reappears the
     /// destructure below stops compiling.
     #[test]
-    fn proof_request_carries_no_artifact_paths() {
+    fn witness_request_carries_no_artifact_paths() {
         let cfg = cfg_n6_k3();
         let req = populated_request(&cfg);
 
-        let ProofRequest { shared, per_jwt } = &req;
+        let WitnessRequest { shared, per_jwt } = &req;
         let _ = (shared, per_jwt);
     }
 }

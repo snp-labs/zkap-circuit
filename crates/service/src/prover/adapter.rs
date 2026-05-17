@@ -1,4 +1,4 @@
-//! Boundary adapter: [`ProveRequest`] → [`crate::witness::ProofRequest`].
+//! Boundary adapter: [`ProveRequest`] → [`crate::witness::WitnessRequest`].
 //!
 //! Validates the request's shape against `CircuitConfig`, decodes every
 //! string-encoded field element via [`ark_utils::codec::string::hex_decimal_to_field`],
@@ -33,13 +33,13 @@ use crate::anchor_host::poseidon::{derive_selector_from_x_list_and_anchor, deriv
 use crate::dto::{AnchorSecret, ProveCredential, ProveRequest};
 use crate::error::ApplicationError;
 use crate::jwt::parser::parse_claim_from_str;
-use crate::witness::{PerJwtFields, ProofRequest, SharedFields};
+use crate::witness::{PerJwtFields, WitnessRequest, SharedFields};
 
 /// RSA-2048 modulus / signature byte length.
 const RSA_2048_BYTES: usize = 256;
 
 /// Convert an external [`ProveRequest`] into the internal witness
-/// [`ProofRequest`].
+/// [`WitnessRequest`].
 ///
 /// All decoding, shape, and consistency checks happen here so the prover
 /// itself receives a fully validated, in-memory witness DTO. Failures
@@ -48,7 +48,7 @@ const RSA_2048_BYTES: usize = 256;
 pub(crate) fn prove_request_to_internal(
     request: &ProveRequest,
     cfg: &CircuitConfig,
-) -> Result<ProofRequest, ApplicationError> {
+) -> Result<WitnessRequest, ApplicationError> {
     let k = cfg.k as usize;
     let n = cfg.n as usize;
     let th = cfg.tree_height as usize;
@@ -219,7 +219,7 @@ pub(crate) fn prove_request_to_internal(
         });
     }
 
-    // 5. Compose internal ProofRequest
+    // 5. Compose internal WitnessRequest
     let anchor_known_x_be: Vec<[u8; 32]> = x_list.iter().map(fe_to_be32).collect();
     let shared = SharedFields {
         random_be,
@@ -243,7 +243,7 @@ pub(crate) fn prove_request_to_internal(
         })
         .collect();
 
-    Ok(ProofRequest { shared, per_jwt })
+    Ok(WitnessRequest { shared, per_jwt })
 }
 
 /// Intermediate per-credential bundle, used to defer

@@ -5,16 +5,12 @@
 
 mod anchor;
 mod hash;
-#[cfg(feature = "proof")]
 mod proof;
-#[cfg(feature = "proof")]
 mod prove;
 
 pub use anchor::*;
 pub use hash::*;
-#[cfg(feature = "proof")]
 pub use proof::*;
-#[cfg(feature = "proof")]
 pub use prove::{ProveCredential, ProveRequest};
 
 // `dto/proof.rs` exports `ProofComponents`, `SharedPublicInputs`, and

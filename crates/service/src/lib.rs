@@ -2,25 +2,26 @@
 //!
 //! # Public API
 //!
-//! **Always available:**
+//! All entry points are always-on after the 2026-05 binding-friendly
+//! refactor (the `proof` and `dev-unverified-artifacts` Cargo features
+//! were removed; heavy ark-* deps are now unconditional).
+//!
 //! - [`generate_poseidon_hash`], [`generate_audience_hashes`],
 //!   [`generate_issuer_key_hash`] — Poseidon hashing (Request/Response DTOs
 //!   live in the [`dto`] re-exports below)
 //! - [`generate_anchor`] — threshold anchor generation (Request/Response DTOs
 //!   re-exported below; see [`AnchorSecret`])
 //! - [`load_circuit_config`] — load [`CircuitConfig`] from JSON
-//!
-//! **`proof` feature (default):**
 //! - [`setup`] — trusted setup: generates proving/verifying keys and writes them to disk
-//! - [`Prover`] — native Groth16 prover (takes [`ProveRequest`]). The
-//!   non-canonical `prove_from_unverified_paths_for_testing` shortcut
-//!   is exposed only under the `dev-unverified-artifacts` feature.
+//! - [`prove`] — native Groth16 prover free function (takes
+//!   `&ArtifactSet` + [`ProveRequest`]; mirrors the `generate_anchor`
+//!   shape).
 //! - [`jwt`] — JWT payload claim parsing ([`jwt::parser::parse_claim_from_str`])
 //!
 //! Proof verification is intentionally **not** wrapped by this crate
 //! after Commit 5 of the 2026-05 ark-ar1cs boundary migration: callers
 //! borrow the prepared verifying key from
-//! [`SetupOutput::prepared_verifying_key`] (or from a `Prover` /
+//! [`SetupOutput::prepared_verifying_key`] (or from an
 //! [`ArtifactSet`]) and feed it directly to
 //! `ark_groth16::Groth16::verify_proof`.
 //!
@@ -43,7 +44,7 @@
 //! │     credentials: [ProveCredential; k]                            │
 //! │   }   (hanchor NOT in request — derived from anchor)             │
 //! └──────────────────────────────┬───────────────────────────────────┘
-//!                                │ Prover::prove(&req)
+//!                                │ prove(&set, &req)
 //!                                ▼
 //! ┌──────────────────────────────────────────────────────────────────┐
 //! │ adapter::prove_request_to_internal                               │
@@ -51,12 +52,12 @@
 //! │   2. decode shared field strings (hex/decimal)                   │
 //! │   3. per-credential: parse JWT → derive x → decode bytes         │
 //! │   4. derive selector + per-credential current_idx                │
-//! │   5. compose internal ProofRequest { SharedFields, [PerJwtFields]}│
+//! │   5. compose internal WitnessRequest { SharedFields, [PerJwtFields]}│
 //! └──────────────────────────────┬───────────────────────────────────┘
 //!                                │
 //!                                ▼
 //! ┌──────────────────────────────────────────────────────────────────┐
-//! │ Prover::prove_internal (OsRng inside `prove`)                    │
+//! │ prove() body (OsRng instantiated once, reused across batch)      │
 //! │   build_input → into_circuit_input → ZkapCircuit::from_input     │
 //! │   → synthesize_full_assignment → ark_ar1cs::prove                │
 //! └──────────────────────────────┬───────────────────────────────────┘
@@ -69,7 +70,7 @@
 //! ```
 //!
 //! `ArtifactSet::load(manifest, dir)` is the trust boundary — manifest
-//! hash validation happens before `Prover::prove` runs, and `Prover::prove`
+//! hash validation happens before [`prove`] runs, and [`prove`]
 //! does not re-verify any hash.
 
 // Crate-internal `missing_docs` warning, not a `#[deny]`. Phase 7 / H5
@@ -93,23 +94,17 @@ pub(crate) mod hash;
 // inspectors, dev tools) can depend on the module cheaply.
 pub mod manifest;
 
-#[cfg(feature = "proof")]
 pub mod artifact;
-#[cfg(feature = "proof")]
 pub(crate) mod crs;
-#[cfg(feature = "proof")]
 pub mod jwt;
-#[cfg(feature = "proof")]
-pub mod proof;
+pub mod setup;
 
 // Native witness-shaping path — pure, wasm-free. Crate-internal only:
 // boundary callers reach this through [`ProveRequest`] and never see
 // the raw `SharedFields` / `PerJwtFields` shapes.
-#[cfg(feature = "proof")]
 pub(crate) mod witness;
 
 // Native ark-ar1cs prover — canonical post-migration entry point.
-#[cfg(feature = "proof")]
 pub mod prover;
 
 use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;
@@ -156,14 +151,8 @@ pub use dto::{
 };
 pub use hash::{generate_audience_hashes, generate_issuer_key_hash, generate_poseidon_hash};
 
-// Public API (proof feature only)
-#[cfg(feature = "proof")]
+// Public API (proof + setup surface — always available after the 2026-05 refactor)
 pub use artifact::{ArtifactError, ArtifactSet};
-#[cfg(feature = "proof")]
 pub use dto::{ProofComponents, ProveCredential, ProveRequest, ProveResponse, SharedPublicInputs};
-#[cfg(feature = "proof")]
-pub use proof::{SetupOutput, SetupShape, setup};
-#[cfg(feature = "proof")]
-pub use prover::Prover;
-#[cfg(feature = "dev-unverified-artifacts")]
-pub use prover::prove_from_unverified_paths_for_testing;
+pub use setup::{SetupOutput, SetupShape, setup};
+pub use prover::prove;

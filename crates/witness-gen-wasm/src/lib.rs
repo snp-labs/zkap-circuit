@@ -198,7 +198,10 @@ mod tests {
     #[test]
     fn synthesize_witness_bytes_rejects_invalid_request_json() {
         let err = synthesize_witness_bytes(b"not-json", b"{}").expect_err("must fail");
-        assert!(err.contains("ProveRequest JSON decode failed"), "got: {err}");
+        assert!(
+            err.contains("ProveRequest JSON decode failed"),
+            "got: {err}"
+        );
     }
 
     #[test]

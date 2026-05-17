@@ -123,14 +123,16 @@ pub fn synthesize_witnesses(
     let anchor_pk = PoseidonAnchorPublicKey::<F> {
         params: poseidon_param.clone(),
     };
-    let selector = derive_selector_from_x_list_and_anchor(&anchor_pk, &x_list, &anchor_obj, &matrix)
-        .map_err(|e| ApplicationError::InvalidProveRequest {
-            field: "anchor / jwts".into(),
-            message: format!(
-                "no valid selector — anchor and JWT claim shares inconsistent: {}",
-                e
-            ),
-        })?;
+    let selector =
+        derive_selector_from_x_list_and_anchor(&anchor_pk, &x_list, &anchor_obj, &matrix).map_err(
+            |e| ApplicationError::InvalidProveRequest {
+                field: "anchor / jwts".into(),
+                message: format!(
+                    "no valid selector — anchor and JWT claim shares inconsistent: {}",
+                    e
+                ),
+            },
+        )?;
     let one_positions: Vec<usize> = selector
         .iter()
         .enumerate()

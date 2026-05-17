@@ -617,10 +617,7 @@ mod tests {
         let bytes = serde_json::to_vec(&manifest).expect("serialize");
         let back: Manifest = serde_json::from_slice(&bytes).expect("deserialize");
         assert_eq!(
-            back.artifacts
-                .witness_gen
-                .as_ref()
-                .map(|e| e.path.as_str()),
+            back.artifacts.witness_gen.as_ref().map(|e| e.path.as_str()),
             Some("witness_gen.wasm")
         );
         assert_eq!(manifest, back);

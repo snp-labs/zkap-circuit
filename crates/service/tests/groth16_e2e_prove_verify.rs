@@ -30,17 +30,15 @@ use ark_std::rand::SeedableRng;
 use ark_utils::hex_decimal_to_field;
 use base64::Engine;
 use circuit::types::F;
-use gadget::{
-    hashes::poseidon::get_poseidon_params, merkletree::tree_config::MerkleTreeParams,
-};
+use gadget::{hashes::poseidon::get_poseidon_params, merkletree::tree_config::MerkleTreeParams};
 use rsa::pkcs1v15::SigningKey;
 use rsa::signature::{SignatureEncoding, Signer};
 use rsa::traits::PublicKeyParts;
 use sha2::Sha256;
 
 use zkap_service::{
-    AnchorSecret, ArtifactSet, CircuitConfig, GenerateAnchorRequest, HashRequest,
-    ProveCredential, ProveRequest, generate_anchor, generate_poseidon_hash, prove, setup,
+    AnchorSecret, ArtifactSet, CircuitConfig, GenerateAnchorRequest, HashRequest, ProveCredential,
+    ProveRequest, generate_anchor, generate_poseidon_hash, prove, setup,
 };
 
 // ============================================================
@@ -276,9 +274,7 @@ fn e2e_setup_prove_verify_via_public_api() {
     let jwts: Vec<(String, rsa::RsaPrivateKey)> = secrets
         .iter()
         .enumerate()
-        .map(|(i, s)| {
-            build_jwt_and_sign(s.aud, s.exp, s.iss, &nonce_hash, s.sub, 99 + i as u64)
-        })
+        .map(|(i, s)| build_jwt_and_sign(s.aud, s.exp, s.iss, &nonce_hash, s.sub, 99 + i as u64))
         .collect();
 
     // ── 4. Build the n-secret anchor (first k = real JWT subjects; last
@@ -335,8 +331,7 @@ fn e2e_setup_prove_verify_via_public_api() {
         .enumerate()
         .map(|(i, (jwt, priv_key))| {
             let proof_path = tree.generate_proof(i).expect("Merkle proof");
-            let mut merkle_path =
-                Vec::with_capacity(1 + proof_path.auth_path.len());
+            let mut merkle_path = Vec::with_capacity(1 + proof_path.auth_path.len());
             merkle_path.push(ark_utils::field_to_hex(proof_path.leaf_sibling_hash));
             for sib in &proof_path.auth_path {
                 merkle_path.push(ark_utils::field_to_hex(*sib));
@@ -432,8 +427,7 @@ fn e2e_verify_rejects_tampered_public_input() {
     let _ = std::fs::remove_dir_all(&tmp_dir);
     std::fs::create_dir_all(&tmp_dir).expect("create setup scratch dir");
 
-    let setup_output = setup(&cfg, &tmp_dir, &mut ark_std::rand::rngs::OsRng, None)
-        .expect("setup");
+    let setup_output = setup(&cfg, &tmp_dir, &mut ark_std::rand::rngs::OsRng, None).expect("setup");
     let set = setup_output.into_artifact_set();
 
     let random_fr = F::from(12345u64);
@@ -481,9 +475,8 @@ fn e2e_verify_rejects_tampered_public_input() {
     for (i, (_, priv_key)) in jwts.iter().enumerate() {
         digests[i] = merkle_leaf_digest(secrets[i].iss, priv_key, &cfg, &params);
     }
-    let tree =
-        MerkleTree::<MerkleTreeParams<F>>::new_with_leaf_digest(&params, &params, digests)
-            .expect("tree");
+    let tree = MerkleTree::<MerkleTreeParams<F>>::new_with_leaf_digest(&params, &params, digests)
+        .expect("tree");
     let root_hex = ark_utils::field_to_hex(tree.root());
 
     let credentials: Vec<ProveCredential> = jwts
@@ -532,7 +525,7 @@ fn e2e_verify_rejects_tampered_public_input() {
     // Tamper with the `hanchor` instance slot (index 0). Verification
     // must reject.
     let mut tampered = pub0.clone();
-    tampered[0] = tampered[0] + F::from(1u64);
+    tampered[0] += F::from(1u64);
     let verified = Groth16::<Bn254>::verify_proof(&set.pvk, &proof0, &tampered).unwrap_or(false);
     assert!(
         !verified,

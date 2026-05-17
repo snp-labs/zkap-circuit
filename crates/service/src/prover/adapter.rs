@@ -13,7 +13,7 @@
 //! - **C5**: [`crate::jwt::parser::parse_claim_from_str`] returns the
 //!   JSON-quoted form for string claims (e.g. `"\"user_0\""`). The adapter
 //!   strips the surrounding `"` before constructing [`AnchorSecret`] so
-//!   [`crate::anchor_host::poseidon::derive_x_from_secret`] does not see a
+//!   [`crate::anchor::poseidon::derive_x_from_secret`] does not see a
 //!   double-quoted value.
 //! - **C8**: Production decoding uses [`gadget::base64::decode_any_base64`]
 //!   exclusively; the `base64` crate stays a dev-dependency for fixture
@@ -28,8 +28,8 @@ use gadget::anchor::poseidon::{PoseidonAnchor, PoseidonAnchorPublicKey};
 use gadget::base64::decode_any_base64;
 use gadget::matrix::VandermondeMatrix;
 
-use crate::anchor_host::AnchorConfig;
-use crate::anchor_host::poseidon::{derive_selector_from_x_list_and_anchor, derive_x_from_secret};
+use crate::anchor::AnchorConfig;
+use crate::anchor::poseidon::{derive_selector_from_x_list_and_anchor, derive_x_from_secret};
 use crate::dto::{AnchorSecret, ProveCredential, ProveRequest};
 use crate::error::ApplicationError;
 use crate::jwt::parser::parse_claim_from_str;

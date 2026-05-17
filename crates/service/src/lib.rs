@@ -84,7 +84,7 @@
 // The workspace-wide flip happens once gadget hits zero at this gate.
 #![warn(missing_docs)]
 
-pub(crate) mod anchor_host;
+pub(crate) mod anchor;
 pub(crate) mod dto;
 pub mod error;
 pub(crate) mod hash;
@@ -141,7 +141,7 @@ pub fn load_circuit_config(
 pub use circuit::types;
 
 // Public API (always available)
-pub use anchor_host::poseidon::generate_anchor;
+pub use anchor::poseidon::generate_anchor;
 pub use circuit::types::CircuitConfig;
 pub use dto::{
     AnchorSecret, AudienceHashRequest, AudienceHashResponse, GenerateAnchorRequest,

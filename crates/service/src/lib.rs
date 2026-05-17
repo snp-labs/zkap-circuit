@@ -96,15 +96,8 @@
 //! let _: fn(&ArtifactSet, &ProveRequest) -> Result<ProveResponse, ApplicationError> = prove;
 //! ```
 
-// Crate-internal `missing_docs` warning, not a `#[deny]`. Phase 7 / H5
-// staged path: clears the zkap-service baseline (39 service warnings +
-// 9 ark-utils warnings that surface only under the `field-serde`
-// feature combination zkap-service activates — see
-// `00-workspace-hygiene.md` §6 v3 H5 baseline drift note) and locks in
-// the floor without depending on a workspace-wide `[lints.rust]
-// missing_docs = "warn"` (which would still block on gadget's 213
-// outstanding warnings — `00-workspace-hygiene.md` §H5 baseline).
-// The workspace-wide flip happens once gadget hits zero at this gate.
+// Crate-internal `missing_docs` warning, not a `#[deny]`. Workspace-wide
+// flip is deferred until gadget reaches zero missing-docs warnings.
 #![warn(missing_docs)]
 
 pub(crate) mod anchor;

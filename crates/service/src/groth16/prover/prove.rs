@@ -40,52 +40,15 @@ use super::circuit_input::{
 /// Run the native ar1cs Groth16 prove flow over every JWT credential
 /// in `request`, against the artifact bundle in `artifact`.
 ///
-/// Mirrors the `generate_anchor` / `generate_audience_hashes` /
-/// `generate_issuer_key_hash` / `generate_poseidon_hash` shape: a free
-/// function taking borrowed config-bearing context plus a Request DTO,
-/// returning a Response DTO. The binding-friendly signature is the
-/// reason the prior `Prover` struct was retired in the 2026-05
-/// refactor.
-///
-/// The call pipeline:
-///
-/// 1. The boundary adapter
-///    (`prove_request_to_decoded`) validates [`ProveRequest`] shape
-///    against the bundled [`crate::CircuitConfig`] and decodes every
-///    hex/base64 field into lean `SharedDecoded` / `CredentialDecoded`
-///    DTOs. No cryptographic derivation happens here.
-/// 2. `prove` parses each credential's JWT for the anchor secret,
-///    runs `derive_x_from_secret` to build `x_list`, then
-///    `derive_selector_from_x_list_and_anchor` to recover the selector
-///    + one-positions.
-/// 3. Per credential: the stage builders in
-///    `crate::groth16::prover::circuit_input` convert decoded inputs
-///    into anchor / JWT / audience / merkle / public-input stages; a
-///    fresh `ZkapCircuitInput<F>` is assembled inline and immediately
-///    consumed by `ZkapCircuit::from_input → synthesize_full_assignment
-///    → ar1cs_prove`. Peak memory holds exactly one
-///    `ZkapCircuitInput<F>` at a time.
-/// 4. The collected proofs + parallel public-input vectors are folded
-///    into a [`ProveResponse`] via the `From<(Vec<Proof>, Vec<Vec<F>>)>`
-///    impl in `crate::dto::proof`.
-///
-/// A fresh [`OsRng`] is constructed inside this function and reused
-/// across every credential in the batch. The public API does not
-/// expose a seedable RNG variant — that would undermine
-/// zero-knowledge for downstream callers. (See `[crate::dto::proof]`
-/// for the response shape.)
+/// See [`crate::groth16::prover`] for the full call pipeline. A fresh
+/// [`OsRng`] is constructed inside this function; the public API does
+/// not expose a seedable RNG variant.
 ///
 /// # Trust boundary
 ///
-/// `prove` does **not** receive a `&Manifest`, does **not** recompute
-/// `arcs.body_blake3()`, and does **not** re-verify any `sha256` hash
-/// on `pk` / `vk` / `pvk` / `circuit_config` / `evm_verifier`. The
-/// loader ([`ArtifactSet::load`]) is the **single** trust gate;
-/// production callers MUST use it. Any reintroduction of manifest /
-/// hash validation inside this function would be a duplication of the
-/// loader's job and a policy break; the absence is enforced by the
-/// `artifact_set_load` integration test
-/// (`crates/service/tests/artifact_set_load.rs`) against the loader.
+/// `prove` does **not** re-verify any manifest hash. The loader
+/// ([`ArtifactSet::load`]) is the **single** trust gate; production
+/// callers MUST use it.
 ///
 /// # Use
 ///

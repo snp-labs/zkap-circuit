@@ -14,14 +14,6 @@
 //! All decoding / shape failures surface as
 //! [`crate::error::ApplicationError::InvalidProveRequest`] with a precise
 //! dotted field path.
-//!
-//! Notable per-finding decisions:
-//!
-//! - **C8**: Production decoding uses [`gadget::base64::decode_any_base64`]
-//!   exclusively; the `base64` crate stays a dev-dependency for fixture
-//!   construction in the unit tests below.
-//! - **C11**: The tree-height bounds check uses [`u64::checked_shl`] to avoid
-//!   overflow when `tree_height >= 64`.
 
 use ark_utils::codec::string::hex_decimal_to_field;
 use circuit::types::{CircuitConfig, F};

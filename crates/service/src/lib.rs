@@ -171,5 +171,5 @@ pub use hash::{generate_audience_hashes, generate_issuer_key_hash, generate_pose
 // Public API (proof + setup surface — always available after the 2026-05 refactor)
 pub use artifact::{ArtifactError, ArtifactSet};
 pub use dto::{ProofComponents, ProveCredential, ProveRequest, ProveResponse, SharedPublicInputs};
-pub use groth16::prover::prove;
+pub use groth16::prover::{WitnessBundle, prove, synthesize_witnesses};
 pub use groth16::setup::{SetupOutput, SetupShape, setup};

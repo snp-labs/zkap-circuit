@@ -43,4 +43,4 @@ mod prove;
 /// length is a host bug or a malformed payload.
 pub(crate) const RSA_2048_BYTES: usize = 256;
 
-pub use prove::prove;
+pub use prove::{WitnessBundle, prove, synthesize_witnesses};

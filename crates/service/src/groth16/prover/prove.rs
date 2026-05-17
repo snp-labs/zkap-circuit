@@ -23,6 +23,7 @@
 //! `pk` / `vk` hash.
 
 use ark_ar1cs::{prove as ar1cs_prove, synthesize_full_assignment};
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::rand::rngs::OsRng;
 use circuit::types::{BN254, BNP, CG, CircuitConfig, F};
 use circuit::witness::{
@@ -60,9 +61,10 @@ use super::circuit_input::{
 ///   h_aud_list]`
 ///
 /// Both vectors are circuit-agnostic at the type level (just `Vec<F>`),
-/// so a WASM module can serialize them via `CanonicalSerialize` and a
-/// native host can deserialize and prove without touching circuit code.
-#[derive(Debug, Clone)]
+/// so a WASM module can serialize them via [`CanonicalSerialize`] and a
+/// native host can [`CanonicalDeserialize`] and prove without touching
+/// circuit code.
+#[derive(Debug, Clone, CanonicalSerialize, CanonicalDeserialize)]
 pub struct WitnessBundle {
     /// Flat wire-value vector from `synthesize_full_assignment`.
     pub full_assignment: Vec<F>,

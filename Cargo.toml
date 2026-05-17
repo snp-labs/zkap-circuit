@@ -6,6 +6,7 @@ members = [
     "crates/cli",
     "crates/gadget",
     "crates/service",
+    "crates/witness-gen-wasm",
     "crates/zkap-evm-verifier",
 ]
 

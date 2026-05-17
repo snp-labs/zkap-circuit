@@ -4,6 +4,12 @@
 //! perform the `WitnessRequest → ZkapCircuitInput<F>` conversion
 //! in-process get a precise diagnostic surface for shape, encoding,
 //! and JWT-parse failures.
+//!
+//! NOTE: this module is dead code after Commit 2 of the witness_* removal
+//! refactor (adapter / prove no longer use it). Commit 3 will delete the
+//! file outright; the `#[allow(dead_code)]` keeps `cargo clippy
+//! -- -D warnings` green in the interim.
+#![allow(dead_code)]
 
 use thiserror::Error;
 

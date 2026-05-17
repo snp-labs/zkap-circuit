@@ -8,6 +8,13 @@
 //! `ArtifactSet`) to the prover separately, so a [`WitnessRequest`]
 //! is a pure description of the credentials being proven and the
 //! field elements that compose the public-input vector.
+//!
+//! NOTE: this module is dead code after Commit 2 of the witness_* removal
+//! refactor. The lean F-based DTOs `SharedDecoded` / `CredentialDecoded`
+//! in [`crate::groth16::prover::adapter`] supersede [`WitnessRequest`].
+//! Commit 3 will delete this file; the `#[allow(dead_code)]` keeps
+//! `cargo clippy -- -D warnings` green in the interim.
+#![allow(dead_code)]
 
 use super::witness_error::ZkapWitnessError;
 

@@ -27,10 +27,9 @@
 //!    inputs `>= F::MODULUS` before they reach these builders.
 //!
 //! NOTE: this module is introduced additively in Commit 1 of the
-//! witness_* removal refactor — callers in `adapter`/`prove` are wired
-//! up in Commit 2. The module-level `#[allow(dead_code)]` quiets
-//! clippy's `-D warnings` gate until then.
-#![allow(dead_code)]
+//! witness_* removal refactor. In Commit 2 `adapter`/`prove` were wired
+//! to call the stage builders directly, so the module-level
+//! `#[allow(dead_code)]` from Commit 1 is gone.
 
 use ark_crypto_primitives::{
     crh::{CRHScheme, poseidon::CRH},

@@ -34,7 +34,4 @@ pub(crate) mod witness_request;
 /// host bug or a malformed payload.
 pub(crate) const RSA_2048_BYTES: usize = 256;
 
-pub(crate) use witness_input::into_circuit_input;
-pub(crate) use witness_request::{PerJwtFields, SharedFields, WitnessRequest};
-
 pub use prove::prove;

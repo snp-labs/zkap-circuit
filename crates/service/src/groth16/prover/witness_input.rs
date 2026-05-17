@@ -5,6 +5,13 @@
 //! [`SharedFields`] + [`PerJwtFields`] + [`CircuitConfig`] triple into
 //! a fully assigned [`ZkapCircuitInput<F>`] in a single in-process
 //! pass.
+//!
+//! NOTE: this module is dead code after Commit 2 of the witness_* removal
+//! refactor. `adapter`/`prove` now stream through
+//! [`crate::groth16::prover::circuit_input`] stage builders directly.
+//! Commit 3 will delete the file; the `#[allow(dead_code)]` keeps
+//! `cargo clippy -- -D warnings` green in the interim.
+#![allow(dead_code)]
 
 use ark_crypto_primitives::{
     crh::{CRHScheme, poseidon::CRH},

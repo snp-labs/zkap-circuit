@@ -3,8 +3,9 @@
 //!
 //! See the module-level docs in [`crate::groth16::prover`] for the canonical
 //! call sequence. `prove` chains
-//! `prove_request_to_internal → into_circuit_input →
-//! ZkapCircuit::from_input → synthesize_full_assignment →
+//! `prove_request_to_decoded → derive_x_from_secret per credential →
+//! derive_selector_from_x_list_and_anchor → per-credential stage builders
+//! → ZkapCircuit::from_input → synthesize_full_assignment →
 //! ark_ar1cs::prove`. Trust gating
 //! ([`crate::artifact::ArtifactSet::load`] sha256 / `ar1cs_blake3`
 //! checks) is the loader's responsibility — `prove` does **not**
@@ -14,13 +15,27 @@
 use ark_ar1cs::{prove as ar1cs_prove, synthesize_full_assignment};
 use ark_std::rand::rngs::OsRng;
 use circuit::types::{BN254, BNP, CG, F};
+use circuit::witness::{
+    AnchorWitness, AudienceWitness, CircuitConstants, CircuitPublicInputs, MiscWitness,
+    ZkapCircuitInput,
+};
 use circuit::zkap::ZkapCircuit;
+use gadget::anchor::poseidon::{PoseidonAnchor, PoseidonAnchorPublicKey};
+use gadget::base64::get_base64_table;
+use gadget::matrix::VandermondeMatrix;
 
+use crate::anchor::AnchorConfig;
+use crate::anchor::poseidon::{derive_selector_from_x_list_and_anchor, derive_x_from_secret};
 use crate::artifact::ArtifactSet;
 use crate::dto::{ProveRequest, ProveResponse};
 use crate::error::ApplicationError;
-use super::adapter::prove_request_to_internal;
-use super::into_circuit_input;
+use crate::jwt::parser::parse_anchor_secret_from_jwt;
+
+use super::adapter::prove_request_to_decoded;
+use super::circuit_input::{
+    build_anchor_stage, build_audience_stage, build_jwt_stage, build_merkle_witness,
+    compute_public_inputs,
+};
 
 /// Run the native ar1cs Groth16 prove flow over every JWT credential
 /// in `request`, against the artifact bundle in `artifact`.
@@ -35,19 +50,22 @@ use super::into_circuit_input;
 /// The call pipeline:
 ///
 /// 1. The boundary adapter
-///    (`prove_request_to_internal`) validates
-///    [`ProveRequest`] shape against the bundled [`crate::CircuitConfig`],
-///    decodes every hex/base64 field, parses each JWT for `sub` / `iss`
-///    / `aud`, derives the per-credential anchor `x`, and composes the
-///    internal witness request.
-/// 2. Per credential: `into_circuit_input` converts the shared +
-///    per-JWT bundle into a fully assigned `ZkapCircuitInput<F>`;
-///    [`ZkapCircuit::from_input`] wraps it in a `ConstraintSynthesizer`;
-///    [`synthesize_full_assignment`] returns the prover-shaped
-///    `[F::ONE, instance..., witness...]` vector; [`ar1cs_prove`]
-///    produces the Groth16 proof against `artifact.pk` and
-///    `artifact.arcs`.
-/// 3. The collected proofs + parallel public-input vectors are folded
+///    (`prove_request_to_decoded`) validates [`ProveRequest`] shape
+///    against the bundled [`crate::CircuitConfig`] and decodes every
+///    hex/base64 field into lean `SharedDecoded` / `CredentialDecoded`
+///    DTOs. No cryptographic derivation happens here.
+/// 2. `prove` parses each credential's JWT for the anchor secret,
+///    runs `derive_x_from_secret` to build `x_list`, then
+///    `derive_selector_from_x_list_and_anchor` to recover the selector
+///    + one-positions.
+/// 3. Per credential: the stage builders in
+///    [`crate::groth16::prover::circuit_input`] convert decoded inputs
+///    into anchor / JWT / audience / merkle / public-input stages; a
+///    fresh `ZkapCircuitInput<F>` is assembled inline and immediately
+///    consumed by `ZkapCircuit::from_input → synthesize_full_assignment
+///    → ar1cs_prove`. Peak memory holds exactly one
+///    `ZkapCircuitInput<F>` at a time.
+/// 4. The collected proofs + parallel public-input vectors are folded
 ///    into a [`ProveResponse`] via the `From<(Vec<Proof>, Vec<Vec<F>>)>`
 ///    impl in `crate::dto::proof`.
 ///
@@ -81,14 +99,153 @@ pub fn prove(
     artifact: &ArtifactSet,
     request: &ProveRequest,
 ) -> Result<ProveResponse, ApplicationError> {
-    let internal = prove_request_to_internal(request, &artifact.cfg)?;
-    internal.validate(artifact.cfg.k as usize, artifact.cfg.n as usize)?;
-    let mut rng = OsRng;
-    let mut proofs = Vec::with_capacity(internal.per_jwt.len());
-    let mut public_input_vectors: Vec<Vec<F>> = Vec::with_capacity(internal.per_jwt.len());
+    let (shared, credentials) = prove_request_to_decoded(request, &artifact.cfg)?;
+    let cfg = &artifact.cfg;
+    let n = cfg.n as usize;
+    let k = cfg.k as usize;
+    let th = cfg.tree_height as usize;
 
-    for per_jwt in internal.per_jwt.iter() {
-        let circuit_input = into_circuit_input(&internal.shared, per_jwt, &artifact.cfg)?;
+    let matrix = VandermondeMatrix::<F>::new(n, k);
+    let poseidon_param = crate::poseidon_params();
+    let base64_table = get_base64_table();
+
+    // ── Pre-batch crypto derivation ────────────────────────────────────
+    // Parse each JWT for sub/iss/aud → derive_x_from_secret → x_list.
+    let anchor_ctx = AnchorConfig::from_params(cfg);
+    let x_list: Vec<F> = credentials
+        .iter()
+        .enumerate()
+        .map(|(i, cred)| {
+            let secret = parse_anchor_secret_from_jwt(&cred.jwt_bytes, i)?;
+            derive_x_from_secret(&secret, poseidon_param, &anchor_ctx).map_err(|e| {
+                ApplicationError::InvalidProveRequest {
+                    field: format!("credentials[{}].jwt", i),
+                    message: format!("derive_x_from_secret failed: {}", e),
+                }
+            })
+        })
+        .collect::<Result<_, _>>()?;
+
+    // Recover the selector + one-positions from the anchor + x_list.
+    let anchor_obj = PoseidonAnchor::new(shared.anchor_values.clone());
+    let pk = PoseidonAnchorPublicKey::<F> {
+        params: poseidon_param.clone(),
+    };
+    let selector = derive_selector_from_x_list_and_anchor(&pk, &x_list, &anchor_obj, &matrix)
+        .map_err(|e| ApplicationError::InvalidProveRequest {
+            field: "anchor / jwts".into(),
+            message: format!(
+                "no valid selector — anchor and JWT claim shares inconsistent: {}",
+                e
+            ),
+        })?;
+    let one_positions: Vec<usize> = selector
+        .iter()
+        .enumerate()
+        .filter(|&(_, &s)| s == 1)
+        .map(|(j, _)| j)
+        .collect();
+    // Defensive: selector must have cardinality k by construction.
+    if one_positions.len() != k {
+        return Err(ApplicationError::InvalidProveRequest {
+            field: "anchor / jwts".into(),
+            message: format!(
+                "derived selector cardinality={} but expected k={}",
+                one_positions.len(),
+                k
+            ),
+        });
+    }
+
+    // ── Per-credential streaming: build → consume → next credential ───
+    let mut rng = OsRng;
+    let mut proofs = Vec::with_capacity(credentials.len());
+    let mut public_input_vectors: Vec<Vec<F>> = Vec::with_capacity(credentials.len());
+
+    for (i, cred) in credentials.iter().enumerate() {
+        let path = format!("credentials[{}]", i);
+        let current_idx = one_positions[i] as u64;
+
+        let anchor_stage = build_anchor_stage(
+            &path,
+            &shared.anchor_values,
+            &x_list,
+            &selector,
+            current_idx,
+            n,
+            k,
+            poseidon_param,
+            &matrix,
+        )?;
+        let jwt_stage = build_jwt_stage(
+            &path,
+            &cred.jwt_bytes,
+            &cred.rsa_modulus_bytes,
+            &cred.rsa_signature_bytes,
+            cfg,
+            poseidon_param,
+        )?;
+        let audience_stage = build_audience_stage(
+            &path,
+            &jwt_stage.payload_bytes,
+            &jwt_stage.claim_indices,
+            &cfg.claims,
+            &jwt_stage.aud_packed,
+            cfg,
+            poseidon_param,
+        )?;
+        let merkle = build_merkle_witness(
+            &path,
+            cred.merkle_leaf_sibling_hash,
+            &cred.merkle_auth_path,
+            cred.merkle_leaf_idx,
+            th,
+        )?;
+        let pub_stage = compute_public_inputs(
+            &path,
+            &anchor_stage,
+            &jwt_stage.payload_bytes,
+            &jwt_stage.claim_indices,
+            &cfg.claims,
+            &jwt_stage.aud_packed,
+            shared.merkle_root,
+            shared.random,
+            cfg,
+            poseidon_param,
+        )?;
+
+        let circuit_input = ZkapCircuitInput {
+            params: cfg.clone(),
+            constants: CircuitConstants {
+                vandermonde_matrix: matrix.clone(),
+                poseidon_param: poseidon_param.clone(),
+                base64_table: base64_table.clone(),
+            },
+            public_inputs: CircuitPublicInputs {
+                hanchor: pub_stage.hanchor,
+                h_a: pub_stage.h_a,
+                root: pub_stage.root,
+                h_sign_user_op: shared.h_sign_user_op,
+                jwt_exp: pub_stage.jwt_exp,
+                partial_rhs: pub_stage.partial_rhs,
+                lhs: pub_stage.lhs,
+                h_aud_list: audience_stage.h_aud_list,
+            },
+            jwt: jwt_stage.jwt_witness,
+            anchor: AnchorWitness {
+                anchor: anchor_stage.anchor,
+                a: anchor_stage.anchor_witness.a,
+                selector: selector.clone(),
+                current_idx: anchor_stage.current_idx,
+            },
+            merkle,
+            audience: AudienceWitness {
+                aud_list: audience_stage.aud_list,
+            },
+            misc: MiscWitness {
+                random: shared.random,
+            },
+        };
         let pub_inputs = circuit_input.public_inputs.clone();
         let circuit: ZkapCircuit<CG, BNP> = ZkapCircuit::<CG, BNP>::from_input(circuit_input);
 

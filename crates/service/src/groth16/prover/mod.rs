@@ -23,6 +23,7 @@
 //! manifest trust gate is exercised on every prove batch.
 
 pub(crate) mod adapter;
+pub(crate) mod circuit_input;
 mod prove;
 pub(crate) mod witness_error;
 pub(crate) mod witness_input;

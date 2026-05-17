@@ -1,0 +1,34 @@
+[package]
+name = "zkap-witness-gen-wasm"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "Wasm32 witness generator for the ZKAP circuit — hosts zkap_service::synthesize_witnesses behind a stable C ABI so circuit-agnostic prover packages can call it from any wasm runtime."
+repository.workspace = true
+
+[lib]
+# cdylib   — wasm32 / native shared-object target for the C ABI exports.
+# rlib     — lets cargo test --release link it into integration tests on
+#            the host (the same entry points are exercised end-to-end).
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+zkap-service = { workspace = true }
+serde_json   = { workspace = true }
+ark-serialize = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+# wasm32 does not have a host CSPRNG — `getrandom`'s `js` feature
+# routes to the browser / Node `crypto` API. Synthesize is fully
+# deterministic given the inputs, but transitive ark-* deps may pull
+# `getrandom` for unrelated codepaths, so we keep this enabled
+# defensively.
+getrandom = { version = "0.2", features = ["js"] }
+
+[lints]
+# `unsafe_code` is workspace-level "deny"; this crate is the only
+# FFI surface in the repo and necessarily uses `unsafe extern "C"`
+# entry points. Override at the crate root with `#![allow]` plus a
+# justification block; see `src/lib.rs`. Other workspace lints (in
+# particular `missing_docs = "warn"`) still apply.
+workspace = true

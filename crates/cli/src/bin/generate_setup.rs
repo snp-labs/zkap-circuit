@@ -88,6 +88,15 @@ struct Cli {
     /// to `git rev-parse HEAD` when unset.
     #[arg(long)]
     build_commit: Option<String>,
+
+    /// Path to a pre-built `witness_gen.wasm` (the cdylib output of
+    /// `cargo build --target wasm32-unknown-unknown -p zkap-witness-gen-wasm`).
+    /// When set, the file is copied to `<output>/witness_gen.wasm`
+    /// and registered as an optional artifact in `manifest.json`.
+    /// When omitted, the manifest is emitted without a `witness_gen`
+    /// entry.
+    #[arg(long)]
+    witness_gen_wasm: Option<PathBuf>,
 }
 
 fn main() {
@@ -129,7 +138,7 @@ fn main() {
         .unwrap_or_else(|| "unknown".into());
     let built_at = built_at_now().unwrap_or_else(|e| die(e));
 
-    let manifest = ManifestBuilder::new(cli.circuit_id.clone(), circuit_tag.clone())
+    let mut builder = ManifestBuilder::new(cli.circuit_id.clone(), circuit_tag.clone())
         .with_ar1cs_blake3(ar1cs_blake3.clone())
         .with_shape(
             setup_output.shape.num_instance,
@@ -185,7 +194,20 @@ fn main() {
             ark_ar1cs_rev: env!("ZKAP_CLI_ARK_AR1CS_REV").to_string(),
             rustc: env!("ZKAP_CLI_RUSTC_VERSION").to_string(),
             built_at,
-        })
+        });
+
+    let witness_gen_attached = if let Some(wasm_src) = cli.witness_gen_wasm.as_deref() {
+        let dest = out.join("witness_gen.wasm");
+        std::fs::copy(wasm_src, &dest)
+            .unwrap_or_else(|e| die(format!("copy witness_gen.wasm: {e}")));
+        let entry = make_entry(&dest, "witness_gen.wasm", "domain-optional", None, None);
+        builder = builder.with_artifact(ArtifactKey::WitnessGen, entry);
+        true
+    } else {
+        false
+    };
+
+    let manifest = builder
         .build()
         .unwrap_or_else(|e| die(format!("manifest build: {e}")));
 
@@ -207,9 +229,15 @@ fn main() {
             SetupProvenance::Ceremony { .. } => "ceremony",
         }
     );
-    println!(
-        "  artifacts     : circuit.ar1cs, pk.bin, vk.bin, pvk.bin,\n                  Groth16Verifier.sol, config.json, manifest.json"
-    );
+    if witness_gen_attached {
+        println!(
+            "  artifacts     : circuit.ar1cs, pk.bin, vk.bin, pvk.bin,\n                  Groth16Verifier.sol, config.json, manifest.json,\n                  witness_gen.wasm"
+        );
+    } else {
+        println!(
+            "  artifacts     : circuit.ar1cs, pk.bin, vk.bin, pvk.bin,\n                  Groth16Verifier.sol, config.json, manifest.json"
+        );
+    }
 }
 
 /// Build an [`ArtifactEntry`] by hashing `disk_path` and reading its size.

@@ -27,6 +27,16 @@ pub struct ArtifactSet {
     pub arcs: ArcsFile<F>,
     /// Circuit configuration — loaded from `config.json`.
     pub cfg: CircuitConfig,
+    /// Optional `witness_gen.wasm` bytes — loaded from the
+    /// `witness_gen` manifest entry when present.
+    ///
+    /// Set to `Some(bytes)` iff `manifest.artifacts.witness_gen` is
+    /// populated and the on-disk file matches the recorded sha256.
+    /// Downstream circuit-agnostic prover packages instantiate this
+    /// wasm via a runtime (wasmtime, browser native, …) and call
+    /// `synthesize_witness` over the ABI documented in the
+    /// `zkap-witness-gen-wasm` crate.
+    pub witness_gen_wasm: Option<Vec<u8>>,
 }
 
 impl ArtifactSet {
@@ -46,6 +56,11 @@ impl ArtifactSet {
     /// * `sha256(config.json)   == manifest.artifacts.circuit_config.sha256`.
     /// * If `manifest.artifacts.evm_verifier` is `Some`, then
     ///   `sha256(Groth16Verifier.sol) == manifest.artifacts.evm_verifier.sha256`.
+    /// * If `manifest.artifacts.witness_gen` is `Some`, then
+    ///   `sha256(witness_gen.wasm) == manifest.artifacts.witness_gen.sha256`
+    ///   and the bytes are stashed on
+    ///   [`ArtifactSet::witness_gen_wasm`] (otherwise that field is
+    ///   `None`).
     ///
     /// Any disagreement returns [`ArtifactError::HashMismatch`] with
     /// the failing manifest field name carried in the `field` slot
@@ -63,12 +78,19 @@ impl ArtifactSet {
         if let Some(entry) = manifest.artifacts.evm_verifier.as_ref() {
             verify_sha256(dir, entry, "artifacts.evm_verifier.sha256")?;
         }
+        let witness_gen_wasm = manifest
+            .artifacts
+            .witness_gen
+            .as_ref()
+            .map(|entry| load_bytes_with_sha(dir, entry, "artifacts.witness_gen.sha256"))
+            .transpose()?;
         Ok(Self {
             pk,
             vk,
             pvk,
             arcs,
             cfg,
+            witness_gen_wasm,
         })
     }
 }
@@ -196,4 +218,32 @@ fn verify_sha256(
         });
     }
     Ok(())
+}
+
+/// Read `dir/entry.path`, assert `sha256(bytes) == entry.sha256`,
+/// and return the bytes.
+///
+/// Same hash-check contract as [`verify_sha256`], but the file's
+/// contents flow out instead of being discarded. Used for opaque
+/// artifacts that downstream consumers need to hold in memory (e.g.
+/// `witness_gen.wasm` instantiated through a wasm runtime).
+fn load_bytes_with_sha(
+    dir: &Path,
+    entry: &ArtifactEntry,
+    field: &'static str,
+) -> Result<Vec<u8>, ArtifactError> {
+    let path = dir.join(&entry.path);
+    let bytes = std::fs::read(&path).map_err(|e| ArtifactError::Io {
+        path: path.clone(),
+        source: e,
+    })?;
+    let sha_hex = sha256_hex(&bytes);
+    if sha_hex != entry.sha256 {
+        return Err(ArtifactError::HashMismatch {
+            field,
+            expected: entry.sha256.clone(),
+            got: sha_hex,
+        });
+    }
+    Ok(bytes)
 }

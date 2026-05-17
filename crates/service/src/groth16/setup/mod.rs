@@ -102,6 +102,9 @@ impl SetupOutput {
             pvk: self.pvk,
             arcs: self.arcs,
             cfg: self.cfg,
+            // setup() does not invoke the wasm32 build; attach the
+            // witness-gen blob via the CLI / manifest path.
+            witness_gen_wasm: None,
         }
     }
 }

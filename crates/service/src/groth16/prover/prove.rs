@@ -1,20 +1,31 @@
 //! Native [`prove`] free function — host-facing entry point for the
-//! ark-ar1cs Groth16 prove flow.
+//! ark-ar1cs Groth16 prove flow, split into two stages:
 //!
-//! See the module-level docs in [`crate::groth16::prover`] for the canonical
-//! call sequence. `prove` chains
-//! `prove_request_to_decoded → derive_x_from_secret per credential →
-//! derive_selector_from_x_list_and_anchor → per-credential stage builders
-//! → ZkapCircuit::from_input → synthesize_full_assignment →
-//! ark_ar1cs::prove`. Trust gating
-//! ([`crate::artifact::ArtifactSet::load`] sha256 / `ar1cs_blake3`
-//! checks) is the loader's responsibility — `prove` does **not**
-//! re-validate the manifest, `arcs.body_blake3()`, or any `pk` / `vk`
-//! hash.
+//! * [`synthesize_witnesses`] runs the **circuit-dependent** half —
+//!   wire decoding, threshold-anchor crypto derivation, per-credential
+//!   stage building, `ZkapCircuit::from_input`, and
+//!   `synthesize_full_assignment`. It takes only `&CircuitConfig` (not
+//!   the full [`ArtifactSet`]) because the proving key and `.ar1cs`
+//!   body are not used here.
+//! * [`prove`] composes [`synthesize_witnesses`] with the
+//!   **circuit-agnostic** `ark_ar1cs::prove` call (the only step that
+//!   needs `pk` / `arcs`).
+//!
+//! This split is the basis for the planned WASM witness-generator
+//! artifact: a downstream `witness_gen.wasm` will host
+//! [`synthesize_witnesses`] and emit serialized [`WitnessBundle`]s,
+//! letting circuit-agnostic prover packages call only
+//! `ark_ar1cs::prove` natively.
+//!
+//! Trust gating ([`crate::artifact::ArtifactSet::load`] sha256 /
+//! `ar1cs_blake3` checks) is the loader's responsibility — neither
+//! function re-validates the manifest, `arcs.body_blake3()`, or any
+//! `pk` / `vk` hash.
 
 use ark_ar1cs::{prove as ar1cs_prove, synthesize_full_assignment};
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::rand::rngs::OsRng;
-use circuit::types::{BN254, BNP, CG, F};
+use circuit::types::{BN254, BNP, CG, CircuitConfig, F};
 use circuit::witness::{
     AnchorWitness, AudienceWitness, CircuitConstants, CircuitPublicInputs, MiscWitness,
     ZkapCircuitInput,
@@ -37,33 +48,51 @@ use super::circuit_input::{
     compute_public_inputs,
 };
 
-/// Run the native ar1cs Groth16 prove flow over every JWT credential
-/// in `request`, against the artifact bundle in `artifact`.
+/// One credential's worth of circuit-synthesis output.
 ///
-/// See [`crate::groth16::prover`] for the full call pipeline. A fresh
-/// [`OsRng`] is constructed inside this function; the public API does
-/// not expose a seedable RNG variant.
+/// `full_assignment` is the flat wire-value vector produced by
+/// `ark_ar1cs::synthesize_full_assignment` — feed it directly to
+/// `ark_ar1cs::prove`.
 ///
-/// # Trust boundary
+/// `public_inputs` is the canonical 8-element layout that the on-chain
+/// verifier consumes:
 ///
-/// `prove` does **not** re-verify any manifest hash. The loader
-/// ([`ArtifactSet::load`]) is the **single** trust gate; production
-/// callers MUST use it.
+/// `[hanchor, h_a, root, h_sign_user_op, jwt_exp, partial_rhs, lhs,
+///   h_aud_list]`
 ///
-/// # Use
+/// Both vectors are circuit-agnostic at the type level (just `Vec<F>`),
+/// so a WASM module can serialize them via [`CanonicalSerialize`] and a
+/// native host can [`CanonicalDeserialize`] and prove without touching
+/// circuit code.
+#[derive(Debug, Clone, CanonicalSerialize, CanonicalDeserialize)]
+pub struct WitnessBundle {
+    /// Flat wire-value vector from `synthesize_full_assignment`.
+    pub full_assignment: Vec<F>,
+    /// 8-element canonical public-input layout (see struct docs).
+    pub public_inputs: Vec<F>,
+}
+
+/// Circuit-dependent half of the prove pipeline — produce one
+/// [`WitnessBundle`] per credential.
 ///
-/// ```ignore
-/// use zkap_service::{ArtifactSet, ProveRequest, prove};
+/// Runs `prove_request_to_decoded` → per-batch `derive_x` /
+/// `derive_selector` → per-credential stage builders →
+/// `ZkapCircuit::from_input` → `synthesize_full_assignment` and
+/// returns the resulting `(Vec<F>, Vec<F>)` pairs. The proving key
+/// and `.ar1cs` body are not used here, so this function takes only
+/// [`CircuitConfig`] (intentionally smaller than the
+/// [`prove`]-flavored `&ArtifactSet` surface).
 ///
-/// let set = ArtifactSet::load(&manifest, dir)?;
-/// let response = prove(&set, &request)?;
-/// ```
-pub fn prove(
-    artifact: &ArtifactSet,
+/// All circuit / gadget dependencies live behind this entry point; a
+/// future `witness_gen.wasm` artifact wraps it and emits the bundles
+/// as `CanonicalSerialize` bytes so that a circuit-agnostic prover
+/// host can finish the job by feeding `bundle.full_assignment` into
+/// `ark_ar1cs::prove`.
+pub fn synthesize_witnesses(
+    cfg: &CircuitConfig,
     request: &ProveRequest,
-) -> Result<ProveResponse, ApplicationError> {
-    let (shared, credentials) = prove_request_to_decoded(request, &artifact.cfg)?;
-    let cfg = &artifact.cfg;
+) -> Result<Vec<WitnessBundle>, ApplicationError> {
+    let (shared, credentials) = prove_request_to_decoded(request, cfg)?;
     let n = cfg.n as usize;
     let k = cfg.k as usize;
     let th = cfg.tree_height as usize;
@@ -91,17 +120,19 @@ pub fn prove(
 
     // Recover the selector + one-positions from the anchor + x_list.
     let anchor_obj = PoseidonAnchor::new(shared.anchor_values.clone());
-    let pk = PoseidonAnchorPublicKey::<F> {
+    let anchor_pk = PoseidonAnchorPublicKey::<F> {
         params: poseidon_param.clone(),
     };
-    let selector = derive_selector_from_x_list_and_anchor(&pk, &x_list, &anchor_obj, &matrix)
-        .map_err(|e| ApplicationError::InvalidProveRequest {
-            field: "anchor / jwts".into(),
-            message: format!(
-                "no valid selector — anchor and JWT claim shares inconsistent: {}",
-                e
-            ),
-        })?;
+    let selector =
+        derive_selector_from_x_list_and_anchor(&anchor_pk, &x_list, &anchor_obj, &matrix).map_err(
+            |e| ApplicationError::InvalidProveRequest {
+                field: "anchor / jwts".into(),
+                message: format!(
+                    "no valid selector — anchor and JWT claim shares inconsistent: {}",
+                    e
+                ),
+            },
+        )?;
     let one_positions: Vec<usize> = selector
         .iter()
         .enumerate()
@@ -120,10 +151,8 @@ pub fn prove(
         });
     }
 
-    // ── Per-credential streaming: build → consume → next credential ───
-    let mut rng = OsRng;
-    let mut proofs = Vec::with_capacity(credentials.len());
-    let mut public_input_vectors: Vec<Vec<F>> = Vec::with_capacity(credentials.len());
+    // ── Per-credential streaming: build → synthesize → next credential ─
+    let mut bundles = Vec::with_capacity(credentials.len());
 
     for (i, cred) in credentials.iter().enumerate() {
         let path = format!("credentials[{}]", i);
@@ -218,16 +247,10 @@ pub fn prove(
             ))
         })?;
 
-        let proof =
-            ar1cs_prove::<BN254, _>(&artifact.pk, &artifact.arcs, &full_assignment, &mut rng)
-                .map_err(|e| {
-                    ApplicationError::ProofGenerationFailed(format!("ark_ar1cs::prove: {e}"))
-                })?;
-
         // Canonical 8-element instance layout — see
         // `ProveResponse::from((proofs, public_inputs))` in
         // `crate::dto::proof` for the per-proof / shared split.
-        let pub_vec = vec![
+        let public_inputs = vec![
             pub_inputs.hanchor,
             pub_inputs.h_a,
             pub_inputs.root,
@@ -238,9 +261,55 @@ pub fn prove(
             pub_inputs.h_aud_list,
         ];
 
-        proofs.push(proof);
-        public_input_vectors.push(pub_vec);
+        bundles.push(WitnessBundle {
+            full_assignment,
+            public_inputs,
+        });
     }
 
+    Ok(bundles)
+}
+
+/// Run the native ar1cs Groth16 prove flow over every JWT credential
+/// in `request`, against the artifact bundle in `artifact`.
+///
+/// Thin composition of [`synthesize_witnesses`] (circuit-dependent
+/// half) and `ark_ar1cs::prove` (circuit-agnostic half). A fresh
+/// [`OsRng`] is constructed inside this function; the public API
+/// does not expose a seedable RNG variant.
+///
+/// # Trust boundary
+///
+/// `prove` does **not** re-verify any manifest hash. The loader
+/// ([`ArtifactSet::load`]) is the **single** trust gate; production
+/// callers MUST use it.
+///
+/// # Use
+///
+/// ```ignore
+/// use zkap_service::{ArtifactSet, ProveRequest, prove};
+///
+/// let set = ArtifactSet::load(&manifest, dir)?;
+/// let response = prove(&set, &request)?;
+/// ```
+pub fn prove(
+    artifact: &ArtifactSet,
+    request: &ProveRequest,
+) -> Result<ProveResponse, ApplicationError> {
+    let bundles = synthesize_witnesses(&artifact.cfg, request)?;
+    let mut rng = OsRng;
+    let mut proofs = Vec::with_capacity(bundles.len());
+    let mut public_input_vectors: Vec<Vec<F>> = Vec::with_capacity(bundles.len());
+    for bundle in bundles {
+        let proof = ar1cs_prove::<BN254, _>(
+            &artifact.pk,
+            &artifact.arcs,
+            &bundle.full_assignment,
+            &mut rng,
+        )
+        .map_err(|e| ApplicationError::ProofGenerationFailed(format!("ark_ar1cs::prove: {e}")))?;
+        proofs.push(proof);
+        public_input_vectors.push(bundle.public_inputs);
+    }
     Ok((proofs, public_input_vectors).into())
 }

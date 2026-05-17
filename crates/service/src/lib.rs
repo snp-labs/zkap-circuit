@@ -3,14 +3,18 @@
 //! # Public API
 //!
 //! **Always available:**
-//! - [`generate_hash`], [`generate_aud_hash`], [`generate_leaf_hash`] — Poseidon hashing
-//! - [`generate_anchor`] — threshold anchor generation (see [`Secret`])
+//! - [`generate_poseidon_hash`], [`generate_audience_hashes`],
+//!   [`generate_issuer_key_hash`] — Poseidon hashing (Request/Response DTOs
+//!   live in the [`dto`] re-exports below)
+//! - [`generate_anchor`] — threshold anchor generation (Request/Response DTOs
+//!   re-exported below; see [`AnchorSecret`])
 //! - [`load_circuit_config`] — load [`CircuitConfig`] from JSON
 //!
 //! **`proof` feature (default):**
 //! - [`setup`] — trusted setup: generates proving/verifying keys and writes them to disk
-//! - [`Prover`] / [`prove_from_unverified_paths`] — native Groth16 prover
-//!   (takes [`ProofRequest`])
+//! - [`Prover`] — native Groth16 prover (takes [`ProveRequest`]). The
+//!   non-canonical `prove_from_unverified_paths_for_testing` shortcut
+//!   is exposed only under the `dev-unverified-artifacts` feature.
 //! - [`jwt`] — JWT payload claim parsing ([`jwt::parser::parse_claim_from_str`])
 //!
 //! Proof verification is intentionally **not** wrapped by this crate
@@ -25,8 +29,48 @@
 //! `<VerifyingKey<E> as zkap_evm_verifier::SolidityContractGenerator>::generate_solidity`
 //! directly. The bundled `Groth16Verifier.sol` produced by [`setup`] uses it
 //! internally.
-//! - DTOs: [`ProofComponents`], [`SharedPublicInputs`], [`PerProofPublicInputs`], [`ZkapProofResult`]
-//! - Keys: [`SetupOutput`], [`SharedFields`], [`PerJwtFields`]
+//! - Request DTOs: [`ProveRequest`], [`ProveCredential`]
+//! - Response DTOs: [`ProveResponse`], [`ProofComponents`], [`SharedPublicInputs`]
+//! - Setup output: [`SetupOutput`]
+//!
+//! ## Prove flow (visual reference)
+//!
+//! ```text
+//! ┌──────────────────────────────────────────────────────────────────┐
+//! │ EXTERNAL CALLER                                                  │
+//! │   ProveRequest {                                                 │
+//! │     random, h_sign_user_op, anchor[*], merkle_root,              │
+//! │     credentials: [ProveCredential; k]                            │
+//! │   }   (hanchor NOT in request — derived from anchor)             │
+//! └──────────────────────────────┬───────────────────────────────────┘
+//!                                │ Prover::prove(&req)
+//!                                ▼
+//! ┌──────────────────────────────────────────────────────────────────┐
+//! │ adapter::prove_request_to_internal                               │
+//! │   1. shape validation (lengths + leaf-idx bound)                 │
+//! │   2. decode shared field strings (hex/decimal)                   │
+//! │   3. per-credential: parse JWT → derive x → decode bytes         │
+//! │   4. derive selector + per-credential current_idx                │
+//! │   5. compose internal ProofRequest { SharedFields, [PerJwtFields]}│
+//! └──────────────────────────────┬───────────────────────────────────┘
+//!                                │
+//!                                ▼
+//! ┌──────────────────────────────────────────────────────────────────┐
+//! │ Prover::prove_internal (OsRng inside `prove`)                    │
+//! │   build_input → into_circuit_input → ZkapCircuit::from_input     │
+//! │   → synthesize_full_assignment → ark_ar1cs::prove                │
+//! └──────────────────────────────┬───────────────────────────────────┘
+//!                                │
+//!                                ▼
+//! ┌──────────────────────────────────────────────────────────────────┐
+//! │ ProveResponse { proofs, shared_public_inputs,                    │
+//! │                 jwt_exp[*], verification_rhs[*] }                │
+//! └──────────────────────────────────────────────────────────────────┘
+//! ```
+//!
+//! `ArtifactSet::load(manifest, dir)` is the trust boundary — manifest
+//! hash validation happens before `Prover::prove` runs, and `Prover::prove`
+//! does not re-verify any hash.
 
 // Crate-internal `missing_docs` warning, not a `#[deny]`. Phase 7 / H5
 // staged path: clears the zkap-service baseline (39 service warnings +
@@ -58,9 +102,11 @@ pub mod jwt;
 #[cfg(feature = "proof")]
 pub mod proof;
 
-// Native witness-shaping path — pure, wasm-free.
+// Native witness-shaping path — pure, wasm-free. Crate-internal only:
+// boundary callers reach this through [`ProveRequest`] and never see
+// the raw `SharedFields` / `PerJwtFields` shapes.
 #[cfg(feature = "proof")]
-pub mod witness;
+pub(crate) mod witness;
 
 // Native ark-ar1cs prover — canonical post-migration entry point.
 #[cfg(feature = "proof")]
@@ -103,19 +149,21 @@ pub use circuit::types;
 
 // Public API (always available)
 pub use anchor_host::poseidon::generate_anchor;
-pub use anchor_host::types::Secret;
 pub use circuit::types::CircuitConfig;
-pub use dto::AudHashResult;
-pub use hash::{generate_aud_hash, generate_hash, generate_leaf_hash};
+pub use dto::{
+    AnchorSecret, AudienceHashRequest, AudienceHashResponse, GenerateAnchorRequest,
+    GenerateAnchorResponse, HashRequest, HashResponse, IssuerKeyHashRequest, IssuerKeyHashResponse,
+};
+pub use hash::{generate_audience_hashes, generate_issuer_key_hash, generate_poseidon_hash};
 
 // Public API (proof feature only)
 #[cfg(feature = "proof")]
 pub use artifact::{ArtifactError, ArtifactSet};
 #[cfg(feature = "proof")]
-pub use dto::{PerProofPublicInputs, ProofComponents, SharedPublicInputs, ZkapProofResult};
+pub use dto::{ProofComponents, ProveCredential, ProveRequest, ProveResponse, SharedPublicInputs};
 #[cfg(feature = "proof")]
 pub use proof::{SetupOutput, SetupShape, setup};
 #[cfg(feature = "proof")]
-pub use prover::{Prover, prove_from_unverified_paths};
-#[cfg(feature = "proof")]
-pub use witness::{PerJwtFields, ProofRequest, SharedFields};
+pub use prover::Prover;
+#[cfg(feature = "dev-unverified-artifacts")]
+pub use prover::prove_from_unverified_paths_for_testing;

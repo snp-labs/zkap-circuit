@@ -1,33 +1,39 @@
-//! Native [`Prover`] handle + `prove_from_unverified_paths` shortcut.
+//! Native [`Prover`] handle + the feature-gated
+//! `prove_from_unverified_paths_for_testing` shortcut.
 //!
 //! See the module-level docs in [`crate::prover`] for the canonical
 //! call sequence. The prover internally chains
-//! `build_input → into_circuit_input → ZkapCircuit::from_input →
-//! synthesize_full_assignment → ark_ar1cs::prove`. Trust gating
+//! `prove_request_to_internal → build_input → into_circuit_input →
+//! ZkapCircuit::from_input → synthesize_full_assignment →
+//! ark_ar1cs::prove`. Trust gating
 //! ([`crate::artifact::ArtifactSet::load`] sha256 / `ar1cs_blake3`
 //! checks) is the loader's responsibility — `Prover::prove` does
 //! **not** re-validate the manifest, `arcs.body_blake3()`, or any
 //! `pk` / `vk` hash.
 
+#[cfg(feature = "dev-unverified-artifacts")]
 use std::path::Path;
 
 use ark_ar1cs::format::ArcsFile;
 use ark_ar1cs::{prove as ar1cs_prove, synthesize_full_assignment};
 use ark_groth16::{PreparedVerifyingKey, ProvingKey, VerifyingKey};
+use ark_std::rand::rngs::OsRng;
 use ark_std::rand::{CryptoRng, Rng};
 use circuit::types::{BN254, BNP, CG, CircuitConfig, F};
 use circuit::zkap::ZkapCircuit;
 
 use crate::artifact::ArtifactSet;
-use crate::dto::ZkapProofResult;
+use crate::dto::{ProveRequest, ProveResponse};
 use crate::error::ApplicationError;
+use crate::prover::adapter::prove_request_to_internal;
 use crate::witness::{ProofRequest, build_input, into_circuit_input};
 
 /// Native ZKAP prover backed by `ark_ar1cs::prove`.
 ///
 /// Construct via [`Prover::from_artifact`] after obtaining a
-/// manifest-verified [`ArtifactSet`] (canonical) or via
-/// [`prove_from_unverified_paths`] (non-canonical shortcut for tests).
+/// manifest-verified [`ArtifactSet`] (canonical) or via the
+/// `prove_from_unverified_paths_for_testing` shortcut (non-canonical,
+/// `dev-unverified-artifacts` feature only).
 pub struct Prover {
     pk: ProvingKey<BN254>,
     vk: VerifyingKey<BN254>,
@@ -39,10 +45,11 @@ pub struct Prover {
 impl Prover {
     /// Build a [`Prover`] from a manifest-verified [`ArtifactSet`].
     ///
-    /// The set was produced by [`ArtifactSet::load`] (canonical) or
-    /// [`ArtifactSet::load_unverified`] (non-canonical, tests only).
-    /// `from_artifact` takes ownership; no further hash validation
-    /// happens inside [`Self::prove`].
+    /// The set was produced by [`ArtifactSet::load`] (canonical) or —
+    /// when the `dev-unverified-artifacts` Cargo feature is enabled —
+    /// `ArtifactSet::load_without_manifest_verification_for_testing`
+    /// (non-canonical, tests only). `from_artifact` takes ownership;
+    /// no further hash validation happens inside [`Self::prove`].
     pub fn from_artifact(set: ArtifactSet) -> Self {
         Self {
             pk: set.pk,
@@ -55,9 +62,6 @@ impl Prover {
 
     /// Borrow the bundled Groth16 verifying key — hand directly to
     /// `ark_groth16::Groth16::verify_proof` for in-process verification.
-    /// The verify wrapper that used to wrap this borrow inside an opaque
-    /// handle was retired in Commit 5 of the 2026-05 ark-ar1cs boundary
-    /// migration.
     pub fn verifying_key(&self) -> &VerifyingKey<BN254> {
         &self.vk
     }
@@ -73,11 +77,50 @@ impl Prover {
         &self.cfg
     }
 
-    /// Run the native prove flow over every JWT credential in `req`.
+    /// Run the native prove flow over every JWT credential in `request`.
+    ///
+    /// The call pipeline:
+    /// 1. The boundary adapter (`crate::prover::adapter::prove_request_to_internal`)
+    ///    validates [`ProveRequest`] shape against the bundled
+    ///    [`CircuitConfig`], decodes every hex/base64 field, and
+    ///    composes the internal witness request type.
+    /// 2. The crate-internal `prove_internal` performs the constraint
+    ///    synthesis and [`ark_ar1cs::prove`] call per credential, using
+    ///    a fresh [`OsRng`] for the proof-side randomness.
+    ///
+    /// Returns one Groth16 proof per credential, along with the
+    /// per-batch shared public inputs and the per-credential `jwt_exp`
+    /// / `verification_rhs` parallel columns. The internal generic-RNG
+    /// path (`Self::prove_internal`, `pub(crate)`) is used by the
+    /// in-tree `#[cfg(test)]` modules that need deterministic
+    /// reproducibility; the public API only exposes the entropy-driven
+    /// form to keep the zero-knowledge property intact.
+    ///
+    /// # Trust boundary
+    ///
+    /// `Prover::prove` does **not** receive a `&Manifest`, does
+    /// **not** recompute `arcs.body_blake3()`, and does **not**
+    /// re-verify any `sha256` hash on `pk` / `vk` / `pvk` /
+    /// `circuit_config` / `evm_verifier`. The loader
+    /// ([`ArtifactSet::load`]) is the **single** trust gate; production
+    /// callers MUST use it (or — under the `dev-unverified-artifacts`
+    /// feature — the `prove_from_unverified_paths_for_testing`
+    /// non-canonical shortcut for caller-trusted paths only). Any
+    /// reintroduction of manifest / hash validation inside this method
+    /// would be a duplication of the loader's job and a policy break;
+    /// the absence is enforced by the `artifact_set_load` integration
+    /// test (`crates/service/tests/artifact_set_load.rs`) against the
+    /// loader.
+    pub fn prove(&self, request: &ProveRequest) -> Result<ProveResponse, ApplicationError> {
+        let internal = prove_request_to_internal(request, &self.cfg)?;
+        let mut rng = OsRng;
+        self.prove_internal(&internal, &mut rng)
+    }
+
+    /// Crate-internal generic-RNG prove path.
     ///
     /// The flow per credential:
-    /// 1. [`build_input`] reshapes the request into a `Vec<ZkapInputV1>`
-    ///    (re-applies the shape invariants).
+    /// 1. [`build_input`] reshapes the request into a `Vec<ZkapInputV1>`.
     /// 2. [`into_circuit_input`] converts each payload into a fully
     ///    assigned `ZkapCircuitInput<F>`.
     /// 3. [`ZkapCircuit::from_input`] wraps it in a
@@ -87,26 +130,15 @@ impl Prover {
     /// 5. [`ar1cs_prove`] produces the Groth16 proof against `self.pk`
     ///    and `self.arcs`.
     ///
-    /// # Trust boundary
-    ///
-    /// `Prover::prove` does **not** receive a `&Manifest`, does
-    /// **not** recompute `arcs.body_blake3()`, and does **not**
-    /// re-verify any `sha256` hash on `pk` / `vk` / `pvk` /
-    /// `circuit_config` / `evm_verifier`. The loader
-    /// ([`ArtifactSet::load`]) is the **single** trust gate; production
-    /// callers MUST use it (or the
-    /// [`prove_from_unverified_paths`] non-canonical shortcut for
-    /// caller-trusted paths only — see its rustdoc warning). Any
-    /// reintroduction of manifest / hash validation inside this method
-    /// would be a duplication of the loader's job and a policy break;
-    /// the absence is enforced by the `artifact_set_load` integration
-    /// test (`crates/service/tests/artifact_set_load.rs`) against the
-    /// loader.
-    pub fn prove<R>(
+    /// Kept `pub(crate)` so in-tree `#[cfg(test)]` modules that need
+    /// deterministic reproducibility can drive a seeded RNG without
+    /// exposing seed-injection on the public surface (which would
+    /// undermine zero-knowledge for downstream callers).
+    pub(crate) fn prove_internal<R>(
         &self,
         req: &ProofRequest,
         rng: &mut R,
-    ) -> Result<ZkapProofResult, ApplicationError>
+    ) -> Result<ProveResponse, ApplicationError>
     where
         R: Rng + CryptoRng,
     {
@@ -131,7 +163,7 @@ impl Prover {
                 })?;
 
             // Canonical 8-element instance layout — see
-            // `ZkapProofResult::from((proofs, public_inputs))` in
+            // `ProveResponse::from((proofs, public_inputs))` in
             // `crate::dto::proof` for the per-proof / shared split.
             let pub_vec = vec![
                 pub_inputs.hanchor,
@@ -158,26 +190,27 @@ impl Prover {
 ///
 /// Loads `pk.bin`, `vk.bin`, `pvk.bin`, `circuit.ar1cs`, and
 /// `config.json` from `bundle_dir` via
-/// [`ArtifactSet::load_unverified`] and forwards to
-/// [`Prover::from_artifact`] + [`Prover::prove`]. Use only in tests,
+/// `ArtifactSet::load_without_manifest_verification_for_testing`
+/// and forwards to [`Prover::from_artifact`] + [`Prover::prove`].
+///
+/// Gated behind the `dev-unverified-artifacts` Cargo feature.
+/// Production builds never compile this code; opt in only in tests,
 /// dev tools, and caller-trusted environments where bundle integrity
-/// is established out of band. The function name's `_unverified`
+/// is established out of band. The function name's `_for_testing`
 /// suffix and this rustdoc warning exist precisely so production
 /// review can flag any call site as a policy violation.
-pub fn prove_from_unverified_paths<R>(
+#[cfg(feature = "dev-unverified-artifacts")]
+pub fn prove_from_unverified_paths_for_testing(
     bundle_dir: &Path,
-    req: &ProofRequest,
-    rng: &mut R,
-) -> Result<ZkapProofResult, ApplicationError>
-where
-    R: Rng + CryptoRng,
-{
-    let set = ArtifactSet::load_unverified(bundle_dir).map_err(|e| {
-        ApplicationError::InvalidFormat(format!(
-            "ArtifactSet::load_unverified({}) failed: {e}",
-            bundle_dir.display()
-        ))
-    })?;
+    request: &ProveRequest,
+) -> Result<ProveResponse, ApplicationError> {
+    let set =
+        ArtifactSet::load_without_manifest_verification_for_testing(bundle_dir).map_err(|e| {
+            ApplicationError::InvalidFormat(format!(
+                "ArtifactSet::load_without_manifest_verification_for_testing({}) failed: {e}",
+                bundle_dir.display()
+            ))
+        })?;
     let prover = Prover::from_artifact(set);
-    prover.prove(req, rng)
+    prover.prove(request)
 }

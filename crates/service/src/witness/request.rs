@@ -94,11 +94,6 @@ pub struct ProofRequest {
 }
 
 impl ProofRequest {
-    /// Number of JWT credentials (`k`).
-    pub fn token_count(&self) -> usize {
-        self.per_jwt.len()
-    }
-
     /// Validate the shared and per-JWT shapes against `params.k` /
     /// `params.n`. Catches host-side dimension bugs before the heavier
     /// `ZkapCircuitInput` conversion runs.
@@ -214,5 +209,128 @@ mod tests {
         req.shared.anchor_selector.pop();
         let err = req.validate(3, 6).unwrap_err();
         assert!(format!("{}", err).contains("anchor_selector"));
+    }
+
+    fn cfg_n6_k3() -> CircuitConfig {
+        CircuitConfig {
+            max_jwt_b64_len: 1024,
+            max_payload_b64_len: 640,
+            max_aud_len: 155,
+            max_exp_len: 20,
+            max_iss_len: 93,
+            max_nonce_len: 93,
+            max_sub_len: 93,
+            n: 6,
+            k: 3,
+            tree_height: 4,
+            num_audience_limit: 5,
+            claims: vec![
+                "aud".into(),
+                "exp".into(),
+                "iss".into(),
+                "nonce".into(),
+                "sub".into(),
+            ],
+            forbidden_string: "forbidden".into(),
+        }
+    }
+
+    fn populated_per_jwt(cfg: &CircuitConfig) -> PerJwtFields {
+        PerJwtFields {
+            jwt_bytes: Vec::new(),
+            rsa_modulus_be: vec![0u8; 256],
+            rsa_signature_be: vec![0u8; 256],
+            anchor_current_idx: 0,
+            merkle_leaf_sibling_hash_be: [0u8; 32],
+            merkle_auth_path_be: vec![[0u8; 32]; (cfg.tree_height - 1) as usize],
+            merkle_leaf_idx: 0,
+        }
+    }
+
+    fn populated_request(cfg: &CircuitConfig) -> ProofRequest {
+        let n = cfg.n as usize;
+        let k = cfg.k as usize;
+        ProofRequest {
+            shared: SharedFields {
+                random_be: [0u8; 32],
+                h_sign_user_op_be: [0u8; 32],
+                anchor_values_be: vec![[0u8; 32]; n - k + 1],
+                anchor_known_x_be: vec![[0u8; 32]; k],
+                anchor_selector: {
+                    let mut s = vec![0u8; n];
+                    for slot in s.iter_mut().take(k) {
+                        *slot = 1;
+                    }
+                    s
+                },
+                merkle_root_be: [0u8; 32],
+            },
+            per_jwt: (0..k).map(|_| populated_per_jwt(cfg)).collect(),
+        }
+    }
+
+    /// `build_input` returns one [`ZkapInputV1`] per JWT and preserves
+    /// the request's `per_jwt.len()`. Moved from the
+    /// `tests/witness_build_input.rs` integration suite when
+    /// `mod witness` was demoted to `pub(crate)`.
+    #[test]
+    fn build_input_returns_one_v1_per_jwt() {
+        let cfg = cfg_n6_k3();
+        let req = populated_request(&cfg);
+        let expected_len = req.per_jwt.len();
+
+        let inputs = build_input(&req, &cfg).expect("build_input");
+        assert_eq!(inputs.len(), expected_len);
+        assert_eq!(inputs.len(), cfg.k as usize);
+    }
+
+    /// `build_input` propagates the shared / per-JWT byte values into
+    /// each [`ZkapInputV1`] payload. Moved from the integration suite.
+    #[test]
+    fn build_input_copies_shared_and_per_jwt_values() {
+        let cfg = cfg_n6_k3();
+        let req = populated_request(&cfg);
+
+        let inputs = build_input(&req, &cfg).expect("build_input");
+        for input in &inputs {
+            assert_eq!(input.random_be, req.shared.random_be);
+            assert_eq!(input.h_sign_user_op_be, req.shared.h_sign_user_op_be);
+            assert_eq!(input.merkle_root_be, req.shared.merkle_root_be);
+            assert_eq!(input.anchor_selector, req.shared.anchor_selector);
+            assert_eq!(input.circuit_config.n, cfg.n);
+            assert_eq!(input.circuit_config.k, cfg.k);
+        }
+    }
+
+    /// `build_input` rejects an inconsistent request shape via the
+    /// same `DimensionMismatch` channel
+    /// [`ProofRequest::validate`] uses. Moved from the integration
+    /// suite — surfaces the boundary via `build_input` rather than
+    /// directly calling `validate`.
+    #[test]
+    fn build_input_rejects_inconsistent_shape() {
+        let cfg = cfg_n6_k3();
+        let mut req = populated_request(&cfg);
+        req.shared.anchor_values_be.pop();
+        let err =
+            build_input(&req, &cfg).expect_err("build_input must reject pop'd anchor_values_be");
+        let msg = format!("{}", err);
+        assert!(
+            msg.contains("anchor_values_be"),
+            "expected error to mention anchor_values_be, got: {msg}"
+        );
+    }
+
+    /// Compile-time check: [`ProofRequest`] exposes only `shared` and
+    /// `per_jwt` — no artifact-path fields slipped through the
+    /// post-migration rename. If any such field reappears the
+    /// destructure below stops compiling.
+    #[test]
+    fn proof_request_carries_no_artifact_paths() {
+        let cfg = cfg_n6_k3();
+        let req = populated_request(&cfg);
+
+        let ProofRequest { shared, per_jwt } = &req;
+        let _ = (shared, per_jwt);
     }
 }

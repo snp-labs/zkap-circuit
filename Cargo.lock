@@ -1914,6 +1914,7 @@ name = "zkap-cli"
 version = "0.1.0"
 dependencies = [
  "ark-ar1cs",
+ "base64",
  "circuit",
  "clap",
  "hex",

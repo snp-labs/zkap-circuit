@@ -19,6 +19,7 @@
 use clap::{Args, Parser, Subcommand};
 use serde::Serialize;
 use zkap_cli::{die, load_config_or_exit, write_json_or_exit};
+use zkap_service::{AudienceHashRequest, IssuerKeyHashRequest};
 
 #[derive(Parser)]
 struct Cli {
@@ -108,14 +109,19 @@ fn generate_aud_hash(args: &AudArgs, params: &circuit::types::CircuitConfig) {
         .map(|s| s.trim().to_string())
         .collect();
 
-    let aud_result = zkap_service::generate_aud_hash(params, aud_vec.clone())
-        .unwrap_or_else(|e| die(format!("Error generating audience hash: {}", e)));
+    let aud_result = zkap_service::generate_audience_hashes(
+        params,
+        AudienceHashRequest {
+            audiences: aud_vec.clone(),
+        },
+    )
+    .unwrap_or_else(|e| die(format!("Error generating audience hash: {}", e)));
 
     let output = AudOutput {
         input: aud_vec,
         output: AudItem {
-            aud_to_field: aud_result.individual,
-            h_aud_lists: aud_result.combined,
+            aud_to_field: aud_result.audience_hashes,
+            h_aud_lists: aud_result.audience_list_hash,
         },
     };
 
@@ -146,10 +152,16 @@ fn generate_pk_leaf(args: &LeafArgs, params: &circuit::types::CircuitConfig) {
                 pk: pk.to_string(),
             };
 
-            let leaf_hex = zkap_service::generate_leaf_hash(params, iss, pk)
-                .unwrap_or_else(|e| die(format!("Error computing leaf for iss '{}': {}", iss, e)));
+            let leaf_resp = zkap_service::generate_issuer_key_hash(
+                params,
+                IssuerKeyHashRequest {
+                    issuer: iss.to_string(),
+                    rsa_modulus_b64: pk.to_string(),
+                },
+            )
+            .unwrap_or_else(|e| die(format!("Error computing leaf for iss '{}': {}", iss, e)));
 
-            (input_data, leaf_hex)
+            (input_data, leaf_resp.hash)
         })
         .unzip();
 

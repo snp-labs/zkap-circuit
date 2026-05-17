@@ -25,12 +25,11 @@ use ark_crypto_primitives::{
 use ark_ff::{PrimeField, Zero};
 
 use circuit::token::ClaimIndices;
-use circuit::types::{BNP, CG, F};
+use circuit::types::F;
 use circuit::witness::{
     AnchorWitness, AudienceWitness, CircuitConstants, CircuitPublicInputs, JwtWitness,
     MerkleWitness, MiscWitness, ZkapCircuitInput,
 };
-use circuit::zkap::ZkapCircuit;
 use gadget::{
     anchor::poseidon::{PoseidonAnchor, build_anchor_witness},
     base64::{IndexBits, get_base64_table},
@@ -43,10 +42,6 @@ use ark_utils::codec::field::fe_from_be32_canonical;
 use ark_utils::wire::{CircuitConfig as WireCircuitConfig, RSA_2048_BYTES, ZkapInputV1};
 
 use crate::witness::error::ZkapWitnessError;
-
-/// Concrete `ZkapCircuit` instantiation used by the native prove path —
-/// `(Curve = ed_on_bn254, BigNat = 2048-bit limbs)`.
-pub type ZkapMainCircuit = ZkapCircuit<CG, BNP>;
 
 const BN254_LIMB_WIDTH: usize = 31;
 
@@ -160,14 +155,6 @@ fn claim_value_bytes_padded(
     let mut bytes = payload_bytes[value_start..value_end].to_vec();
     bytes.resize(max_len, 0x00);
     bytes
-}
-
-/// One-shot native entry point: `V1 → ZkapMainCircuit` ready for
-/// `ConstraintSynthesizer`. Wraps [`into_circuit_input`] and
-/// `ZkapCircuit::from_input`.
-pub fn build_main_circuit(input: ZkapInputV1) -> Result<ZkapMainCircuit, ZkapWitnessError> {
-    let ci = into_circuit_input(input)?;
-    Ok(ZkapMainCircuit::from_input(ci))
 }
 
 fn nc_field<S: Into<String>>(
@@ -760,7 +747,8 @@ fn base64_url_no_pad_decode(input: &[u8]) -> Result<Vec<u8>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use circuit::types::CircuitConfig;
+    use circuit::types::{BNP, CG, CircuitConfig};
+    use circuit::zkap::ZkapCircuit;
 
     fn sample_config_v1() -> CircuitConfig {
         CircuitConfig {
@@ -893,5 +881,86 @@ mod tests {
             Err(ZkapWitnessError::DimensionMismatch(_)) => {}
             other => panic!("expected DimensionMismatch, got {:?}", other.err()),
         }
+    }
+
+    /// `build_input` → `into_circuit_input` chain propagates a wrong
+    /// `rsa_modulus_be` length as a [`ZkapWitnessError::DimensionMismatch`].
+    /// Moved from the `tests/witness_build_input.rs` integration suite
+    /// when `mod witness` was demoted to `pub(crate)`. Distinct from
+    /// [`into_circuit_input_rejects_rsa_modulus_too_short`] in that it
+    /// exercises both stages of the chain.
+    #[test]
+    fn build_input_then_into_circuit_input_chain_propagates_dimension_mismatch() {
+        use crate::witness::request::{PerJwtFields, ProofRequest, SharedFields, build_input};
+
+        let cfg = sample_config_v1();
+        let n = cfg.n as usize;
+        let k = cfg.k as usize;
+        let req = ProofRequest {
+            shared: SharedFields {
+                random_be: [0u8; 32],
+                h_sign_user_op_be: [0u8; 32],
+                anchor_values_be: vec![[0u8; 32]; n - k + 1],
+                anchor_known_x_be: vec![[0u8; 32]; k],
+                anchor_selector: {
+                    let mut s = vec![0u8; n];
+                    for slot in s.iter_mut().take(k) {
+                        *slot = 1;
+                    }
+                    s
+                },
+                merkle_root_be: [0u8; 32],
+            },
+            per_jwt: (0..k)
+                .map(|_| PerJwtFields {
+                    jwt_bytes: Vec::new(),
+                    rsa_modulus_be: vec![0u8; 256],
+                    rsa_signature_be: vec![0u8; 256],
+                    anchor_current_idx: 0,
+                    merkle_leaf_sibling_hash_be: [0u8; 32],
+                    merkle_auth_path_be: vec![[0u8; 32]; (cfg.tree_height - 1) as usize],
+                    merkle_leaf_idx: 0,
+                })
+                .collect(),
+        };
+
+        let mut inputs = build_input(&req, &cfg).expect("build_input");
+        // Wrong rsa_modulus_be length → DimensionMismatch from
+        // into_circuit_input.
+        inputs[0].rsa_modulus_be = vec![0u8; 255];
+        match into_circuit_input(inputs.remove(0)) {
+            Err(ZkapWitnessError::DimensionMismatch(msg)) => {
+                assert!(
+                    msg.contains("rsa_modulus_be"),
+                    "expected error to mention rsa_modulus_be, got: {msg}"
+                );
+            }
+            other => panic!("expected DimensionMismatch, got {:?}", other.err()),
+        }
+    }
+
+    /// `ZkapCircuit::from_input` is callable on a
+    /// [`ZkapCircuitInput<F>`] produced by service-side code. Moved
+    /// from `tests/witness_build_input.rs` — the seam check stays
+    /// under a second by feeding
+    /// `ZkapCircuit::generate_mock_circuit`'s own input rather than
+    /// running the V1 → circuit conversion end to end.
+    #[test]
+    fn zkap_circuit_from_input_native_constructor() {
+        let cfg = sample_config_v1();
+
+        let mock = ZkapCircuit::<CG, BNP>::generate_mock_circuit(&cfg);
+
+        let ci: ZkapCircuitInput<F> = ZkapCircuitInput {
+            params: mock.params.clone(),
+            constants: mock.constants.clone(),
+            public_inputs: mock.public_inputs.clone(),
+            jwt: mock.jwt.clone(),
+            anchor: mock.anchor.clone(),
+            merkle: mock.merkle.clone(),
+            audience: mock.audience.clone(),
+            misc: mock.misc.clone(),
+        };
+        let _circuit = ZkapCircuit::<CG, BNP>::from_input(ci);
     }
 }

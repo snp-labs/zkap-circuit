@@ -3,8 +3,9 @@
 //! These exercise the actual binary entry points end-to-end so that changes
 //! to argument parsing, stdout/stderr contracts, or output JSON shapes are
 //! caught at the CLI boundary — the library-level paths inside
-//! `zkap_service::generate_aud_hash` / `generate_leaf_hash` are already
-//! covered by service crate tests.
+//! `zkap_service::generate_audience_hashes` /
+//! `zkap_service::generate_issuer_key_hash` are already covered by service
+//! crate tests.
 //!
 //! `generate_setup` is intentionally not covered here because its
 //! `zkap_service::setup` call runs the full Groth16 trusted setup, which
@@ -114,12 +115,24 @@ fn generate_hash_aud_smoke() {
 
 #[test]
 fn generate_hash_leaf_smoke() {
+    use base64::Engine;
+
     let scratch = ScratchDir::new("leaf");
     let cfg = write_sample_config(&scratch);
     let out = scratch.join("leaf.json");
 
-    // `AQAB` is the canonical base64 encoding of `[1, 0, 1]`; service-side
-    // tests use the same placeholder for `pk_b64` smoke coverage.
+    // `zkap_service::generate_issuer_key_hash` enforces the RSA-2048
+    // modulus length (exactly 256 bytes after base64 decoding); use a
+    // valid-shape placeholder to exercise the success path.
+    let modulus_bytes = {
+        let mut v = vec![0xABu8; 256];
+        v[0] = 0xC0;
+        v[255] = 0x01;
+        v
+    };
+    let pk_b64 = base64::engine::general_purpose::STANDARD.encode(&modulus_bytes);
+    let pk_arg = format!("{pk_b64},{pk_b64}");
+
     let status = Command::new(env!("CARGO_BIN_EXE_generate_hash"))
         .arg("--config")
         .arg(&cfg)
@@ -127,7 +140,7 @@ fn generate_hash_leaf_smoke() {
         .arg("--iss")
         .arg("https://issuer1.example,https://issuer2.example")
         .arg("--pk")
-        .arg("AQAB,AQAB")
+        .arg(&pk_arg)
         .arg("--out")
         .arg(&out)
         .status()
@@ -138,7 +151,7 @@ fn generate_hash_leaf_smoke() {
     let inputs = json["input"].as_array().expect("input is array");
     assert_eq!(inputs.len(), 2);
     assert_eq!(inputs[0]["iss"].as_str(), Some("https://issuer1.example"));
-    assert_eq!(inputs[1]["pk"].as_str(), Some("AQAB"));
+    assert_eq!(inputs[1]["pk"].as_str(), Some(pk_b64.as_str()));
 
     let outputs = json["output"].as_array().expect("output is array");
     assert_eq!(outputs.len(), 2);

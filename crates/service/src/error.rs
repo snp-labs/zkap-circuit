@@ -14,7 +14,12 @@ use thiserror::Error;
 /// Top-level error type for the zkap-service layer.
 ///
 /// Consumer-facing variants are named by concern, not by internal crate origin.
+///
+/// `#[non_exhaustive]` so that adding new typed variants (e.g. anchor- or
+/// audience-specific failures) is not a breaking change for downstream
+/// `match` sites.
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum ApplicationError {
     /// Input could not be parsed against the expected format (JSON shape,
     /// length, or CircuitConfig invariants). The string carries the upstream
@@ -78,6 +83,82 @@ pub enum ApplicationError {
     /// available, by Groth16's design).
     #[error("Proof verification failed")]
     VerifyFailed,
+
+    /// A field-element input string could not be parsed as either `0x`-hex or
+    /// decimal. `index` is the 0-based position of the offending entry inside
+    /// the input vector; `message` carries the upstream parser description.
+    /// Returned by [`crate::generate_poseidon_hash`].
+    #[error("invalid field element at index {index}: {message}")]
+    InvalidFieldElement {
+        /// 0-based position of the offending input.
+        index: usize,
+        /// Upstream parser description.
+        message: String,
+    },
+
+    /// The supplied audience list is longer than the circuit's
+    /// `num_audience_limit`. Returned by [`crate::generate_audience_hashes`].
+    #[error("audience limit exceeded: got {got}, limit {limit}")]
+    AudienceLimitExceeded {
+        /// Number of audiences the caller supplied.
+        got: usize,
+        /// Maximum number permitted by `CircuitConfig::num_audience_limit`.
+        limit: usize,
+    },
+
+    /// A JWT claim value (e.g. an issuer or audience string) failed
+    /// domain-level validation before hashing. `which` names the claim
+    /// (`"iss"`, `"aud"`, …); `message` carries the upstream description.
+    #[error("invalid {which} value: {message}")]
+    InvalidClaimValue {
+        /// Claim name (`"iss"`, `"aud"`, …).
+        which: String,
+        /// Upstream description.
+        message: String,
+    },
+
+    /// A base64 input could not be decoded. The string carries the upstream
+    /// description. Returned by [`crate::generate_issuer_key_hash`] when the
+    /// supplied `rsa_modulus_b64` fails base64 decoding.
+    #[error("invalid base64: {0}")]
+    InvalidBase64(String),
+
+    /// The supplied RSA modulus failed structural validation (e.g. its
+    /// decoded byte length is not the RSA-2048 size of 256 bytes). The
+    /// string carries the failure detail.
+    #[error("invalid RSA modulus: {0}")]
+    InvalidRsaModulus(String),
+
+    /// Poseidon evaluation failed during a host-side hash computation. The
+    /// in-tree Poseidon implementation is total today, so this variant is
+    /// reserved for future Poseidon backends that can fail and as a defensive
+    /// catch-all from the hash-API surface.
+    #[error("hash computation failed: {0}")]
+    HashFailed(String),
+
+    /// The number of supplied anchor secrets does not match the matrix row
+    /// count `n` declared in [`circuit::types::CircuitConfig`]. Returned by
+    /// [`crate::generate_anchor`] when
+    /// `request.secrets.len() != config.n`.
+    #[error("anchor dimension mismatch: expected {expected} secrets, got {got}")]
+    AnchorDimensionMismatch {
+        /// Number of secrets the circuit configuration requires (`config.n`).
+        expected: usize,
+        /// Number of secrets the caller supplied.
+        got: usize,
+    },
+
+    /// An input on the prove API failed boundary validation (length, format,
+    /// or decoding). `field` is a dotted path into the [`crate::ProveRequest`]
+    /// (e.g. `"credentials[2].rsa_modulus_b64"`); `message` carries the
+    /// upstream description.
+    #[error("invalid prove request at {field}: {message}")]
+    InvalidProveRequest {
+        /// Dotted field path into the failing [`crate::ProveRequest`].
+        field: String,
+        /// Upstream parser / validator description.
+        message: String,
+    },
 }
 
 impl From<AnchorError> for ApplicationError {

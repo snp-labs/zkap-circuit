@@ -275,20 +275,23 @@ impl Prover {
 }
 ```
 
-Canonical post-migration prove entry point. Internally chains:
+Canonical post-migration prove entry point (free function, replacing the earlier intermediate-migration `Prover` struct). Internally chains:
 
-1. `witness::build_input(&req, &self.cfg)` → `Vec<ZkapInputV1>`
-2. `witness::into_circuit_input(v1)` → `ZkapCircuitInput<F>`
-3. `ZkapCircuit::from_input(circuit_input)` → `ConstraintSynthesizer`
-4. `ark_ar1cs::synthesize_full_assignment(circuit)` → `[F::ONE, instance…, witness…]`
-5. `ark_ar1cs::prove(&self.pk, &self.arcs, &full_assignment, rng)` → `Proof<BN254>`
+1. `groth16::prover::adapter::prove_request_to_decoded(&req, &cfg)` → `(SharedDecoded, Vec<CredentialDecoded>)`
+2. Pre-batch: per-credential `derive_x_from_secret` → `x_list`; `derive_selector_from_x_list_and_anchor` → `selector` + `one_positions`
+3. Per credential: `circuit_input::{build_anchor_stage, build_jwt_stage, build_audience_stage, build_merkle_witness, compute_public_inputs}` → `ZkapCircuitInput<F>`
+4. `ZkapCircuit::from_input(circuit_input)` → `ConstraintSynthesizer`
+5. `ark_ar1cs::synthesize_full_assignment(circuit)` → `[F::ONE, instance…, witness…]`
+6. `ark_ar1cs::prove(&pk, &arcs, &full_assignment, OsRng)` → `Proof<BN254>`
 
-**Trust gating** lives entirely in [`ArtifactSet::load`](#artifactsetload). `Prover::prove` performs no manifest lookup, no `arcs.body_blake3` recompute, and no sha256 re-check. The `Manifest`/`hash` validation is the loader's job; `Prover` trusts the set that built it.
+**Trust gating** lives entirely in [`ArtifactSet::load`](#artifactsetload). `prove` performs no manifest lookup, no `arcs.body_blake3` recompute, and no sha256 re-check. The `Manifest`/`hash` validation is the loader's job; `prove` trusts the set that built it.
 
-**Returns:** [`ZkapProofResult`](#zkapproofresult) containing K proofs and public inputs.
+**Returns:** [`ProveResponse`](#proveresponse) containing K proofs and the deterministic public-input bundle.
 
 **Errors:**
-- `InvalidFormat` — `ProofRequest` shape mismatch surfaced through `ZkapWitnessError` (anchor cardinality, RSA length, JWT decode, …).
+- `InvalidProveRequest { field, message }` — shape / decode / config-validation failure with the offending dotted field path. Replaces the earlier intermediate-migration `InvalidFormat(String)` wrapper for these classes of failure.
+- `PoseidonHashError` — reserved for future fallible Poseidon backends (structurally unreachable on the BN254 implementation but mapped for completeness).
+- `CryptographicError(...)` — surfaces gadget-layer errors (e.g. `AnchorError`) via the `From<AnchorError>` impl.
 - `ProofGenerationFailed` — `synthesize_full_assignment` failed or `ark_ar1cs::prove` rejected the assignment at R1CS preflight.
 
 **Non-canonical shortcut:**
@@ -354,37 +357,34 @@ Runtime circuit parameters. Load from JSON via `load_circuit_config()` or constr
 
 ---
 
-### `ProofRequest` / `SharedFields` / `PerJwtFields`
+### `ProveRequest` / `ProveCredential`
 
-Native-path proof request — carries **no** artifact paths. The post-migration request describes only the credentials being proven; the CRS bundle reaches the prover through [`ArtifactSet::load`](#artifactsetload) (canonical) or `ArtifactSet::load_unverified` (non-canonical shortcut).
+Native-path prove request — carries **no** artifact paths. The post-migration request describes only the credentials being proven; the CRS bundle reaches the prover through [`ArtifactSet::load`](#artifactsetload) (canonical) or `ArtifactSet::load_unverified` (non-canonical shortcut).
 
 ```rust
-pub struct ProofRequest {
-    pub shared: SharedFields,
-    pub per_jwt: Vec<PerJwtFields>,
+pub struct ProveRequest {
+    pub random: String,            // hex or decimal field-element string
+    pub h_sign_user_op: String,    // hex or decimal field-element string
+    pub anchor: Vec<String>,       // len = n - k + 1, hex/decimal field strings
+    pub merkle_root: String,
+    pub credentials: Vec<ProveCredential>,    // len = k
 }
 
-pub struct SharedFields {
-    pub random_be: [u8; 32],
-    pub h_sign_user_op_be: [u8; 32],
-    pub anchor_values_be: Vec<[u8; 32]>,       // len = n - k + 1
-    pub anchor_known_x_be: Vec<[u8; 32]>,      // len = k
-    pub anchor_selector: Vec<u8>,              // len = n, cardinality = k
-    pub merkle_root_be: [u8; 32],
-}
-
-pub struct PerJwtFields {
-    pub jwt_bytes: Vec<u8>,
-    pub rsa_modulus_be: Vec<u8>,               // exactly 256 bytes
-    pub rsa_signature_be: Vec<u8>,             // exactly 256 bytes
-    pub anchor_current_idx: u64,
-    pub merkle_leaf_sibling_hash_be: [u8; 32],
-    pub merkle_auth_path_be: Vec<[u8; 32]>,    // len = tree_height - 1
-    pub merkle_leaf_idx: u64,
+pub struct ProveCredential {
+    pub jwt: String,               // compact-serialization "header.payload.signature"
+    pub rsa_modulus_b64: String,   // base64 — must decode to 256 bytes
+    pub merkle_path: Vec<String>,  // len = tree_height; [0] = leaf sibling, [1..] = inner siblings
+    pub merkle_leaf_idx: u64,      // 0 .. 2^tree_height
 }
 ```
 
-`ProofRequest::validate(k, n)` re-applies the shape invariants; the same checks run again inside `witness::build_input` and `witness::into_circuit_input` defensively.
+Shape and decoding checks live in
+`groth16::prover::adapter::prove_request_to_decoded`: it runs
+`CircuitConfig::validate`, then validates `credentials.len() == k`,
+`anchor.len() == n - k + 1`, `merkle_path.len() == tree_height`, and
+`merkle_leaf_idx < 2^tree_height`. Wire-string decoding rejects
+non-canonical field encodings at the boundary, so the downstream stage
+builders see only F-typed values.
 
 ---
 

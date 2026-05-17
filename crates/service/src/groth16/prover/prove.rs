@@ -59,7 +59,7 @@ use super::circuit_input::{
 ///    `derive_selector_from_x_list_and_anchor` to recover the selector
 ///    + one-positions.
 /// 3. Per credential: the stage builders in
-///    [`crate::groth16::prover::circuit_input`] convert decoded inputs
+///    `crate::groth16::prover::circuit_input` convert decoded inputs
 ///    into anchor / JWT / audience / merkle / public-input stages; a
 ///    fresh `ZkapCircuitInput<F>` is assembled inline and immediately
 ///    consumed by `ZkapCircuit::from_input → synthesize_full_assignment

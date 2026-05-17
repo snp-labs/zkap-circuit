@@ -42,24 +42,34 @@
 //! │   ProveRequest {                                                 │
 //! │     random, h_sign_user_op, anchor[*], merkle_root,              │
 //! │     credentials: [ProveCredential; k]                            │
-//! │   }   (hanchor NOT in request — derived from anchor)             │
+//! │   }                                                              │
 //! └──────────────────────────────┬───────────────────────────────────┘
 //!                                │ prove(&set, &req)
 //!                                ▼
 //! ┌──────────────────────────────────────────────────────────────────┐
-//! │ adapter::prove_request_to_internal                               │
-//! │   1. shape validation (lengths + leaf-idx bound)                 │
-//! │   2. decode shared field strings (hex/decimal)                   │
-//! │   3. per-credential: parse JWT → derive x → decode bytes         │
-//! │   4. derive selector + per-credential current_idx                │
-//! │   5. compose internal WitnessRequest { SharedFields, [PerJwtFields]}│
+//! │ adapter::prove_request_to_decoded                                │
+//! │   1. cfg.validate()                                              │
+//! │   2. shape validation (lengths + leaf-idx bound)                 │
+//! │   3. decode shared field strings (hex/decimal → F)               │
+//! │   4. per-credential: base64-decode RSA/sig, merkle path → F      │
+//! │   → (SharedDecoded, Vec<CredentialDecoded>)                      │
 //! └──────────────────────────────┬───────────────────────────────────┘
 //!                                │
 //!                                ▼
 //! ┌──────────────────────────────────────────────────────────────────┐
-//! │ prove() body (OsRng instantiated once, reused across batch)      │
-//! │   into_circuit_input → ZkapCircuit::from_input                   │
-//! │   → synthesize_full_assignment → ark_ar1cs::prove                │
+//! │ prove() body                                                     │
+//! │   pre-batch:                                                     │
+//! │     parse JWTs → derive_x_from_secret → x_list                   │
+//! │     derive_selector_from_x_list_and_anchor → selector            │
+//! │     one_positions[i] = i-th 1-position of selector               │
+//! │   per credential:                                                │
+//! │     circuit_input::build_anchor_stage                            │
+//! │     circuit_input::build_jwt_stage                               │
+//! │     circuit_input::build_audience_stage                          │
+//! │     circuit_input::build_merkle_witness                          │
+//! │     circuit_input::compute_public_inputs                         │
+//! │     ZkapCircuit::from_input → synthesize_full_assignment         │
+//! │     → ark_ar1cs::prove                                           │
 //! └──────────────────────────────┬───────────────────────────────────┘
 //!                                │
 //!                                ▼
@@ -72,6 +82,19 @@
 //! `ArtifactSet::load(manifest, dir)` is the trust boundary — manifest
 //! hash validation happens before [`prove`] runs, and [`prove`]
 //! does not re-verify any hash.
+//!
+//! ### Drift safeguard
+//!
+//! Compile-checked guard against accidental signature drift on the
+//! canonical `prove` entry point. Updates to this signature must update
+//! the diagram above (and the flow doc in
+//! `crates/service/src/groth16/prover/mod.rs`).
+//!
+//! ```ignore
+//! use zkap_service::{ArtifactSet, ProveRequest, ProveResponse, prove};
+//! use zkap_service::error::ApplicationError;
+//! let _: fn(&ArtifactSet, &ProveRequest) -> Result<ProveResponse, ApplicationError> = prove;
+//! ```
 
 // Crate-internal `missing_docs` warning, not a `#[deny]`. Phase 7 / H5
 // staged path: clears the zkap-service baseline (39 service warnings +
@@ -99,12 +122,13 @@ pub(crate) mod crs;
 pub mod jwt;
 
 // Groth16 lifecycle parent — `pub(crate)` so module-qualified paths
-// `zkap_service::setup::*` / `zkap_service::prover::*` are intentionally
+// `zkap_service::setup::*` / `zkap_service::groth16::*` are intentionally
 // gone (BREAKING change). External callers must use the top-level
 // re-exports below (`zkap_service::{setup, prove, SetupOutput, ...}`).
-// Hosts the witness-shaping path as a sub-module; boundary callers
-// reach that layer through [`ProveRequest`] and never see the raw
-// `SharedFields` / `PerJwtFields` shapes.
+// Hosts the wire-decoder (adapter), per-credential stage builders
+// (circuit_input), and the ar1cs orchestrator (prove). Boundary callers
+// reach the SNARK layer through `ProveRequest` and never see raw
+// F-decoded bundles.
 pub(crate) mod groth16;
 
 use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;

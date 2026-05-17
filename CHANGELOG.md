@@ -19,19 +19,21 @@ once.
   `vk.bin`, `pvk.bin`, `Groth16Verifier.sol`, `config.json`,
   `manifest.json`. Older filenames and the wasm artifact that
   pre-dated the migration are no longer produced or consumed.
-- **`ProofRequest` is the new request type.** Holds only
-  `shared: SharedFields` and `per_jwt: Vec<PerJwtFields>` — every
-  artifact-path field is gone. Lives in
-  `service::witness::request`.
-- **Native ar1cs prove path.** The proving entry point is
-  `service::prover::Prover` (`Prover::from_artifact(set)` +
-  `Prover::prove(&request, rng)`). Internally chains
-  `witness::build_input → witness::into_circuit_input →
-  ZkapCircuit::from_input → ark_ar1cs::synthesize_full_assignment →
-  ark_ar1cs::prove(&pk, &arcs, &full_assignment, rng)`. The
-  non-canonical `prove_from_unverified_paths(bundle_dir, &req, rng)`
-  shortcut exists for tests/dev tools and is documented in-line as
-  bypassing the manifest hash gate.
+- **`ProveRequest` is the new request type** (renamed from the
+  earlier intermediate-migration `ProofRequest`). Holds wire-format
+  string fields plus a `credentials: Vec<ProveCredential>`; every
+  artifact-path field is gone. Lives in `service::dto::proof`.
+- **Native ar1cs prove path.** The proving entry point is the free
+  function `service::prove(&ArtifactSet, &ProveRequest) ->
+  Result<ProveResponse, ApplicationError>`. Internally chains
+  `groth16::prover::adapter::prove_request_to_decoded` →
+  per-credential `groth16::prover::circuit_input` stage builders →
+  `ZkapCircuit::from_input` → `ark_ar1cs::synthesize_full_assignment`
+  → `ark_ar1cs::prove(&pk, &arcs, &full_assignment, OsRng)`. The
+  earlier `service::prover::Prover` struct (and its companion
+  `prove_from_unverified_paths` shortcut) were removed in the
+  binding-friendly refactor that landed shortly after the initial
+  migration; trust gating lives entirely in `ArtifactSet::load`.
 - **`ArtifactSet::load(manifest, dir)` is the single trust gate.**
   The loader checks `arcs.body_blake3() == manifest.ar1cs_blake3`
   plus `sha256` of every artifact (`circuit.ar1cs`, `pk.bin`,

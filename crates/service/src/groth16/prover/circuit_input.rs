@@ -1,10 +1,11 @@
 //! F-based per-stage witness builders for the ZKAP groth16 prove flow.
 //!
-//! This module is the post-refactor home of the algorithm that used
-//! to live in `witness_input.rs`. The differences with the old module:
+//! This module owns the per-credential algorithm that the wire-decoded
+//! `(SharedDecoded, Vec<CredentialDecoded>)` tuple is folded through.
+//! Key design points:
 //!
 //! 1. Stage builders are `pub(crate)` (callable directly by `prove()`),
-//!    not just package-private helpers used by a single `into_circuit_input`
+//!    not just package-private helpers wrapped in a single batch-level
 //!    free function.
 //! 2. Builder signatures take field elements (`F`) directly for fields
 //!    that *are* field elements (anchor_values, anchor_known_x, merkle_root,
@@ -25,11 +26,6 @@
 //!    that responsibility now lives entirely in the adapter's
 //!    `decode_field_string`, which decodes wire strings to `F` and rejects
 //!    inputs `>= F::MODULUS` before they reach these builders.
-//!
-//! NOTE: this module is introduced additively in Commit 1 of the
-//! witness_* removal refactor. In Commit 2 `adapter`/`prove` were wired
-//! to call the stage builders directly, so the module-level
-//! `#[allow(dead_code)]` from Commit 1 is gone.
 
 use ark_crypto_primitives::{
     crh::{CRHScheme, poseidon::CRH},

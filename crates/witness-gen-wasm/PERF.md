@@ -136,6 +136,38 @@ Step 2 Tier 1 (`wasm-opt -O3 --enable-simd --enable-bulk-memory ...`)
 typically removes 15–30% from this number. Post-optimization size lands
 in PERF.md after that PR.
 
+## CI SLA gate (PR-1b)
+
+These numbers are pinned in `baseline.json` and policed by
+`.github/workflows/wasm-perf.yml`. On each PR that touches
+`crates/witness-gen-wasm/**`, `Cargo.toml`, or `Cargo.lock`, the
+workflow runs the bench on a `macos-14` (Apple Silicon) runner and
+fails the check when any benchmark's measured mean exceeds the
+baseline value by more than `slack_pct` (default 10%, overridable
+via the `SLACK_PCT` env in the workflow step).
+
+The comparison script is `scripts/check-regression.py`. Run it
+locally after `cargo bench` to validate before pushing:
+
+```bash
+cargo bench -p zkap-witness-gen-wasm
+python3 crates/witness-gen-wasm/scripts/check-regression.py
+# or with custom slack:
+SLACK_PCT=15 python3 crates/witness-gen-wasm/scripts/check-regression.py
+```
+
+**Updating the baseline.** When Step 2 perf optimisations (wasm-opt,
+SIMD, etc.) land and reduce measured times, refresh `baseline.json`
+with the new numbers in the same PR that introduces the optimisation.
+That keeps the gate aligned with the latest reality instead of
+silently allowing regression-from-optimum.
+
+**Host-class drift.** The baseline is calibrated on Apple-Silicon
+hardware. Running the gate on a different host class (e.g. Linux
+x86_64 laptops, Intel Macs) will false-positive across the board.
+For local dev on non-matching hosts, either skip the gate or set
+`SLACK_PCT` generously. Future work: per-host calibration sections.
+
 ## What this baseline does NOT yet measure
 
 - **aarch64 mobile arch.** All numbers above run wasmtime on the

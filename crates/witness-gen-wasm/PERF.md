@@ -128,13 +128,63 @@ the runtime numbers — the cdylib's `.wasm` size bounds the
 download-and-instantiate path on browser/RN/mobile clients.
 
 ```text
-$ ls -l target/wasm32-unknown-unknown/release/zkap_witness_gen_wasm.wasm
-1,039,908 bytes (~1.0 MB, pre-wasm-opt)
+# Pre-wasm-opt (`cargo build --target wasm32-unknown-unknown --release`):
+1,039,908 bytes  (~1.0 MB)
+
+# Post Step 2 Tier 1.1 (`scripts/optimize-wasm.sh`, wasm-opt -O3):
+  864,088 bytes  (~0.83 MB, -16.9%)
 ```
 
-Step 2 Tier 1 (`wasm-opt -O3 --enable-simd --enable-bulk-memory ...`)
-typically removes 15–30% from this number. Post-optimization size lands
-in PERF.md after that PR.
+## Step 2 Tier 1.1 — wasm-opt -O3 (landed)
+
+Production build now runs `crates/witness-gen-wasm/scripts/optimize-wasm.sh`
+between `cargo build --target wasm32-unknown-unknown --release` and the
+bench/parity steps. The script in-place overwrites the cdylib with the
+output of:
+
+```bash
+wasm-opt -O3 \
+    --enable-simd --enable-bulk-memory --enable-mutable-globals \
+    --enable-sign-ext --enable-nontrapping-float-to-int \
+    <wasm> -o <wasm>
+```
+
+The `--enable-*` flags whitelist the wasm features the Rust wasm32
+backend emits by default; without them wasm-opt rejects the input.
+SIMD is whitelisted ahead of Tier 1.2 so the same pipeline absorbs
+the rustc `+simd128` target-feature flip without changes.
+
+**Measured impact** (criterion bench against baseline.json values):
+
+| Axis × k     | Baseline (ms)    | wasm-opt (ms)    | Δ      |
+|--------------|------------------|------------------|--------|
+| wasmtime/cold/1 | 256.45         | 256.86           | +0.2%  |
+| wasmtime/warm/1 | 257.87         | 254.76           | -1.2%  |
+| wasmtime/cold/3 | 769.89         | 771.09           | +0.2%  |
+| wasmtime/warm/3 | 750.17         | 755.55           | +0.7%  |
+| wasmtime/cold/5 | 1287.7         | 1295.18          | +0.6%  |
+| wasmtime/warm/5 | 1255.7         | 1262.51          | +0.5%  |
+
+All twelve benches (rlib + wasmtime) pass the 10%-slack regression gate.
+Wasmtime cranelift JIT runtime is **largely insensitive to wasm-opt for
+this workload** — cranelift's middle-end optimisations overlap heavily
+with wasm-opt's, so the static optimisation is mostly redundant once
+JIT re-compilation runs. The win lands on:
+
+1. **Binary size: -16.9%** (175,820 bytes removed). Matters for browser
+   / RN download cost, not for desktop wasmtime runtime.
+2. **AOT path (cwasm)** — pre-optimised input feeds Cranelift's
+   `precompile_module` cheaper. Verified once Step 5 wires the iOS
+   AOT axis in.
+3. **Browser engines (V8, JSC, SpiderMonkey)** — these run less
+   aggressive optimisation at JIT time than Cranelift, so wasm-opt's
+   static pass becomes load-bearing there. Quantified at SDK
+   integration time (Step 4 / 5).
+
+`baseline.json` values are **unchanged** by this step — runtime didn't
+improve, so updating would just encode machine noise. The next lever
+(Tier 1.2 — `rustc -C target-feature=+simd128`) is where the wasmtime
+axis is expected to actually move.
 
 ## CI SLA gate (PR-1b)
 
@@ -190,20 +240,24 @@ For local dev on non-matching hosts, either skip the gate or set
 ## Reproducing
 
 ```bash
-# Prereq: install the wasm32 target.
+# Prereq: install the wasm32 target + binaryen (for wasm-opt).
 rustup target add wasm32-unknown-unknown
+brew install binaryen   # or: cargo install wasm-opt
 
 # 1. Build the cdylib the bench / parity test load.
 cargo build --target wasm32-unknown-unknown --release -p zkap-witness-gen-wasm
 
-# 2. Confirm parity (rlib == wasmtime, byte-for-byte).
+# 2. Apply wasm-opt -O3 in place (Step 2 Tier 1.1; production build step).
+crates/witness-gen-wasm/scripts/optimize-wasm.sh
+
+# 3. Confirm parity (rlib == wasmtime, byte-for-byte).
 cargo test --release -p zkap-witness-gen-wasm --test parity
 
-# 3. Run the criterion suite. ~10-15 min on first run. NOTE: cargo bench
+# 4. Run the criterion suite. ~10-15 min on first run. NOTE: cargo bench
 #    inherits [profile.release] automatically; passing --release errors
 #    out ("unexpected argument '--release'").
 cargo bench -p zkap-witness-gen-wasm
 
-# 4. Open the HTML report.
+# 5. Open the HTML report.
 open target/criterion/report/index.html
 ```

@@ -74,6 +74,22 @@ jobs:
         # zkap_witness_gen_wasm.wasm`.
         run: cargo build --target wasm32-unknown-unknown --release -p zkap-witness-gen-wasm
 
+      - name: Install binaryen (wasm-opt)
+        # Step 2 Tier 1.1: wasm-opt -O3 is part of the production build
+        # pipeline. macos-14 runners ship Homebrew; binaryen provides
+        # the `wasm-opt` binary the optimize-wasm.sh script invokes.
+        run: brew install binaryen
+
+      - name: wasm-opt -O3 (in place)
+        # Overwrites the cdylib produced by `cargo build` so both parity
+        # and bench measure the production-representative binary. See
+        # crates/witness-gen-wasm/scripts/optimize-wasm.sh for the flag
+        # set + binary-size accounting. ~15-17% size reduction observed
+        # locally; runtime under wasmtime cranelift is largely
+        # insensitive (cranelift re-derives most of what wasm-opt does),
+        # so the gate values in baseline.json are unchanged by this step.
+        run: crates/witness-gen-wasm/scripts/optimize-wasm.sh
+
       - name: Parity test (rlib == wasmtime byte-identical)
         # IRON RULE regression guard. Runs before the bench so a parity
         # break aborts the job before we burn ~15 min of bench time.

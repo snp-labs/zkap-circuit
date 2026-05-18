@@ -397,6 +397,56 @@ heap cap). The combination of streaming + allocator swap + arena
 reset is the realistic path to fitting under 256 MiB at k=5; that's
 a multi-PR investigation, not a single-session config flip.
 
+## Mobile-RSS Lever #1 — bundle streaming (landed)
+
+`crates/service/src/groth16/prover/prove.rs` now exposes
+`synthesize_witnesses_streaming<Sink: FnMut(WitnessBundle) ->
+Result<(), ApplicationError>>` as the primitive. The Vec-returning
+`synthesize_witnesses` becomes a thin wrapper that pushes into a Vec
+inside the closure -- native callers see no API change. The wasm
+`synthesize_witness_inner` adopts the streaming primitive directly,
+serialising each bundle into the output buffer and dropping the
+source before the next iteration. The host-visible wire format is
+unchanged: a `u64` LE length prefix followed by each `WitnessBundle`
+serialised by `CanonicalSerialize::serialize_uncompressed`, byte-
+identical to `Vec<WitnessBundle>::serialize_uncompressed`. The
+parity test (rlib vs wasmtime cranelift JIT) still passes byte-for-
+byte at k = 1, 3, 5.
+
+**Measured impact** (`memory_profile.rs`, post Tier 1.1 + 1.2):
+
+| `k` | Δ pages (pre-streaming) | Δ pages (post-streaming) | savings (pages) | savings (MiB) |
+|----:|------------------------:|-------------------------:|----------------:|--------------:|
+|   1 |                   1,035 |                    1,035 |               0 |             0 |
+|   3 |                   5,060 |                    4,473 |             587 |          36.7 |
+|   5 |                  10,032 |                    8,569 |           1,463 |          91.4 |
+
+- At `k = 1` the savings are zero by construction -- nothing to
+  stream away when only one bundle is produced.
+- At `k = 5` the saving is **-91.4 MiB**, slightly below the upper
+  bound of `(k-1) * 27 MiB = 108 MiB` predicted from
+  `full_assignment.len() * 32 B`. The ~16 MiB shortfall is allocator
+  fragmentation overhead: the freed bundle's `Vec<F>` does not
+  always land back where the next iteration's intermediate
+  allocations want to draw from.
+- The non-bundle dominant cost (per-iter intermediates +
+  `synthesize_full_assignment` workspace + rayon dead-weight) is
+  untouched by this lever, as expected.
+
+**Remaining peak after streaming**, against typical mobile envelopes:
+
+| `k` | post-streaming peak | iOS jetsam (4 GiB device, ~3 GiB ceiling) | Android mid-tier (512 MiB heap) | Android high-end (1 GiB heap) |
+|----:|--------------------:|:------------------------------------------|:--------------------------------|:------------------------------|
+|   1 |             ~66 MiB | fits comfortably                          | fits                            | fits                          |
+|   3 |            ~280 MiB | fits                                      | fits with headroom for prover   | fits                          |
+|   5 |            ~535 MiB | fits                                      | **OOM**                         | tight (Groth16 prover next)   |
+
+Streaming clears the `k = 3` mid-tier Android case from "tight" to
+"fits with headroom for prover", which is the meaningful product win
+for v0.2. `k = 5` on mid-tier Android remains a blocker; the path
+through it is the allocator-swap / arena-reset / parallel-flag work
+outlined in the lever survey above, not a single config flip.
+
 ## CI SLA gate (PR-1b)
 
 These numbers are pinned in `baseline.json` and policed by

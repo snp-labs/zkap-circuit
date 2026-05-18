@@ -47,7 +47,8 @@
 use std::cell::RefCell;
 
 use ark_serialize::CanonicalSerialize;
-use zkap_service::{CircuitConfig, ProveRequest, WitnessBundle, synthesize_witnesses};
+use zkap_service::error::ApplicationError;
+use zkap_service::{CircuitConfig, ProveRequest, synthesize_witnesses_streaming};
 
 thread_local! {
     /// Most recent successful CanonicalSerialize output. The
@@ -182,12 +183,27 @@ fn synthesize_witness_inner(req_bytes: &[u8], cfg_bytes: &[u8]) -> Result<Vec<u8
         .map_err(|e| format!("ProveRequest JSON decode failed: {e}"))?;
     let cfg: CircuitConfig = serde_json::from_slice(cfg_bytes)
         .map_err(|e| format!("CircuitConfig JSON decode failed: {e}"))?;
-    let bundles: Vec<WitnessBundle> =
-        synthesize_witnesses(&cfg, &request).map_err(|e| format!("synthesize_witnesses: {e}"))?;
+
+    // `Vec<T>::serialize_uncompressed` writes a u64 LE length prefix
+    // followed by each element serialised in order. We emit the same
+    // wire layout manually so the host can `Vec::<WitnessBundle>::
+    // deserialize_uncompressed` the bytes unchanged, while never
+    // materialising a `Vec<WitnessBundle>` in linear memory. This
+    // recovers `(k-1) * sizeof(WitnessBundle) ~ 27 MiB / cred` of peak
+    // vs the prior collect-then-serialize path. See
+    // `crates/witness-gen-wasm/PERF.md` (mobile-RSS investigation).
     let mut out = Vec::new();
-    bundles
+    (request.credentials.len() as u64)
         .serialize_uncompressed(&mut out)
-        .map_err(|e| format!("CanonicalSerialize failed: {e}"))?;
+        .map_err(|e| format!("CanonicalSerialize len prefix failed: {e}"))?;
+    synthesize_witnesses_streaming(&cfg, &request, |bundle| {
+        bundle.serialize_uncompressed(&mut out).map_err(|e| {
+            ApplicationError::ProofGenerationFailed(format!(
+                "WitnessBundle serialize_uncompressed failed: {e}"
+            ))
+        })
+    })
+    .map_err(|e| format!("synthesize_witnesses: {e}"))?;
     Ok(out)
 }
 

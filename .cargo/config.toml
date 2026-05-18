@@ -1,0 +1,20 @@
+# Cargo build configuration -- workspace-scoped.
+#
+# Today this file exists solely to pin the wasm32 target-feature set
+# for the witness-gen-wasm cdylib. The block applies only when
+# `--target wasm32-unknown-unknown` is on the cargo command line; the
+# host (native rlib + workspace tests) is untouched.
+#
+# Step 2 Tier 1.2 of the cross-platform SDK plan. See
+# crates/witness-gen-wasm/PERF.md.
+
+[target.wasm32-unknown-unknown]
+# Enable wasm SIMD (v128 ops) and bulk-memory in the rustc backend so
+# Cranelift / browser engines get vectorisable IR for the workload's
+# inner loops (Poseidon hashing, BN254 limb arith, RSA verify).
+# `+bulk-memory` is a Rust wasm32 default since ~1.77; restated here
+# to make the contract explicit -- it pairs with `--enable-bulk-memory`
+# in scripts/optimize-wasm.sh so the wasm-opt pass accepts the input
+# unconditionally. `+simd128` is the actual lever; without it Rust
+# emits scalar i32/i64 ops and wasm-opt cannot vectorise after the fact.
+rustflags = ["-C", "target-feature=+simd128,+bulk-memory"]

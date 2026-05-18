@@ -186,6 +186,90 @@ improve, so updating would just encode machine noise. The next lever
 (Tier 1.2 — `rustc -C target-feature=+simd128`) is where the wasmtime
 axis is expected to actually move.
 
+## Step 2 Tier 1.2 — rustc `+simd128,+bulk-memory` (landed)
+
+`.cargo/config.toml` pins `target-feature=+simd128,+bulk-memory` for
+the `wasm32-unknown-unknown` target. The host (rlib native + workspace
+tests) is untouched -- `[target.wasm32-...]` only applies when
+`--target wasm32-...` is on the command line. `+bulk-memory` is a Rust
+wasm32 default since ~1.77; restated here to make the contract
+explicit and to keep the rustflags consistent with the `--enable-*`
+flags in `scripts/optimize-wasm.sh`. The lever is `+simd128`: without
+it rustc emits scalar i32/i64 ops and wasm-opt cannot vectorise after
+the fact.
+
+**Verified SIMD lands in the binary** (post Tier 1.2 + wasm-opt):
+
+```bash
+wasm-tools print zkap_witness_gen_wasm.wasm \
+    | grep -cE '\b(v128|i8x16|i16x8|i32x4|i64x2|f32x4|f64x2)\.'
+8563
+```
+
+Top v128 op kinds by frequency:
+
+| Op kind             | Count | Notes                                       |
+|---------------------|-------|---------------------------------------------|
+| `v128.store`        | 4143  | 16-byte coalesced store                     |
+| `v128.load`         | 3568  | 16-byte coalesced load                      |
+| `v128.const`        |  503  | Vector constants (masks, etc.)              |
+| `i8x16.shuffle`     |   47  | Byte permute / cross-lane                   |
+| `i32x4.add`         |   44  | Lane-parallel 4×i32 add                     |
+| `i8x16.replace_lane`|   37  | Lane insert                                 |
+| ... (other arith)   | ~200  | Mixed extract/replace/splat/and/or/eq/shift |
+
+**90% of v128 ops are bulk load/store** -- rustc/LLVM coalesces
+adjacent 16-byte memory operations into single vector ops. The crypto
+inner loops (Poseidon Montgomery reduce, RSA mod-exp, BN254 `BigInt<4>`
+limb arithmetic) **do not auto-vectorise** here because their data
+dependence pattern doesn't fit the SLP / loop-vector matchers. The
+runtime win therefore comes from reduced memory traffic on
+serialise/assemble paths, not from vectorised crypto kernels.
+
+**Measured impact (Tier 1.1 → Tier 1.2):**
+
+| Axis × k        | Tier 1.1 (ms) | Tier 1.2 (ms) | Δ vs T1.1 | Δ vs PR-1a |
+|-----------------|---------------|---------------|-----------|------------|
+| wasmtime/cold/1 | 256.86        | 250.07        |  -2.6%    | -2.5%      |
+| wasmtime/warm/1 | 254.76        | 249.40        |  -2.1%    | -3.3%      |
+| wasmtime/cold/3 | 771.09        | 762.22        |  -1.2%    | -1.0%      |
+| wasmtime/warm/3 | 755.55        | 741.84        |  -1.8%    | -1.1%      |
+| wasmtime/cold/5 | 1295.18       | 1286.20       |  -0.7%    | -0.1%      |
+| wasmtime/warm/5 | 1262.51       | 1235.40       |  -2.1%    | -1.6%      |
+
+Average wasmtime improvement vs PR-1a baseline: **-1.6%** (range
+-0.1% to -3.3%). Real but modest, consistent with the load/store-heavy
+SIMD profile above. The wasmtime / rlib ratio drops from ~2.0x to
+~1.95x at k=1; the 2x ceiling is still set by cranelift JIT overhead
+on per-credential synth, not by the static optimisation layer. Closing
+that ratio further requires either AOT (cwasm pre-compile, Step 5),
+ABI-level changes that bypass JSON parse (Tier 2 gate), or
+algorithmic-level changes to the crypto kernels.
+
+The rlib axis drifted +2-5% upward in the Tier 1.2 measurement run,
+but the rlib code path is byte-identical to PR-1a (no rlib code or
+build-flag change touches that axis -- `[target.wasm32-...]` rustflags
+do not affect native rlib builds). Attribution: bench-machine thermal
+load after a sustained compile+bench loop. Decision: leave `rlib_*`
+entries in `baseline.json` at the cold-machine PR-1a values, so the
+gate keeps its sensitivity for that axis. `wasmtime_*` entries are
+refreshed to the Tier 1.2 measurements so future regressions are
+caught against the tighter floor.
+
+### Wasm binary size after Tier 1.2
+
+| Stage                       | Bytes      | Δ vs PR-1a |
+|-----------------------------|------------|------------|
+| PR-1a (scalar, pre-wasm-opt)| 1,039,908  | --         |
+| Tier 1.1 (wasm-opt only)    |   864,088  | -16.9%     |
+| Tier 1.2 pre-wasm-opt       | 1,004,717  |  -3.4%     |
+| **Tier 1.2 + wasm-opt**     |   **836,370** | **-19.6%** |
+
+SIMD-emitted code is slightly smaller pre-wasm-opt (vectorised ops are
+more compact than the equivalent scalar sequences), and stacks
+multiplicatively with wasm-opt's -16.9%. -19.6% from baseline -- a
+meaningful download-cost reduction for browser/RN clients.
+
 ## CI SLA gate (PR-1b)
 
 These numbers are pinned in `baseline.json` and policed by

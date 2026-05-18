@@ -75,7 +75,30 @@ impl WasmModule {
     }
 }
 
+/// Wasm spec page size in bytes (= 64 KiB).
+///
+/// `#[allow(dead_code)]`: this module is included via
+/// `#[path = "..."]` by both the bench (`benches/synthesize.rs`),
+/// the parity test (`tests/parity.rs`), and the memory profile test
+/// (`tests/memory_profile.rs`). Only the last one references
+/// `WASM_PAGE_SIZE` / `memory_pages`, so the bench / parity builds
+/// would otherwise trip `-D dead_code`. The `allow` keeps the
+/// shared module compile-clean for every consumer.
+#[allow(dead_code)]
+pub const WASM_PAGE_SIZE: usize = 65_536;
+
 impl WasmInstance {
+    /// Current linear-memory size in wasm pages (1 page = 64 KiB).
+    ///
+    /// Wasm linear memory only ever grows, so reading this after a
+    /// synthesize call yields the per-instance peak. Used by
+    /// `tests/memory_profile.rs`. See `WASM_PAGE_SIZE` above for the
+    /// `#[allow(dead_code)]` rationale.
+    #[allow(dead_code)]
+    pub fn memory_pages(&self) -> usize {
+        self.memory.data_size(&self.store) / WASM_PAGE_SIZE
+    }
+
     /// Drive `synthesize_witness` end-to-end: allocate two host
     /// buffers, write the input JSON, call the export, read back the
     /// canonical-serialize bytes, and free the buffers.

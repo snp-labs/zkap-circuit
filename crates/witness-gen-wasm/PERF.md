@@ -270,6 +270,64 @@ more compact than the equivalent scalar sequences), and stacks
 multiplicatively with wasm-opt's -16.9%. -19.6% from baseline -- a
 meaningful download-cost reduction for browser/RN clients.
 
+## Wasm linear-memory footprint
+
+Captured via the integration test `tests/memory_profile.rs`, which
+reads `wasmtime::Memory::data_size()` before and after a single
+`synthesize_witness` call per `k`. The test asserts a generous
+per-credential drift envelope so a future per-credential memory
+regression in `synthesize_witnesses` trips the gate. Reproduce with:
+
+```bash
+cargo test --release -p zkap-witness-gen-wasm \
+    --test memory_profile -- --nocapture
+```
+
+**Measured (post Tier 1.1 + Tier 1.2)**:
+
+| `k` | initial pages | post-call peak | Δ pages | per-cred (MiB) |
+|----:|--------------:|---------------:|--------:|---------------:|
+|   1 |            18 |          1,053 |   1,035 |             64 |
+|   3 |            18 |          5,078 |   5,060 |            105 |
+|   5 |            18 |         10,050 |  10,032 |            125 |
+
+- **`initial_pages = 18`** — what the cdylib reserves statically in
+  its memory section (~1.15 MiB).
+- **Per-credential cost climbs from 64 → 125 MiB** between k=1 and
+  k=5 (slightly super-linear). Some amortisation at k=1 (fixed witness
+  scaffolding), and arkworks intermediate allocations dominate as k
+  grows.
+- **Peak at k=5 is ~628 MiB**, against a typical mobile process
+  budget of 1-3 GiB on iOS (jetsam) and 256 MiB - 1 GiB per app on
+  Android. The witness generator alone consumes a meaningful fraction
+  of that ceiling on Android-class devices.
+
+**Implication for the Step 2 Tier 1.3 "pre-grow" idea.** The handoff
+plan called for setting `--initial-memory=1024 pages (64 MiB)` to
+suppress the per-call `memory.grow` cost. The measurement above
+overturns that plan:
+
+- 1024 pages does **not** envelope even `k = 1` (peak 1053 pages).
+  `memory.grow` would still fire on every cold call, so the
+  optimisation has zero effect on warm steady-state.
+- Envelope-sizing to `k = 5` would mean baking `~10,240 pages
+  (~640 MiB)` of initial memory into the cdylib -- a footprint that
+  is unconditionally allocated on instance construction even when
+  the caller only intends to prove `k = 1`. On mobile this is a
+  regression: cold-start RSS spike vs the natural grow-as-needed
+  curve.
+- The actual leverage on this axis is **reducing peak memory** (per-
+  credential allocator churn, intermediate-buffer reuse, arkworks
+  feature-flag tuning), not pre-growing past it. That work is
+  deferred to a focused mobile-RSS investigation -- it needs a
+  scoped plan + arkworks-version compatibility audit, not a
+  drive-by config-flag flip.
+
+**Decision:** Tier 1.3 (memory pre-grow) as specified in the handoff
+is **dropped**. The `memory_profile` test remains as the
+characterisation artefact that informed the decision and as the
+forward-going drift gate for per-credential memory growth.
+
 ## CI SLA gate (PR-1b)
 
 These numbers are pinned in `baseline.json` and policed by

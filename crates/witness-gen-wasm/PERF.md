@@ -328,6 +328,75 @@ is **dropped**. The `memory_profile` test remains as the
 characterisation artefact that informed the decision and as the
 forward-going drift gate for per-credential memory growth.
 
+### Decomposition: bundle vs non-bundle
+
+`memory_profile.rs` also deserialises the `Vec<WitnessBundle>` output
+and reports the per-bundle witness vector length, so the linear-memory
+peak can be decomposed into "live payload" vs "everything else"
+(intermediates, fragmentation, runtime dead-weight).
+
+| `k` | total Δ (MiB) | `full_assignment.len()` | bundles total (MiB) | **non-bundle (MiB)** | non-bundle share |
+|----:|--------------:|------------------------:|--------------------:|---------------------:|-----------------:|
+|   1 |            64 |                 895,551 |                  27 |                   37 |              58% |
+|   3 |           316 |                 895,565 |                  81 |                  235 |              74% |
+|   5 |           627 |                 895,579 |                 136 |                  491 |              78% |
+
+- **`full_assignment.len()` is essentially constant in `k`** — the
+  ZkapCircuit's wire count is determined by the circuit, not by the
+  number of credentials. Each bundle is ~27 MiB of `Vec<F>` regardless
+  of `k`.
+- **Bundle storage scales linearly** at ~27 MiB / credential. At k=5,
+  the live bundles account for 136 MiB.
+- **Non-bundle memory dominates and scales super-linearly** — 37 MiB
+  at k=1 grows to 491 MiB at k=5 (13.2x). Per-credential cost of
+  non-bundle memory **itself climbs** with `k` (50 → 64 MiB/cred
+  between k=1→3 and k=3→5).
+
+What is in "non-bundle"? Educated decomposition from reading
+`crates/service/src/groth16/prover/prove.rs`:
+
+1. **Per-iteration intermediate buffers** — `build_anchor_stage` /
+   `build_jwt_stage` / `build_audience_stage` / `build_merkle_witness`
+   / `compute_public_inputs` each allocate Vec<F> witnesses, packed
+   bytes, and Poseidon hash inputs. `synthesize_full_assignment`
+   internally allocates the R1CS constraint matrices and a working
+   witness vector. All of this is freed at end-of-iteration, but
+   wasm linear memory does not shrink (linear memory is monotonic).
+2. **Allocator fragmentation** — long-lived `bundles` Vec entries
+   interleave with short-lived per-iter allocations. Rust's default
+   wasm32 allocator (dlmalloc) coalesces freed blocks but cannot
+   reuse a freed region that is now smaller than the next
+   allocation's request, so each iteration tends to grow the
+   high-water mark further.
+3. **`rayon` thread-pool dead-weight** — the workspace pins ark-ff /
+   ark-ec / ark-poly with `features = ["parallel"]` and pulls in
+   `rayon` + `crossbeam-deque` + `crossbeam-epoch` transitively. On
+   `wasm32-unknown-unknown` (no atomics, no native threads) those
+   pathways either fall back to sequential or allocate worker
+   deques + thread-local arenas that are never used. Fixed-cost
+   inflation, not super-linear.
+4. **`Vec<F>` clones into `ZkapCircuitInput`** — `matrix.clone()`,
+   `poseidon_param.clone()`, `base64_table.clone()`, `selector
+   .clone()` happen per credential at lines 211-230. Each
+   `VandermondeMatrix<F>` is `n × k` field elements.
+
+**Implications for mitigation lever choice** (none implemented in
+this PR; recorded as input to the follow-on mobile-RSS plan):
+
+| Lever                                             | Reduction at k=5 | Risk / effort        |
+|---------------------------------------------------|------------------|----------------------|
+| Stream bundles via callback / `Write` sink        | ~108 MiB linear  | API change; low      |
+| Bumpalo arena reset per credential                | 50-70% of non-bundle | new allocator + cap audit |
+| Swap wasm allocator (talc / lol_alloc)            | 20-40% of non-bundle | dep add + parity audit |
+| Disable `parallel` on wasm32 (per-target feature) | 10-30 MiB fixed  | feature-gate refactor across workspace |
+| Audit per-iter clones in prove.rs                 | unknown          | localised; low risk  |
+
+The streaming change alone is **insufficient** to ship to mid-tier
+Android (peak after streaming at k=5: ~520 MiB, still over 512 MiB
+heap cap). The combination of streaming + allocator swap + arena
+reset is the realistic path to fitting under 256 MiB at k=5; that's
+a multi-PR investigation, not a single-session config flip.
+
 ## CI SLA gate (PR-1b)
 
 These numbers are pinned in `baseline.json` and policed by

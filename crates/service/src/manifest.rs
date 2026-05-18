@@ -117,11 +117,12 @@ pub struct ArtifactEntry {
     pub size: u64,
     /// Classification — `"core"` / `"domain"` / `"domain-optional"`.
     pub kind: String,
-    /// Schema owner pointer (e.g. `"npm:@baerae/zkap-zkp@^1"`) for the
+    /// Schema owner pointer (e.g. `"npm:@baerae/zkap-zkp@^0.1"`) for the
     /// `circuit_config` artifact.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub schema_owner: Option<String>,
-    /// Schema reference (e.g. `"ZkapCircuitConfigV1"`).
+    /// Schema reference (e.g. `"JsCircuitConfig"` — the TS type the
+    /// `@baerae/zkap-zkp` SDK actually exports for this shape).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub schema_ref: Option<String>,
 }
@@ -476,8 +477,8 @@ mod tests {
             .with_artifact(
                 ArtifactKey::CircuitConfig,
                 ArtifactEntry {
-                    schema_owner: Some("npm:@baerae/zkap-zkp@^1".into()),
-                    schema_ref: Some("ZkapCircuitConfigV1".into()),
+                    schema_owner: Some("npm:@baerae/zkap-zkp@^0.1".into()),
+                    schema_ref: Some("JsCircuitConfig".into()),
                     ..sample_entry("config.json", "domain")
                 },
             )

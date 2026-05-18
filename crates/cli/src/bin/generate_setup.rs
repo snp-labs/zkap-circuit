@@ -183,8 +183,8 @@ fn main() {
                 &cfg_path,
                 "config.json",
                 "domain",
-                Some("npm:@baerae/zkap-zkp@^1".into()),
-                Some("ZkapCircuitConfigV1".into()),
+                Some("npm:@baerae/zkap-zkp@^0.1".into()),
+                Some("JsCircuitConfig".into()),
             ),
         )
         .with_setup_provenance(provenance)

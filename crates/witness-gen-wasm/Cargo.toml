@@ -17,13 +17,56 @@ zkap-service = { workspace = true }
 serde_json   = { workspace = true }
 ark-serialize = { workspace = true }
 
+[dev-dependencies]
+# `criterion` drives the cold/warm benchmark suite under
+# `benches/synthesize.rs`. `wasmtime` is the JIT runtime we instantiate
+# the cdylib build inside, on the host, for the wasm32 measurement
+# axis and the parity test. The bench + parity test additionally
+# borrow fixture-construction helpers from `zkap-service` (real RSA
+# JWT + Merkle inputs) so the witness path doesn't reject inputs at
+# the constraint layer.
+criterion = { workspace = true }
+wasmtime = { workspace = true }
+zkap-service = { workspace = true }
+ark-utils = { workspace = true, features = ["field-serde", "io"] }
+ark-bn254 = { workspace = true }
+ark-ff = { workspace = true }
+ark-std = { workspace = true }
+ark-crypto-primitives = { workspace = true }
+ark-serialize = { workspace = true }
+circuit = { workspace = true }
+gadget = { workspace = true, default-features = false, features = ["crypto", "base64", "rsa"] }
+rsa = { workspace = true }
+sha2 = { workspace = true }
+base64 = { workspace = true }
+signature = "2"
+anyhow = "1"
+
+[[bench]]
+name = "synthesize"
+harness = false
+
+[features]
+# Stub features that gate the deferred wasmtime AOT (`.cwasm`) and
+# pulley-interpreter bench axes. Empty today — wired up in a
+# follow-up PR. Declared here so `#[cfg(feature = "wasmtime_aot")]` /
+# `#[cfg(feature = "wasmtime_pulley")]` are recognised by
+# `cargo check --check-cfg` and don't surface as warnings.
+wasmtime_aot = []
+wasmtime_pulley = []
+
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-# wasm32 does not have a host CSPRNG — `getrandom`'s `js` feature
-# routes to the browser / Node `crypto` API. Synthesize is fully
-# deterministic given the inputs, but transitive ark-* deps may pull
-# `getrandom` for unrelated codepaths, so we keep this enabled
-# defensively.
-getrandom = { version = "0.2", features = ["js"] }
+# wasm32 has no host CSPRNG. We don't actually consume entropy —
+# synthesize_witnesses is fully deterministic given its inputs — but
+# transitive `ark-*` deps still link `getrandom`. The `js` feature
+# was the original defensive choice, but it pulls in
+# `__wbindgen_*` imports that bare wasmtime cannot satisfy
+# (`Instance::new: expected N imports, found 0`). The `custom`
+# feature lets us register a no-op backend (see `src/lib.rs`'s
+# `register_custom_getrandom!`) that errors loudly if any latent
+# codepath actually draws entropy, leaving the import section
+# empty for `Instance::new(_, _, &[])`.
+getrandom = { version = "0.2", features = ["custom"] }
 
 [lints]
 # `unsafe_code` is workspace-level "deny"; this crate is the only

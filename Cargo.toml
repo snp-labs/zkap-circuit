@@ -86,6 +86,13 @@ serde_json = { version = "1.0.145" }
 clap = { version = "4.5.53" }
 log = "0.4"
 
+# --- Benchmark / wasm runtime stack ---
+# Used only as dev-dependencies by `crates/witness-gen-wasm` for its
+# criterion bench suite + wasm parity integration test. Not pulled
+# into any release artifact.
+criterion = "0.5"
+wasmtime = { version = "26", default-features = false, features = ["cranelift", "runtime", "std"] }
+
 
 [profile.release]
 lto = true

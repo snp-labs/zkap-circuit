@@ -25,9 +25,12 @@ ark-serialize = { workspace = true }
 # borrow fixture-construction helpers from `zkap-service` (real RSA
 # JWT + Merkle inputs) so the witness path doesn't reject inputs at
 # the constraint layer.
-criterion = { workspace = true }
-wasmtime = { workspace = true }
+criterion    = { workspace = true }
+wasmtime     = { workspace = true }
 zkap-service = { workspace = true }
+serde        = { workspace = true, features = ["derive"] }
+serde_json   = { workspace = true }
+ark-ar1cs    = { workspace = true }
 ark-utils = { workspace = true, features = ["field-serde", "io"] }
 ark-bn254 = { workspace = true }
 ark-ff = { workspace = true }

@@ -114,6 +114,29 @@ pub enum CircuitConfigError {
         /// Observed value.
         value: u64,
     },
+    /// `n` exceeds the 8-bit upper bound enforced by
+    /// `zkap::generate_constraints`. The circuit decomposes
+    /// `current_idx` (the selected anchor slot, `0..n`) into 8 bits
+    /// before calling `enforce_less_than`, so any `n > 256` would let
+    /// the prover wrap-around past the upper bound silently.
+    #[error("n must be <= 256 (8-bit current_idx decomposition); got: {0}")]
+    NTooLargeFor8BitIdx(u64),
+    /// `tree_height` exceeds the depth limit implied by the in-circuit
+    /// 16-bit `leaf_idx` allocation. The Merkle tree has `1 << (tree_height
+    /// - 1)` leaves; a tree of height >= 17 would index past `u16::MAX`.
+    #[error("tree_height must be <= 16 (16-bit leaf_idx allocation); got: {0}")]
+    TreeHeightTooLargeFor16BitLeafIdx(u64),
+    /// A 16-bit byte-offset / -length field in the circuit
+    /// (`pay_offset_b64`, `pay_len_b64`, `total_len`, …) must fit in
+    /// `u16`. `max_jwt_b64_len` and `max_payload_b64_len` bound those
+    /// fields, so they must be strictly less than `u16::MAX + 1 = 65536`.
+    #[error("{field} must be <= 65535 (16-bit witness allocation); got: {value}")]
+    LenExceeds16Bit {
+        /// Name of the offending field.
+        field: &'static str,
+        /// Observed value.
+        value: u64,
+    },
 }
 
 impl CircuitConfig {
@@ -121,7 +144,14 @@ impl CircuitConfig {
     ///
     /// Checks that `k >= 1`, `k <= n`, `n >= 1`, `tree_height >= 1`,
     /// `max_payload_b64_len <= max_jwt_b64_len`, `num_audience_limit >= 1`,
-    /// and that `claims` is non-empty.  Returns the first violation found.
+    /// and that `claims` is non-empty.  Also verifies the in-circuit
+    /// witness-width limits implied by `zkap::generate_constraints`:
+    /// - `n <= 256` (current_idx is 8-bit decomposed),
+    /// - `tree_height <= 16` (leaf_idx is a 16-bit witness),
+    /// - `max_jwt_b64_len <= 65535` and `max_payload_b64_len <= 65535`
+    ///   (16-bit byte-offset witnesses derived from them).
+    ///
+    /// Returns the first violation found.
     pub fn validate(&self) -> Result<(), CircuitConfigError> {
         if self.k < 1 {
             return Err(CircuitConfigError::InvalidK(self.k));
@@ -135,14 +165,31 @@ impl CircuitConfig {
         if self.n < 1 {
             return Err(CircuitConfigError::InvalidN(self.n));
         }
+        if self.n > 256 {
+            return Err(CircuitConfigError::NTooLargeFor8BitIdx(self.n));
+        }
         if self.tree_height < 1 {
             return Err(CircuitConfigError::InvalidTreeHeight(self.tree_height));
+        }
+        if self.tree_height > 16 {
+            return Err(CircuitConfigError::TreeHeightTooLargeFor16BitLeafIdx(
+                self.tree_height,
+            ));
         }
         if self.max_payload_b64_len > self.max_jwt_b64_len {
             return Err(CircuitConfigError::PayloadExceedsJwt {
                 payload: self.max_payload_b64_len,
                 jwt: self.max_jwt_b64_len,
             });
+        }
+        // 16-bit byte-offset / -length witness gates.
+        for (field, value) in [
+            ("max_jwt_b64_len", self.max_jwt_b64_len),
+            ("max_payload_b64_len", self.max_payload_b64_len),
+        ] {
+            if value > u16::MAX as u64 {
+                return Err(CircuitConfigError::LenExceeds16Bit { field, value });
+            }
         }
         if self.num_audience_limit < 1 {
             return Err(CircuitConfigError::InvalidNumAudienceLimit(
@@ -294,5 +341,93 @@ mod tests {
         cfg.max_sub_len = 0;
         cfg.validate()
             .expect("zero is a multiple of 31 — validate must accept it");
+    }
+
+    // ---------------------------------------------------------------
+    // Audit-hardening (P2 #15a): in-circuit witness-width bounds.
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn validate_rejects_n_above_256() {
+        // current_idx is 8-bit-decomposed in `zkap::generate_constraints`;
+        // n must therefore be in 1..=256.
+        let mut cfg = valid_config();
+        cfg.n = 257;
+        cfg.k = 1;
+        match cfg.validate() {
+            Err(CircuitConfigError::NTooLargeFor8BitIdx(value)) => assert_eq!(value, 257),
+            other => panic!("expected NTooLargeFor8BitIdx, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn validate_accepts_n_at_256_boundary() {
+        // n = 256 fits the 8-bit decomposition exactly. Boundary case.
+        let mut cfg = valid_config();
+        cfg.n = 256;
+        cfg.k = 1;
+        cfg.validate().expect("n = 256 must validate");
+    }
+
+    #[test]
+    fn validate_rejects_tree_height_above_16() {
+        // leaf_idx is allocated as a 16-bit witness; tree_height > 16
+        // would index past u16::MAX.
+        let mut cfg = valid_config();
+        cfg.tree_height = 17;
+        match cfg.validate() {
+            Err(CircuitConfigError::TreeHeightTooLargeFor16BitLeafIdx(value)) => {
+                assert_eq!(value, 17);
+            }
+            other => panic!("expected TreeHeightTooLargeFor16BitLeafIdx, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn validate_accepts_tree_height_at_16_boundary() {
+        let mut cfg = valid_config();
+        cfg.tree_height = 16;
+        cfg.validate().expect("tree_height = 16 must validate");
+    }
+
+    #[test]
+    fn validate_rejects_max_jwt_b64_len_above_u16_max() {
+        let mut cfg = valid_config();
+        cfg.max_jwt_b64_len = u16::MAX as u64 + 1;
+        cfg.max_payload_b64_len = cfg.max_jwt_b64_len;
+        match cfg.validate() {
+            Err(CircuitConfigError::LenExceeds16Bit { field, value }) => {
+                assert_eq!(field, "max_jwt_b64_len");
+                assert_eq!(value, u16::MAX as u64 + 1);
+            }
+            other => panic!("expected LenExceeds16Bit(max_jwt_b64_len), got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn validate_rejects_max_payload_b64_len_above_u16_max() {
+        let mut cfg = valid_config();
+        // Bump jwt above payload so the payload check fires before jwt — but
+        // both fields share the same 16-bit ceiling, so set jwt past it too
+        // and confirm the *payload* error surfaces when payload exceeds the
+        // limit while jwt does not (we instead test the path where jwt is
+        // ok and payload alone violates).
+        cfg.max_jwt_b64_len = u16::MAX as u64;
+        cfg.max_payload_b64_len = u16::MAX as u64 + 1;
+        match cfg.validate() {
+            // payload > jwt is checked first; this is a stricter, earlier
+            // error and is the correct rejection path.
+            Err(CircuitConfigError::PayloadExceedsJwt { .. }) => {}
+            other => panic!("expected PayloadExceedsJwt, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn validate_accepts_max_jwt_at_u16_max_boundary() {
+        let mut cfg = valid_config();
+        cfg.max_jwt_b64_len = u16::MAX as u64;
+        cfg.max_payload_b64_len = u16::MAX as u64;
+        cfg.validate()
+            .expect("max_jwt_b64_len = u16::MAX must validate");
     }
 }

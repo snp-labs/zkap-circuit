@@ -29,9 +29,6 @@
 //! `generate_constraints` is an intentional panic-on-host-bug guard — do **not** replace it
 //! with `SynthesisError`; the panic path preserves R1CS variable allocation ordering.
 
-#![allow(unused_variables)]
-#![allow(unused_mut)]
-
 use ark_crypto_primitives::{
     crh::{
         CRHSchemeGadget,

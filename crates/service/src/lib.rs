@@ -86,10 +86,9 @@
 //! ### Drift safeguard
 //!
 //! `prove`'s canonical signature is pinned by the `const _` assertion at
-//! the bottom of this file — a signature drift becomes a compile error,
-//! not a silent rustdoc-`ignore` block. Updates to that signature must
-//! also update the diagram above and the flow doc in
-//! `crates/service/src/groth16/prover/mod.rs`.
+//! the bottom of this file, so any drift becomes a compile error.
+//! Updates to that signature must also update the diagram above and the
+//! flow doc in `crates/service/src/groth16/prover/mod.rs`.
 
 // Crate-internal `missing_docs` warning, not a `#[deny]`. Workspace-wide
 // flip is deferred until gadget reaches zero missing-docs warnings.
@@ -172,9 +171,7 @@ pub use groth16::prover::{
 };
 pub use groth16::setup::{SetupOutput, SetupRng, SetupShape, setup};
 
-// Compile-checked signature pin for the canonical `prove` entry point.
-// See the "Drift safeguard" rustdoc above — a signature change here
-// becomes a compile error rather than a silently-skipped rustdoc block.
+// Compile-checked signature pin for `prove`.
 const _ASSERT_PROVE_SIGNATURE: fn(
     &ArtifactSet,
     &dto::ProveRequest,

@@ -92,10 +92,9 @@ pub fn pad(s: &str, target_len: usize, pad_char: char) -> Result<String, TextErr
 ///
 /// Pads the string to `target_len` with `pad` byte, then splits into
 /// limb-sized chunks and converts each to a field element. Returns
-/// `Err(TextError::InvalidFormat)` if `s` is longer than `target_len`
-/// (which would have silently truncated under the previous
-/// `Vec::resize` behaviour and broken the JWT-claim length invariant
-/// the circuit relies on).
+/// `Err(TextError::InvalidFormat)` if `s` is longer than `target_len`:
+/// the JWT-claim length invariant the circuit relies on must not be
+/// silently truncated.
 pub fn str_to_limbs<F: PrimeField>(
     s: &str,
     target_len: usize,

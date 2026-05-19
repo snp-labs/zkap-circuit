@@ -25,6 +25,9 @@ time = { workspace = true }
 # from disk and emits a signed manifest via
 # `zkap_service::manifest::sign_manifest`.
 ed25519-dalek = { workspace = true }
+# F5 follow-up: zero raw 32-byte ed25519 seed buffers used by
+# `load_signing_key` before the `Vec`/`[u8;32]` falls out of scope.
+zeroize = { workspace = true }
 
 [dev-dependencies]
 # Smoke tests construct a valid base64-encoded 256-byte RSA-2048 modulus

@@ -23,6 +23,7 @@ use clap::Parser;
 use ed25519_dalek::{SECRET_KEY_LENGTH, SigningKey};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use zeroize::{Zeroize, Zeroizing};
 use zkap_cli::{
     ArtifactEntry, ArtifactKey, BuildMetadata, ManifestBuilder, SetupProvenance, built_at_now,
     canonical_json_bytes, compute_circuit_tag, die, load_config_or_exit, read_arcs_blake3_hex,
@@ -282,8 +283,10 @@ fn main() {
 /// construct a [`SigningKey`]. Aborts with [`die`] on any failure
 /// (read, length, parse) — the CLI is process-mode, not library.
 fn load_signing_key(path: &Path) -> SigningKey {
-    let bytes = std::fs::read(path)
-        .unwrap_or_else(|e| die(format!("read signing key {}: {}", path.display(), e)));
+    let bytes: Zeroizing<Vec<u8>> = Zeroizing::new(
+        std::fs::read(path)
+            .unwrap_or_else(|e| die(format!("read signing key {}: {}", path.display(), e))),
+    );
     if bytes.len() != SECRET_KEY_LENGTH {
         die(format!(
             "signing key {} must be exactly {} raw bytes (got {})",
@@ -294,7 +297,9 @@ fn load_signing_key(path: &Path) -> SigningKey {
     }
     let mut seed = [0u8; SECRET_KEY_LENGTH];
     seed.copy_from_slice(&bytes);
-    SigningKey::from_bytes(&seed)
+    let key = SigningKey::from_bytes(&seed);
+    seed.zeroize();
+    key
 }
 
 /// Build an [`ArtifactEntry`] by hashing `disk_path` and reading its size.

@@ -95,6 +95,7 @@ log = "0.4"
 # Default `fast` is opt-in below because the workspace already pulls
 # precomputed-tables transitively via other crypto deps.
 ed25519-dalek = { version = "2.2", default-features = false, features = ["std", "zeroize"] }
+zeroize = { version = "1.8", default-features = false, features = ["alloc"] }
 
 # --- Benchmark / wasm runtime stack ---
 # Used only as dev-dependencies by `crates/witness-gen-wasm` for its

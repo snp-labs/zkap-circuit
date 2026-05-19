@@ -43,6 +43,7 @@ ark-serialize         = { workspace = true }
 memmap2               = { workspace = true }
 blake2                = { workspace = true }
 rand                  = { workspace = true }
+rand_chacha           = { workspace = true }
 # Native prove flow — Commit 4 of the 2026-05 ark-ar1cs boundary
 # migration. The `ark-ar1cs` root crate exposes `prove`,
 # `synthesize_full_assignment`, and the `format::ArcsFile` envelope

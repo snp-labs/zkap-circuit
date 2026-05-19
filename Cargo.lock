@@ -2769,6 +2769,7 @@ dependencies = [
  "log",
  "memmap2",
  "rand",
+ "rand_chacha",
  "rsa",
  "serde",
  "serde_json",

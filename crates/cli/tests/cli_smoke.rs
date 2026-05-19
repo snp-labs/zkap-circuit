@@ -188,3 +188,41 @@ fn generate_hash_leaf_iss_pk_count_mismatch_exits_nonzero() {
         "stderr should mention 'Mismatch', got: {stderr}"
     );
 }
+
+/// `generate_setup --rng-seed <hex>` must be rejected unless `--allow-test-only` is also set.
+///
+/// This guards the safety invariant: a deterministic-seed bundle can only be
+/// produced when the operator explicitly acknowledges it is test-only.
+#[test]
+fn generate_setup_rng_seed_requires_allow_test_only() {
+    let scratch = ScratchDir::new("setup_seed_gate");
+    let cfg = write_sample_config(&scratch);
+    let out = scratch.join("out");
+    std::fs::create_dir_all(&out).expect("create out dir");
+
+    // 32-byte all-zeros seed, hex-encoded.
+    let seed_hex = "0000000000000000000000000000000000000000000000000000000000000000";
+
+    let output = Command::new(env!("CARGO_BIN_EXE_generate_setup"))
+        .arg("--config")
+        .arg(&cfg)
+        .arg("--output")
+        .arg(&out)
+        .arg("--circuit-id")
+        .arg("test-circuit")
+        .arg("--rng-seed")
+        .arg(seed_hex)
+        // NOTE: --allow-test-only is intentionally omitted.
+        .output()
+        .expect("spawn generate_setup");
+
+    assert!(
+        !output.status.success(),
+        "generate_setup must exit non-zero when --rng-seed is given without --allow-test-only"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("--allow-test-only"),
+        "stderr must mention '--allow-test-only', got: {stderr}"
+    );
+}

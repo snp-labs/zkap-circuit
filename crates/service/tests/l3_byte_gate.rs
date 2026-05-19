@@ -299,7 +299,7 @@ fn tier_a_ar1cs_blake3_f1() {
     std::fs::create_dir_all(&tmp_dir).expect("create tmp dir");
 
     let cfg = circuit_config_f1();
-    setup(&cfg, &tmp_dir, &mut rand::rngs::OsRng, None)
+    setup(&cfg, &tmp_dir, zkap_service::SetupRng::OsRng, None)
         .expect("service::setup must succeed for F1 config");
 
     let arcs_path = tmp_dir.join("circuit.ar1cs");
@@ -325,7 +325,7 @@ fn tier_a_ar1cs_blake3_f2() {
     std::fs::create_dir_all(&tmp_dir).expect("create tmp dir");
 
     let cfg = circuit_config_f2();
-    setup(&cfg, &tmp_dir, &mut rand::rngs::OsRng, None)
+    setup(&cfg, &tmp_dir, zkap_service::SetupRng::OsRng, None)
         .expect("service::setup must succeed for F2 config");
 
     let arcs_path = tmp_dir.join("circuit.ar1cs");
@@ -360,7 +360,7 @@ fn tier_a_ar1cs_blake3_f3() {
     std::fs::create_dir_all(&tmp_dir).expect("create tmp dir");
 
     let cfg = circuit_config_f3();
-    setup(&cfg, &tmp_dir, &mut rand::rngs::OsRng, None)
+    setup(&cfg, &tmp_dir, zkap_service::SetupRng::OsRng, None)
         .expect("service::setup must succeed for F3 config");
 
     let arcs_path = tmp_dir.join("circuit.ar1cs");

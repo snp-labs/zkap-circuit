@@ -20,10 +20,6 @@
 //! `built_at` for byte-reproducible runs.
 
 use clap::Parser;
-use rand::RngCore;
-use rand::rngs::OsRng;
-use rand_chacha::ChaCha20Rng;
-use rand_chacha::rand_core::SeedableRng;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use zkap_cli::{
@@ -31,7 +27,7 @@ use zkap_cli::{
     canonical_json_bytes, compute_circuit_tag, die, load_config_or_exit, read_arcs_blake3_hex,
     sha256_hex,
 };
-use zkap_service::setup;
+use zkap_service::{SetupRng, setup};
 
 /// ZKAP public-input names in the order the circuit allocates them.
 ///
@@ -105,7 +101,7 @@ fn main() {
     if cli.ptau.is_some() || cli.phase2_attestations.is_some() {
         die("--ptau / --phase2-attestations are Stage 2 only (not yet active)");
     }
-    let (mut rng_box, provenance) = pick_rng(cli.rng_seed.as_deref(), cli.allow_test_only);
+    let (setup_rng, provenance) = pick_rng(cli.rng_seed.as_deref(), cli.allow_test_only);
 
     let params = load_config_or_exit(Path::new(&cli.config));
     let out = PathBuf::from(&cli.output);
@@ -116,7 +112,7 @@ fn main() {
     let circuit_tag = compute_circuit_tag(&cli.circuit_id, &canonical_cfg_bytes);
 
     println!("[1/2] Groth16 trusted setup → {}", out.display());
-    let setup_output = setup(&params, &out, rng_box.as_mut(), None)
+    let setup_output = setup(&params, &out, setup_rng, None)
         .unwrap_or_else(|e| die(format!("setup failed: {e}")));
 
     // `circuit.ar1cs` / `pk.bin` / `vk.bin` / `pvk.bin` /
@@ -263,20 +259,25 @@ fn make_entry(
     }
 }
 
-/// Decode `--rng-seed` and pick either `ChaCha20Rng` or `OsRng`.
-fn pick_rng(seed_hex: Option<&str>, allow_test_only: bool) -> (Box<dyn RngCore>, SetupProvenance) {
+/// Decode `--rng-seed` and pick either `SetupRng::ChaCha20` or `SetupRng::OsRng`.
+///
+/// The `--rng-seed` path requires `--allow-test-only`; without the flag
+/// the function terminates the process with an error message. This preserves
+/// the safety gate: a deterministic-seed bundle can only be produced when the
+/// operator explicitly acknowledges it is test-only.
+fn pick_rng(seed_hex: Option<&str>, allow_test_only: bool) -> (SetupRng, SetupProvenance) {
     match (seed_hex, allow_test_only) {
         (Some(seed), true) => {
             let bytes = decode_seed_hex(seed).unwrap_or_else(|e| die(format!("--rng-seed: {e}")));
             (
-                Box::new(ChaCha20Rng::from_seed(bytes)),
+                SetupRng::ChaCha20 { seed: bytes },
                 SetupProvenance::Seed {
                     seed: seed.to_string(),
                 },
             )
         }
         (Some(_), false) => die("--rng-seed requires --allow-test-only"),
-        (None, _) => (Box::new(OsRng), SetupProvenance::OsRng),
+        (None, _) => (SetupRng::OsRng, SetupProvenance::OsRng),
     }
 }
 

@@ -157,7 +157,7 @@ fn unique_tmp_dir(tag: &str) -> PathBuf {
 fn prove_failure_mode_is_deterministic_for_canonical_fixture() {
     let cfg = fixture_config();
     let out_dir = unique_tmp_dir("failure_mode");
-    let setup_output = setup(&cfg, &out_dir, &mut ark_std::rand::rngs::OsRng, None)
+    let setup_output = setup(&cfg, &out_dir, zkap_service::SetupRng::OsRng, None)
         .expect("service::setup must succeed for F1 config");
     let set: ArtifactSet = setup_output.into_artifact_set();
 

@@ -212,7 +212,7 @@ fn test_setup_creates_all_artifacts() {
     let tmp_dir = std::env::temp_dir().join("zkap-test-artifacts");
     let _ = std::fs::remove_dir_all(&tmp_dir);
 
-    setup(&params, &tmp_dir, &mut rand::rngs::OsRng, None).expect("setup() failed");
+    setup(&params, &tmp_dir, zkap_service::SetupRng::OsRng, None).expect("setup() failed");
 
     // Post-migration (Commit 2 of the 2026-05 ark-ar1cs boundary plan)
     // setup output: six core files. `manifest.json` is written by the
@@ -253,7 +253,7 @@ fn test_setup_config_json_round_trip() {
     let tmp_dir = std::env::temp_dir().join("zkap-test-config-roundtrip");
     let _ = std::fs::remove_dir_all(&tmp_dir);
 
-    setup(&params, &tmp_dir, &mut rand::rngs::OsRng, None).expect("setup() failed");
+    setup(&params, &tmp_dir, zkap_service::SetupRng::OsRng, None).expect("setup() failed");
 
     let loaded =
         load_circuit_config(&tmp_dir.join("config.json")).expect("load_circuit_config failed");
@@ -288,7 +288,7 @@ fn test_setup_and_verify_via_arkworks_direct() {
     let _ = std::fs::remove_dir_all(&tmp_dir);
 
     let setup_output =
-        setup(&params, &tmp_dir, &mut rand::rngs::OsRng, None).expect("setup() failed");
+        setup(&params, &tmp_dir, zkap_service::SetupRng::OsRng, None).expect("setup() failed");
 
     // VK should have the right number of public inputs.
     assert!(setup_output.public_input_count() > 0);

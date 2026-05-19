@@ -139,7 +139,7 @@ fn artifact_set_in_memory_round_trip() {
     let cfg = test_config();
     let out_dir = unique_tmp_dir("from_artifact_set");
 
-    let setup_output = setup(&cfg, &out_dir, &mut ark_std::rand::rngs::OsRng, None)
+    let setup_output = setup(&cfg, &out_dir, zkap_service::SetupRng::OsRng, None)
         .expect("service::setup must succeed for F1 config");
     let set: ArtifactSet = setup_output.into_artifact_set();
 
@@ -182,7 +182,7 @@ fn artifact_set_in_memory_round_trip() {
 fn prove_rejects_invalid_request() {
     let cfg = test_config();
     let out_dir = unique_tmp_dir("prove_rejects");
-    let setup_output = setup(&cfg, &out_dir, &mut ark_std::rand::rngs::OsRng, None)
+    let setup_output = setup(&cfg, &out_dir, zkap_service::SetupRng::OsRng, None)
         .expect("service::setup must succeed for F1 config");
     let set: ArtifactSet = setup_output.into_artifact_set();
     let req = placeholder_prove_request(&cfg);

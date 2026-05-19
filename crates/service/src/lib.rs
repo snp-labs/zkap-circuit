@@ -174,4 +174,4 @@ pub use dto::{ProofComponents, ProveCredential, ProveRequest, ProveResponse, Sha
 pub use groth16::prover::{
     WitnessBundle, prove, synthesize_witnesses, synthesize_witnesses_streaming,
 };
-pub use groth16::setup::{SetupOutput, SetupShape, setup};
+pub use groth16::setup::{SetupOutput, SetupRng, SetupShape, setup};

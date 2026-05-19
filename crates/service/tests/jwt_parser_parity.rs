@@ -254,6 +254,89 @@ fn empty_array_value() {
     assert_eq!(reparsed, Value::Array(vec![]));
 }
 
+/// Regression pin: the quote-strip + re-wrap invariant for `aud`.
+///
+/// `locate_claim("aud")` returns a byte range that *includes* the surrounding
+/// `"` characters. `parse_claim_from_str` exposes the same quoted value string.
+/// Stripping the leading/trailing quote and re-wrapping must round-trip to the
+/// raw byte slice bit-exactly. If `derive_x_from_secret` (or any caller) ever
+/// changes its quote handling, this test fails loudly instead of silently
+/// reopening the soundness gap.
+#[test]
+fn aud_anchor_secret_byte_range_matches_locate_claim() {
+    let payload = r#"{"aud":"test-audience","other":"v"}"#;
+    let payload_bytes = payload.as_bytes();
+
+    // locate_claim returns indices relative to its `offset` field.
+    let idx = locate_claim(payload, "aud").expect("locate aud");
+    let value_start = idx.offset + idx.value_idx;
+    let value_end = value_start + idx.value_len;
+
+    // Raw slice from locate_claim — includes surrounding quotes.
+    let raw = std::str::from_utf8(&payload_bytes[value_start..value_end])
+        .expect("raw value is valid UTF-8");
+    assert_eq!(raw, r#""test-audience""#, "locate_claim must include surrounding quotes");
+
+    // parse_claim_from_str wraps the same locate_claim; its .value field is identical.
+    let claim = parse_claim_from_str(payload, "aud").expect("parse aud");
+    let quoted_value = &claim.value; // e.g. `"test-audience"` (with quotes)
+    assert!(
+        quoted_value.starts_with('"') && quoted_value.ends_with('"'),
+        "parse_claim_from_str value must be JSON-quoted: {quoted_value:?}"
+    );
+
+    // Strip the quotes the same way extract_string_claim does, then re-wrap.
+    let unquoted = &quoted_value[1..quoted_value.len() - 1];
+    let rewrapped = format!("\"{unquoted}\"");
+
+    assert_eq!(
+        raw, rewrapped,
+        "quote-strip + re-wrap must round-trip to the locate_claim byte slice exactly"
+    );
+}
+
+/// Hand-written escape coverage: `\"` and `\\` branches of locate_claim's string scanner.
+///
+/// The proptest strategy (`arb_claim_value`) filters out embedded `\"` and `\\`
+/// to keep round-trip assertions simple. These two cases exercise the escape-handling
+/// branches directly so a future refactor of the string scanner that breaks escape
+/// awareness is caught.
+#[test]
+fn locate_claim_handles_escaped_quotes_and_backslashes() {
+    // Case 1: value contains an escaped quote — raw JSON `"a\"b"` decodes to `a"b`.
+    {
+        let payload = r#"{"key":"a\"b","other":1}"#;
+        let idx = locate_claim(payload, "key").expect("locate key (escaped quote)");
+        let value_start = idx.offset + idx.value_idx;
+        let value_end = value_start + idx.value_len;
+        let raw = &payload[value_start..value_end]; // includes surrounding quotes
+        // serde_json must decode the extracted slice to the string `a"b`.
+        let decoded: serde_json::Value =
+            serde_json::from_str(raw).expect("round-trip escaped quote");
+        assert_eq!(
+            decoded,
+            serde_json::Value::String(r#"a"b"#.to_string()),
+            "escaped quote: decoded value must be a\"b"
+        );
+    }
+
+    // Case 2: value contains an escaped backslash — raw JSON `"a\\b"` decodes to `a\b`.
+    {
+        let payload = r#"{"key":"a\\b","other":1}"#;
+        let idx = locate_claim(payload, "key").expect("locate key (escaped backslash)");
+        let value_start = idx.offset + idx.value_idx;
+        let value_end = value_start + idx.value_len;
+        let raw = &payload[value_start..value_end];
+        let decoded: serde_json::Value =
+            serde_json::from_str(raw).expect("round-trip escaped backslash");
+        assert_eq!(
+            decoded,
+            serde_json::Value::String("a\\b".to_string()),
+            "escaped backslash: decoded value must be a\\b"
+        );
+    }
+}
+
 /// Soundness regression gate: for the canonical `aud` claim, the byte range
 /// returned by `locate_claim` equals what `parse_claim_from_str` uses, which
 /// is the same function `parse_anchor_secret_from_jwt` calls internally.

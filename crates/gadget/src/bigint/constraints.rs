@@ -1964,4 +1964,119 @@ mod test {
                 .unwrap();
         assert_eq!(var.value().unwrap(), original);
     }
+
+    // ------------------------------------------------------------------
+    // mult_mod / square_mod / pow_mod — checked vs. unchecked parity.
+    //
+    // The unchecked variants are the RSA-2048 signature-verification
+    // fast path. They allocate only N (rather than 2N) quotient limbs
+    // and skip a redundant input range check, but must agree with the
+    // checked variants on canonical operands. Without these parity
+    // tests, a future tweak to either path could silently drift apart
+    // and still pass the existing tests (which only cover happy
+    // checked-path mult_mod).
+    // ------------------------------------------------------------------
+
+    /// Build two canonical operands under `BigNat512TestParams` for use
+    /// across the parity tests. Values are arbitrary but deliberately
+    /// non-trivial (multi-limb, neither 0 nor 1).
+    fn parity_operands() -> (BigNat, BigNat, BigNat) {
+        let a = BigNat::from(0x0123_4567_89ab_cdefu64);
+        let b = BigNat::from(0xfedc_ba98_7654_3210u64);
+        let modulus = (BigNat::one() << 200) - BigNat::one(); // 2^200 - 1
+        (a, b, modulus)
+    }
+
+    #[test]
+    fn mult_mod_checked_unchecked_parity() {
+        let (a, b, m) = parity_operands();
+        let expected = (&a * &b) % &m;
+
+        // Checked path
+        let cs1 = ConstraintSystem::<Fq>::new_ref();
+        let av = BigNatVar::<Fq, BigNat512TestParams>::new_witness(cs1.clone(), || Ok(&a)).unwrap();
+        let bv = BigNatVar::<Fq, BigNat512TestParams>::new_witness(cs1.clone(), || Ok(&b)).unwrap();
+        let mv = BigNatVar::<Fq, BigNat512TestParams>::new_witness(cs1.clone(), || Ok(&m)).unwrap();
+        let checked = av.mult_mod(&bv, &mv).unwrap();
+        assert!(cs1.is_satisfied().unwrap());
+        assert_eq!(checked.value().unwrap(), expected);
+
+        // Unchecked path — pre-range-check inputs (mirroring the RSA
+        // gadget's calling convention) so the fast path is exercised
+        // on canonical operands.
+        let cs2 = ConstraintSystem::<Fq>::new_ref();
+        let av = BigNatVar::<Fq, BigNat512TestParams>::new_witness(cs2.clone(), || Ok(&a)).unwrap();
+        let bv = BigNatVar::<Fq, BigNat512TestParams>::new_witness(cs2.clone(), || Ok(&b)).unwrap();
+        let mv = BigNatVar::<Fq, BigNat512TestParams>::new_witness(cs2.clone(), || Ok(&m)).unwrap();
+        av.enforce_limb_range_via_bits().unwrap();
+        bv.enforce_limb_range_via_bits().unwrap();
+        mv.enforce_limb_range_via_bits().unwrap();
+        let unchecked = av.mult_mod_unchecked(&bv, &mv).unwrap();
+        assert!(cs2.is_satisfied().unwrap());
+
+        // Both paths must agree on the witness value.
+        assert_eq!(unchecked.value().unwrap(), expected);
+        assert_eq!(checked.value().unwrap(), unchecked.value().unwrap());
+    }
+
+    #[test]
+    fn square_mod_checked_unchecked_parity() {
+        let (a, _, m) = parity_operands();
+        let expected = (&a * &a) % &m;
+
+        let cs1 = ConstraintSystem::<Fq>::new_ref();
+        let av = BigNatVar::<Fq, BigNat512TestParams>::new_witness(cs1.clone(), || Ok(&a)).unwrap();
+        let mv = BigNatVar::<Fq, BigNat512TestParams>::new_witness(cs1.clone(), || Ok(&m)).unwrap();
+        let checked = av.square_mod(&mv).unwrap();
+        assert!(cs1.is_satisfied().unwrap());
+        assert_eq!(checked.value().unwrap(), expected);
+
+        let cs2 = ConstraintSystem::<Fq>::new_ref();
+        let av = BigNatVar::<Fq, BigNat512TestParams>::new_witness(cs2.clone(), || Ok(&a)).unwrap();
+        let mv = BigNatVar::<Fq, BigNat512TestParams>::new_witness(cs2.clone(), || Ok(&m)).unwrap();
+        av.enforce_limb_range_via_bits().unwrap();
+        mv.enforce_limb_range_via_bits().unwrap();
+        let unchecked = av.square_mod_unchecked(&mv).unwrap();
+        assert!(cs2.is_satisfied().unwrap());
+
+        assert_eq!(unchecked.value().unwrap(), expected);
+        assert_eq!(checked.value().unwrap(), unchecked.value().unwrap());
+    }
+
+    #[test]
+    fn pow_mod_checked_unchecked_parity_e65537() {
+        // 65537-specific path: production callers (the RSA-2048
+        // signature gadget) exclusively raise to e = 65537. Pin both
+        // pow_mod paths to the canonical exponent so any future drift
+        // surfaces against the same input distribution the prover sees.
+        let (base, _, m) = parity_operands();
+        let exponent = BigNat::from(65537u32);
+        let num_exp_bits: usize = 17;
+        let expected = base.modpow(&exponent, &m);
+
+        let cs1 = ConstraintSystem::<Fq>::new_ref();
+        let bv =
+            BigNatVar::<Fq, BigNat512TestParams>::new_witness(cs1.clone(), || Ok(&base)).unwrap();
+        let ev = BigNatVar::<Fq, BigNat512TestParams>::new_witness(cs1.clone(), || Ok(&exponent))
+            .unwrap();
+        let mv = BigNatVar::<Fq, BigNat512TestParams>::new_witness(cs1.clone(), || Ok(&m)).unwrap();
+        let checked = bv.pow_mod(&ev, &mv, num_exp_bits).unwrap();
+        assert!(cs1.is_satisfied().unwrap());
+        assert_eq!(checked.value().unwrap(), expected);
+
+        let cs2 = ConstraintSystem::<Fq>::new_ref();
+        let bv =
+            BigNatVar::<Fq, BigNat512TestParams>::new_witness(cs2.clone(), || Ok(&base)).unwrap();
+        let ev = BigNatVar::<Fq, BigNat512TestParams>::new_witness(cs2.clone(), || Ok(&exponent))
+            .unwrap();
+        let mv = BigNatVar::<Fq, BigNat512TestParams>::new_witness(cs2.clone(), || Ok(&m)).unwrap();
+        bv.enforce_limb_range_via_bits().unwrap();
+        ev.enforce_limb_range_via_bits().unwrap();
+        mv.enforce_limb_range_via_bits().unwrap();
+        let unchecked = bv.pow_mod_unchecked(&ev, &mv, num_exp_bits).unwrap();
+        assert!(cs2.is_satisfied().unwrap());
+
+        assert_eq!(unchecked.value().unwrap(), expected);
+        assert_eq!(checked.value().unwrap(), unchecked.value().unwrap());
+    }
 }

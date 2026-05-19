@@ -124,13 +124,13 @@ impl<F: PrimeField> SHA256Gadget<F> {
             let s0 = {
                 let x1 = w[i - 15].rotate_right(7);
                 let x2 = w[i - 15].rotate_right(18);
-                let x3 = w[i - 15].shr(3);
+                let x3 = w[i - 15].shr(3)?;
                 x1 ^ (x2 ^ x3)
             };
             let s1 = {
                 let x1 = w[i - 2].rotate_right(17);
                 let x2 = w[i - 2].rotate_right(19);
-                let x3 = w[i - 2].shr(10);
+                let x3 = w[i - 2].shr(10)?;
                 x1 ^ (x2 ^ x3)
             };
 

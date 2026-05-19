@@ -22,10 +22,9 @@ fn divide_mod_power_of_2_circuit<F: PrimeField>(
     input: &UInt16<F>,
     p: u32,
 ) -> Result<(UInt16<F>, UInt16<F>), SynthesisError> {
-    assert!(
-        p > 0 && p < 16,
-        "p must be greater than 0 and less than 16 for UInt16"
-    );
+    if p == 0 || p >= 16 {
+        return Err(SynthesisError::Unsatisfiable);
+    }
 
     let bits = input.to_bits_le()?;
 
@@ -103,19 +102,20 @@ fn slice_in_binary_tree<F: PrimeField>(
     Ok(output)
 }
 
-/// Performs ceiling division.
-/// Computes ceil(n / q).
-fn ceil(n: u64, q: u64) -> u64 {
-    assert!(q != 0, "Divisor q cannot be zero");
+/// Computes `ceil(n / q)`. Returns `Err(SynthesisError::Unsatisfiable)` on `q == 0`.
+fn ceil(n: u64, q: u64) -> Result<u64, SynthesisError> {
+    if q == 0 {
+        return Err(SynthesisError::Unsatisfiable);
+    }
 
     let quotient = n / q;
     let remainder = n % q;
 
-    if remainder == 0 {
+    Ok(if remainder == 0 {
         quotient
     } else {
         quotient + 1
-    }
+    })
 }
 
 /// Returns the first `length` elements from the input vector and fills the rest with `pad_char`.
@@ -133,15 +133,9 @@ pub fn slice_from_start<F: PrimeField>(
 ) -> Result<Vec<FpVar<F>>, SynthesisError> {
     let in_len = in_vec.len();
 
-    assert!(
-        out_len > 0,
-        "Output length (out_len) must be greater than 0."
-    );
-    assert!(
-        out_len <= in_len,
-        "Output length (out_len) must be less than or equal to input length (in_len = {}).",
-        in_len
-    );
+    if out_len == 0 || out_len > in_len {
+        return Err(SynthesisError::Unsatisfiable);
+    }
 
     let mask_vec: Vec<FpVar<F>> = lt_bit_vector(length, out_len)?;
 
@@ -200,11 +194,10 @@ pub fn segments_to_num_be<F: PrimeField>(
     segments: &[FpVar<F>],
     bit_width: usize,
 ) -> Result<FpVar<F>, SynthesisError> {
-    // Validate n * w <= 253 (field size limit)
-    assert!(
-        segments.len() * bit_width <= 253,
-        "Total bit width exceeds field capacity"
-    );
+    // Validate n * w <= 253 (field size limit).
+    if segments.len() * bit_width > 253 {
+        return Err(SynthesisError::Unsatisfiable);
+    }
 
     let mut result = FpVar::<F>::zero();
     let mut multiplier = F::one();
@@ -274,8 +267,8 @@ pub fn slice_grouped<F: PrimeField>(
 ) -> Result<Vec<FpVar<F>>, SynthesisError> {
     let in_len = data.len();
 
-    // Check that nums_per_group is a power of 2
-    let log_p = log_base_2(nums_per_group).expect("nums_per_group must be a power of 2");
+    // Check that nums_per_group is a power of 2.
+    let log_p = log_base_2(nums_per_group).ok_or(SynthesisError::Unsatisfiable)?;
 
     // --- Range Checks ---
     // 1. index in [0, inLen - 1]
@@ -294,12 +287,11 @@ pub fn slice_grouped<F: PrimeField>(
 
     // --- Group inputs ---
     let grouped_in_width = nums_per_group * 8; // each byte is 8 bits
-    assert!(
-        grouped_in_width < 253,
-        "Grouped width must be less than field size"
-    );
+    if grouped_in_width >= 253 {
+        return Err(SynthesisError::Unsatisfiable);
+    }
 
-    let grouped_in_len = ceil(in_len as u64, nums_per_group as u64) as usize;
+    let grouped_in_len = ceil(in_len as u64, nums_per_group as u64)? as usize;
     let mut in_grouped = Vec::with_capacity(grouped_in_len);
 
     // Group inputs into chunks of nums_per_group and combine in big-endian order
@@ -335,7 +327,7 @@ pub fn slice_grouped<F: PrimeField>(
     // --- Compute number of output groups ---
     // The sublist spans the most groups when it starts at the last element of a group.
     // Therefore: 1 + ceil((outLen - 1) / numsPerGroup)
-    let grouped_out_len = 1 + ceil((max_len - 1) as u64, nums_per_group as u64) as usize;
+    let grouped_out_len = 1 + ceil((max_len - 1) as u64, nums_per_group as u64)? as usize;
 
     // --- Slice from grouped array ---
     // length_in_groups = endIdxByP - startIdxByP + 1
@@ -361,7 +353,9 @@ pub fn slice_grouped<F: PrimeField>(
     }
 
     // Verify: (outLen - 1) + (numsPerGroup - 1) < X
-    assert!((max_len - 1) + (nums_per_group - 1) < x);
+    if (max_len - 1) + (nums_per_group - 1) >= x {
+        return Err(SynthesisError::Unsatisfiable);
+    }
 
     // --- Generate rotation options (MultiMux role) ---
     // outOptions[i][j] = outFinal[i + j]
@@ -423,22 +417,21 @@ mod tests {
 
     #[test]
     fn test_ceil_basic() {
-        assert_eq!(ceil(7, 3), 3);
-        assert_eq!(ceil(10, 3), 4);
-        assert_eq!(ceil(1, 1), 1);
+        assert_eq!(ceil(7, 3).unwrap(), 3);
+        assert_eq!(ceil(10, 3).unwrap(), 4);
+        assert_eq!(ceil(1, 1).unwrap(), 1);
     }
 
     #[test]
     fn test_ceil_exact_division() {
-        assert_eq!(ceil(6, 3), 2);
-        assert_eq!(ceil(9, 3), 3);
-        assert_eq!(ceil(0, 5), 0);
+        assert_eq!(ceil(6, 3).unwrap(), 2);
+        assert_eq!(ceil(9, 3).unwrap(), 3);
+        assert_eq!(ceil(0, 5).unwrap(), 0);
     }
 
     #[test]
-    #[should_panic(expected = "Divisor q cannot be zero")]
-    fn test_ceil_zero_divisor_panics() {
-        let _ = ceil(5, 0);
+    fn test_ceil_zero_divisor_returns_err() {
+        assert!(matches!(ceil(5, 0), Err(SynthesisError::Unsatisfiable)));
     }
 
     #[test]
@@ -752,10 +745,16 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "p must be greater than 0")]
-    fn test_divide_mod_power_of_2_invalid_p_panics() {
+    fn test_divide_mod_power_of_2_invalid_p_returns_err() {
         let cs = ConstraintSystem::<F>::new_ref();
         let input = UInt16::new_witness(cs.clone(), || Ok(10u16)).unwrap();
-        let _ = divide_mod_power_of_2_circuit(&input, 0);
+        assert!(matches!(
+            divide_mod_power_of_2_circuit(&input, 0),
+            Err(SynthesisError::Unsatisfiable)
+        ));
+        assert!(matches!(
+            divide_mod_power_of_2_circuit(&input, 16),
+            Err(SynthesisError::Unsatisfiable)
+        ));
     }
 }

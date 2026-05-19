@@ -63,7 +63,11 @@ where
 }
 
 impl<ConstraintF: PrimeField> AllocVar<Vec<u8>, ConstraintF> for DigestVar<ConstraintF> {
-    // Allocates 32 UInt8s
+    // Allocates 32 UInt8s. Returns `SynthesisError::Unsatisfiable` if the
+    // host-supplied digest is not exactly 32 bytes — previously a panic,
+    // which crashed the prover process on malformed input. Setup paths that
+    // pass `Err` are tolerated (length-check skipped) so trusted setup keeps
+    // allocating a zero-witness placeholder.
     fn new_variable<T: Borrow<Vec<u8>>>(
         cs: impl Into<Namespace<ConstraintF>>,
         f: impl FnOnce() -> Result<T, SynthesisError>,
@@ -72,13 +76,10 @@ impl<ConstraintF: PrimeField> AllocVar<Vec<u8>, ConstraintF> for DigestVar<Const
         let cs = cs.into().cs();
         let native_bytes = f();
 
-        if native_bytes
-            .as_ref()
-            .map(|b| b.borrow().len())
-            .unwrap_or(32)
-            != 32
+        if let Ok(ref b) = native_bytes
+            && b.borrow().len() != 32
         {
-            panic!("DigestVar must be allocated with precisely 32 bytes");
+            return Err(SynthesisError::Unsatisfiable);
         }
 
         // For each i, allocate the i-th byte

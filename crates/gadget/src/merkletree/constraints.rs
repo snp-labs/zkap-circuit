@@ -57,14 +57,19 @@ where
     /// Re-derives the Merkle root from `self.leaf`, `self.leaf_idx`, and `self.path` in-circuit,
     /// then enforces equality with the public `root`.
     ///
-    /// Sets the leaf position on `self.path` using `leaf_idx.to_bits_be()` before calling
+    /// Sets the leaf position on `self.path` using `leaf_idx.to_bits_le()` before calling
     /// `verify_membership`; the Boolean result is constrained to `TRUE`.
+    ///
+    /// Bit-order note: `PathVar::set_leaf_position` consumes little-endian path-direction
+    /// bits. The production ZKAP circuit inlines this with `leaf_idx.to_bits_le()`
+    /// (`circuit::zkap::generate_constraints`), and every in-module test follows the same
+    /// LE convention; this helper must match.
     pub fn enforce_membership(
         &mut self,
         hash_param: &CRHParametersVar<F>,
         root: &FpVar<F>,
     ) -> Result<(), SynthesisError> {
-        self.path.set_leaf_position(self.leaf_idx.to_bits_be()?);
+        self.path.set_leaf_position(self.leaf_idx.to_bits_le()?);
 
         let membership = self.path.verify_membership(
             hash_param,
@@ -408,6 +413,89 @@ mod tests {
         verify_membership.enforce_equal(&Boolean::TRUE).unwrap();
 
         assert!(!cs.is_satisfied().unwrap(), "Wrong leaf should not satisfy");
+    }
+
+    #[test]
+    fn test_enforce_membership_helper_le_bit_order() {
+        // Regression: `MerkleCircuitInputVar::enforce_membership` previously called
+        // `to_bits_be()` on `leaf_idx`, contradicting the LE convention used by
+        // production (`circuit::zkap::generate_constraints`) and every other test
+        // here. This test exercises the helper directly so any future BE/LE
+        // regression flips the result and fails immediately.
+        let tree_height = 5;
+        let n_leaves = 5;
+
+        for idx in 0..n_leaves {
+            let (root, path, _digest) =
+                generate_merkle_tree_input::<F>(tree_height, n_leaves, idx);
+
+            let cs = ark_relations::gr1cs::ConstraintSystem::<F>::new_ref();
+            let poseidon_params = get_poseidon_params::<F>();
+            let hash_params_var =
+                CRHParametersVar::<F>::new_constant(cs.clone(), poseidon_params).unwrap();
+
+            let input = crate::merkletree::MerkleCircuitInput::<F> {
+                leaf: F::from(idx as u64),
+                leaf_idx: idx,
+                path: path.clone(),
+            };
+            let mut input_var =
+                crate::merkletree::constraints::MerkleCircuitInputVar::<F>::new_witness(
+                    cs.clone(),
+                    || Ok(input),
+                )
+                .unwrap();
+            let root_var = FpVar::<F>::new_witness(cs.clone(), || Ok(root)).unwrap();
+
+            input_var
+                .enforce_membership(&hash_params_var, &root_var)
+                .unwrap();
+
+            assert!(
+                cs.is_satisfied().unwrap(),
+                "enforce_membership helper rejected a valid proof at idx={idx}; \
+                 leaf_idx bit-order regression suspected (must be LE)"
+            );
+        }
+    }
+
+    #[test]
+    fn test_enforce_membership_helper_rejects_wrong_root() {
+        // Sanity-check the negative case so the LE/BE smoke above can't pass
+        // simply because the constraint is trivially satisfied.
+        let tree_height = 5;
+        let n_leaves = 5;
+        let idx = 1;
+
+        let (_root, path, _) = generate_merkle_tree_input::<F>(tree_height, n_leaves, idx);
+
+        let cs = ark_relations::gr1cs::ConstraintSystem::<F>::new_ref();
+        let poseidon_params = get_poseidon_params::<F>();
+        let hash_params_var =
+            CRHParametersVar::<F>::new_constant(cs.clone(), poseidon_params).unwrap();
+
+        let input = crate::merkletree::MerkleCircuitInput::<F> {
+            leaf: F::from(idx as u64),
+            leaf_idx: idx,
+            path,
+        };
+        let mut input_var =
+            crate::merkletree::constraints::MerkleCircuitInputVar::<F>::new_witness(
+                cs.clone(),
+                || Ok(input),
+            )
+            .unwrap();
+        let wrong_root_var =
+            FpVar::<F>::new_witness(cs.clone(), || Ok(F::from(999_999u64))).unwrap();
+
+        input_var
+            .enforce_membership(&hash_params_var, &wrong_root_var)
+            .unwrap();
+
+        assert!(
+            !cs.is_satisfied().unwrap(),
+            "enforce_membership helper accepted a tampered root"
+        );
     }
 
     #[test]

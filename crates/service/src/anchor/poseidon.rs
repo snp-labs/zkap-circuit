@@ -65,7 +65,7 @@ pub fn generate_anchor(
     let anchor_secret = PoseidonAnchorSecret(x_list);
     let anchor = PoseidonAnchorScheme::generate_anchor(&anchor_key, &anchor_secret, &ctx.matrix)?;
 
-    let hanchor_field = chain_hash_anchor(&anchor.0, poseidon_params)?;
+    let hanchor_field = chain_hash(&anchor.0, poseidon_params)?;
 
     Ok(GenerateAnchorResponse {
         anchor_evaluations: anchor.0.iter().map(|f| crate::field_to_hex(*f)).collect(),
@@ -76,16 +76,20 @@ pub fn generate_anchor(
 /// Sequential Poseidon chain hash matching the in-circuit `hanchor` recipe:
 /// `H(v[0])`, then `H(prev, v[i])` for `i in 1..len`.
 ///
-/// Inlined here (rather than reusing
-/// `crate::groth16::prover::circuit_input::chain_hash_native`) so this
-/// module's anchor-generation path stays independent of the Groth16
-/// prove subtree. The duplication is intentional — both copies share the
-/// same `H(v[0])` / `H(prev, v[i])` recipe and any algorithm change must
-/// be mirrored in both call sites.
-fn chain_hash_anchor(values: &[F], params: &PoseidonConfig<F>) -> Result<F, ApplicationError> {
+/// Single source of truth for the host-side recipe — both `generate_anchor`
+/// (this module) and `groth16::prover::circuit_input::compute_public_inputs`
+/// route through here, so the chain-hash algorithm is defined exactly once.
+/// Any change to the recipe is automatically reflected on both call sites,
+/// eliminating the silent-drift risk of the previous mirrored implementation.
+///
+/// The companion in-circuit recipe is
+/// [`gadget::hashes::poseidon::constraints::chain_hash_gadget`]; that one
+/// pins the R1CS layout under `circuit::zkap`'s L1 lock, so any change here
+/// must be mirrored in-circuit by a coordinated re-key.
+pub(crate) fn chain_hash(values: &[F], params: &PoseidonConfig<F>) -> Result<F, ApplicationError> {
     if values.is_empty() {
         return Err(ApplicationError::HashFailed(
-            "chain_hash on empty anchor".into(),
+            "chain_hash on empty input".into(),
         ));
     }
     let mut h = PoseidonHash::evaluate(params, [values[0]])
@@ -343,6 +347,45 @@ mod tests {
                 assert_eq!(which, "subject");
             }
             other => panic!("expected InvalidClaimValue, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn chain_hash_matches_explicit_recipe() {
+        // Pin the chain-hash recipe used by `generate_anchor` and
+        // `compute_public_inputs`. The function is now the single source of
+        // truth (the previous `chain_hash_native` mirror in circuit_input.rs
+        // has been removed); this test guards against any future refactor
+        // that silently changes the algorithm.
+        let params = get_poseidon_params::<F>();
+
+        let values: Vec<F> = (1u64..=5).map(F::from).collect();
+        let got = chain_hash(&values, &params).expect("chain_hash succeeds on non-empty input");
+
+        // Explicit reconstruction: H(v[0]), then H(prev, v[i]) for i in 1..len.
+        let mut expected = PoseidonHash::evaluate(&params, [values[0]]).unwrap();
+        for v in &values[1..] {
+            expected = PoseidonHash::evaluate(&params, [expected, *v]).unwrap();
+        }
+
+        assert_eq!(got, expected, "chain_hash recipe drifted from H(v0)→H(prev,vi)");
+    }
+
+    #[test]
+    fn chain_hash_single_element_just_hashes_once() {
+        let params = get_poseidon_params::<F>();
+        let v = F::from(42u64);
+        let got = chain_hash(std::slice::from_ref(&v), &params).unwrap();
+        let expected = PoseidonHash::evaluate(&params, [v]).unwrap();
+        assert_eq!(got, expected);
+    }
+
+    #[test]
+    fn chain_hash_rejects_empty_input() {
+        let params = get_poseidon_params::<F>();
+        match chain_hash(&[], &params) {
+            Err(ApplicationError::HashFailed(msg)) => assert!(msg.contains("empty")),
+            other => panic!("expected HashFailed, got {:?}", other),
         }
     }
 

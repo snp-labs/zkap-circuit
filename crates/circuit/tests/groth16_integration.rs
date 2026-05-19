@@ -19,8 +19,8 @@ use rsa::signature::{SignatureEncoding, Signer};
 use rsa::traits::PublicKeyParts;
 use sha2::Sha256;
 
-use ark_utils::pad;
-use ark_utils::try_str_to_fields;
+use ark_codec::pad;
+use ark_codec::try_str_to_fields;
 use circuit::{
     token::ClaimIndices,
     types::{BNP, CG, CircuitConfig, PAD_CHAR},

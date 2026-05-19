@@ -62,7 +62,7 @@ fn workaround_satisfied(a: u64, b: u64) -> bool {
     let a_bits = a_var.to_bits_le().unwrap();
     let b_bits = b_var.to_bits_le().unwrap();
     let bits_16 = 16usize;
-    let lt = ark_utils::is_less_than(&a_bits[..bits_16], &b_bits[..bits_16]).unwrap();
+    let lt = ark_r1cs_helpers::is_less_than(&a_bits[..bits_16], &b_bits[..bits_16]).unwrap();
     let eq = a_var.is_eq(&b_var).unwrap();
     (lt | eq).enforce_equal(&Boolean::TRUE).unwrap();
     cs.is_satisfied().unwrap()

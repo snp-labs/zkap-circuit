@@ -1,10 +1,10 @@
+use ark_codec::pad;
+use ark_codec::try_str_to_fields;
 use ark_crypto_primitives::{
     crh::CRHScheme,
     sponge::{Absorb, poseidon::PoseidonConfig},
 };
 use ark_ff::PrimeField;
-use ark_utils::pad;
-use ark_utils::try_str_to_fields;
 use circuit::types::{CircuitConfig, F, PoseidonHash};
 
 use super::AnchorConfig;

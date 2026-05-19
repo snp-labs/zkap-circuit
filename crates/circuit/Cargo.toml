@@ -10,7 +10,7 @@ categories = ["cryptography"]
 
 [dependencies]
 gadget = { workspace = true, default-features = false, features = ["crypto", "base64", "rsa"] }
-ark-utils = { workspace = true }
+ark-r1cs-helpers = { workspace = true }
 
 ark-ec = { workspace = true }
 ark-ff = { workspace = true }
@@ -39,7 +39,7 @@ integration-tests = []
 # from `[dependencies]` so the rlib's runtime surface stays minimal.
 ark-groth16 = { workspace = true }
 ark-poly = { workspace = true }
-ark-utils = { workspace = true, features = ["field-serde"] }
+ark-codec = { workspace = true, features = ["field-serde"] }
 hex = { workspace = true }
 serde_json = { workspace = true }
 rsa = { workspace = true }

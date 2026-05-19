@@ -21,6 +21,7 @@
 //! `is_less_than | is_eq` expression below stays as-is.
 
 use ark_ff::PrimeField;
+use ark_r1cs_helpers::{is_less_than, single_multiplexer};
 use ark_r1cs_std::{
     eq::EqGadget,
     fields::{FieldVar, fp::FpVar},
@@ -29,7 +30,6 @@ use ark_r1cs_std::{
     uint16::UInt16,
 };
 use ark_relations::gr1cs::SynthesisError;
-use ark_utils::{is_less_than, single_multiplexer};
 
 pub(super) fn claim_format_verifier_v2<F: PrimeField>(
     claim: &[FpVar<F>],

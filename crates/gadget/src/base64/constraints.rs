@@ -11,7 +11,7 @@ use ark_r1cs_std::{
 };
 use ark_relations::gr1cs::SynthesisError;
 
-use ark_utils::select_array_element_be;
+use ark_r1cs_helpers::select_array_element_be;
 
 use crate::base64::{
     Base64Table,

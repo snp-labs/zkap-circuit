@@ -11,9 +11,9 @@
 
 use ark_bn254::Fr as F;
 use ark_ff::PrimeField;
+use ark_r1cs_helpers::{slice_efficient, slice_from_start};
 use ark_r1cs_std::{GR1CSVar, alloc::AllocVar, eq::EqGadget, fields::fp::FpVar, uint16::UInt16};
 use ark_relations::gr1cs::ConstraintSystem;
-use ark_utils::{slice_efficient, slice_from_start};
 
 use circuit::token::claim_indices::ClaimIndicesVar;
 use circuit::token::claimverifier::claim_extractor_v2;

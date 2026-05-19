@@ -142,6 +142,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ark-codec"
+version = "0.1.0"
+dependencies = [
+ "ark-bn254",
+ "ark-ec",
+ "ark-ff",
+ "hex",
+ "thiserror 2.0.17",
+]
+
+[[package]]
 name = "ark-crypto-primitives"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -290,6 +301,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ark-r1cs-helpers"
+version = "0.1.0"
+dependencies = [
+ "ark-bn254",
+ "ark-ff",
+ "ark-r1cs-std",
+ "ark-relations",
+ "thiserror 2.0.17",
+]
+
+[[package]]
 name = "ark-r1cs-std"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -371,20 +393,6 @@ dependencies = [
  "num-traits",
  "rand 0.8.5",
  "rayon",
-]
-
-[[package]]
-name = "ark-utils"
-version = "0.1.0"
-dependencies = [
- "ark-bn254",
- "ark-ec",
- "ark-ff",
- "ark-r1cs-std",
- "ark-relations",
- "ark-serialize",
- "hex",
- "thiserror 2.0.17",
 ]
 
 [[package]]
@@ -542,17 +550,18 @@ name = "circuit"
 version = "0.1.0"
 dependencies = [
  "ark-bn254",
+ "ark-codec",
  "ark-crypto-primitives",
  "ark-ec",
  "ark-ed-on-bn254",
  "ark-ff",
  "ark-groth16",
  "ark-poly",
+ "ark-r1cs-helpers",
  "ark-r1cs-std",
  "ark-relations",
  "ark-serialize",
  "ark-std",
- "ark-utils",
  "base64",
  "gadget",
  "hex",
@@ -1088,11 +1097,11 @@ dependencies = [
  "ark-ec",
  "ark-ed-on-bn254",
  "ark-ff",
+ "ark-r1cs-helpers",
  "ark-r1cs-std",
  "ark-relations",
  "ark-serialize",
  "ark-std",
- "ark-utils",
  "base64",
  "hex",
  "num",
@@ -2906,6 +2915,7 @@ version = "0.1.0"
 dependencies = [
  "ark-ar1cs",
  "ark-bn254",
+ "ark-codec",
  "ark-crypto-primitives",
  "ark-ec",
  "ark-ff",
@@ -2915,7 +2925,6 @@ dependencies = [
  "ark-relations",
  "ark-serialize",
  "ark-std",
- "ark-utils",
  "base64",
  "blake2",
  "circuit",
@@ -2943,11 +2952,11 @@ dependencies = [
  "anyhow",
  "ark-ar1cs",
  "ark-bn254",
+ "ark-codec",
  "ark-crypto-primitives",
  "ark-ff",
  "ark-serialize",
  "ark-std",
- "ark-utils",
  "base64",
  "circuit",
  "criterion",

@@ -19,6 +19,7 @@
 use std::str::FromStr;
 
 use ark_bn254::{Bn254, Fq, Fq2, G1Affine, G2Affine};
+use ark_codec::hex_decimal_to_field;
 use ark_crypto_primitives::{
     crh::{CRHScheme, poseidon::CRH},
     merkle_tree::MerkleTree,
@@ -27,7 +28,6 @@ use ark_crypto_primitives::{
 use ark_ff::{PrimeField, Zero};
 use ark_groth16::{Groth16, Proof};
 use ark_std::rand::SeedableRng;
-use ark_utils::hex_decimal_to_field;
 use base64::Engine;
 use circuit::types::F;
 use gadget::{hashes::poseidon::get_poseidon_params, merkletree::tree_config::MerkleTreeParams};
@@ -263,8 +263,8 @@ fn e2e_setup_prove_verify_via_public_api() {
     // — `generate_poseidon_hash` is the documented host-side recipe.
     let nonce_hash = generate_poseidon_hash(HashRequest {
         field_elements: vec![
-            ark_utils::field_to_hex(h_sign_user_op_fr),
-            ark_utils::field_to_hex(random_fr),
+            ark_codec::field_to_hex(h_sign_user_op_fr),
+            ark_codec::field_to_hex(random_fr),
         ],
     })
     .expect("nonce poseidon hash")
@@ -321,7 +321,7 @@ fn e2e_setup_prove_verify_via_public_api() {
     let tree = MerkleTree::<MerkleTreeParams<F>>::new_with_leaf_digest(&params, &params, digests)
         .expect("Merkle tree build");
     let root_fr = tree.root();
-    let root_hex = ark_utils::field_to_hex(root_fr);
+    let root_hex = ark_codec::field_to_hex(root_fr);
 
     // ── 6. Assemble the `ProveRequest`. The Merkle-path slice
     //      `[leaf_sibling_hash, auth_path_0, auth_path_1, ...]` matches
@@ -332,9 +332,9 @@ fn e2e_setup_prove_verify_via_public_api() {
         .map(|(i, (jwt, priv_key))| {
             let proof_path = tree.generate_proof(i).expect("Merkle proof");
             let mut merkle_path = Vec::with_capacity(1 + proof_path.auth_path.len());
-            merkle_path.push(ark_utils::field_to_hex(proof_path.leaf_sibling_hash));
+            merkle_path.push(ark_codec::field_to_hex(proof_path.leaf_sibling_hash));
             for sib in &proof_path.auth_path {
-                merkle_path.push(ark_utils::field_to_hex(*sib));
+                merkle_path.push(ark_codec::field_to_hex(*sib));
             }
 
             let pub_key = priv_key.to_public_key();
@@ -359,8 +359,8 @@ fn e2e_setup_prove_verify_via_public_api() {
         .collect();
 
     let request = ProveRequest {
-        random: ark_utils::field_to_hex(random_fr),
-        h_sign_user_op: ark_utils::field_to_hex(h_sign_user_op_fr),
+        random: ark_codec::field_to_hex(random_fr),
+        h_sign_user_op: ark_codec::field_to_hex(h_sign_user_op_fr),
         anchor: anchor_resp.anchor_evaluations.clone(),
         merkle_root: root_hex,
         credentials,
@@ -434,8 +434,8 @@ fn e2e_verify_rejects_tampered_public_input() {
     let h_sign_user_op_fr = F::from(67890u64);
     let nonce_hash = generate_poseidon_hash(HashRequest {
         field_elements: vec![
-            ark_utils::field_to_hex(h_sign_user_op_fr),
-            ark_utils::field_to_hex(random_fr),
+            ark_codec::field_to_hex(h_sign_user_op_fr),
+            ark_codec::field_to_hex(random_fr),
         ],
     })
     .unwrap()
@@ -477,7 +477,7 @@ fn e2e_verify_rejects_tampered_public_input() {
     }
     let tree = MerkleTree::<MerkleTreeParams<F>>::new_with_leaf_digest(&params, &params, digests)
         .expect("tree");
-    let root_hex = ark_utils::field_to_hex(tree.root());
+    let root_hex = ark_codec::field_to_hex(tree.root());
 
     let credentials: Vec<ProveCredential> = jwts
         .iter()
@@ -485,9 +485,9 @@ fn e2e_verify_rejects_tampered_public_input() {
         .map(|(i, (jwt, priv_key))| {
             let p = tree.generate_proof(i).unwrap();
             let mut mp = Vec::with_capacity(1 + p.auth_path.len());
-            mp.push(ark_utils::field_to_hex(p.leaf_sibling_hash));
+            mp.push(ark_codec::field_to_hex(p.leaf_sibling_hash));
             for sib in &p.auth_path {
-                mp.push(ark_utils::field_to_hex(*sib));
+                mp.push(ark_codec::field_to_hex(*sib));
             }
             let pub_key = priv_key.to_public_key();
             let mut n_be = pub_key.n().to_bytes_be();
@@ -506,8 +506,8 @@ fn e2e_verify_rejects_tampered_public_input() {
         .collect();
 
     let request = ProveRequest {
-        random: ark_utils::field_to_hex(random_fr),
-        h_sign_user_op: ark_utils::field_to_hex(h_sign_user_op_fr),
+        random: ark_codec::field_to_hex(random_fr),
+        h_sign_user_op: ark_codec::field_to_hex(h_sign_user_op_fr),
         anchor: anchor_resp.anchor_evaluations,
         merkle_root: root_hex,
         credentials,

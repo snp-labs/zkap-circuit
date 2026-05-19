@@ -20,19 +20,24 @@
 //! # Prereqs
 //!
 //! The test reads from `dist/1-of-1-wasm/` relative to the workspace
-//! root.  That bundle must already exist (it ships with the repo).
-//! The `proof_fixture.json` inside it must also be present (it is
-//! staged by `scripts/build-witness-wasm.sh` and committed in
-//! `dist/1-of-1-wasm/`).
+//! root.  That directory is a `generate_setup` output — it is
+//! **gitignored** (release artifact), so it is NOT present in CI
+//! checkouts. Run `cargo run --release --bin generate_setup -- --config
+//! example.json --output dist/1-of-1-wasm` locally first.  The
+//! `proof_fixture.json` inside it is staged by `gen_proof_fixture` (see
+//! `crates/service/tests/gen_proof_fixture.rs`).
 //!
 //! # Run
 //!
 //! ```bash
-//! cargo test --release -p zkap-witness-gen-wasm --test r1cs_preflight
+//! cargo test --release -p zkap-witness-gen-wasm --test r1cs_preflight -- --ignored
 //! ```
 //!
 //! `--release` is required: loading `pk.bin` (~363 MiB) and running
 //! the Groth16 prover is very slow in debug mode.
+//!
+//! The test is `#[ignore]`d because the bundle is gitignored; opt-in via
+//! `-- --ignored` on a machine that has run `generate_setup` already.
 
 use std::path::PathBuf;
 
@@ -149,6 +154,7 @@ fn load_fixture_json(bundle_dir: &std::path::Path) -> (Vec<u8>, Vec<u8>) {
 /// `Vec<WitnessBundle>` and fed to `ark_ar1cs::prove`, produce a valid
 /// proof against the matching `pk.bin` + `circuit.ar1cs`.
 #[test]
+#[ignore = "requires local dist/1-of-1-wasm bundle (gitignored release artifact); run generate_setup first then `cargo test -- --ignored`"]
 fn r1cs_preflight_1_of_1_wasm() {
     let (manifest, bundle_dir) = load_bundle();
     let (cfg_bytes, req_bytes) = load_fixture_json(&bundle_dir);

@@ -4,13 +4,14 @@
 use std::path::Path;
 
 use ark_ar1cs::format::ArcsFile;
-use ark_groth16::{PreparedVerifyingKey, ProvingKey, VerifyingKey};
+use ark_groth16::{PreparedVerifyingKey, ProvingKey, VerifyingKey as Groth16VerifyingKey};
 use ark_serialize::CanonicalDeserialize;
 use circuit::types::{BN254, CircuitConfig, F};
+use ed25519_dalek::VerifyingKey;
 use sha2::{Digest, Sha256};
 
 use super::error::ArtifactError;
-use crate::manifest::{ArtifactEntry, Manifest};
+use crate::manifest::{ArtifactEntry, Manifest, verify_manifest};
 
 /// In-memory bundle of every CRS artifact a `Prover` needs.
 ///
@@ -20,7 +21,7 @@ pub struct ArtifactSet {
     /// Groth16 proving key — loaded from `pk.bin`.
     pub pk: ProvingKey<BN254>,
     /// Groth16 verifying key — loaded from `vk.bin`.
-    pub vk: VerifyingKey<BN254>,
+    pub vk: Groth16VerifyingKey<BN254>,
     /// Prepared verifying key — loaded from `pvk.bin`.
     pub pvk: PreparedVerifyingKey<BN254>,
     /// `.ar1cs` body — loaded from `circuit.ar1cs`.
@@ -68,10 +69,44 @@ impl ArtifactSet {
     /// `"artifacts.evm_verifier.sha256"`). The downstream
     /// [`crate::prove`] performs **no** additional hash
     /// validation; trust gating lives entirely in this loader.
-    pub fn load(manifest: &Manifest, dir: &Path) -> Result<Self, ArtifactError> {
+    ///
+    /// ## Manifest signature policy (soft enforce)
+    ///
+    /// The `verifying_key` parameter selects between three states:
+    ///
+    /// * `Some(key)` and `manifest.signature` is `Some(_)` — the
+    ///   signature is verified against `key`. A mismatch (decode
+    ///   failure or ed25519 reject) returns
+    ///   [`ArtifactError::Signature`].
+    /// * `Some(key)` and `manifest.signature` is `None` — the load
+    ///   is rejected with
+    ///   [`ArtifactError::Signature`]([`crate::manifest::ManifestError::SignatureMissing`]).
+    ///   Supplying a key means the caller wants a signed manifest;
+    ///   the absence is treated as a trust failure.
+    /// * `None` — signature verification is skipped entirely.
+    ///   Unsigned and signed manifests both load successfully.
+    ///   This preserves the pre-F5 behaviour: existing unsigned
+    ///   bundles continue to load, and signed bundles can still
+    ///   be loaded by callers that explicitly opt out of
+    ///   verification.
+    ///
+    /// Signature verification happens **before** any hash check —
+    /// a tampered hash on a signed manifest is caught by the
+    /// signature gate, not by the recomputed-sha256 gate. (The
+    /// hash gates remain in place as a defence-in-depth for the
+    /// no-key path.)
+    pub fn load(
+        manifest: &Manifest,
+        dir: &Path,
+        verifying_key: Option<&VerifyingKey>,
+    ) -> Result<Self, ArtifactError> {
+        if let Some(key) = verifying_key {
+            verify_manifest(manifest, key)?;
+        }
         let arcs = load_arcs(dir, &manifest.artifacts.ar1cs, &manifest.ar1cs_blake3)?;
         let pk = load_canonical::<ProvingKey<BN254>>(dir, &manifest.artifacts.pk, "pk")?;
-        let vk = load_canonical::<VerifyingKey<BN254>>(dir, &manifest.artifacts.vk, "vk")?;
+        let vk =
+            load_canonical::<Groth16VerifyingKey<BN254>>(dir, &manifest.artifacts.vk, "vk")?;
         let pvk =
             load_canonical::<PreparedVerifyingKey<BN254>>(dir, &manifest.artifacts.pvk, "pvk")?;
         let cfg = load_circuit_config(dir, &manifest.artifacts.circuit_config)?;

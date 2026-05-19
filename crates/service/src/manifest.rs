@@ -14,6 +14,7 @@
 //! that consume the manifest without pulling Groth16 (e.g. lightweight
 //! binding builds) can depend on it cheaply.
 
+use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use serde::{Deserialize, Serialize};
 
 /// Top-level manifest written to `<output>/manifest.json`.
@@ -54,9 +55,130 @@ pub struct Manifest {
     pub toxic_waste_disclosure: ToxicWasteDisclosure,
     /// Build metadata (repo, commit, rustc, RFC3339 built_at).
     pub build: BuildMetadata,
-    /// Optional manifest signature (v2 — Stage 1 always emits `null`).
+    /// Optional ed25519 manifest signature, lowercase hex (64-byte
+    /// signature → 128 hex chars). `None` for unsigned bundles
+    /// (Stage 1 default).
+    ///
+    /// Produced by [`sign_manifest`] and consumed by
+    /// [`verify_manifest`]. The signature covers
+    /// [`Manifest::canonical_signing_bytes`] — every field of the
+    /// manifest **except** `signature` itself.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub signature: Option<String>,
+}
+
+impl Manifest {
+    /// Canonical signing payload — the bytes a manifest signature
+    /// covers.
+    ///
+    /// Returns `serde_json::to_vec` of a temporary clone of `self`
+    /// with `signature` cleared to `None`. The chosen wire format
+    /// is **compact JSON** (no whitespace, no trailing newline);
+    /// `serde_json` preserves struct-field declaration order for
+    /// derived `Serialize`, so the byte stream is stable across
+    /// runs given identical content.
+    ///
+    /// ## Signing payload invariant
+    ///
+    /// **All fields except `signature` participate in the signing
+    /// payload.** Adding a new field to [`Manifest`] automatically
+    /// brings it under the signature: any tampered byte in
+    /// `circuit_id`, `ar1cs_blake3`, `artifacts.*`,
+    /// `setup_provenance`, `build`, etc. invalidates the signature
+    /// on next verify.
+    ///
+    /// ## Stability
+    ///
+    /// Two `Manifest` values with identical non-signature content
+    /// — one with `signature = None` and one with
+    /// `signature = Some(_)` — produce **identical** bytes from
+    /// this function. The `canonical_bytes_stable_across_signature_states`
+    /// integration test pins this invariant.
+    pub fn canonical_signing_bytes(&self) -> Result<Vec<u8>, ManifestError> {
+        let mut probe = self.clone();
+        probe.signature = None;
+        serde_json::to_vec(&probe).map_err(|e| ManifestError::CanonicalEncoding(format!("{e}")))
+    }
+}
+
+/// Errors surfaced by the manifest signing helpers
+/// ([`sign_manifest`], [`verify_manifest`]).
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum ManifestError {
+    /// `serde_json::to_vec` of the signing-payload clone failed.
+    /// Surfaces only on pathological `Serialize` errors; the derived
+    /// schema cannot fail under normal use.
+    #[error("manifest canonical encoding error: {0}")]
+    CanonicalEncoding(String),
+    /// Caller supplied a [`VerifyingKey`] but the manifest carries
+    /// `signature: None`. Soft-enforce policy: an unsigned manifest
+    /// can still load when the caller passes `None` as the key, but
+    /// supplying a key means a signature is required.
+    #[error("manifest signature missing (signed verification was requested)")]
+    SignatureMissing,
+    /// The signature hex failed to decode, was not 64 bytes long,
+    /// or did not verify against the supplied [`VerifyingKey`].
+    #[error("manifest signature invalid: {0}")]
+    SignatureInvalid(String),
+}
+
+/// Sign `manifest` in place with `signing_key`.
+///
+/// Clears `manifest.signature`, computes
+/// [`Manifest::canonical_signing_bytes`], signs the resulting
+/// payload with `signing_key.sign(..)`, and stores the resulting
+/// 64-byte ed25519 signature as a lowercase hex string into
+/// `manifest.signature`.
+///
+/// Hex (not base64) is used for parity with the existing
+/// `manifest.json` shape: every other hash field (sha256, blake3)
+/// is already lowercase hex.
+pub fn sign_manifest(
+    manifest: &mut Manifest,
+    signing_key: &SigningKey,
+) -> Result<(), ManifestError> {
+    manifest.signature = None;
+    let bytes = manifest.canonical_signing_bytes()?;
+    let signature: Signature = signing_key.sign(&bytes);
+    manifest.signature = Some(hex::encode(signature.to_bytes()));
+    Ok(())
+}
+
+/// Verify `manifest.signature` against `verifying_key`.
+///
+/// Returns [`ManifestError::SignatureMissing`] when
+/// `manifest.signature` is `None`,
+/// [`ManifestError::SignatureInvalid`] when the hex fails to decode,
+/// the length is not 64 bytes, or the underlying ed25519 verifier
+/// rejects.
+///
+/// The signed payload is [`Manifest::canonical_signing_bytes`] —
+/// the manifest with `signature` cleared, so the verifier and the
+/// signer agree on the same byte stream regardless of whether the
+/// signature slot is populated when this function is called.
+pub fn verify_manifest(
+    manifest: &Manifest,
+    verifying_key: &VerifyingKey,
+) -> Result<(), ManifestError> {
+    let sig_hex = manifest
+        .signature
+        .as_deref()
+        .ok_or(ManifestError::SignatureMissing)?;
+    let sig_bytes = hex::decode(sig_hex)
+        .map_err(|e| ManifestError::SignatureInvalid(format!("hex decode: {e}")))?;
+    let sig_array: [u8; ed25519_dalek::SIGNATURE_LENGTH] = sig_bytes.as_slice().try_into().map_err(|_| {
+        ManifestError::SignatureInvalid(format!(
+            "expected {}-byte signature, got {} bytes",
+            ed25519_dalek::SIGNATURE_LENGTH,
+            sig_bytes.len()
+        ))
+    })?;
+    let signature = Signature::from_bytes(&sig_array);
+    let bytes = manifest.canonical_signing_bytes()?;
+    verifying_key
+        .verify(&bytes, &signature)
+        .map_err(|e| ManifestError::SignatureInvalid(format!("ed25519 verify: {e}")))
 }
 
 /// Circuit shape (constraint-system counts).

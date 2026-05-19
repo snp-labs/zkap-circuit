@@ -24,6 +24,10 @@ thiserror = { workspace = true }
 rand = { workspace = true }
 rand_chacha = { workspace = true }
 time = { workspace = true }
+# F5: `generate_setup --signing-key <PATH>` reads a 32-byte raw seed
+# from disk and emits a signed manifest via
+# `zkap_service::manifest::sign_manifest`.
+ed25519-dalek = { workspace = true }
 
 [dev-dependencies]
 # Smoke tests construct a valid base64-encoded 256-byte RSA-2048 modulus

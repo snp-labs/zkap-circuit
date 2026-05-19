@@ -17,7 +17,7 @@ use gadget::{
         error::AnchorError,
         poseidon::{
             PoseidonAnchor, PoseidonAnchorPublicKey, PoseidonAnchorScheme, PoseidonAnchorSecret,
-            build_anchor_witness,
+            build_anchor_witness, generate_combinations,
         },
     },
     matrix::VandermondeMatrix,
@@ -163,7 +163,8 @@ pub(crate) fn derive_selector_from_x_list_and_anchor<F: PrimeField + Absorb>(
 
     // 1. Generate all index combinations that select k positions out of n.
     // e.g.: n=6, k=3 -> [[0,1,2], [0,1,3], ...]
-    let index_combinations = combinations(n, k);
+    // Single source of truth lives in `gadget::anchor::poseidon::generate_combinations`.
+    let index_combinations = generate_combinations(n, k);
 
     // 2. Attempt verification for each index combination.
     for index_combo in index_combinations {
@@ -192,34 +193,6 @@ pub(crate) fn derive_selector_from_x_list_and_anchor<F: PrimeField + Absorb>(
         "No valid selector found".to_string(),
     ))
     .map_err(|e| ApplicationError::InvalidFormat(format!("{}", e)))
-}
-
-// nCk combination generator
-#[allow(dead_code)]
-fn combinations(n: usize, k: usize) -> Vec<Vec<usize>> {
-    let mut result = Vec::new();
-    if k == 0 || k > n {
-        return result;
-    }
-    let mut indices: Vec<usize> = (0..k).collect();
-    loop {
-        result.push(indices.clone());
-        let mut i = k;
-        while i > 0 {
-            i -= 1;
-            if indices[i] != i + n - k {
-                break;
-            }
-        }
-        if indices[0] == n - k {
-            break;
-        }
-        indices[i] += 1;
-        for j in i + 1..k {
-            indices[j] = indices[j - 1] + 1;
-        }
-    }
-    result
 }
 
 #[cfg(test)]

@@ -31,7 +31,7 @@ use gadget::{
     anchor::AnchorScheme,
     anchor::poseidon::{
         PoseidonAnchor, PoseidonAnchorPublicKey, PoseidonAnchorScheme, PoseidonAnchorSecret,
-        build_anchor_witness,
+        build_anchor_witness, generate_combinations,
     },
     base64::{IndexBits, get_base64_table},
     hashes::poseidon::get_poseidon_params,
@@ -284,31 +284,6 @@ fn derive_x(aud: &str, iss: &str, sub: &str, params: &PoseidonConfig<F>, cfg: &C
     CRH::<F>::evaluate(params, limbs).unwrap()
 }
 
-/// Generate all k-element index subsets of 0..n
-fn combinations(n: usize, k: usize) -> Vec<Vec<usize>> {
-    let mut result = Vec::new();
-    let mut combo = vec![0usize; k];
-    fn helper(
-        start: usize,
-        depth: usize,
-        n: usize,
-        k: usize,
-        combo: &mut Vec<usize>,
-        result: &mut Vec<Vec<usize>>,
-    ) {
-        if depth == k {
-            result.push(combo.clone());
-            return;
-        }
-        for i in start..=(n - k + depth) {
-            combo[depth] = i;
-            helper(i + 1, depth + 1, n, k, combo, result);
-        }
-    }
-    helper(0, 0, n, k, &mut combo, &mut result);
-    result
-}
-
 /// Brute-force find a valid selector for the anchor
 fn derive_selector(
     pk: &PoseidonAnchorPublicKey<F>,
@@ -320,7 +295,7 @@ fn derive_selector(
     let n = cfg.n as usize;
     let k = cfg.k as usize;
 
-    for combo in combinations(n, k) {
+    for combo in generate_combinations(n, k) {
         let mut selector = vec![0u8; n];
         for &idx in &combo {
             selector[idx] = 1;

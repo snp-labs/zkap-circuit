@@ -78,12 +78,29 @@ impl SetupOutput {
         &self.pvk
     }
 
-    /// Returns `gamma_abc_g1.len()` — i.e., the number of public inputs
-    /// plus one for the constant term, matching the on-chain verifier's
-    /// indexing into `gamma_abc_g1`. This is *not* the textbook
-    /// `n_public_inputs` (which would be `gamma_abc_g1.len() - 1`); callers
-    /// who want that count should subtract 1.
+    /// Number of public inputs the circuit exposes — the textbook count
+    /// (`gamma_abc_g1.len() - 1`). This matches what
+    /// `circuit::ExposesPublicInputs::public_inputs` reports and what
+    /// `ProveResponse::public_inputs` carries on the wire.
     pub fn public_input_count(&self) -> usize {
+        // `gamma_abc_g1[0]` corresponds to the constant-1 wire and is not
+        // a user-visible public input; subtract it to get the textbook
+        // count. `gamma_abc_g1` is built by `Groth16::setup`, so the
+        // invariant `len() >= 1` holds for any setup output.
+        self.pvk
+            .vk
+            .gamma_abc_g1
+            .len()
+            .checked_sub(1)
+            .expect("gamma_abc_g1 must include the constant-1 element")
+    }
+
+    /// Length of `vk.gamma_abc_g1`, i.e. the textbook public-input count
+    /// plus one for the constant-1 wire. Matches the on-chain verifier's
+    /// indexing into `gamma_abc_g1`. Use this when allocating the
+    /// `instance` buffer the Solidity verifier consumes; use
+    /// [`Self::public_input_count`] for the user-visible count.
+    pub fn gamma_abc_g1_len(&self) -> usize {
         self.pvk.vk.gamma_abc_g1.len()
     }
 

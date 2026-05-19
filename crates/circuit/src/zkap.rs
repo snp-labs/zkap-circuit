@@ -59,9 +59,8 @@ use crate::types::CircuitConfig;
 use crate::{
     ExposesPublicInputs,
     token::{
-        ClaimIndices,
-        claimverifier::claim_extractor_v2,
-        constraints::{ClaimIndicesVar, RSA2048VerifyGadget},
+        ClaimIndices, claim_indices::ClaimIndicesVar, claimverifier::claim_extractor_v2,
+        rsa::RSA2048VerifyGadget,
     },
     witness,
 };

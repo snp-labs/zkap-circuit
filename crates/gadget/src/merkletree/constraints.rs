@@ -426,8 +426,7 @@ mod tests {
         let n_leaves = 5;
 
         for idx in 0..n_leaves {
-            let (root, path, _digest) =
-                generate_merkle_tree_input::<F>(tree_height, n_leaves, idx);
+            let (root, path, _digest) = generate_merkle_tree_input::<F>(tree_height, n_leaves, idx);
 
             let cs = ark_relations::gr1cs::ConstraintSystem::<F>::new_ref();
             let poseidon_params = get_poseidon_params::<F>();

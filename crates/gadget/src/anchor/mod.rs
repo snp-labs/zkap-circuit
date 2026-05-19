@@ -12,8 +12,6 @@ use crate::anchor::error::AnchorError;
 pub mod constraints;
 pub mod error;
 pub mod poseidon;
-#[cfg(feature = "rsa")]
-pub mod utils;
 
 /// Core trait for the Anchor Scheme V3
 ///

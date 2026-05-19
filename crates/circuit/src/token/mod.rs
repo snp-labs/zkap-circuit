@@ -9,7 +9,6 @@
 //!   PKCS#1 signature verification
 //! - [`jwt_field`] — byte-to-field converters for JWT nonce (hex) and expiry
 //!   (decimal); split into `jwt_field/nonce.rs` and `jwt_field/exp.rs` siblings
-//! - [`constraints`] — backward-compatible re-export of `claim_indices` + `rsa`
 //!
 //! Host-side data:
 //! - [`ClaimIndices`] — plain indices describing a claim's position in the JWT payload
@@ -22,15 +21,6 @@ pub mod claim_indices;
 pub mod claimverifier;
 pub mod jwt_field;
 pub mod rsa;
-
-/// Backward-compatible re-export of [`claim_indices`] and [`rsa`] contents.
-///
-/// Existing code using `token::constraints::ClaimIndicesVar` or
-/// `token::constraints::RSA2048VerifyGadget` continues to compile unchanged.
-pub mod constraints {
-    pub use super::claim_indices::ClaimIndicesVar;
-    pub use super::rsa::RSA2048VerifyGadget;
-}
 
 /// Plain (host-side) indices describing one named claim's position in
 /// the decoded JWT payload. Allocated into [`claim_indices::ClaimIndicesVar`]

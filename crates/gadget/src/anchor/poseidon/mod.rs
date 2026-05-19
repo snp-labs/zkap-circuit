@@ -347,8 +347,12 @@ where
         )));
     }
 
-    // Optimization: hash secrets upfront for reuse
-    let _hashed_cache = HashedSecretsCache::new(&pk.params, &known_secrets.0)?;
+    // Note: a `HashedSecretsCache` was previously allocated here as an
+    // "optimisation", but the cached digests were never consumed —
+    // `PoseidonAnchorScheme::generate_witness` (called inside the loop
+    // below) re-hashes every secret via `build_anchor_witness`. The
+    // allocation has been removed; rewiring `build_anchor_witness` to
+    // accept a pre-computed cache is left as a separate optimisation.
 
     // Generate all combinations of k from n indices
     let index_combinations = generate_combinations(n, k);

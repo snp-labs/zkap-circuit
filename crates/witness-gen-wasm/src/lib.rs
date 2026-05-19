@@ -50,6 +50,20 @@ use ark_serialize::CanonicalSerialize;
 use zkap_service::error::ApplicationError;
 use zkap_service::{CircuitConfig, ProveRequest, synthesize_witnesses_streaming};
 
+// `getrandom`'s `custom` feature lets us register a no-op backend so
+// the cdylib's import section stays empty. `synthesize_witnesses` is
+// deterministic; if a transitive `ark-*` codepath ever actually draws
+// entropy, the call surfaces as `Error::UNSUPPORTED` — a loud
+// deterministic failure inside the host instead of a silent zero-fill
+// or a missing-import link error.
+#[cfg(target_arch = "wasm32")]
+getrandom::register_custom_getrandom!(__zkap_wg_no_rng);
+
+#[cfg(target_arch = "wasm32")]
+fn __zkap_wg_no_rng(_buf: &mut [u8]) -> Result<(), getrandom::Error> {
+    Err(getrandom::Error::UNSUPPORTED)
+}
+
 thread_local! {
     /// Most recent successful CanonicalSerialize output. The
     /// pointer returned by [`wg_last_output_ptr`] stays valid
@@ -68,30 +82,66 @@ thread_local! {
 /// `(ptr, len)` to [`synthesize_witness`]; afterwards the host
 /// releases the buffer with [`wg_dealloc`]. The allocation is
 /// independent of [`LAST_OUTPUT`] / [`LAST_ERROR`].
+///
+/// ## Zero-length contract
+///
+/// When `len == 0` no allocation is performed and a non-null
+/// sentinel (`NonNull::<u8>::dangling()`) is returned. The matching
+/// [`wg_dealloc`] call with the same `len == 0` is a no-op.
+/// This keeps the host loop symmetric: it may always call
+/// `wg_alloc` / `wg_dealloc` without special-casing empty buffers.
+///
+/// # Safety
+///
+/// The returned pointer is valid for reads/writes of exactly `len`
+/// bytes. It must be released with [`wg_dealloc`](len) and must not
+/// be used after that call.
 #[unsafe(no_mangle)]
 pub extern "C" fn wg_alloc(len: usize) -> *mut u8 {
-    let mut buf: Vec<u8> = Vec::with_capacity(len);
-    let ptr = buf.as_mut_ptr();
-    core::mem::forget(buf);
+    if len == 0 {
+        // SAFETY: NonNull::dangling() is a properly-aligned non-null
+        // pointer. No memory is read or written through it when
+        // len == 0; wg_dealloc treats len == 0 as a no-op.
+        return core::ptr::NonNull::<u8>::dangling().as_ptr();
+    }
+    // SAFETY: len > 0 so Layout::array::<u8>(len) is valid and
+    // non-zero-sized. If the allocator returns null we panic —
+    // that is the correct behavior for an OOM in a wasm context.
+    let layout = std::alloc::Layout::array::<u8>(len)
+        .expect("wg_alloc: layout overflow");
+    let ptr = unsafe { std::alloc::alloc(layout) };
+    assert!(!ptr.is_null(), "wg_alloc: allocation failed (OOM)");
     ptr
 }
 
 /// Free a buffer previously returned by [`wg_alloc`].
 ///
+/// ## Zero-length contract
+///
+/// When `len == 0` (matching a zero-length [`wg_alloc`]) this
+/// function is a no-op — no memory was actually allocated.
+///
 /// # Safety
 ///
-/// `ptr` must be a pointer previously returned by [`wg_alloc`] and
-/// `len` must equal the original allocation request; otherwise
-/// reconstructing the `Vec` is undefined behavior. Passing a null
-/// `ptr` or `len == 0` is a no-op.
+/// `ptr` must be a pointer previously returned by `wg_alloc(len)`
+/// and `len` must equal the exact value passed to that call.
+/// The layout used for deallocation is
+/// `Layout::array::<u8>(len)` — the same as allocation — so the
+/// allocator's bookkeeping is always consistent. Calling with a
+/// null pointer or mismatched `len` is undefined behavior.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn wg_dealloc(ptr: *mut u8, len: usize) {
-    if ptr.is_null() || len == 0 {
+    if len == 0 {
+        // Zero-length sentinel — no real allocation was made.
         return;
     }
     // SAFETY: caller guarantees (ptr, len) matches an earlier
-    // wg_alloc(len) — that Vec had capacity == len.
-    drop(unsafe { Vec::from_raw_parts(ptr, len, len) });
+    // wg_alloc(len). Layout::array::<u8>(len) produces the same
+    // layout that was used in wg_alloc, satisfying the global
+    // allocator's dealloc contract.
+    let layout = std::alloc::Layout::array::<u8>(len)
+        .expect("wg_dealloc: layout overflow");
+    unsafe { std::alloc::dealloc(ptr, layout) };
 }
 
 /// Run [`zkap_service::synthesize_witnesses`] against UTF-8 JSON
@@ -120,9 +170,22 @@ pub unsafe extern "C" fn synthesize_witness(
     cfg_ptr: *const u8,
     cfg_len: usize,
 ) -> i64 {
+    // Guard against null pointers when the corresponding length is
+    // non-zero. A null pointer with len > 0 would make
+    // `slice::from_raw_parts` undefined behavior. A null pointer
+    // with len == 0 is technically safe (the slice is never
+    // dereferenced), but we reject it anyway to surface likely
+    // host-side bugs early.
+    if req_ptr.is_null() || cfg_ptr.is_null() {
+        LAST_ERROR.with(|err| {
+            *err.borrow_mut() = "null input pointer".to_owned();
+        });
+        return -1;
+    }
+
     // SAFETY: caller upholds the lifetime + UTF-8 contract per the
     // # Safety section above. We only borrow during this call and
-    // copy out before returning.
+    // copy out before returning. Null pointers are rejected above.
     let req_bytes = unsafe { core::slice::from_raw_parts(req_ptr, req_len) };
     let cfg_bytes = unsafe { core::slice::from_raw_parts(cfg_ptr, cfg_len) };
 

@@ -129,6 +129,8 @@ pub extern "C" fn wg_alloc(len: usize) -> *mut u8 {
 /// `Layout::array::<u8>(len)` — the same as allocation — so the
 /// allocator's bookkeeping is always consistent. Calling with a
 /// null pointer or mismatched `len` is undefined behavior.
+/// Corrupted `len` is silently dropped to avoid aborting the wasm
+/// instance; recovery is impossible at this point regardless.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn wg_dealloc(ptr: *mut u8, len: usize) {
     if len == 0 {
@@ -139,8 +141,11 @@ pub unsafe extern "C" fn wg_dealloc(ptr: *mut u8, len: usize) {
     // wg_alloc(len). Layout::array::<u8>(len) produces the same
     // layout that was used in wg_alloc, satisfying the global
     // allocator's dealloc contract.
-    let layout = std::alloc::Layout::array::<u8>(len)
-        .expect("wg_dealloc: layout overflow");
+    let Ok(layout) = std::alloc::Layout::array::<u8>(len) else {
+        // Corrupted len from host — silently drop. Aborting the wasm instance
+        // would be worse than leaking the (already-unreachable) allocation.
+        return;
+    };
     unsafe { std::alloc::dealloc(ptr, layout) };
 }
 

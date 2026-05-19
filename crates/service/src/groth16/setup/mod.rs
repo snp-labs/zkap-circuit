@@ -126,7 +126,7 @@ pub enum SetupRng {
     /// **Only acceptable for tests or byte-reproducible CRS builds.**
     /// The CLI gates this variant behind `--allow-test-only`. Any bundle
     /// produced with this variant will have
-    /// `SetupProvenance::Seed { seed_hex }` in its manifest — a permanent
+    /// `SetupProvenance::Seed { seed }` in its manifest — a permanent
     /// on-chain signal that the toxic waste is recoverable from the seed.
     ChaCha20 {
         /// Raw 32-byte seed fed to `ChaCha20Rng::from_seed`.

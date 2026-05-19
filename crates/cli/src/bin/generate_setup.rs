@@ -27,23 +27,7 @@ use zkap_cli::{
     canonical_json_bytes, compute_circuit_tag, die, load_config_or_exit, read_arcs_blake3_hex,
     sha256_hex,
 };
-use zkap_service::{SetupRng, setup};
-
-/// ZKAP public-input names in the order the circuit allocates them.
-///
-/// Mirrors the canonical public-input ordering that downstream verifiers
-/// rely on. Drift between this list and the circuit's
-/// `CircuitPublicInputs::to_vec` is a host-side instance-vector bug.
-const ZKAP_PUBLIC_INPUT_NAMES: &[&str] = &[
-    "hanchor",
-    "h_a",
-    "root",
-    "h_sign_user_op",
-    "jwt_exp",
-    "partial_rhs",
-    "lhs",
-    "h_aud_list",
-];
+use zkap_service::{PUBLIC_INPUT_NAMES, SetupRng, setup};
 
 #[derive(Parser)]
 #[command(
@@ -142,7 +126,7 @@ fn main() {
             setup_output.shape.num_constraints,
         )
         .with_public_input_names(
-            ZKAP_PUBLIC_INPUT_NAMES
+            PUBLIC_INPUT_NAMES
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),

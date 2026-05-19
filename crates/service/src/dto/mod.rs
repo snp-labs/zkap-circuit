@@ -7,11 +7,13 @@ mod anchor;
 mod hash;
 mod proof;
 mod prove;
+pub mod public_inputs;
 
 pub use anchor::*;
 pub use hash::*;
 pub use proof::*;
 pub use prove::{ProveCredential, ProveRequest};
+pub use public_inputs::{PUBLIC_INPUTS, PUBLIC_INPUT_NAMES, PublicInputSlot};
 
 // `dto/proof.rs` exports `ProofComponents`, `SharedPublicInputs`, and
 // `ProveResponse`. The earlier `ZkapProofResult` / `PerProofPublicInputs`

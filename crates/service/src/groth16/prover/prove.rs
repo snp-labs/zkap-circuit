@@ -38,7 +38,7 @@ use gadget::matrix::VandermondeMatrix;
 use crate::anchor::AnchorConfig;
 use crate::anchor::poseidon::{derive_selector_from_x_list_and_anchor, derive_x_from_secret};
 use crate::artifact::ArtifactSet;
-use crate::dto::{ProveRequest, ProveResponse};
+use crate::dto::{ProveRequest, ProveResponse, PublicInputSlot, PUBLIC_INPUTS};
 use crate::error::ApplicationError;
 use crate::jwt::parser::parse_anchor_secret_from_jwt;
 
@@ -250,19 +250,23 @@ where
             ))
         })?;
 
-        // Canonical 8-element instance layout — see
-        // `ProveResponse::from((proofs, public_inputs))` in
-        // `crate::dto::proof` for the per-proof / shared split.
-        let public_inputs = vec![
-            pub_inputs.hanchor,
-            pub_inputs.h_a,
-            pub_inputs.root,
-            pub_inputs.h_sign_user_op,
-            pub_inputs.jwt_exp,
-            pub_inputs.partial_rhs,
-            pub_inputs.lhs,
-            pub_inputs.h_aud_list,
-        ];
+        // Canonical 8-element instance layout — derived from PUBLIC_INPUTS so
+        // that adding a new PublicInputSlot variant forces a compiler error here
+        // (exhaustive match, no `_` arm). See `crate::dto::public_inputs` for
+        // the single source of truth.
+        let public_inputs: Vec<F> = PUBLIC_INPUTS
+            .iter()
+            .map(|&slot| match slot {
+                PublicInputSlot::Hanchor => pub_inputs.hanchor,
+                PublicInputSlot::Ha => pub_inputs.h_a,
+                PublicInputSlot::Root => pub_inputs.root,
+                PublicInputSlot::HSignUserOp => pub_inputs.h_sign_user_op,
+                PublicInputSlot::JwtExp => pub_inputs.jwt_exp,
+                PublicInputSlot::PartialRhs => pub_inputs.partial_rhs,
+                PublicInputSlot::Lhs => pub_inputs.lhs,
+                PublicInputSlot::HAudList => pub_inputs.h_aud_list,
+            })
+            .collect();
 
         // Move the bundle into the sink; it drops at end of the
         // callback so the next iteration can reuse the freed

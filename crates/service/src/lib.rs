@@ -166,6 +166,7 @@ pub use dto::{
     AnchorSecret, AudienceHashRequest, AudienceHashResponse, GenerateAnchorRequest,
     GenerateAnchorResponse, HashRequest, HashResponse, IssuerKeyHashRequest, IssuerKeyHashResponse,
 };
+pub use dto::{PUBLIC_INPUTS, PUBLIC_INPUT_NAMES, PublicInputSlot};
 pub use hash::{generate_audience_hashes, generate_issuer_key_hash, generate_poseidon_hash};
 
 // Public API (proof + setup surface — always available after the 2026-05 refactor)

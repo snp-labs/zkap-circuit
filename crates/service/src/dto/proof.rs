@@ -5,6 +5,8 @@ use circuit::types::{BN254, F};
 
 use zkap_evm_verifier::Solidity;
 
+use super::public_inputs::PublicInputSlot;
+
 /// Groth16 proof components in Solidity-compatible hex string format.
 ///
 /// - `a`, `c`: BN254 G1 affine points — `[x, y]` (2 strings each).
@@ -145,21 +147,21 @@ impl From<(Vec<Proof<BN254>>, Vec<Vec<F>>)> for ProveResponse {
         // across the batch.
         let first = &raw_inputs[0];
         let shared_public_inputs = SharedPublicInputs {
-            hanchor: crate::field_to_hex(first[0]),
-            h_a: crate::field_to_hex(first[1]),
-            root: crate::field_to_hex(first[2]),
-            h_sign_user_op: crate::field_to_hex(first[3]),
-            lhs: crate::field_to_hex(first[6]),
-            h_aud_list: crate::field_to_hex(first[7]),
+            hanchor: crate::field_to_hex(first[PublicInputSlot::Hanchor.index()]),
+            h_a: crate::field_to_hex(first[PublicInputSlot::Ha.index()]),
+            root: crate::field_to_hex(first[PublicInputSlot::Root.index()]),
+            h_sign_user_op: crate::field_to_hex(first[PublicInputSlot::HSignUserOp.index()]),
+            lhs: crate::field_to_hex(first[PublicInputSlot::Lhs.index()]),
+            h_aud_list: crate::field_to_hex(first[PublicInputSlot::HAudList.index()]),
         };
 
         let jwt_exp: Vec<String> = raw_inputs
             .iter()
-            .map(|inputs| crate::field_to_hex(inputs[4]))
+            .map(|inputs| crate::field_to_hex(inputs[PublicInputSlot::JwtExp.index()]))
             .collect();
         let verification_rhs: Vec<String> = raw_inputs
             .iter()
-            .map(|inputs| crate::field_to_hex(inputs[5]))
+            .map(|inputs| crate::field_to_hex(inputs[PublicInputSlot::PartialRhs.index()]))
             .collect();
 
         Self {

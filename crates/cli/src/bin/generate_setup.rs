@@ -111,6 +111,15 @@ fn main() {
     }
     let (setup_rng, provenance) = pick_rng(cli.rng_seed.as_deref(), cli.allow_test_only);
 
+    // Fail-fast: validate the CLI flags that gate manifest signing BEFORE
+    // running the ~60s Groth16 trusted setup. A wrong-length --signing-key
+    // file or a --verifying-key-out without --signing-key should reject
+    // immediately, not after burning a minute on setup.
+    let signing_key = cli.signing_key.as_deref().map(load_signing_key);
+    if signing_key.is_none() && cli.verifying_key_out.is_some() {
+        die("--verifying-key-out requires --signing-key");
+    }
+
     let params = load_config_or_exit(Path::new(&cli.config));
     let out = PathBuf::from(&cli.output);
 
@@ -210,9 +219,8 @@ fn main() {
         .build()
         .unwrap_or_else(|e| die(format!("manifest build: {e}")));
 
-    let signed = if let Some(signing_key_path) = cli.signing_key.as_deref() {
-        let signing_key = load_signing_key(signing_key_path);
-        sign_manifest(&mut manifest, &signing_key)
+    let signed = if let Some(signing_key) = signing_key.as_ref() {
+        sign_manifest(&mut manifest, signing_key)
             .unwrap_or_else(|e| die(format!("sign manifest: {e}")));
         if let Some(vk_out) = cli.verifying_key_out.as_deref() {
             std::fs::write(vk_out, signing_key.verifying_key().to_bytes())
@@ -220,9 +228,8 @@ fn main() {
         }
         true
     } else {
-        if cli.verifying_key_out.is_some() {
-            die("--verifying-key-out requires --signing-key");
-        }
+        // --verifying-key-out without --signing-key already rejected at
+        // the top of main() (fail-fast before setup).
         false
     };
 

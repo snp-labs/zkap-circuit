@@ -876,9 +876,13 @@ mod tests {
         assert_eq!(padded.len() % 64, 0);
         let nblocks = padded.len() / 64 - 1;
 
-        // Extend to circuit buffer size
+        // Extend to circuit buffer size. The JWT header.payload above is
+        // ~700 bytes; SHA256 padding rounds up to <= 768 bytes (12 blocks),
+        // so 1024 bytes (16 blocks) is the smallest power-of-two that
+        // safely fits without changing the test's coverage. Was 2048;
+        // halving cuts the constraint count and the test wall-time ~50%.
         let mut circuit_data = padded.clone();
-        circuit_data.resize(2048, 0); // Larger buffer for full JWT
+        circuit_data.resize(1024, 0); // 16 blocks, fits the synthetic JWT + padding
 
         // Create constraint system
         let cs = ConstraintSystem::<Fr>::new_ref();

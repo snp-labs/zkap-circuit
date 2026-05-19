@@ -452,8 +452,8 @@ mod tests {
         // An empty array as a bare (non-quoted) value.
         let payload = r#"{"key":[],"other":1}"#;
         let indices = locate_claim(payload, "key").expect("empty array claim");
-        let val_bytes = &payload.as_bytes()
-            [indices.offset + indices.value_idx..indices.offset + indices.value_idx + indices.value_len];
+        let val_bytes = &payload.as_bytes()[indices.offset + indices.value_idx
+            ..indices.offset + indices.value_idx + indices.value_len];
         assert_eq!(val_bytes, b"[]");
     }
 }

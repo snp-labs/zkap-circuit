@@ -134,35 +134,38 @@ fn build_canonical_manifest(dir: &Path) -> Manifest {
     let arcs = ArcsFile::<Fr>::read(&mut &arcs_bytes[..]).expect("parse circuit.ar1cs");
     let ar1cs_blake3 = hex::encode(arcs.body_blake3());
 
-    ManifestBuilder::new("zkap-manifest-signing-test", "zkap-manifest-signing-test__toy")
-        .with_ar1cs_blake3(ar1cs_blake3)
-        .with_shape(2, 2, 1)
-        .with_public_input_names(vec!["z".into()])
-        .with_artifact(
-            ArtifactKey::Ar1cs,
-            artifact_entry(dir, "circuit.ar1cs", "core"),
-        )
-        .with_artifact(ArtifactKey::Pk, artifact_entry(dir, "pk.bin", "core"))
-        .with_artifact(ArtifactKey::Vk, artifact_entry(dir, "vk.bin", "core"))
-        .with_artifact(ArtifactKey::Pvk, artifact_entry(dir, "pvk.bin", "core"))
-        .with_artifact(
-            ArtifactKey::EvmVerifier,
-            artifact_entry(dir, "Groth16Verifier.sol", "domain-optional"),
-        )
-        .with_artifact(
-            ArtifactKey::CircuitConfig,
-            artifact_entry(dir, "config.json", "domain"),
-        )
-        .with_setup_provenance(SetupProvenance::OsRng)
-        .with_build(BuildMetadata {
-            circuit_repo: "https://github.com/snp-labs/zkap-circuit".into(),
-            circuit_commit: "test".into(),
-            ark_ar1cs_rev: "test".into(),
-            rustc: "test".into(),
-            built_at: "2026-05-19T00:00:00Z".into(),
-        })
-        .build()
-        .expect("manifest builder must accept full payload")
+    ManifestBuilder::new(
+        "zkap-manifest-signing-test",
+        "zkap-manifest-signing-test__toy",
+    )
+    .with_ar1cs_blake3(ar1cs_blake3)
+    .with_shape(2, 2, 1)
+    .with_public_input_names(vec!["z".into()])
+    .with_artifact(
+        ArtifactKey::Ar1cs,
+        artifact_entry(dir, "circuit.ar1cs", "core"),
+    )
+    .with_artifact(ArtifactKey::Pk, artifact_entry(dir, "pk.bin", "core"))
+    .with_artifact(ArtifactKey::Vk, artifact_entry(dir, "vk.bin", "core"))
+    .with_artifact(ArtifactKey::Pvk, artifact_entry(dir, "pvk.bin", "core"))
+    .with_artifact(
+        ArtifactKey::EvmVerifier,
+        artifact_entry(dir, "Groth16Verifier.sol", "domain-optional"),
+    )
+    .with_artifact(
+        ArtifactKey::CircuitConfig,
+        artifact_entry(dir, "config.json", "domain"),
+    )
+    .with_setup_provenance(SetupProvenance::OsRng)
+    .with_build(BuildMetadata {
+        circuit_repo: "https://github.com/snp-labs/zkap-circuit".into(),
+        circuit_commit: "test".into(),
+        ark_ar1cs_rev: "test".into(),
+        rustc: "test".into(),
+        built_at: "2026-05-19T00:00:00Z".into(),
+    })
+    .build()
+    .expect("manifest builder must accept full payload")
 }
 
 fn unique_tmp_dir(tag: &str) -> PathBuf {

@@ -164,9 +164,8 @@ pub fn setup(
     let circuit = ZkapCircuit::<CG, BNP>::generate_mock_circuit(params);
 
     let (pk, vk) = match rng {
-        SetupRng::OsRng => Groth16::<BN254>::setup(circuit, &mut rand::rngs::OsRng).map_err(
-            |e| ApplicationError::InvalidFormat(format!("Groth16 setup failed: {}", e)),
-        )?,
+        SetupRng::OsRng => Groth16::<BN254>::setup(circuit, &mut rand::rngs::OsRng)
+            .map_err(|e| ApplicationError::InvalidFormat(format!("Groth16 setup failed: {}", e)))?,
         SetupRng::ChaCha20 { seed } => {
             Groth16::<BN254>::setup(circuit, &mut ChaCha20Rng::from_seed(seed)).map_err(|e| {
                 ApplicationError::InvalidFormat(format!("Groth16 setup failed: {}", e))

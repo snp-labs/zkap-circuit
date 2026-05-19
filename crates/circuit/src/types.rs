@@ -207,11 +207,11 @@ mod tests {
         CircuitConfig {
             max_jwt_b64_len: 1024,
             max_payload_b64_len: 640,
-            max_aud_len: 155,  // 5 × 31
+            max_aud_len: 155, // 5 × 31
             max_exp_len: 20,
-            max_iss_len: 93,   // 3 × 31
+            max_iss_len: 93, // 3 × 31
             max_nonce_len: 93,
-            max_sub_len: 93,   // 3 × 31
+            max_sub_len: 93, // 3 × 31
             n: 6,
             k: 3,
             tree_height: 4,
@@ -292,6 +292,7 @@ mod tests {
         cfg.max_aud_len = 0;
         cfg.max_iss_len = 0;
         cfg.max_sub_len = 0;
-        cfg.validate().expect("zero is a multiple of 31 — validate must accept it");
+        cfg.validate()
+            .expect("zero is a multiple of 31 — validate must accept it");
     }
 }

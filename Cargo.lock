@@ -2945,6 +2945,7 @@ name = "zkap-witness-gen-wasm"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "ark-ar1cs",
  "ark-bn254",
  "ark-crypto-primitives",
  "ark-ff",
@@ -2957,6 +2958,7 @@ dependencies = [
  "gadget",
  "getrandom 0.2.17",
  "rsa",
+ "serde",
  "serde_json",
  "sha2",
  "signature",

@@ -107,8 +107,7 @@ pub extern "C" fn wg_alloc(len: usize) -> *mut u8 {
     // SAFETY: len > 0 so Layout::array::<u8>(len) is valid and
     // non-zero-sized. If the allocator returns null we panic —
     // that is the correct behavior for an OOM in a wasm context.
-    let layout = std::alloc::Layout::array::<u8>(len)
-        .expect("wg_alloc: layout overflow");
+    let layout = std::alloc::Layout::array::<u8>(len).expect("wg_alloc: layout overflow");
     let ptr = unsafe { std::alloc::alloc(layout) };
     assert!(!ptr.is_null(), "wg_alloc: allocation failed (OOM)");
     ptr

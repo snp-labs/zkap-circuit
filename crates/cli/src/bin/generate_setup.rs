@@ -120,8 +120,8 @@ fn main() {
     let circuit_tag = compute_circuit_tag(&cli.circuit_id, &canonical_cfg_bytes);
 
     println!("[1/2] Groth16 trusted setup → {}", out.display());
-    let setup_output = setup(&params, &out, setup_rng, None)
-        .unwrap_or_else(|e| die(format!("setup failed: {e}")));
+    let setup_output =
+        setup(&params, &out, setup_rng, None).unwrap_or_else(|e| die(format!("setup failed: {e}")));
 
     // `circuit.ar1cs` / `pk.bin` / `vk.bin` / `pvk.bin` /
     // `Groth16Verifier.sol` / `config.json` are written by `setup()`.
@@ -149,12 +149,7 @@ fn main() {
             setup_output.shape.num_witness,
             setup_output.shape.num_constraints,
         )
-        .with_public_input_names(
-            PUBLIC_INPUT_NAMES
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
-        )
+        .with_public_input_names(PUBLIC_INPUT_NAMES.iter().map(|s| s.to_string()).collect())
         .with_artifact(
             ArtifactKey::Ar1cs,
             make_entry(&arcs_path, "circuit.ar1cs", "core", None, None),

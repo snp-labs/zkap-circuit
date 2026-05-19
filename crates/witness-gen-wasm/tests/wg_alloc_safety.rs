@@ -55,11 +55,7 @@ fn wg_alloc_roundtrip_preserves_bytes() {
     // SAFETY: same region, still within the allocation lifetime.
     for i in 0..N {
         let byte = unsafe { ptr.add(i).read() };
-        assert_eq!(
-            byte,
-            (i & 0xFF) as u8,
-            "byte at offset {i} was corrupted"
-        );
+        assert_eq!(byte, (i & 0xFF) as u8, "byte at offset {i} was corrupted");
     }
 
     // Release — must not crash and must not double-free when the
@@ -93,11 +89,17 @@ fn synthesize_witness_null_request_returns_error() {
         )
     };
 
-    assert!(ret < 0, "expected negative return for null req_ptr, got {ret}");
+    assert!(
+        ret < 0,
+        "expected negative return for null req_ptr, got {ret}"
+    );
 
     // Verify that LAST_ERROR was populated with the sentinel message.
     let err_len = wg_last_error_len();
-    assert!(err_len > 0, "LAST_ERROR must be non-empty after null-pointer error");
+    assert!(
+        err_len > 0,
+        "LAST_ERROR must be non-empty after null-pointer error"
+    );
 
     let err_ptr = wg_last_error_ptr();
     // SAFETY: wg_last_error_ptr() is valid for wg_last_error_len()

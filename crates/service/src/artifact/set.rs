@@ -105,8 +105,7 @@ impl ArtifactSet {
         }
         let arcs = load_arcs(dir, &manifest.artifacts.ar1cs, &manifest.ar1cs_blake3)?;
         let pk = load_canonical::<ProvingKey<BN254>>(dir, &manifest.artifacts.pk, "pk")?;
-        let vk =
-            load_canonical::<Groth16VerifyingKey<BN254>>(dir, &manifest.artifacts.vk, "vk")?;
+        let vk = load_canonical::<Groth16VerifyingKey<BN254>>(dir, &manifest.artifacts.vk, "vk")?;
         let pvk =
             load_canonical::<PreparedVerifyingKey<BN254>>(dir, &manifest.artifacts.pvk, "pvk")?;
         let cfg = load_circuit_config(dir, &manifest.artifacts.circuit_config)?;

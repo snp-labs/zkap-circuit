@@ -66,19 +66,55 @@ struct IndicesTuple {
 
 impl IndicesTuple {
     fn assert_eq(&self, other: &IndicesTuple, label: &str) {
-        assert_eq!(self.offset,    other.offset,    "{}: offset mismatch",    label);
-        assert_eq!(self.claim_len, other.claim_len, "{}: claim_len mismatch", label);
-        assert_eq!(self.colon_idx, other.colon_idx, "{}: colon_idx mismatch", label);
-        assert_eq!(self.value_idx, other.value_idx, "{}: value_idx mismatch", label);
-        assert_eq!(self.value_len, other.value_len, "{}: value_len mismatch", label);
+        assert_eq!(self.offset, other.offset, "{}: offset mismatch", label);
+        assert_eq!(
+            self.claim_len, other.claim_len,
+            "{}: claim_len mismatch",
+            label
+        );
+        assert_eq!(
+            self.colon_idx, other.colon_idx,
+            "{}: colon_idx mismatch",
+            label
+        );
+        assert_eq!(
+            self.value_idx, other.value_idx,
+            "{}: value_idx mismatch",
+            label
+        );
+        assert_eq!(
+            self.value_len, other.value_len,
+            "{}: value_len mismatch",
+            label
+        );
     }
 
     fn prop_assert_eq(&self, other: &IndicesTuple, label: &str) -> Result<(), TestCaseError> {
-        prop_assert_eq!(self.offset,    other.offset,    "{}: offset mismatch",    label);
-        prop_assert_eq!(self.claim_len, other.claim_len, "{}: claim_len mismatch", label);
-        prop_assert_eq!(self.colon_idx, other.colon_idx, "{}: colon_idx mismatch", label);
-        prop_assert_eq!(self.value_idx, other.value_idx, "{}: value_idx mismatch", label);
-        prop_assert_eq!(self.value_len, other.value_len, "{}: value_len mismatch", label);
+        prop_assert_eq!(self.offset, other.offset, "{}: offset mismatch", label);
+        prop_assert_eq!(
+            self.claim_len,
+            other.claim_len,
+            "{}: claim_len mismatch",
+            label
+        );
+        prop_assert_eq!(
+            self.colon_idx,
+            other.colon_idx,
+            "{}: colon_idx mismatch",
+            label
+        );
+        prop_assert_eq!(
+            self.value_idx,
+            other.value_idx,
+            "{}: value_idx mismatch",
+            label
+        );
+        prop_assert_eq!(
+            self.value_len,
+            other.value_len,
+            "{}: value_len mismatch",
+            label
+        );
         Ok(())
     }
 }
@@ -197,7 +233,10 @@ proptest! {
 fn string_value_containing_comma() {
     let payload = r#"{"key":"val,ue","other":1}"#;
     let v = located_value_str(payload, "key");
-    assert_eq!(v, r#""val,ue""#, "comma inside string value must not terminate scan");
+    assert_eq!(
+        v, r#""val,ue""#,
+        "comma inside string value must not terminate scan"
+    );
     let reparsed: Value = serde_json::from_str(&v).expect("round-trip");
     assert_eq!(reparsed, Value::String("val,ue".into()));
 }
@@ -207,7 +246,10 @@ fn string_value_containing_comma() {
 fn string_value_containing_brace() {
     let payload = r#"{"key":"val}ue","other":1}"#;
     let v = located_value_str(payload, "key");
-    assert_eq!(v, r#""val}ue""#, "brace inside string value must not terminate scan");
+    assert_eq!(
+        v, r#""val}ue""#,
+        "brace inside string value must not terminate scan"
+    );
 }
 
 /// Claim is the last claim in the object — terminator is `}` not `,`.
@@ -237,7 +279,10 @@ fn missing_claim_returns_error() {
 fn empty_string_value() {
     let payload = r#"{"key":"","other":1}"#;
     let idx = locate_claim(payload, "key").expect("key");
-    assert_eq!(idx.value_len, 2, "empty string occupies exactly 2 bytes (the two quotes)");
+    assert_eq!(
+        idx.value_len, 2,
+        "empty string occupies exactly 2 bytes (the two quotes)"
+    );
     let v = located_value_str(payload, "key");
     assert_eq!(v, r#""""#);
     let reparsed: Value = serde_json::from_str(&v).expect("round-trip");
@@ -275,7 +320,10 @@ fn aud_anchor_secret_byte_range_matches_locate_claim() {
     // Raw slice from locate_claim — includes surrounding quotes.
     let raw = std::str::from_utf8(&payload_bytes[value_start..value_end])
         .expect("raw value is valid UTF-8");
-    assert_eq!(raw, r#""test-audience""#, "locate_claim must include surrounding quotes");
+    assert_eq!(
+        raw, r#""test-audience""#,
+        "locate_claim must include surrounding quotes"
+    );
 
     // parse_claim_from_str wraps the same locate_claim; its .value field is identical.
     let claim = parse_claim_from_str(payload, "aud").expect("parse aud");
@@ -352,8 +400,20 @@ fn aud_locate_matches_parse_soundness_gate() {
     // locate_claim IS the implementation of parse_claim_from_str; their
     // indices must always agree.  Any divergence means one path has been
     // accidentally changed to use a different parser.
-    let l = IndicesTuple { offset: loc.offset, claim_len: loc.claim_len, colon_idx: loc.colon_idx, value_idx: loc.value_idx, value_len: loc.value_len };
-    let r = IndicesTuple { offset: parsed.indices.offset, claim_len: parsed.indices.claim_len, colon_idx: parsed.indices.colon_idx, value_idx: parsed.indices.value_idx, value_len: parsed.indices.value_len };
+    let l = IndicesTuple {
+        offset: loc.offset,
+        claim_len: loc.claim_len,
+        colon_idx: loc.colon_idx,
+        value_idx: loc.value_idx,
+        value_len: loc.value_len,
+    };
+    let r = IndicesTuple {
+        offset: parsed.indices.offset,
+        claim_len: parsed.indices.claim_len,
+        colon_idx: parsed.indices.colon_idx,
+        value_idx: parsed.indices.value_idx,
+        value_len: parsed.indices.value_len,
+    };
     l.assert_eq(&r, "aud soundness regression");
 
     // The extracted value must be the JSON string (with surrounding quotes).

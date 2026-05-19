@@ -38,7 +38,7 @@ use gadget::matrix::VandermondeMatrix;
 use crate::anchor::AnchorConfig;
 use crate::anchor::poseidon::{derive_selector_from_x_list_and_anchor, derive_x_from_secret};
 use crate::artifact::ArtifactSet;
-use crate::dto::{ProveRequest, ProveResponse, PublicInputSlot, PUBLIC_INPUTS};
+use crate::dto::{PUBLIC_INPUTS, ProveRequest, ProveResponse, PublicInputSlot};
 use crate::error::ApplicationError;
 use crate::jwt::parser::parse_anchor_secret_from_jwt;
 

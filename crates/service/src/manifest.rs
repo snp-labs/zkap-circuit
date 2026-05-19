@@ -167,13 +167,14 @@ pub fn verify_manifest(
         .ok_or(ManifestError::SignatureMissing)?;
     let sig_bytes = hex::decode(sig_hex)
         .map_err(|e| ManifestError::SignatureInvalid(format!("hex decode: {e}")))?;
-    let sig_array: [u8; ed25519_dalek::SIGNATURE_LENGTH] = sig_bytes.as_slice().try_into().map_err(|_| {
-        ManifestError::SignatureInvalid(format!(
-            "expected {}-byte signature, got {} bytes",
-            ed25519_dalek::SIGNATURE_LENGTH,
-            sig_bytes.len()
-        ))
-    })?;
+    let sig_array: [u8; ed25519_dalek::SIGNATURE_LENGTH] =
+        sig_bytes.as_slice().try_into().map_err(|_| {
+            ManifestError::SignatureInvalid(format!(
+                "expected {}-byte signature, got {} bytes",
+                ed25519_dalek::SIGNATURE_LENGTH,
+                sig_bytes.len()
+            ))
+        })?;
     let signature = Signature::from_bytes(&sig_array);
     let bytes = manifest.canonical_signing_bytes()?;
     verifying_key

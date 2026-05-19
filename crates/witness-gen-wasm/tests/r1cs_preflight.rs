@@ -40,8 +40,7 @@ use ark_serialize::CanonicalDeserialize;
 use ark_std::rand::rngs::OsRng;
 
 use zkap_service::{
-    ArtifactSet, CircuitConfig, ProveCredential, ProveRequest, WitnessBundle,
-    manifest::Manifest,
+    ArtifactSet, CircuitConfig, ProveCredential, ProveRequest, WitnessBundle, manifest::Manifest,
 };
 use zkap_witness_gen_wasm::synthesize_witness_bytes;
 
@@ -117,31 +116,28 @@ fn load_bundle() -> (Manifest, PathBuf) {
         "manifest.json missing at {} — is the bundle checked in?",
         manifest_path.display()
     );
-    let bytes = std::fs::read(&manifest_path)
-        .unwrap_or_else(|e| panic!("read manifest.json: {e}"));
-    let manifest: Manifest = serde_json::from_slice(&bytes)
-        .unwrap_or_else(|e| panic!("parse manifest.json: {e}"));
+    let bytes = std::fs::read(&manifest_path).unwrap_or_else(|e| panic!("read manifest.json: {e}"));
+    let manifest: Manifest =
+        serde_json::from_slice(&bytes).unwrap_or_else(|e| panic!("parse manifest.json: {e}"));
     (manifest, bundle_dir)
 }
 
 /// Load `(cfg_bytes, req_bytes)` from the bundle's `config.json` and
 /// `proof_fixture.json` — the same pair the `oracle` example stages.
 fn load_fixture_json(bundle_dir: &std::path::Path) -> (Vec<u8>, Vec<u8>) {
-    let cfg_bytes = std::fs::read(bundle_dir.join("config.json"))
-        .expect("read config.json");
+    let cfg_bytes = std::fs::read(bundle_dir.join("config.json")).expect("read config.json");
     // Validate that cfg_bytes parses as CircuitConfig.
-    let _cfg: CircuitConfig = serde_json::from_slice(&cfg_bytes)
-        .expect("parse config.json as CircuitConfig");
+    let _cfg: CircuitConfig =
+        serde_json::from_slice(&cfg_bytes).expect("parse config.json as CircuitConfig");
 
-    let fixture_bytes = std::fs::read(bundle_dir.join("proof_fixture.json"))
-        .expect(
-            "read proof_fixture.json — run \
+    let fixture_bytes = std::fs::read(bundle_dir.join("proof_fixture.json")).expect(
+        "read proof_fixture.json — run \
              `cargo test --release -p zkap-service --test gen_proof_fixture \
              -- --ignored --nocapture` with ZKAP_PROOF_MANIFEST_DIR set \
              if it is missing",
-        );
-    let fixture: ProofFixtureFile = serde_json::from_slice(&fixture_bytes)
-        .expect("parse proof_fixture.json (camelCase)");
+    );
+    let fixture: ProofFixtureFile =
+        serde_json::from_slice(&fixture_bytes).expect("parse proof_fixture.json (camelCase)");
     let request: ProveRequest = fixture.request.into();
     let req_bytes = serde_json::to_vec(&request).expect("serialize ProveRequest snake_case");
     (cfg_bytes, req_bytes)

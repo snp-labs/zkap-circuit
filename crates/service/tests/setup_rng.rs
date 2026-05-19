@@ -49,10 +49,7 @@ fn unique_tmp_dir(label: &str) -> PathBuf {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(0);
-    std::env::temp_dir().join(format!(
-        "setup_rng_{label}_{}_{nanos}",
-        std::process::id()
-    ))
+    std::env::temp_dir().join(format!("setup_rng_{label}_{}_{nanos}", std::process::id()))
 }
 
 /// Two `setup()` calls with the same `SetupRng::ChaCha20` seed must produce
@@ -76,10 +73,8 @@ fn setup_with_chacha20_seed_is_deterministic() {
     fs::create_dir_all(&dir1).expect("create dir1");
     fs::create_dir_all(&dir2).expect("create dir2");
 
-    setup(&cfg, &dir1, SetupRng::ChaCha20 { seed }, None)
-        .expect("setup run 1 must succeed");
-    setup(&cfg, &dir2, SetupRng::ChaCha20 { seed }, None)
-        .expect("setup run 2 must succeed");
+    setup(&cfg, &dir1, SetupRng::ChaCha20 { seed }, None).expect("setup run 1 must succeed");
+    setup(&cfg, &dir2, SetupRng::ChaCha20 { seed }, None).expect("setup run 2 must succeed");
 
     let pk1 = fs::read(dir1.join("pk.bin")).expect("pk.bin run 1");
     let pk2 = fs::read(dir2.join("pk.bin")).expect("pk.bin run 2");
@@ -115,8 +110,7 @@ fn setup_rng_variant_emits_correct_provenance() {
     let dir = unique_tmp_dir("osrng_provenance");
     fs::create_dir_all(&dir).expect("create dir");
 
-    let output = setup(&cfg, &dir, SetupRng::OsRng, None)
-        .expect("setup with OsRng must succeed");
+    let output = setup(&cfg, &dir, SetupRng::OsRng, None).expect("setup with OsRng must succeed");
 
     // The shape fields are populated from the synthesized ConstraintSystem —
     // non-zero values confirm setup ran end-to-end.

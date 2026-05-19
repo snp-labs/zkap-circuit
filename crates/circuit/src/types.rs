@@ -103,6 +103,17 @@ pub enum CircuitConfigError {
     /// `claims` must not be empty.
     #[error("claims must not be empty")]
     EmptyClaims,
+    /// A claim-length field fed to `pack_bytes_to_field_native` must be a
+    /// multiple of 31 (the BN254 limb width).  Any other value causes
+    /// `chunks(31)` to silently drop trailing bytes, corrupting field
+    /// elements.
+    #[error("{field} must be a multiple of 31 (got {value})")]
+    ClaimLenNotMultipleOf31 {
+        /// Name of the offending field (e.g. `"max_aud_len"`).
+        field: &'static str,
+        /// Observed value.
+        value: u64,
+    },
 }
 
 impl CircuitConfig {
@@ -141,6 +152,20 @@ impl CircuitConfig {
         if self.claims.is_empty() {
             return Err(CircuitConfigError::EmptyClaims);
         }
+        // `pack_bytes_to_field_native` packs bytes into BN254 field elements
+        // using 31-byte chunks.  Any `max_*_len` that is not a multiple of 31
+        // causes `chunks(31)` to silently drop trailing bytes, corrupting the
+        // resulting field elements.  Catch this at config-load time so the
+        // error surfaces before any proof attempt.
+        for (field, value) in [
+            ("max_aud_len", self.max_aud_len),
+            ("max_iss_len", self.max_iss_len),
+            ("max_sub_len", self.max_sub_len),
+        ] {
+            if value % 31 != 0 {
+                return Err(CircuitConfigError::ClaimLenNotMultipleOf31 { field, value });
+            }
+        }
         Ok(())
     }
 }
@@ -170,3 +195,103 @@ pub type BN254 = ark_bn254::Bn254;
 /// packed into BN254 field elements via `BigNat2048Params`'s 64-bit limb
 /// schedule. Used as the `BNP` type parameter on [`crate::zkap::ZkapCircuit`].
 pub type BNP = BigNat2048Params;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Baseline valid config used as a starting point for mutation tests.
+    /// All `max_*_len` values that feed `pack_bytes_to_field_native` are
+    /// multiples of 31 (93 = 3 × 31, 155 = 5 × 31).
+    fn valid_config() -> CircuitConfig {
+        CircuitConfig {
+            max_jwt_b64_len: 1024,
+            max_payload_b64_len: 640,
+            max_aud_len: 155,  // 5 × 31
+            max_exp_len: 20,
+            max_iss_len: 93,   // 3 × 31
+            max_nonce_len: 93,
+            max_sub_len: 93,   // 3 × 31
+            n: 6,
+            k: 3,
+            tree_height: 4,
+            num_audience_limit: 5,
+            claims: vec![
+                "aud".into(),
+                "exp".into(),
+                "iss".into(),
+                "nonce".into(),
+                "sub".into(),
+            ],
+            forbidden_string: "forbidden".into(),
+        }
+    }
+
+    #[test]
+    fn validate_accepts_multiple_of_31() {
+        // 93 = 3 × 31 and 155 = 5 × 31 — all claim-length fields are valid.
+        let cfg = valid_config();
+        cfg.validate().expect("valid config must pass validation");
+    }
+
+    #[test]
+    fn validate_rejects_non_multiple_of_31_max_aud_len() {
+        let mut cfg = valid_config();
+        cfg.max_aud_len = 100; // 100 % 31 = 7 — invalid
+        match cfg.validate() {
+            Err(CircuitConfigError::ClaimLenNotMultipleOf31 { field, value }) => {
+                assert!(
+                    field.contains("max_aud_len"),
+                    "expected max_aud_len in error, got: {field}"
+                );
+                assert_eq!(value, 100);
+            }
+            other => panic!("expected ClaimLenNotMultipleOf31, got: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn validate_rejects_non_multiple_of_31_max_iss_len() {
+        let mut cfg = valid_config();
+        cfg.max_iss_len = 100; // 100 % 31 = 7 — invalid
+        match cfg.validate() {
+            Err(CircuitConfigError::ClaimLenNotMultipleOf31 { field, value }) => {
+                assert!(
+                    field.contains("max_iss_len"),
+                    "expected max_iss_len in error, got: {field}"
+                );
+                assert_eq!(value, 100);
+            }
+            other => panic!("expected ClaimLenNotMultipleOf31, got: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn validate_rejects_non_multiple_of_31_max_sub_len() {
+        let mut cfg = valid_config();
+        cfg.max_sub_len = 100; // 100 % 31 = 7 — invalid
+        match cfg.validate() {
+            Err(CircuitConfigError::ClaimLenNotMultipleOf31 { field, value }) => {
+                assert!(
+                    field.contains("max_sub_len"),
+                    "expected max_sub_len in error, got: {field}"
+                );
+                assert_eq!(value, 100);
+            }
+            other => panic!("expected ClaimLenNotMultipleOf31, got: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn validate_accepts_zero_claim_len() {
+        // Zero is a multiple of 31 (0 % 31 == 0), so it passes the
+        // 31-divisibility check.  Other constraints (e.g. shape checks in the
+        // prover) may later reject zero-length claims, but validate() itself
+        // must accept it.
+        let mut cfg = valid_config();
+        cfg.max_aud_len = 0;
+        cfg.max_iss_len = 0;
+        cfg.max_sub_len = 0;
+        cfg.validate().expect("zero is a multiple of 31 — validate must accept it");
+    }
+}

@@ -51,7 +51,13 @@ use super::RSA_2048_BYTES;
 const BN254_LIMB_WIDTH: usize = 31;
 
 fn pack_bytes_to_field_native(bytes: &[u8]) -> Vec<F> {
-    debug_assert!(bytes.len().is_multiple_of(BN254_LIMB_WIDTH));
+    // Invariant guaranteed by CircuitConfig::validate(); assert is defence-in-depth.
+    assert!(
+        bytes.len().is_multiple_of(BN254_LIMB_WIDTH),
+        "pack_bytes_to_field_native: input length {} is not a multiple of {} (BN254 limb width)",
+        bytes.len(),
+        BN254_LIMB_WIDTH,
+    );
     bytes
         .chunks(BN254_LIMB_WIDTH)
         .map(F::from_be_bytes_mod_order)

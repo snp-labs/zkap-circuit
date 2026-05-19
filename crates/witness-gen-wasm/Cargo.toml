@@ -21,22 +21,20 @@ ark-serialize = { workspace = true }
 # `criterion` drives the cold/warm benchmark suite under
 # `benches/synthesize.rs`. `wasmtime` is the JIT runtime we instantiate
 # the cdylib build inside, on the host, for the wasm32 measurement
-# axis and the parity test. The bench + parity test additionally
-# borrow fixture-construction helpers from `zkap-service` (real RSA
-# JWT + Merkle inputs) so the witness path doesn't reject inputs at
-# the constraint layer.
+# axis and the parity test.
+#
+# `zkap-service`, `serde_json`, and `ark-serialize` are already declared
+# under `[dependencies]` so the rlib path inherits them in test builds —
+# do not redeclare them here.
 criterion    = { workspace = true }
 wasmtime     = { workspace = true }
-zkap-service = { workspace = true }
 serde        = { workspace = true, features = ["derive"] }
-serde_json   = { workspace = true }
 ark-ar1cs    = { workspace = true }
 ark-utils = { workspace = true, features = ["field-serde", "io"] }
 ark-bn254 = { workspace = true }
 ark-ff = { workspace = true }
 ark-std = { workspace = true }
 ark-crypto-primitives = { workspace = true }
-ark-serialize = { workspace = true }
 circuit = { workspace = true }
 gadget = { workspace = true, default-features = false, features = ["crypto", "base64", "rsa"] }
 rsa = { workspace = true }

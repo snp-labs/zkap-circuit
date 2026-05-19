@@ -12,21 +12,17 @@ categories = ["cryptography"]
 gadget = { workspace = true, default-features = false, features = ["crypto", "base64", "rsa"] }
 ark-utils = { workspace = true }
 
-ark-groth16 = { workspace = true }
 ark-ec = { workspace = true }
 ark-ff = { workspace = true }
-ark-poly = { workspace = true }
 ark-r1cs-std = { workspace = true }
 ark-relations = { workspace = true }
 ark-std = { workspace = true }
-ark-crypto-primitives = { workspace = true, features = ["crh", "constraints", "prf", "merkle_tree"] }
+ark-crypto-primitives = { workspace = true, features = ["crh", "constraints", "merkle_tree"] }
 ark-bn254 = { workspace = true }
 ark-ed-on-bn254 = { workspace = true, features = ["r1cs"] }
 ark-serialize = { workspace = true, features = ["derive"] }
 
 serde = { workspace = true }
-serde_json = { workspace = true }
-hex = { workspace = true }
 thiserror = { workspace = true }
 
 [features]
@@ -38,7 +34,14 @@ print-trace = ["gadget/print-trace"]
 integration-tests = []
 
 [dev-dependencies]
+# Integration tests under `tests/groth16_integration.rs` exercise the
+# real Groth16 prove/verify path against the circuit; move these deps
+# from `[dependencies]` so the rlib's runtime surface stays minimal.
+ark-groth16 = { workspace = true }
+ark-poly = { workspace = true }
 ark-utils = { workspace = true, features = ["field-serde"] }
+hex = { workspace = true }
+serde_json = { workspace = true }
 rsa = { workspace = true }
 sha2 = { workspace = true }
 rand = { workspace = true }

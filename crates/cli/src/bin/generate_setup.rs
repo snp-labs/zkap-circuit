@@ -20,12 +20,13 @@
 //! `built_at` for byte-reproducible runs.
 
 use clap::Parser;
+use ed25519_dalek::{SECRET_KEY_LENGTH, SigningKey};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use zkap_cli::{
     ArtifactEntry, ArtifactKey, BuildMetadata, ManifestBuilder, SetupProvenance, built_at_now,
     canonical_json_bytes, compute_circuit_tag, die, load_config_or_exit, read_arcs_blake3_hex,
-    sha256_hex,
+    sha256_hex, sign_manifest,
 };
 use zkap_service::{SetupRng, setup};
 
@@ -93,6 +94,29 @@ struct Cli {
     /// entry.
     #[arg(long)]
     witness_gen_wasm: Option<PathBuf>,
+
+    /// Path to a raw 32-byte ed25519 signing key (the secret-key
+    /// seed used by [`ed25519_dalek::SigningKey::from_bytes`]). When
+    /// supplied, the emitted `manifest.json` carries an
+    /// ed25519 signature in its `signature` field; downstream
+    /// loaders can verify it by passing the corresponding
+    /// `VerifyingKey` to `ArtifactSet::load`. When omitted, the
+    /// manifest is written with `signature: null` exactly as
+    /// pre-F5 (preserving manifest-golden byte-reproducibility).
+    ///
+    /// File format: raw 32 bytes (no PEM/DER wrapper, no
+    /// newline). Generate with `openssl rand 32 > signing.key` or
+    /// `dd if=/dev/urandom bs=32 count=1 of=signing.key`.
+    #[arg(long)]
+    signing_key: Option<PathBuf>,
+
+    /// Optional output path for the ed25519 public key (32 raw
+    /// bytes) derived from `--signing-key`. Has no effect unless
+    /// `--signing-key` is also supplied. Useful so downstream
+    /// callers can verify the bundle without re-deriving the
+    /// public key.
+    #[arg(long)]
+    verifying_key_out: Option<PathBuf>,
 }
 
 fn main() {
@@ -203,9 +227,25 @@ fn main() {
         false
     };
 
-    let manifest = builder
+    let mut manifest = builder
         .build()
         .unwrap_or_else(|e| die(format!("manifest build: {e}")));
+
+    let signed = if let Some(signing_key_path) = cli.signing_key.as_deref() {
+        let signing_key = load_signing_key(signing_key_path);
+        sign_manifest(&mut manifest, &signing_key)
+            .unwrap_or_else(|e| die(format!("sign manifest: {e}")));
+        if let Some(vk_out) = cli.verifying_key_out.as_deref() {
+            std::fs::write(vk_out, signing_key.verifying_key().to_bytes())
+                .unwrap_or_else(|e| die(format!("write verifying key: {e}")));
+        }
+        true
+    } else {
+        if cli.verifying_key_out.is_some() {
+            die("--verifying-key-out requires --signing-key");
+        }
+        false
+    };
 
     let manifest_pretty = serde_json::to_string_pretty(&manifest)
         .unwrap_or_else(|e| die(format!("serialize manifest: {e}")));
@@ -234,6 +274,29 @@ fn main() {
             "  artifacts     : circuit.ar1cs, pk.bin, vk.bin, pvk.bin,\n                  Groth16Verifier.sol, config.json, manifest.json"
         );
     }
+    println!(
+        "  signature     : {}",
+        if signed { "ed25519 (signed)" } else { "none" }
+    );
+}
+
+/// Read `path` as raw 32-byte ed25519 secret-key bytes and
+/// construct a [`SigningKey`]. Aborts with [`die`] on any failure
+/// (read, length, parse) — the CLI is process-mode, not library.
+fn load_signing_key(path: &Path) -> SigningKey {
+    let bytes = std::fs::read(path)
+        .unwrap_or_else(|e| die(format!("read signing key {}: {}", path.display(), e)));
+    if bytes.len() != SECRET_KEY_LENGTH {
+        die(format!(
+            "signing key {} must be exactly {} raw bytes (got {})",
+            path.display(),
+            SECRET_KEY_LENGTH,
+            bytes.len()
+        ));
+    }
+    let mut seed = [0u8; SECRET_KEY_LENGTH];
+    seed.copy_from_slice(&bytes);
+    SigningKey::from_bytes(&seed)
 }
 
 /// Build an [`ArtifactEntry`] by hashing `disk_path` and reading its size.

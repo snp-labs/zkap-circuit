@@ -49,16 +49,19 @@ fn parity_for_k(k: u64) {
 }
 
 #[test]
+#[ignore = "requires pre-built wasm artifact; the wasm-perf workflow builds it then runs `cargo test --test parity -- --ignored`"]
 fn parity_k1() {
     parity_for_k(1);
 }
 
 #[test]
+#[ignore = "requires pre-built wasm artifact; the wasm-perf workflow builds it then runs `cargo test --test parity -- --ignored`"]
 fn parity_k3() {
     parity_for_k(3);
 }
 
 #[test]
+#[ignore = "requires pre-built wasm artifact; the wasm-perf workflow builds it then runs `cargo test --test parity -- --ignored`"]
 fn parity_k5() {
     parity_for_k(5);
 }

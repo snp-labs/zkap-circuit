@@ -93,7 +93,9 @@ jobs:
       - name: Parity test (rlib == wasmtime byte-identical)
         # IRON RULE regression guard. Runs before the bench so a parity
         # break aborts the job before we burn ~15 min of bench time.
-        run: cargo test --release -p zkap-witness-gen-wasm --test parity
+        # Tests are `#[ignore]`d because they require the wasm artifact
+        # built in the preceding step; opt in via `-- --ignored` here.
+        run: cargo test --release -p zkap-witness-gen-wasm --test parity -- --ignored
 
       - name: Run criterion bench
         # `cargo bench` inherits [profile.release]; passing --release

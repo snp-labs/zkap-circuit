@@ -46,6 +46,7 @@ const F_BYTES_IN_MEMORY: usize = 32;
 const PAGES_PER_CRED_ENVELOPE: usize = 5_000;
 
 #[test]
+#[ignore = "requires pre-built wasm artifact; run `cargo build --target wasm32-unknown-unknown --release -p zkap-witness-gen-wasm` first, then `cargo test -- --ignored`"]
 fn memory_profile_k1_k3_k5() {
     let module = WasmModule::from_path(&wasm_artifact_path()).expect("load wasm");
 

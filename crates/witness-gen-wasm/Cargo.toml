@@ -30,7 +30,7 @@ criterion    = { workspace = true }
 wasmtime     = { workspace = true }
 serde        = { workspace = true, features = ["derive"] }
 ark-ar1cs    = { workspace = true }
-ark-utils = { workspace = true, features = ["field-serde", "io"] }
+ark-utils = { workspace = true, features = ["field-serde"] }
 ark-bn254 = { workspace = true }
 ark-ff = { workspace = true }
 ark-std = { workspace = true }

@@ -8,11 +8,14 @@
 //!   helpers in `codec::affine`).
 //! - [`r1cs`] — R1CS gadgets (`comparison`, `packing`, `select`, `slice`,
 //!   `uint32`) — all gated behind the `r1cs` feature.
-//! - `io` — uncompressed key-file loader; gated behind the `io` feature.
 //! - [`error`] — re-exports of the per-module error types for callers that
 //!   prefer a single import root (`ark_utils::error::ConvertError`, etc.).
 //!
-//! Feature flags: `r1cs` (default), `field-serde`, `io`.
+//! Feature flags: `r1cs` (default), `field-serde`.
+//!
+//! The earlier `io` feature (and its `load_key_uncompressed` helper) was
+//! removed after the P2 audit pass — no in-tree caller ever consumed it,
+//! so the feature flag stood as dead public surface only.
 //!
 //! Error types are accessible via `ark_utils::error::*` or directly from the
 //! crate root (`ark_utils::ConvertError`, `ark_utils::FieldParseError`, etc.).
@@ -44,10 +47,6 @@ pub mod codec;
 // R1CS gadgets (feature = "r1cs", default-on).
 #[cfg(feature = "r1cs")]
 pub mod r1cs;
-
-// IO (feature = "io")
-#[cfg(feature = "io")]
-pub mod io;
 
 // Per-module error re-exports (kept as its own path so callers can
 // `use ark_utils::error::*;` without the conversion submodule).
@@ -83,7 +82,3 @@ pub use r1cs::slice::{
 };
 #[cfg(feature = "r1cs")]
 pub use r1cs::uint32::UInt32Ext;
-
-// IO re-exports
-#[cfg(feature = "io")]
-pub use io::{IoError, load_key_uncompressed};

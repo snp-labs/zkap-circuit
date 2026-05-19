@@ -18,7 +18,6 @@ ark-relations = { workspace = true, optional = true }
 
 # Field serde (optional)
 ark-ec = { workspace = true, optional = true }
-ark-serialize = { workspace = true, optional = true }
 hex = { workspace = true, optional = true }
 
 [dev-dependencies]
@@ -28,7 +27,6 @@ ark-bn254 = { workspace = true }
 default = ["r1cs"]
 r1cs = ["dep:ark-r1cs-std", "dep:ark-relations"]
 field-serde = ["dep:ark-ec", "dep:hex"]
-io = ["dep:ark-serialize"]
 
 [lints]
 workspace = true

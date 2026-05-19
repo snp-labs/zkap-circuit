@@ -59,6 +59,8 @@ hex = { workspace = true }
 sha2 = { workspace = true }
 ark-relations = { workspace = true }
 circuit = { workspace = true }
+proptest = { workspace = true }
+serde_json = { workspace = true }
 
 [lib]
 name = "zkap_service"

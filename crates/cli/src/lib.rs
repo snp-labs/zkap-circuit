@@ -38,8 +38,9 @@ use sha2::{Digest, Sha256};
 // binaries and the `manifest_golden` test suite consume.
 pub use zkap_service::manifest::{
     ArtifactEntry, ArtifactKey, Artifacts, BuildMetadata, BuilderError, ContributionPublicKeyJson,
-    Manifest, ManifestBuilder, Phase2Attestation, PtauRef, SetupProvenance, Shape,
+    Manifest, ManifestBuilder, ManifestError, Phase2Attestation, PtauRef, SetupProvenance, Shape,
     ToxicWasteDisclosure, canonical_json_bytes, compute_circuit_tag, derive_toxic_waste_disclosure,
+    sign_manifest, verify_manifest,
 };
 
 /// Print `msg` to stderr and exit the process with code 1.

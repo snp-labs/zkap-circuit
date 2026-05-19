@@ -29,6 +29,11 @@ hex = { workspace = true }
 # bindings can depend on it cheaply. The runtime cost of pulling sha2
 # unconditionally is negligible.
 sha2 = { workspace = true }
+# Manifest signing (F5 soft-enforce policy). `manifest` module exposes
+# `sign_manifest` / `verify_manifest`; `ArtifactSet::load` calls
+# `verify_manifest` when the caller supplies a `VerifyingKey`. Stays
+# proof-feature-independent (no ark-* coupling).
+ed25519-dalek = { workspace = true }
 
 # --- Proof / Groth16 dependencies (always-on after the 2026-05
 #     binding-friendly refactor; previously gated behind the `proof`
@@ -43,6 +48,7 @@ ark-serialize         = { workspace = true }
 memmap2               = { workspace = true }
 blake2                = { workspace = true }
 rand                  = { workspace = true }
+rand_chacha           = { workspace = true }
 # Native prove flow — Commit 4 of the 2026-05 ark-ar1cs boundary
 # migration. The `ark-ar1cs` root crate exposes `prove`,
 # `synthesize_full_assignment`, and the `format::ArcsFile` envelope
@@ -58,6 +64,8 @@ hex = { workspace = true }
 sha2 = { workspace = true }
 ark-relations = { workspace = true }
 circuit = { workspace = true }
+proptest = { workspace = true }
+serde_json = { workspace = true }
 
 [lib]
 name = "zkap_service"

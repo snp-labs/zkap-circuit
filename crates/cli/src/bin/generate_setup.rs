@@ -20,34 +20,15 @@
 //! `built_at` for byte-reproducible runs.
 
 use clap::Parser;
-use rand::RngCore;
-use rand::rngs::OsRng;
-use rand_chacha::ChaCha20Rng;
-use rand_chacha::rand_core::SeedableRng;
+use ed25519_dalek::{SECRET_KEY_LENGTH, SigningKey};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use zkap_cli::{
     ArtifactEntry, ArtifactKey, BuildMetadata, ManifestBuilder, SetupProvenance, built_at_now,
     canonical_json_bytes, compute_circuit_tag, die, load_config_or_exit, read_arcs_blake3_hex,
-    sha256_hex,
+    sha256_hex, sign_manifest,
 };
-use zkap_service::setup;
-
-/// ZKAP public-input names in the order the circuit allocates them.
-///
-/// Mirrors the canonical public-input ordering that downstream verifiers
-/// rely on. Drift between this list and the circuit's
-/// `CircuitPublicInputs::to_vec` is a host-side instance-vector bug.
-const ZKAP_PUBLIC_INPUT_NAMES: &[&str] = &[
-    "hanchor",
-    "h_a",
-    "root",
-    "h_sign_user_op",
-    "jwt_exp",
-    "partial_rhs",
-    "lhs",
-    "h_aud_list",
-];
+use zkap_service::{PUBLIC_INPUT_NAMES, SetupRng, setup};
 
 #[derive(Parser)]
 #[command(
@@ -97,6 +78,29 @@ struct Cli {
     /// entry.
     #[arg(long)]
     witness_gen_wasm: Option<PathBuf>,
+
+    /// Path to a raw 32-byte ed25519 signing key (the secret-key
+    /// seed used by [`ed25519_dalek::SigningKey::from_bytes`]). When
+    /// supplied, the emitted `manifest.json` carries an
+    /// ed25519 signature in its `signature` field; downstream
+    /// loaders can verify it by passing the corresponding
+    /// `VerifyingKey` to `ArtifactSet::load`. When omitted, the
+    /// manifest is written with `signature: null` exactly as
+    /// pre-F5 (preserving manifest-golden byte-reproducibility).
+    ///
+    /// File format: raw 32 bytes (no PEM/DER wrapper, no
+    /// newline). Generate with `openssl rand 32 > signing.key` or
+    /// `dd if=/dev/urandom bs=32 count=1 of=signing.key`.
+    #[arg(long)]
+    signing_key: Option<PathBuf>,
+
+    /// Optional output path for the ed25519 public key (32 raw
+    /// bytes) derived from `--signing-key`. Has no effect unless
+    /// `--signing-key` is also supplied. Useful so downstream
+    /// callers can verify the bundle without re-deriving the
+    /// public key.
+    #[arg(long)]
+    verifying_key_out: Option<PathBuf>,
 }
 
 fn main() {
@@ -105,7 +109,16 @@ fn main() {
     if cli.ptau.is_some() || cli.phase2_attestations.is_some() {
         die("--ptau / --phase2-attestations are Stage 2 only (not yet active)");
     }
-    let (mut rng_box, provenance) = pick_rng(cli.rng_seed.as_deref(), cli.allow_test_only);
+    let (setup_rng, provenance) = pick_rng(cli.rng_seed.as_deref(), cli.allow_test_only);
+
+    // Fail-fast: validate the CLI flags that gate manifest signing BEFORE
+    // running the ~60s Groth16 trusted setup. A wrong-length --signing-key
+    // file or a --verifying-key-out without --signing-key should reject
+    // immediately, not after burning a minute on setup.
+    let signing_key = cli.signing_key.as_deref().map(load_signing_key);
+    if signing_key.is_none() && cli.verifying_key_out.is_some() {
+        die("--verifying-key-out requires --signing-key");
+    }
 
     let params = load_config_or_exit(Path::new(&cli.config));
     let out = PathBuf::from(&cli.output);
@@ -116,8 +129,8 @@ fn main() {
     let circuit_tag = compute_circuit_tag(&cli.circuit_id, &canonical_cfg_bytes);
 
     println!("[1/2] Groth16 trusted setup → {}", out.display());
-    let setup_output = setup(&params, &out, rng_box.as_mut(), None)
-        .unwrap_or_else(|e| die(format!("setup failed: {e}")));
+    let setup_output =
+        setup(&params, &out, setup_rng, None).unwrap_or_else(|e| die(format!("setup failed: {e}")));
 
     // `circuit.ar1cs` / `pk.bin` / `vk.bin` / `pvk.bin` /
     // `Groth16Verifier.sol` / `config.json` are written by `setup()`.
@@ -145,12 +158,7 @@ fn main() {
             setup_output.shape.num_witness,
             setup_output.shape.num_constraints,
         )
-        .with_public_input_names(
-            ZKAP_PUBLIC_INPUT_NAMES
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
-        )
+        .with_public_input_names(PUBLIC_INPUT_NAMES.iter().map(|s| s.to_string()).collect())
         .with_artifact(
             ArtifactKey::Ar1cs,
             make_entry(&arcs_path, "circuit.ar1cs", "core", None, None),
@@ -183,8 +191,8 @@ fn main() {
                 &cfg_path,
                 "config.json",
                 "domain",
-                Some("npm:@baerae/zkap-zkp@^1".into()),
-                Some("ZkapCircuitConfigV1".into()),
+                Some("npm:@baerae/zkap-zkp@^0.1".into()),
+                Some("JsCircuitConfig".into()),
             ),
         )
         .with_setup_provenance(provenance)
@@ -207,9 +215,23 @@ fn main() {
         false
     };
 
-    let manifest = builder
+    let mut manifest = builder
         .build()
         .unwrap_or_else(|e| die(format!("manifest build: {e}")));
+
+    let signed = if let Some(signing_key) = signing_key.as_ref() {
+        sign_manifest(&mut manifest, signing_key)
+            .unwrap_or_else(|e| die(format!("sign manifest: {e}")));
+        if let Some(vk_out) = cli.verifying_key_out.as_deref() {
+            std::fs::write(vk_out, signing_key.verifying_key().to_bytes())
+                .unwrap_or_else(|e| die(format!("write verifying key: {e}")));
+        }
+        true
+    } else {
+        // --verifying-key-out without --signing-key already rejected at
+        // the top of main() (fail-fast before setup).
+        false
+    };
 
     let manifest_pretty = serde_json::to_string_pretty(&manifest)
         .unwrap_or_else(|e| die(format!("serialize manifest: {e}")));
@@ -238,6 +260,29 @@ fn main() {
             "  artifacts     : circuit.ar1cs, pk.bin, vk.bin, pvk.bin,\n                  Groth16Verifier.sol, config.json, manifest.json"
         );
     }
+    println!(
+        "  signature     : {}",
+        if signed { "ed25519 (signed)" } else { "none" }
+    );
+}
+
+/// Read `path` as raw 32-byte ed25519 secret-key bytes and
+/// construct a [`SigningKey`]. Aborts with [`die`] on any failure
+/// (read, length, parse) — the CLI is process-mode, not library.
+fn load_signing_key(path: &Path) -> SigningKey {
+    let bytes = std::fs::read(path)
+        .unwrap_or_else(|e| die(format!("read signing key {}: {}", path.display(), e)));
+    if bytes.len() != SECRET_KEY_LENGTH {
+        die(format!(
+            "signing key {} must be exactly {} raw bytes (got {})",
+            path.display(),
+            SECRET_KEY_LENGTH,
+            bytes.len()
+        ));
+    }
+    let mut seed = [0u8; SECRET_KEY_LENGTH];
+    seed.copy_from_slice(&bytes);
+    SigningKey::from_bytes(&seed)
 }
 
 /// Build an [`ArtifactEntry`] by hashing `disk_path` and reading its size.
@@ -263,20 +308,25 @@ fn make_entry(
     }
 }
 
-/// Decode `--rng-seed` and pick either `ChaCha20Rng` or `OsRng`.
-fn pick_rng(seed_hex: Option<&str>, allow_test_only: bool) -> (Box<dyn RngCore>, SetupProvenance) {
+/// Decode `--rng-seed` and pick either `SetupRng::ChaCha20` or `SetupRng::OsRng`.
+///
+/// The `--rng-seed` path requires `--allow-test-only`; without the flag
+/// the function terminates the process with an error message. This preserves
+/// the safety gate: a deterministic-seed bundle can only be produced when the
+/// operator explicitly acknowledges it is test-only.
+fn pick_rng(seed_hex: Option<&str>, allow_test_only: bool) -> (SetupRng, SetupProvenance) {
     match (seed_hex, allow_test_only) {
         (Some(seed), true) => {
             let bytes = decode_seed_hex(seed).unwrap_or_else(|e| die(format!("--rng-seed: {e}")));
             (
-                Box::new(ChaCha20Rng::from_seed(bytes)),
+                SetupRng::ChaCha20 { seed: bytes },
                 SetupProvenance::Seed {
                     seed: seed.to_string(),
                 },
             )
         }
         (Some(_), false) => die("--rng-seed requires --allow-test-only"),
-        (None, _) => (Box::new(OsRng), SetupProvenance::OsRng),
+        (None, _) => (SetupRng::OsRng, SetupProvenance::OsRng),
     }
 }
 

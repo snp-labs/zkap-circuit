@@ -18,7 +18,8 @@ use ark_relations::gr1cs::{
 };
 use circuit::types::{BN254, BNP, CG, CircuitConfig, F};
 use circuit::zkap::ZkapCircuit;
-use rand::{CryptoRng, RngCore};
+use rand_chacha::ChaCha20Rng;
+use rand_chacha::rand_core::SeedableRng;
 use std::path::Path;
 
 use crate::error::ApplicationError;
@@ -109,35 +110,29 @@ impl SetupOutput {
     }
 }
 
-/// `&mut dyn RngCore` adapter that claims `CryptoRng`.
+/// Typed randomness source for [`setup`].
 ///
-/// `Groth16::setup` bounds its rng with `R: RngCore + CryptoRng`. Stage 1
-/// callers route either `OsRng` (cryptographically secure) or
-/// `ChaCha20Rng` (a CSPRNG seeded by the operator) through the public
-/// [`setup`] signature, which carries only `&mut dyn RngCore`. Both
-/// concrete types already implement `CryptoRng`; this wrapper makes the
-/// trait-object form explicit. It is a load-bearing assumption — passing
-/// a non-CSPRNG through this adapter would compromise toxic-waste
-/// secrecy, which is why the CLI only constructs `OsRng` or
-/// `ChaCha20Rng` and why this wrapper stays `pub(crate)`.
-struct AssumedCryptoRng<'a>(&'a mut dyn RngCore);
-
-impl RngCore for AssumedCryptoRng<'_> {
-    fn next_u32(&mut self) -> u32 {
-        self.0.next_u32()
-    }
-    fn next_u64(&mut self) -> u64 {
-        self.0.next_u64()
-    }
-    fn fill_bytes(&mut self, dest: &mut [u8]) {
-        self.0.fill_bytes(dest)
-    }
-    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand::Error> {
-        self.0.try_fill_bytes(dest)
-    }
+/// Replaces the former `&mut dyn RngCore` parameter and the
+/// `AssumedCryptoRng` load-bearing wrapper. Both variants construct a
+/// concrete type that the compiler knows satisfies `RngCore + CryptoRng`,
+/// so passing a non-CSPRNG is now a compile-time impossibility rather than
+/// a runtime convention.
+pub enum SetupRng {
+    /// Production default. Draws entropy directly from the OS CSPRNG
+    /// (`rand::rngs::OsRng`). Use this for all real trusted-setup runs.
+    OsRng,
+    /// Deterministic CSPRNG seeded by the caller-supplied 32-byte array.
+    ///
+    /// **Only acceptable for tests or byte-reproducible CRS builds.**
+    /// The CLI gates this variant behind `--allow-test-only`. Any bundle
+    /// produced with this variant will have
+    /// `SetupProvenance::Seed { seed }` in its manifest — a permanent
+    /// on-chain signal that the toxic waste is recoverable from the seed.
+    ChaCha20 {
+        /// Raw 32-byte seed fed to `ChaCha20Rng::from_seed`.
+        seed: [u8; 32],
+    },
 }
-
-impl CryptoRng for AssumedCryptoRng<'_> {}
 
 /// Trusted setup. Persists pk/vk/pvk + Solidity verifier + config to
 /// `output_dir`, then returns the [`SetupOutput`] (including the
@@ -146,11 +141,10 @@ impl CryptoRng for AssumedCryptoRng<'_> {}
 ///
 /// # Parameters
 ///
-/// * `rng` — caller-supplied randomness source. `OsRng` for production
-///   fallback, `ChaCha20Rng` for `--rng-seed --allow-test-only` CI runs.
-///   Both implement `RngCore + CryptoRng`; the function wraps the
-///   trait-object in an `AssumedCryptoRng` adapter to satisfy
-///   `Groth16::setup`'s bound.
+/// * `rng` — typed randomness source. [`SetupRng::OsRng`] for production;
+///   [`SetupRng::ChaCha20`] for `--rng-seed --allow-test-only` CI runs.
+///   Both variants construct a concrete `RngCore + CryptoRng` type,
+///   removing the former `AssumedCryptoRng` load-bearing assumption.
 /// * `ptau` — Stage 2 placeholder. The Stage 1 binary never sets this,
 ///   but the parameter is part of the signature so Stage 2 can land
 ///   without another breaking change. Passing `Some` returns an
@@ -158,7 +152,7 @@ impl CryptoRng for AssumedCryptoRng<'_> {}
 pub fn setup(
     params: &CircuitConfig,
     output_dir: &Path,
-    rng: &mut dyn RngCore,
+    rng: SetupRng,
     ptau: Option<&Path>,
 ) -> Result<SetupOutput, ApplicationError> {
     if ptau.is_some() {
@@ -168,10 +162,16 @@ pub fn setup(
     }
 
     let circuit = ZkapCircuit::<CG, BNP>::generate_mock_circuit(params);
-    let mut crypto_rng = AssumedCryptoRng(rng);
 
-    let (pk, vk) = Groth16::<BN254>::setup(circuit, &mut crypto_rng)
-        .map_err(|e| ApplicationError::InvalidFormat(format!("Groth16 setup failed: {}", e)))?;
+    let (pk, vk) = match rng {
+        SetupRng::OsRng => Groth16::<BN254>::setup(circuit, &mut rand::rngs::OsRng)
+            .map_err(|e| ApplicationError::InvalidFormat(format!("Groth16 setup failed: {}", e)))?,
+        SetupRng::ChaCha20 { seed } => {
+            Groth16::<BN254>::setup(circuit, &mut ChaCha20Rng::from_seed(seed)).map_err(|e| {
+                ApplicationError::InvalidFormat(format!("Groth16 setup failed: {}", e))
+            })?
+        }
+    };
 
     let pvk = prepare_verifying_key(&vk);
 

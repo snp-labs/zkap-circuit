@@ -250,7 +250,7 @@ fn e2e_setup_prove_verify_via_public_api() {
     let _ = std::fs::remove_dir_all(&tmp_dir);
     std::fs::create_dir_all(&tmp_dir).expect("create setup scratch dir");
 
-    let setup_output = setup(&cfg, &tmp_dir, &mut ark_std::rand::rngs::OsRng, None)
+    let setup_output = setup(&cfg, &tmp_dir, zkap_service::SetupRng::OsRng, None)
         .expect("service::setup must succeed for F1 config");
     let set: ArtifactSet = setup_output.into_artifact_set();
 
@@ -427,7 +427,7 @@ fn e2e_verify_rejects_tampered_public_input() {
     let _ = std::fs::remove_dir_all(&tmp_dir);
     std::fs::create_dir_all(&tmp_dir).expect("create setup scratch dir");
 
-    let setup_output = setup(&cfg, &tmp_dir, &mut ark_std::rand::rngs::OsRng, None).expect("setup");
+    let setup_output = setup(&cfg, &tmp_dir, zkap_service::SetupRng::OsRng, None).expect("setup");
     let set = setup_output.into_artifact_set();
 
     let random_fr = F::from(12345u64);

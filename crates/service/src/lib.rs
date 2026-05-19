@@ -166,10 +166,13 @@ pub use dto::{
     AnchorSecret, AudienceHashRequest, AudienceHashResponse, GenerateAnchorRequest,
     GenerateAnchorResponse, HashRequest, HashResponse, IssuerKeyHashRequest, IssuerKeyHashResponse,
 };
+pub use dto::{PUBLIC_INPUT_NAMES, PUBLIC_INPUTS, PublicInputSlot};
 pub use hash::{generate_audience_hashes, generate_issuer_key_hash, generate_poseidon_hash};
 
 // Public API (proof + setup surface — always available after the 2026-05 refactor)
 pub use artifact::{ArtifactError, ArtifactSet};
 pub use dto::{ProofComponents, ProveCredential, ProveRequest, ProveResponse, SharedPublicInputs};
-pub use groth16::prover::{WitnessBundle, prove, synthesize_witnesses};
-pub use groth16::setup::{SetupOutput, SetupShape, setup};
+pub use groth16::prover::{
+    WitnessBundle, prove, synthesize_witnesses, synthesize_witnesses_streaming,
+};
+pub use groth16::setup::{SetupOutput, SetupRng, SetupShape, setup};

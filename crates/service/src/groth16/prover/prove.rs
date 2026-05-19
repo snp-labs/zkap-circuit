@@ -38,7 +38,7 @@ use gadget::matrix::VandermondeMatrix;
 use crate::anchor::AnchorConfig;
 use crate::anchor::poseidon::{derive_selector_from_x_list_and_anchor, derive_x_from_secret};
 use crate::artifact::ArtifactSet;
-use crate::dto::{ProveRequest, ProveResponse};
+use crate::dto::{PUBLIC_INPUTS, ProveRequest, ProveResponse, PublicInputSlot};
 use crate::error::ApplicationError;
 use crate::jwt::parser::parse_anchor_secret_from_jwt;
 
@@ -72,26 +72,31 @@ pub struct WitnessBundle {
     pub public_inputs: Vec<F>,
 }
 
-/// Circuit-dependent half of the prove pipeline — produce one
-/// [`WitnessBundle`] per credential.
+/// Circuit-dependent half of the prove pipeline — emit one
+/// [`WitnessBundle`] per credential via a caller-supplied sink.
 ///
-/// Runs `prove_request_to_decoded` → per-batch `derive_x` /
+/// Pulls each `WitnessBundle` (`Vec<F>` `full_assignment` ~27 MiB) into
+/// the callback in turn and **drops it before producing the next one**.
+/// Used by the wasm path so the serialised output stream replaces the
+/// `Vec<WitnessBundle>` retention; recovers `(k-1) * sizeof(bundle)`
+/// of linear-memory peak vs. the [`synthesize_witnesses`] (collect-into-
+/// Vec) entry below. See `crates/witness-gen-wasm/PERF.md` ("Mobile
+/// RSS investigation").
+///
+/// The flow is otherwise identical to [`synthesize_witnesses`]:
+/// `prove_request_to_decoded` → per-batch `derive_x` /
 /// `derive_selector` → per-credential stage builders →
-/// `ZkapCircuit::from_input` → `synthesize_full_assignment` and
-/// returns the resulting `(Vec<F>, Vec<F>)` pairs. The proving key
-/// and `.ar1cs` body are not used here, so this function takes only
-/// [`CircuitConfig`] (intentionally smaller than the
-/// [`prove`]-flavored `&ArtifactSet` surface).
-///
-/// All circuit / gadget dependencies live behind this entry point; a
-/// future `witness_gen.wasm` artifact wraps it and emits the bundles
-/// as `CanonicalSerialize` bytes so that a circuit-agnostic prover
-/// host can finish the job by feeding `bundle.full_assignment` into
-/// `ark_ar1cs::prove`.
-pub fn synthesize_witnesses(
+/// `ZkapCircuit::from_input` → `synthesize_full_assignment`. The
+/// proving key and `.ar1cs` body are not used here, so the function
+/// takes only [`CircuitConfig`].
+pub fn synthesize_witnesses_streaming<Sink>(
     cfg: &CircuitConfig,
     request: &ProveRequest,
-) -> Result<Vec<WitnessBundle>, ApplicationError> {
+    mut on_bundle: Sink,
+) -> Result<(), ApplicationError>
+where
+    Sink: FnMut(WitnessBundle) -> Result<(), ApplicationError>,
+{
     let (shared, credentials) = prove_request_to_decoded(request, cfg)?;
     let n = cfg.n as usize;
     let k = cfg.k as usize;
@@ -151,9 +156,7 @@ pub fn synthesize_witnesses(
         });
     }
 
-    // ── Per-credential streaming: build → synthesize → next credential ─
-    let mut bundles = Vec::with_capacity(credentials.len());
-
+    // ── Per-credential: build → synthesize → emit → drop ───────────────
     for (i, cred) in credentials.iter().enumerate() {
         let path = format!("credentials[{}]", i);
         let current_idx = one_positions[i] as u64;
@@ -247,26 +250,56 @@ pub fn synthesize_witnesses(
             ))
         })?;
 
-        // Canonical 8-element instance layout — see
-        // `ProveResponse::from((proofs, public_inputs))` in
-        // `crate::dto::proof` for the per-proof / shared split.
-        let public_inputs = vec![
-            pub_inputs.hanchor,
-            pub_inputs.h_a,
-            pub_inputs.root,
-            pub_inputs.h_sign_user_op,
-            pub_inputs.jwt_exp,
-            pub_inputs.partial_rhs,
-            pub_inputs.lhs,
-            pub_inputs.h_aud_list,
-        ];
+        // Canonical 8-element instance layout — derived from PUBLIC_INPUTS so
+        // that adding a new PublicInputSlot variant forces a compiler error here
+        // (exhaustive match, no `_` arm). See `crate::dto::public_inputs` for
+        // the single source of truth.
+        let public_inputs: Vec<F> = PUBLIC_INPUTS
+            .iter()
+            .map(|&slot| match slot {
+                PublicInputSlot::Hanchor => pub_inputs.hanchor,
+                PublicInputSlot::Ha => pub_inputs.h_a,
+                PublicInputSlot::Root => pub_inputs.root,
+                PublicInputSlot::HSignUserOp => pub_inputs.h_sign_user_op,
+                PublicInputSlot::JwtExp => pub_inputs.jwt_exp,
+                PublicInputSlot::PartialRhs => pub_inputs.partial_rhs,
+                PublicInputSlot::Lhs => pub_inputs.lhs,
+                PublicInputSlot::HAudList => pub_inputs.h_aud_list,
+            })
+            .collect();
 
-        bundles.push(WitnessBundle {
+        // Move the bundle into the sink; it drops at end of the
+        // callback so the next iteration can reuse the freed
+        // allocation pool. Wasm linear memory is monotonic, so this
+        // does NOT shrink the live high-water mark immediately, but
+        // it prevents the simultaneous `Vec<WitnessBundle>` +
+        // serialised-output redundancy that doubled bundle storage
+        // before this refactor.
+        on_bundle(WitnessBundle {
             full_assignment,
             public_inputs,
-        });
+        })?;
     }
 
+    Ok(())
+}
+
+/// Vec-collecting wrapper around [`synthesize_witnesses_streaming`].
+///
+/// Native callers (e.g. [`prove`]) that consume every bundle in
+/// memory anyway should use this entry. Wasm callers should drive the
+/// streaming entry directly and serialise each bundle into an output
+/// buffer to avoid holding the whole `Vec<WitnessBundle>` plus the
+/// serialised output simultaneously.
+pub fn synthesize_witnesses(
+    cfg: &CircuitConfig,
+    request: &ProveRequest,
+) -> Result<Vec<WitnessBundle>, ApplicationError> {
+    let mut bundles = Vec::with_capacity(request.credentials.len());
+    synthesize_witnesses_streaming(cfg, request, |bundle| {
+        bundles.push(bundle);
+        Ok(())
+    })?;
     Ok(bundles)
 }
 

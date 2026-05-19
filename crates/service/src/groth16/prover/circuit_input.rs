@@ -45,13 +45,20 @@ use gadget::{
 };
 
 use crate::error::ApplicationError;
+use crate::jwt::parser::locate_claim;
 
 use super::RSA_2048_BYTES;
 
 const BN254_LIMB_WIDTH: usize = 31;
 
 fn pack_bytes_to_field_native(bytes: &[u8]) -> Vec<F> {
-    debug_assert!(bytes.len().is_multiple_of(BN254_LIMB_WIDTH));
+    // Invariant guaranteed by CircuitConfig::validate(); assert is defence-in-depth.
+    assert!(
+        bytes.len().is_multiple_of(BN254_LIMB_WIDTH),
+        "pack_bytes_to_field_native: input length {} is not a multiple of {} (BN254 limb width)",
+        bytes.len(),
+        BN254_LIMB_WIDTH,
+    );
     bytes
         .chunks(BN254_LIMB_WIDTH)
         .map(F::from_be_bytes_mod_order)
@@ -80,84 +87,6 @@ fn sha_pad_signing_input(signing_input: &[u8], max_jwt_b64_len: usize) -> (Vec<u
     let nblocks = sha_padded.len() / 64 - 1;
     sha_padded.resize(max_jwt_b64_len, 0x00);
     (sha_padded, nblocks)
-}
-
-fn locate_claim(payload: &str, key: &str) -> Result<ClaimIndices, ApplicationError> {
-    let needle = {
-        let mut s = String::with_capacity(key.len() + 2);
-        s.push('"');
-        s.push_str(key);
-        s.push('"');
-        s
-    };
-    let bytes = payload.as_bytes();
-
-    let key_pos = payload
-        .find(&needle)
-        .ok_or_else(|| ApplicationError::InvalidProveRequest {
-            field: "jwt.payload".into(),
-            message: format!("claim `{}` not found in JWT payload", key),
-        })?;
-
-    let mut p = key_pos + needle.len();
-    while p < bytes.len() && bytes[p].is_ascii_whitespace() {
-        p += 1;
-    }
-    if p >= bytes.len() || bytes[p] != b':' {
-        return Err(ApplicationError::InvalidProveRequest {
-            field: "jwt.payload".into(),
-            message: format!("claim `{}` missing `:` separator", key),
-        });
-    }
-    let colon_abs = p;
-    p += 1;
-
-    while p < bytes.len() && bytes[p].is_ascii_whitespace() {
-        p += 1;
-    }
-    let value_start_abs = p;
-    let opens_with_quote = p < bytes.len() && bytes[p] == b'"';
-    if opens_with_quote {
-        p += 1;
-    }
-    while p < bytes.len() && bytes[p] != b'"' && bytes[p] != b',' && bytes[p] != b'}' {
-        p += 1;
-    }
-    if opens_with_quote {
-        if p >= bytes.len() || bytes[p] != b'"' {
-            return Err(ApplicationError::InvalidProveRequest {
-                field: "jwt.payload".into(),
-                message: format!("claim `{}` quoted value not terminated", key),
-            });
-        }
-        p += 1;
-    }
-    let value_end_abs = p;
-
-    while p < bytes.len() && bytes[p].is_ascii_whitespace() {
-        p += 1;
-    }
-    if p >= bytes.len() || (bytes[p] != b',' && bytes[p] != b'}') {
-        return Err(ApplicationError::InvalidProveRequest {
-            field: "jwt.payload".into(),
-            message: format!("claim `{}` not terminated by `,` or `}}`", key),
-        });
-    }
-    let terminator_abs = p;
-
-    let offset = key_pos;
-    let claim_len = terminator_abs + 1 - offset;
-    let colon_idx = colon_abs - offset;
-    let value_idx = value_start_abs - offset;
-    let value_len = value_end_abs - value_start_abs;
-
-    Ok(ClaimIndices {
-        offset,
-        claim_len,
-        colon_idx,
-        value_idx,
-        value_len,
-    })
 }
 
 fn claim_value_bytes_padded(
@@ -346,16 +275,13 @@ pub(crate) fn build_jwt_stage(
 
     let mut claim_indices: Vec<ClaimIndices> = Vec::with_capacity(cfg.claims.len());
     for key in &cfg.claims {
-        // locate_claim returns InvalidProveRequest{field:"jwt.payload", ...};
-        // wrap to include the credential field_path prefix.
-        claim_indices.push(locate_claim(payload_str, key).map_err(|e| match e {
-            ApplicationError::InvalidProveRequest { message, .. } => {
-                ApplicationError::InvalidProveRequest {
-                    field: format!("{}.jwt_bytes", field_path),
-                    message,
-                }
+        // locate_claim (jwt::parser) returns TokenError; convert to
+        // ApplicationError::InvalidProveRequest with the credential field_path prefix.
+        claim_indices.push(locate_claim(payload_str, key).map_err(|e| {
+            ApplicationError::InvalidProveRequest {
+                field: format!("{}.jwt_bytes", field_path),
+                message: e.to_string(),
             }
-            other => other,
         })?);
     }
 

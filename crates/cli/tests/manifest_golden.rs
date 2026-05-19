@@ -62,8 +62,8 @@ fn build_sample(built_at: String) -> Manifest {
                 "config.json",
                 "domain",
                 345,
-                Some("npm:@baerae/zkap-zkp@^1".into()),
-                Some("ZkapCircuitConfigV1".into()),
+                Some("npm:@baerae/zkap-zkp@^0.1".into()),
+                Some("JsCircuitConfig".into()),
             ),
         )
         .with_setup_provenance(SetupProvenance::Seed {
@@ -143,7 +143,11 @@ fn manifest_stage1_smoke_fields_present() {
     );
     assert_eq!(
         v["artifacts"]["circuit_config"]["schema_owner"],
-        "npm:@baerae/zkap-zkp@^1"
+        "npm:@baerae/zkap-zkp@^0.1"
+    );
+    assert_eq!(
+        v["artifacts"]["circuit_config"]["schema_ref"],
+        "JsCircuitConfig"
     );
     assert_eq!(
         v["ar1cs_blake3"]

@@ -86,6 +86,22 @@ serde_json = { version = "1.0.145" }
 clap = { version = "4.5.53" }
 log = "0.4"
 
+# Ed25519 signing for manifest authenticity (F5 — soft-enforce policy).
+# `std` carries the std::error::Error impl needed by `thiserror`-driven
+# error types; `zeroize` clears `SigningKey` material on drop.
+# All callers use `SigningKey::from_bytes` (deterministic seed) — no RNG needed.
+# Default `fast` is opt-in below because the workspace already pulls
+# precomputed-tables transitively via other crypto deps.
+ed25519-dalek = { version = "2.2", default-features = false, features = ["std", "zeroize"] }
+
+# --- Benchmark / wasm runtime stack ---
+# Used only as dev-dependencies by `crates/witness-gen-wasm` for its
+# criterion bench suite + wasm parity integration test. Not pulled
+# into any release artifact.
+criterion = "0.5"
+wasmtime = { version = "26", default-features = false, features = ["cranelift", "runtime", "std"] }
+proptest = { version = "1", default-features = false, features = ["std"] }
+
 
 [profile.release]
 lto = true

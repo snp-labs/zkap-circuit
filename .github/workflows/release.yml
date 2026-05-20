@@ -61,7 +61,7 @@ jobs:
       - uses: taiki-e/install-action@c070f87102a1c75b3183910f391c1cb887fe13c8 # v2
         with:
           tool: cargo-nextest
-      - run: cargo clippy --workspace -- -D warnings
+      - run: cargo clippy --workspace --locked -- -D warnings
       # Workspace `[profile.release]` is `panic = "abort"`, which Cargo does
       # not propagate to test binaries; `cargo test --release` therefore
       # hits a panic-strategy mismatch (deps=abort vs test crate=unwind)
@@ -69,7 +69,7 @@ jobs:
       # `release-tests` profile (release optimization, LTO off, `panic = "unwind"`)
       # for exactly this reason — `ci.yml` already uses it. Mirror that
       # here so the tag-cut path test invocation matches the PR-side one.
-      - run: cargo nextest run --profile ci --cargo-profile release-tests --workspace
+      - run: cargo nextest run --profile ci --cargo-profile release-tests --workspace --locked
 
   generate-keys:
     # Mirrors the defence-in-depth guards from `ci.yml`'s
@@ -99,7 +99,7 @@ jobs:
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
 
       - name: Generate CRS bundle
-        run: cargo run --release --features circuit/integration-tests
+        run: cargo run --release --locked --features circuit/integration-tests
           --bin generate_setup --
           --config configs/release/${{ matrix.shape }}.json --output output/keys
           --circuit-id zkap-main-${{ matrix.shape }}

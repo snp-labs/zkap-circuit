@@ -22,6 +22,11 @@ hex         = { workspace = true }
 # round-trip the Solidity codegen without paying the cost of a real
 # Groth16 setup.
 ark-bn254 = { workspace = true }
+# Needed by `tests/hex_parity.rs` (§2.6 Option 2) to cross-assert that
+# `ark_codec::field_to_hex` and `Solidity::to_solidity` for `Fp` produce
+# identical output. Only `field_to_hex` is used (base module, no
+# feature-flag needed).
+ark-codec = { workspace = true }
 
 [lints]
 workspace = true

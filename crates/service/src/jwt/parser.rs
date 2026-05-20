@@ -32,12 +32,42 @@
 //! [`TokenError`] converts automatically into [`crate::error::ApplicationError`]
 //! via the `From` impl in [`crate::error`].
 
-use circuit::token::{Claim, ClaimIndices};
+use circuit::token::ClaimIndices;
 use gadget::base64::{Base64Error, decode_any_base64};
 use thiserror::Error;
 
 use crate::dto::AnchorSecret;
 use crate::error::ApplicationError;
+
+/// Host-only struct combining a JWT claim's textual key/value with its
+/// byte-position [`ClaimIndices`]. Returned by [`parse_claim_from_str`] and used
+/// by wasm test fixtures; not consumed by R1CS code.
+///
+/// Previously defined in `circuit::token` (see §4.4 audit remediation); moved
+/// here because `Claim` is purely a host-side return type of `zkap-service::jwt::parser`.
+/// [`ClaimIndices`] remains in `circuit` as it is the native counterpart of
+/// `ClaimIndicesVar` (R1CS-bound).
+#[derive(Clone, Debug, Default)]
+pub struct Claim {
+    /// Claim key (e.g. `"aud"`, `"sub"`, `"iss"`).
+    pub key: String,
+    /// Claim value as the textual JSON string the JWT carries.
+    pub value: String,
+    /// Byte-position metadata for in-circuit slicing.
+    pub indices: ClaimIndices,
+}
+
+impl Claim {
+    /// Returns a [`Claim`] with empty `key`, empty `value`, and zeroed
+    /// indices — convenience constructor for fixtures and placeholders.
+    pub fn empty() -> Self {
+        Claim {
+            key: String::new(),
+            value: String::new(),
+            indices: ClaimIndices::default(),
+        }
+    }
+}
 
 /// Failure modes for JWT claim parsing.
 ///

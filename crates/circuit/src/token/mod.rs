@@ -5,22 +5,20 @@
 //!   (`claim_extractor_v2`, `claim_format_verifier_v2`)
 //! - [`claim_indices`] — [`ClaimIndicesVar`](claim_indices::ClaimIndicesVar)
 //!   R1CS variable + `AllocVar` impl
-//! - [`rsa`] — [`RSA2048VerifyGadget`](rsa::RSA2048VerifyGadget) for RSA-2048
-//!   PKCS#1 signature verification
 //! - [`jwt_field`] — byte-to-field converters for JWT nonce (hex) and expiry
 //!   (decimal); split into `jwt_field/nonce.rs` and `jwt_field/exp.rs` siblings
 //!
 //! Host-side data:
 //! - [`ClaimIndices`] — plain indices describing a claim's position in the JWT payload
 //!   (zeroed `ClaimIndices::default()` is the placeholder for trusted setup)
-//! - [`Claim`] — host-only struct combining key, value, and indices; not used in R1CS
+//! - `Claim` — host-only struct combining key, value, and indices; moved to
+//!   `zkap_service::jwt::Claim` (§4.4 audit remediation; not consumed by R1CS code)
 
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 
 pub mod claim_indices;
 pub mod claimverifier;
 pub mod jwt_field;
-pub mod rsa;
 
 /// Plain (host-side) indices describing one named claim's position in
 /// the decoded JWT payload. Allocated into [`claim_indices::ClaimIndicesVar`]
@@ -41,27 +39,3 @@ pub struct ClaimIndices {
     pub value_len: usize,
 }
 
-/// Host-only struct combining a JWT claim's textual key/value with its
-/// byte-position [`ClaimIndices`]. Used by `zkap-service::jwt::parser`
-/// and the wasm test fixtures; not consumed by R1CS code.
-#[derive(Clone, Debug, Default)]
-pub struct Claim {
-    /// Claim key (e.g. `"aud"`, `"sub"`, `"iss"`).
-    pub key: String,
-    /// Claim value as the textual JSON string the JWT carries.
-    pub value: String,
-    /// Byte-position metadata for in-circuit slicing.
-    pub indices: ClaimIndices,
-}
-
-impl Claim {
-    /// Returns a [`Claim`] with empty `key`, empty `value`, and zeroed
-    /// indices — convenience constructor for fixtures and placeholders.
-    pub fn empty() -> Self {
-        Claim {
-            key: String::new(),
-            value: String::new(),
-            indices: ClaimIndices::default(),
-        }
-    }
-}

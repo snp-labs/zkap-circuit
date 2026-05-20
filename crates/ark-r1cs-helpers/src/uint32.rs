@@ -18,8 +18,10 @@ pub trait UInt32Ext<F: PrimeField>: Sized {
     /// Logical right shift by `by` positions. Returns
     /// `Err(SynthesisError::Unsatisfiable)` if `by >= 32`.
     fn shr(&self, by: usize) -> Result<Self, SynthesisError>;
-    /// Bitwise NOT (one's complement).
-    fn not(&self) -> Self;
+    /// Bitwise NOT (one's complement). Propagates `SynthesisError` from
+    /// `to_bits_le`, matching the pattern of sibling methods `shr` and
+    /// `bitand`.
+    fn not(&self) -> Result<Self, SynthesisError>;
     /// Bitwise AND with `other`. Both operands keep their existing R1CS
     /// allocations; only the resulting bits are newly allocated.
     fn bitand(&self, other: &Self) -> Result<Self, SynthesisError>;
@@ -41,10 +43,9 @@ impl<F: PrimeField> UInt32Ext<F> for UInt32<F> {
         Ok(UInt32::from_bits_le(&new_bits))
     }
 
-    fn not(&self) -> Self {
-        let new_bits: Vec<_> = self.to_bits_le().unwrap().iter().map(|bit| !bit).collect();
-
-        UInt32::from_bits_le(&new_bits)
+    fn not(&self) -> Result<Self, SynthesisError> {
+        let new_bits: Vec<_> = self.to_bits_le()?.iter().map(|bit| !bit).collect();
+        Ok(UInt32::from_bits_le(&new_bits))
     }
 
     fn bitand(&self, rhs: &Self) -> Result<Self, SynthesisError> {
@@ -61,7 +62,7 @@ impl<F: PrimeField> UInt32Ext<F> for UInt32<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ark_r1cs_std::{GR1CSVar, uint32::UInt32};
+    use ark_r1cs_std::{GR1CSVar, alloc::AllocVar, uint32::UInt32};
     use ark_relations::gr1cs::ConstraintSystem;
 
     type F = ark_bn254::Fr;
@@ -100,12 +101,24 @@ mod tests {
     fn test_uint32_not_basic() {
         let _cs = ConstraintSystem::<F>::new_ref();
         let val = UInt32::<F>::constant(0u32);
-        let notted = val.not();
+        let notted = val.not().unwrap();
         assert_eq!(notted.value().unwrap(), 0xFFFFFFFFu32);
 
         let val2 = UInt32::<F>::constant(0xFFFFFFFFu32);
-        let notted2 = val2.not();
+        let notted2 = val2.not().unwrap();
         assert_eq!(notted2.value().unwrap(), 0u32);
+    }
+
+    #[test]
+    fn test_uint32_not_satisfiability() {
+        // Allocate a known value, call not(), verify bits match bitwise-NOT
+        // and that the resulting constraint system is satisfied.
+        let cs = ConstraintSystem::<F>::new_ref();
+        let input = 0xA5A5A5A5u32;
+        let val = UInt32::<F>::new_witness(cs.clone(), || Ok(input)).unwrap();
+        let result = val.not().unwrap();
+        assert!(cs.is_satisfied().unwrap());
+        assert_eq!(result.value().unwrap(), !input);
     }
 
     #[test]

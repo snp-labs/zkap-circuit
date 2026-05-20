@@ -17,7 +17,17 @@ use ark_relations::gr1cs::ConstraintSystem;
 
 use circuit::token::claim_indices::ClaimIndicesVar;
 use circuit::token::claimverifier::claim_extractor_v2;
-use circuit::token::{Claim, ClaimIndices};
+use circuit::token::ClaimIndices;
+
+/// Test-local host-only struct equivalent to `zkap_service::jwt::Claim` (§4.4).
+/// Defined here because `circuit` cannot depend on `service` (dependency cycle).
+#[derive(Debug)]
+#[allow(dead_code)]
+struct Claim {
+    key: String,
+    value: String,
+    indices: ClaimIndices,
+}
 
 /// Test-local copy of parse_claim_from_str using pure std string operations.
 fn parse_claim_from_str(s: &str, key: &str) -> Result<Claim, String> {

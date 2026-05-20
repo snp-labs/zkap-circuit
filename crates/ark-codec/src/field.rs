@@ -62,6 +62,16 @@ pub fn fe_to_be32<F: PrimeField>(value: &F) -> [u8; 32] {
 ///
 /// Used by service-level DTOs (`ProofComponents`, `ZkapProofResult`) and
 /// for EVM-verifier-compatible input formatting.
+///
+/// # Cross-reference
+///
+/// This format is byte-for-byte identical to `zkap-evm-verifier::Solidity::to_solidity`
+/// for `Fp` (both use `into_bigint().to_bytes_be()` with `hex::encode` /
+/// `{:02x}` per-byte loop — identical output for BN254 Fr and Fq). Parity
+/// is pinned by `zkap-evm-verifier/tests/hex_parity.rs`.
+///
+/// The companion `ark_codec::affine_to_hex_str` intentionally diverges
+/// (UPPERCASE, variable width). See audit §2.6 Option 2.
 pub fn field_to_hex<F: PrimeField>(f: F) -> String {
     let bytes = f.into_bigint().to_bytes_be();
     let mut s = String::with_capacity(2 + bytes.len() * 2);

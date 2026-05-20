@@ -3,8 +3,7 @@
 //! Provides [`PoseidonAnchorScheme`] and the [`build_anchor_witness`] function which
 //! constructs the Vandermonde witness from a set of `k`-of-`n` secrets. Invariants:
 //! the selector cardinality must equal `k`, and the secrets slice must have length `n`.
-//! [`HashedSecretsCache`] stores pre-hashed secrets to avoid redundant hash evaluations,
-//! and [`find_valid_indices`] locates which `k` secrets satisfy the anchor equation.
+//! [`HashedSecretsCache`] stores pre-hashed secrets to avoid redundant hash evaluations.
 
 pub mod constraints;
 
@@ -364,69 +363,6 @@ impl<F: PrimeField + Absorb> AnchorScheme for PoseidonAnchorScheme<F> {
 
 // ==================== Utility Functions ====================
 
-/// Optimized function for finding valid indices from an Anchor
-///
-/// Extracted from the original get_indices into a standalone function for clearer responsibility
-pub fn find_valid_indices<F>(
-    pk: &PoseidonAnchorPublicKey<F>,
-    anchor: &PoseidonAnchor<F>,
-    known_secrets: &PoseidonAnchorSecret<F>,
-    matrix: &VandermondeMatrix<F>,
-) -> Result<Vec<usize>, AnchorError>
-where
-    F: PrimeField + Absorb,
-{
-    let (n, k) = matrix.dimensions();
-
-    if known_secrets.0.len() != k {
-        return Err(AnchorError::DimensionMismatch(format!(
-            "Known secrets length ({}) must match k ({})",
-            known_secrets.0.len(),
-            k
-        )));
-    }
-
-    // Note: a `HashedSecretsCache` was previously allocated here as an
-    // "optimisation", but the cached digests were never consumed —
-    // `PoseidonAnchorScheme::generate_witness` (called inside the loop
-    // below) re-hashes every secret via `build_anchor_witness`. The
-    // allocation has been removed; rewiring `build_anchor_witness` to
-    // accept a pre-computed cache is left as a separate optimisation.
-
-    // Generate all combinations of k from n indices
-    let index_combinations = generate_combinations(n, k);
-
-    // Try permutations for each combination
-    for index_combo in index_combinations {
-        let secret_permutations = generate_permutations(&known_secrets.0);
-
-        for secret_perm in &secret_permutations {
-            // Build selector
-            let mut selector = vec![0; n];
-            for &idx in &index_combo {
-                selector[idx] = 1;
-            }
-
-            // Generate and verify witness (passing only known secrets)
-            let permuted_known_secrets = PoseidonAnchorSecret(secret_perm.clone());
-            let witness = PoseidonAnchorScheme::<F>::generate_witness(
-                pk,
-                &permuted_known_secrets,
-                &selector,
-                matrix,
-            )?;
-
-            if PoseidonAnchorScheme::<F>::verify(anchor, &witness).is_ok() {
-                return Ok(index_combo);
-            }
-        }
-    }
-
-    Err(AnchorError::InvalidParameters(
-        "No valid selector found".to_string(),
-    ))
-}
-
 /// Generate all `k`-element index subsets of `0..n` in lexicographic order.
 ///
 /// Single source of truth for host-side `C(n, k)` enumeration across the
@@ -471,28 +407,6 @@ fn generate_combinations_helper(
         combination[depth] = i;
         generate_combinations_helper(i + 1, depth + 1, n, k, combination, result);
     }
-}
-
-/// Generate all permutations of a vector
-fn generate_permutations<F: Clone>(items: &[F]) -> Vec<Vec<F>> {
-    if items.is_empty() {
-        return vec![vec![]];
-    }
-    if items.len() == 1 {
-        return vec![items.to_vec()];
-    }
-
-    let mut result = Vec::new();
-    for i in 0..items.len() {
-        let mut remaining = items.to_vec();
-        let current = remaining.remove(i);
-
-        for mut perm in generate_permutations(&remaining) {
-            perm.insert(0, current.clone());
-            result.push(perm);
-        }
-    }
-    result
 }
 
 #[cfg(test)]
@@ -657,11 +571,4 @@ mod tests {
         assert!(combos.contains(&vec![2, 3]));
     }
 
-    #[test]
-    fn test_permutations_generation() {
-        let items = vec![1, 2, 3];
-        let perms = generate_permutations(&items);
-        // 3! = 6
-        assert_eq!(perms.len(), 6);
-    }
 }

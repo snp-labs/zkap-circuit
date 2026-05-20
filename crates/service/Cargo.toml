@@ -63,6 +63,9 @@ ark-relations = { workspace = true }
 circuit = { workspace = true }
 proptest = { workspace = true }
 serde_json = { workspace = true }
+# Enable the `testing` feature when building test binaries so that
+# integration tests in `tests/` can call `SetupOutput::into_artifact_set`.
+zkap-service = { path = ".", features = ["testing"] }
 
 [lib]
 name = "zkap_service"
@@ -77,6 +80,11 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 # `proof` and `dev-unverified-artifacts` features were removed in the
 # 2026-05 binding-friendly refactor. Heavy ark-* deps are always-on.
 print-trace = ["circuit/print-trace"]
+# Enables `SetupOutput::into_artifact_set` — a convenience that converts
+# a freshly-built `SetupOutput` into an `ArtifactSet` in memory without
+# going through disk.  Bypasses the manifest hash-check trust gate, so it
+# must ONLY be used in tests / CI tooling, never in production code paths.
+testing = []
 
 # Example temporarily disabled — see comment above the [features] block.
 # [[example]]

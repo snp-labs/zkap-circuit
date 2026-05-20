@@ -35,13 +35,13 @@ pub mod affine;
 
 /// Per-module error re-exports for callers that prefer a single
 /// `ark_codec::error::*` import root.
+///
+/// Errors are defined in their owning modules:
+/// - `FieldParseError` → `affine` (with `field-serde`)
+/// - `TextError` → `string`
+/// - `ConvertError` → `string`
+/// - `NonCanonicalFieldError` → `field`
 pub mod error {
-    //! Errors are defined in their owning modules:
-    //! - `FieldParseError` → `affine` (with `field-serde`)
-    //! - `TextError` → `string`
-    //! - `ConvertError` → `string`
-    //! - `NonCanonicalFieldError` → `field`
-
     pub use crate::field::NonCanonicalFieldError;
     pub use crate::string::{ConvertError, TextError};
 

@@ -150,6 +150,14 @@ where
         assert!(self.anchor.selector.len() == self.params.n as usize);
         // Implement the constraint generation logic here
 
+        // Validate that max_jwt_b64_len is a power of two so the address-bit
+        // width derived from `trailing_zeros()` below is sound.  The circuit
+        // allocates `sha_pad_jwt_b64` with exactly `max_jwt_b64_len` bytes, so
+        // `sha_pad_jwt_b64.len() == max_jwt_b64_len` when this runs.
+        if !self.params.max_jwt_b64_len.is_power_of_two() {
+            return Err(ark_relations::gr1cs::SynthesisError::Unsatisfiable);
+        }
+
         // ============ Constants ============
         let vandermonde_matrix = VandermondeMatrixVar::<C::BaseField>::new_constant(
             cs.clone(),
@@ -311,11 +319,19 @@ where
 
         // First '.': immediately before payload start (between header and payload)
         let first_dot_idx = &payload_offset_fp - &one;
-        // Binary tree selector: O(log n) vs O(n) constraints
-        // sha_pad_jwt_b64_to_fp.len() == MAX_JWT_B64_LEN == 1024 == 2^10, so 10 bits suffice
+        // Binary tree selector: O(log n) vs O(n) constraints.
+        // Derive the address width from the actual buffer length rather than
+        // hard-coding 10 bits — CircuitConfig::validate() permits
+        // max_jwt_b64_len up to 65535 (16 bits); a hard-coded slice would
+        // silently truncate addresses for buffers larger than 1024 elements.
+        // The is_power_of_two guard at the top of generate_constraints ensures
+        // trailing_zeros() gives the exact log2 of the buffer length.
+        let buf_bits = sha_pad_jwt_b64_to_fp.len().trailing_zeros() as usize;
         let first_dot_bits = first_dot_idx.to_bits_le()?;
-        let first_dot_char =
-            ark_r1cs_helpers::select_array_element(&sha_pad_jwt_b64_to_fp, &first_dot_bits[..10])?;
+        let first_dot_char = ark_r1cs_helpers::select_array_element(
+            &sha_pad_jwt_b64_to_fp,
+            &first_dot_bits[..buf_bits],
+        )?;
 
         first_dot_char.enforce_equal(&dot_char)?;
 

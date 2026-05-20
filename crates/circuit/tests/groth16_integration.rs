@@ -20,6 +20,7 @@ use rsa::traits::PublicKeyParts;
 use sha2::Sha256;
 
 use ark_codec::pad;
+use ark_codec::string::try_bytes_to_fields;
 use ark_codec::try_str_to_fields;
 use circuit::{
     token::ClaimIndices,
@@ -251,16 +252,6 @@ fn build_jwt_witness(
     }
 }
 
-/// Pack bytes into field elements (31 bytes per chunk, big-endian) - same as circuit's
-/// pack_decompose_bytes_unchecked
-fn pack_bytes_to_field_native(bytes: &[u8]) -> Vec<F> {
-    let limb_width = 31; // (254 - 1) / 8 = 31 for BN254
-    assert!(bytes.len().is_multiple_of(limb_width));
-    bytes
-        .chunks(limb_width)
-        .map(F::from_be_bytes_mod_order)
-        .collect()
-}
 
 /// Get the claim value bytes as the circuit would see them (with quotes for strings,
 /// zero-padded to max_len)
@@ -454,7 +445,7 @@ fn build_audience_list(
     let forbidden_str = cfg.forbidden_string.as_str();
     let mut forbidden_bytes = format!("\"{}\"", forbidden_str).into_bytes();
     forbidden_bytes.resize(cfg.max_aud_len as usize, 0x00);
-    let forbidden_packed = pack_bytes_to_field_native(&forbidden_bytes);
+    let forbidden_packed = try_bytes_to_fields::<F>(&forbidden_bytes).unwrap();
     let h_forbidden = CRH::<F>::evaluate(params, forbidden_packed).unwrap();
 
     let mut aud_list = vec![h_aud];
@@ -526,7 +517,7 @@ fn build_valid_circuit_inputs() -> Vec<ZkapCircuitInput<F>> {
             let payload_bytes = engine.decode(jwt_parts[1]).unwrap();
             let payload_str = String::from_utf8(payload_bytes).unwrap();
             let iss_bytes = claim_value_bytes(&payload_str, "iss", cfg.max_iss_len as usize);
-            let iss_packed = pack_bytes_to_field_native(&iss_bytes);
+            let iss_packed = try_bytes_to_fields::<F>(&iss_bytes).unwrap();
             let pk_n_limbs = rsa_pk_n_limbs(rsa_key);
             (iss_packed, pk_n_limbs)
         })
@@ -540,7 +531,7 @@ fn build_valid_circuit_inputs() -> Vec<ZkapCircuitInput<F>> {
     let payload_bytes = engine.decode(jwt_parts[1]).unwrap();
     let payload_str = String::from_utf8(payload_bytes).unwrap();
     let aud_bytes = claim_value_bytes(&payload_str, "aud", cfg.max_aud_len as usize);
-    let aud_packed = pack_bytes_to_field_native(&aud_bytes);
+    let aud_packed = try_bytes_to_fields::<F>(&aud_bytes).unwrap();
     let (aud_list, h_aud_list) = build_audience_list(&aud_packed, &params, &cfg);
 
     // Build K circuit inputs
@@ -558,9 +549,9 @@ fn build_valid_circuit_inputs() -> Vec<ZkapCircuitInput<F>> {
             let aud_bytes_i = claim_value_bytes(&payload_str, "aud", cfg.max_aud_len as usize);
             let iss_bytes_i = claim_value_bytes(&payload_str, "iss", cfg.max_iss_len as usize);
             let sub_bytes_i = claim_value_bytes(&payload_str, "sub", cfg.max_sub_len as usize);
-            let aud_packed_i = pack_bytes_to_field_native(&aud_bytes_i);
-            let iss_packed_i = pack_bytes_to_field_native(&iss_bytes_i);
-            let sub_packed_i = pack_bytes_to_field_native(&sub_bytes_i);
+            let aud_packed_i = try_bytes_to_fields::<F>(&aud_bytes_i).unwrap();
+            let iss_packed_i = try_bytes_to_fields::<F>(&iss_bytes_i).unwrap();
+            let sub_packed_i = try_bytes_to_fields::<F>(&sub_bytes_i).unwrap();
 
             let mut h_id_inputs = Vec::new();
             h_id_inputs.extend_from_slice(&aud_packed_i);
@@ -776,5 +767,58 @@ fn reject_rsa_exponent_other_than_65537() {
     assert!(
         !satisfied_after_constraints(input),
         "RSA exponent != 65537 must violate phase-1 e==65537 enforcement"
+    );
+}
+
+// ============================================================
+// M-1 tests: first_dot select-width derived from buffer length.
+// ============================================================
+
+/// Build a valid circuit input adjusted to use a different max_jwt_b64_len.
+/// The SHA-padded buffer is re-sized to `new_max` and the input is otherwise
+/// kept structurally correct so we can exercise generate_constraints.
+fn first_valid_input_with_jwt_len(new_max: usize) -> ZkapCircuitInput<F> {
+    let mut input = first_valid_input();
+    input.params.max_jwt_b64_len = new_max as u64;
+    // Re-size the sha-padded buffer: pad/truncate to the new length.
+    input.jwt.sha_pad_jwt_b64.resize(new_max, 0x00);
+    input
+}
+
+#[test]
+fn m1_non_power_of_two_jwt_len_returns_unsatisfiable() {
+    // max_jwt_b64_len = 1025 is not a power of two; generate_constraints
+    // must return SynthesisError::Unsatisfiable immediately.
+    let input = first_valid_input_with_jwt_len(1025);
+    let circuit = TestCircuit::from_input(input);
+    let cs = ark_relations::gr1cs::ConstraintSystem::<F>::new_ref();
+    let result = circuit.generate_constraints(cs.clone());
+    assert!(
+        matches!(result, Err(ark_relations::gr1cs::SynthesisError::Unsatisfiable)),
+        "non-power-of-two max_jwt_b64_len must return SynthesisError::Unsatisfiable"
+    );
+}
+
+#[test]
+fn m1_2048_byte_jwt_buffer_generate_constraints_runs() {
+    // max_jwt_b64_len = 2048 (2^11) must be accepted by generate_constraints
+    // and use 11-bit addressing for the first-dot selector — i.e. the
+    // dynamic width derivation correctly picks buf_bits = 11.
+    // We only verify that generate_constraints does not error out on the
+    // power-of-two check and the first_dot select call; full constraint
+    // satisfaction requires a properly-signed 2048-byte JWT which is out of
+    // scope for this unit test.
+    let input = first_valid_input_with_jwt_len(2048);
+    let circuit = TestCircuit::from_input(input);
+    let cs = ark_relations::gr1cs::ConstraintSystem::<F>::new_ref();
+    // generate_constraints should not return Unsatisfiable for a valid
+    // power-of-two buffer length (it may return other synthesis errors or
+    // produce unsatisfied constraints because the witness is invalid for
+    // the new buffer size, but it must not panic or reject the buf_bits
+    // derivation itself).
+    let result = circuit.generate_constraints(cs.clone());
+    assert!(
+        !matches!(result, Err(ark_relations::gr1cs::SynthesisError::Unsatisfiable)),
+        "max_jwt_b64_len = 2048 (power-of-two) must pass the is_power_of_two gate"
     );
 }

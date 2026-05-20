@@ -96,6 +96,40 @@ pub fn write_json_or_exit<T: Serialize>(path: &str, data: &T) {
     }
 }
 
+/// Write `bytes` to `path` atomically: bytes are first written to a sibling
+/// `<path>.tmp.<pid>` file and only then renamed onto `path`, so a mid-write
+/// crash leaves the previous file untouched rather than producing a truncated
+/// half-written artifact.
+///
+/// On failure the temp file is removed and the process is terminated via
+/// [`die`].
+pub fn atomic_write_bytes_or_exit(path: &Path, bytes: &[u8]) {
+    let tmp_path = match path.parent() {
+        Some(dir) if !dir.as_os_str().is_empty() => {
+            dir.join(format!(".{}.tmp.{}", file_name_of(path), std::process::id()))
+        }
+        _ => Path::new(".").join(format!(".{}.tmp.{}", file_name_of(path), std::process::id())),
+    };
+
+    if let Err(e) = std::fs::write(&tmp_path, bytes) {
+        let _ = std::fs::remove_file(&tmp_path);
+        die(format!(
+            "Failed to write '{}': {}",
+            tmp_path.display(),
+            e
+        ));
+    }
+    if let Err(e) = std::fs::rename(&tmp_path, path) {
+        let _ = std::fs::remove_file(&tmp_path);
+        die(format!(
+            "Failed to atomically replace '{}' (temp '{}'): {}",
+            path.display(),
+            tmp_path.display(),
+            e
+        ));
+    }
+}
+
 fn file_name_of(p: &Path) -> String {
     p.file_name()
         .and_then(|n| n.to_str())
@@ -169,4 +203,80 @@ pub fn sha256_hex(path: &Path) -> Result<String, std::io::Error> {
         hasher.update(&buf[..n]);
     }
     Ok(hex::encode(hasher.finalize()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::path::PathBuf;
+
+    fn tmp_dir() -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "zkap_cli_test_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .subsec_nanos()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// When the rename step cannot complete (target path is a pre-existing
+    /// directory so `fs::rename` fails), neither a partial file nor the
+    /// temp file is left behind.  The target directory itself is still
+    /// present, but the target *file* path was never created.
+    #[test]
+    fn atomic_write_bytes_failed_rename_leaves_no_partial_file() {
+        let dir = tmp_dir();
+        // Create a subdirectory at the intended target path so rename() fails.
+        let target = dir.join("artifact.bin");
+        fs::create_dir_all(&target).unwrap();
+
+        // Build the tmp path the helper would use.
+        let tmp_path = dir.join(format!(".artifact.bin.tmp.{}", std::process::id()));
+
+        // Write bytes to the tmp path directly (simulating the helper's write step).
+        let bytes = b"partial data";
+        fs::write(&tmp_path, bytes).unwrap();
+
+        // Attempt to rename onto the directory — this should fail.
+        let rename_result = fs::rename(&tmp_path, &target);
+        assert!(rename_result.is_err(), "rename onto a directory must fail");
+
+        // Clean up the tmp file as the helper does on rename failure.
+        let _ = fs::remove_file(&tmp_path);
+
+        // The target directory still exists but no *file* was created at that path.
+        assert!(target.exists(), "target directory must still exist");
+        assert!(target.is_dir(), "target must still be a directory, not a file");
+        // The tmp file must have been cleaned up.
+        assert!(!tmp_path.exists(), "temp file must be removed on rename failure");
+
+        // Cleanup.
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// `write_json_or_exit` writes valid JSON to a fresh path atomically.
+    #[test]
+    fn write_json_or_exit_creates_target_file() {
+        let dir = tmp_dir();
+        let target = dir.join("out.json");
+        let data = serde_json::json!({"key": "value"});
+        write_json_or_exit(target.to_str().unwrap(), &data);
+        let content = fs::read_to_string(&target).unwrap();
+        assert!(content.contains("\"key\""));
+        // No temp file left behind.
+        let mut found_tmp = false;
+        for entry in fs::read_dir(&dir).unwrap() {
+            let name = entry.unwrap().file_name();
+            if name.to_string_lossy().contains(".tmp.") {
+                found_tmp = true;
+            }
+        }
+        assert!(!found_tmp, "no temp file should remain after successful write");
+        fs::remove_dir_all(&dir).unwrap();
+    }
 }

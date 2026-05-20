@@ -25,9 +25,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use zeroize::{Zeroize, Zeroizing};
 use zkap_cli::{
-    ArtifactEntry, ArtifactKey, BuildMetadata, ManifestBuilder, SetupProvenance, built_at_now,
-    canonical_json_bytes, compute_circuit_tag, die, load_config_or_exit, read_arcs_blake3_hex,
-    sha256_hex, sign_manifest,
+    ArtifactEntry, ArtifactKey, BuildMetadata, ManifestBuilder, SetupProvenance,
+    atomic_write_bytes_or_exit, built_at_now, canonical_json_bytes, compute_circuit_tag, die,
+    load_config_or_exit, read_arcs_blake3_hex, sha256_hex, sign_manifest, write_json_or_exit,
 };
 use zkap_service::{PUBLIC_INPUT_NAMES, SetupRng, setup};
 
@@ -236,8 +236,7 @@ fn main() {
         sign_manifest(&mut manifest, signing_key)
             .unwrap_or_else(|e| die(format!("sign manifest: {e}")));
         if let Some(vk_out) = cli.verifying_key_out.as_deref() {
-            std::fs::write(vk_out, signing_key.verifying_key().to_bytes())
-                .unwrap_or_else(|e| die(format!("write verifying key: {e}")));
+            atomic_write_bytes_or_exit(vk_out, signing_key.verifying_key().as_bytes());
         }
         true
     } else {
@@ -246,10 +245,10 @@ fn main() {
         false
     };
 
-    let manifest_pretty = serde_json::to_string_pretty(&manifest)
-        .unwrap_or_else(|e| die(format!("serialize manifest: {e}")));
-    std::fs::write(out.join("manifest.json"), &manifest_pretty)
-        .unwrap_or_else(|e| die(format!("write manifest.json: {e}")));
+    write_json_or_exit(
+        out.join("manifest.json").to_str().unwrap_or_else(|| die("manifest.json path is not valid UTF-8")),
+        &manifest,
+    );
 
     println!();
     println!("✓ generate_setup OK");

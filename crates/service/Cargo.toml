@@ -22,7 +22,6 @@ ark-ff                = { workspace = true }
 ark-std               = { workspace = true }
 ark-crypto-primitives = { workspace = true }
 ark-bn254             = { workspace = true }
-log = { workspace = true }
 hex = { workspace = true }
 # Always-on: `manifest` module needs sha2 (ceremony chain_hash,
 # compute_circuit_tag) and must stay proof-feature-independent so light
@@ -45,8 +44,6 @@ ark-poly              = { workspace = true }
 ark-r1cs-std          = { workspace = true }
 ark-relations         = { workspace = true }
 ark-serialize         = { workspace = true }
-memmap2               = { workspace = true }
-blake2                = { workspace = true }
 rand                  = { workspace = true }
 rand_chacha           = { workspace = true }
 # Native prove flow — Commit 4 of the 2026-05 ark-ar1cs boundary
@@ -56,7 +53,7 @@ rand_chacha           = { workspace = true }
 ark-ar1cs              = { workspace = true }
 
 [dev-dependencies]
-signature = "2"
+signature = { workspace = true }
 ark-std = { workspace = true }
 rsa = { workspace = true }
 base64 = { workspace = true }

@@ -13,7 +13,7 @@ members = [
 
 [workspace.package]
 repository = "https://github.com/snp-labs/zkap-circuit"
-rust-version = "1.85"
+rust-version = "1.86"
 
 # Workspace-wide rust lints. Each member's `Cargo.toml` opts in via
 # `[lints] workspace = true`. Clippy CI is `--all-targets -- -D warnings`,
@@ -104,6 +104,8 @@ zeroize = { version = "1.8", default-features = false, features = ["alloc"] }
 criterion = "0.5"
 wasmtime = { version = "26", default-features = false, features = ["cranelift", "runtime", "std"] }
 proptest = { version = "1", default-features = false, features = ["std"] }
+anyhow = { version = "1" }
+signature = { version = "2" }
 
 
 [profile.release]

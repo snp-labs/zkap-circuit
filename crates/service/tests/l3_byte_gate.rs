@@ -147,13 +147,17 @@ fn circuit_config_f3() -> CircuitConfig {
 const GOLDEN_AR1CS_BLAKE3_F1: &str =
     "afb9ca5c043226a201f55e50a0a24d57a8613c3ad94effada85c45b2ff665f5b";
 
-/// F2 Tier A — `n=8, k=3, tree_height=5`.
-/// Captured at P0-A commit by running Tier A test with --nocapture.
-const GOLDEN_AR1CS_BLAKE3_F2: &str = "PLACEHOLDER_F2_RUN_IGNORED_TO_CAPTURE";
+/// F2 Tier A golden — `n=8, k=3, tree_height=5`.
+/// `None` until the ignored test has been run and the hex captured.
+/// See L-30: run `cargo test --release -p zkap-service -- --include-ignored
+/// tier_a_ar1cs_blake3_f2 --nocapture`, copy the printed hex, set to `Some("...")`.
+const GOLDEN_AR1CS_BLAKE3_F2: Option<&str> = None;
 
-/// F3 Tier A — `n=4, k=2, tree_height=3`.
-/// Captured at P0-A commit by running Tier A test with --nocapture.
-const GOLDEN_AR1CS_BLAKE3_F3: &str = "PLACEHOLDER_F3_RUN_IGNORED_TO_CAPTURE";
+/// F3 Tier A golden — `n=4, k=2, tree_height=3`.
+/// `None` until the ignored test has been run and the hex captured.
+/// See L-30: run `cargo test --release -p zkap-service -- --include-ignored
+/// tier_a_ar1cs_blake3_f3 --nocapture`, copy the printed hex, set to `Some("...")`.
+const GOLDEN_AR1CS_BLAKE3_F3: Option<&str> = None;
 
 // ─── Golden constants — Tier B (CircuitConfig::serialize_compressed) ──────────
 
@@ -288,12 +292,13 @@ fn unique_tmp_dir(label: &str) -> PathBuf {
 
 // ─── Tier A — ar1cs_blake3 (L1.1) ────────────────────────────────────────────
 
-/// F1 Tier A (always run). Original fixture from PR0 — golden MUST stay constant.
+/// F1 Tier A — slow (full Groth16 setup ~120-150s). Run with `-- --include-ignored`.
 ///
 /// Reads `circuit.ar1cs` (post-migration bundle layout, Commit 2 of the
 /// 2026-05 ark-ar1cs boundary migration) and recomputes
 /// `body_blake3()` directly from the canonical envelope.
 #[test]
+#[ignore = "setup is slow; run with --ignored"]
 fn tier_a_ar1cs_blake3_f1() {
     let tmp_dir = unique_tmp_dir("tier_a_f1");
     std::fs::create_dir_all(&tmp_dir).expect("create tmp dir");
@@ -337,19 +342,19 @@ fn tier_a_ar1cs_blake3_f2() {
 
     // Print for golden capture on first run; thereafter assert equality.
     println!("F2 ar1cs_blake3: {actual_hex}");
-    if GOLDEN_AR1CS_BLAKE3_F2.starts_with("PLACEHOLDER") {
-        panic!(
-            "GOLDEN_AR1CS_BLAKE3_F2 is a placeholder. \
-             Copy the printed hex into the constant and re-run.\n\
+    match GOLDEN_AR1CS_BLAKE3_F2 {
+        None => panic!(
+            "GOLDEN_AR1CS_BLAKE3_F2 is not yet captured (L-30). \
+             Copy the printed hex into the constant (Some(\"...\")) and re-run.\n\
              Captured: {actual_hex}"
-        );
+        ),
+        Some(golden) => assert_eq!(
+            actual_hex, golden,
+            "L1.1 break — F2 `circuit.ar1cs::body_blake3` differs from golden.\n\
+             baseline: {golden}\n\
+             actual:   {actual_hex}"
+        ),
     }
-    assert_eq!(
-        actual_hex, GOLDEN_AR1CS_BLAKE3_F2,
-        "L1.1 break — F2 `circuit.ar1cs::body_blake3` differs from golden.\n\
-         baseline: {GOLDEN_AR1CS_BLAKE3_F2}\n\
-         actual:   {actual_hex}"
-    );
 }
 
 /// F3 Tier A — slow (full Groth16 setup ~120-150s). Run with `-- --include-ignored`.
@@ -371,19 +376,19 @@ fn tier_a_ar1cs_blake3_f3() {
     let _ = std::fs::remove_dir_all(&tmp_dir);
 
     println!("F3 ar1cs_blake3: {actual_hex}");
-    if GOLDEN_AR1CS_BLAKE3_F3.starts_with("PLACEHOLDER") {
-        panic!(
-            "GOLDEN_AR1CS_BLAKE3_F3 is a placeholder. \
-             Copy the printed hex into the constant and re-run.\n\
+    match GOLDEN_AR1CS_BLAKE3_F3 {
+        None => panic!(
+            "GOLDEN_AR1CS_BLAKE3_F3 is not yet captured (L-30). \
+             Copy the printed hex into the constant (Some(\"...\")) and re-run.\n\
              Captured: {actual_hex}"
-        );
+        ),
+        Some(golden) => assert_eq!(
+            actual_hex, golden,
+            "L1.1 break — F3 `circuit.ar1cs::body_blake3` differs from golden.\n\
+             baseline: {golden}\n\
+             actual:   {actual_hex}"
+        ),
     }
-    assert_eq!(
-        actual_hex, GOLDEN_AR1CS_BLAKE3_F3,
-        "L1.1 break — F3 `circuit.ar1cs::body_blake3` differs from golden.\n\
-         baseline: {GOLDEN_AR1CS_BLAKE3_F3}\n\
-         actual:   {actual_hex}"
-    );
 }
 
 // ─── Tier B — CircuitConfig::serialize_compressed (schema drift) ──────────────

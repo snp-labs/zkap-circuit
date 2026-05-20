@@ -43,16 +43,50 @@ where
         let cs = cs.into();
         let claim_indices = f()?.borrow().clone();
 
-        let offset = UInt16::new_variable(cs.clone(), || Ok(claim_indices.offset as u16), mode)?;
-        let claim_len =
-            UInt16::new_variable(cs.clone(), || Ok(claim_indices.claim_len as u16), mode)?;
-        let colon_idx =
-            UInt16::new_variable(cs.clone(), || Ok(claim_indices.colon_idx as u16), mode)?;
+        // C2.4: replace silent `as u16` truncation with `u16::try_from` so any
+        // overflow surfaces as SynthesisError::AssignmentMissing instead of
+        // creating an aliased low-bits value.
+        let offset = UInt16::new_variable(
+            cs.clone(),
+            || {
+                u16::try_from(claim_indices.offset)
+                    .map_err(|_| SynthesisError::AssignmentMissing)
+            },
+            mode,
+        )?;
+        let claim_len = UInt16::new_variable(
+            cs.clone(),
+            || {
+                u16::try_from(claim_indices.claim_len)
+                    .map_err(|_| SynthesisError::AssignmentMissing)
+            },
+            mode,
+        )?;
+        let colon_idx = UInt16::new_variable(
+            cs.clone(),
+            || {
+                u16::try_from(claim_indices.colon_idx)
+                    .map_err(|_| SynthesisError::AssignmentMissing)
+            },
+            mode,
+        )?;
 
-        let value_idx =
-            UInt16::new_variable(cs.clone(), || Ok(claim_indices.value_idx as u16), mode)?;
-        let value_len =
-            UInt16::new_variable(cs.clone(), || Ok(claim_indices.value_len as u16), mode)?;
+        let value_idx = UInt16::new_variable(
+            cs.clone(),
+            || {
+                u16::try_from(claim_indices.value_idx)
+                    .map_err(|_| SynthesisError::AssignmentMissing)
+            },
+            mode,
+        )?;
+        let value_len = UInt16::new_variable(
+            cs.clone(),
+            || {
+                u16::try_from(claim_indices.value_len)
+                    .map_err(|_| SynthesisError::AssignmentMissing)
+            },
+            mode,
+        )?;
 
         Ok(Self {
             offset,
@@ -61,5 +95,81 @@ where
             value_idx,
             value_len,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! C2.4 overflow rejection — each field must trigger
+    //! `SynthesisError::AssignmentMissing` when its `usize` value exceeds
+    //! `u16::MAX`. Prior to AC-4 these would silently truncate to the low
+    //! 16 bits, producing an aliased witness that the circuit would happily
+    //! accept.
+    use super::*;
+    use ark_bn254::Fr;
+    use ark_r1cs_std::alloc::AllocationMode;
+    use ark_relations::gr1cs::ConstraintSystem;
+
+    const OVERFLOW: usize = u16::MAX as usize + 1; // 65_536
+
+    fn assert_overflow_rejected(ci: ClaimIndices, field: &str) {
+        let cs = ConstraintSystem::<Fr>::new_ref();
+        // Discard the Ok variant (ClaimIndicesVar doesn't impl Debug) — only
+        // the error case needs to be inspectable for the failure message.
+        let err = ClaimIndicesVar::<Fr>::new_variable(
+            cs,
+            || Ok::<_, SynthesisError>(ci),
+            AllocationMode::Witness,
+        )
+        .err();
+        assert!(
+            matches!(err, Some(SynthesisError::AssignmentMissing)),
+            "expected overflow for {field} to map to SynthesisError::AssignmentMissing, got Err = {err:?}",
+        );
+    }
+
+    #[test]
+    fn try_from_rejects_overflow_offset() {
+        let ci = ClaimIndices {
+            offset: OVERFLOW,
+            ..Default::default()
+        };
+        assert_overflow_rejected(ci, "offset");
+    }
+
+    #[test]
+    fn try_from_rejects_overflow_claim_len() {
+        let ci = ClaimIndices {
+            claim_len: OVERFLOW,
+            ..Default::default()
+        };
+        assert_overflow_rejected(ci, "claim_len");
+    }
+
+    #[test]
+    fn try_from_rejects_overflow_colon_idx() {
+        let ci = ClaimIndices {
+            colon_idx: OVERFLOW,
+            ..Default::default()
+        };
+        assert_overflow_rejected(ci, "colon_idx");
+    }
+
+    #[test]
+    fn try_from_rejects_overflow_value_idx() {
+        let ci = ClaimIndices {
+            value_idx: OVERFLOW,
+            ..Default::default()
+        };
+        assert_overflow_rejected(ci, "value_idx");
+    }
+
+    #[test]
+    fn try_from_rejects_overflow_value_len() {
+        let ci = ClaimIndices {
+            value_len: OVERFLOW,
+            ..Default::default()
+        };
+        assert_overflow_rejected(ci, "value_len");
     }
 }

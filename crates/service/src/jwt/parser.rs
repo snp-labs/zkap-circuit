@@ -9,10 +9,10 @@
 //! [`locate_claim`], slices the value bytes out of the payload, and returns a
 //! [`Claim`] with the decoded value string attached.
 //!
-//! [`parse_anchor_secret_from_jwt`] builds an [`AnchorSecret`] by calling
-//! [`locate_claim`] for `sub`, `iss`, and `aud` — guaranteeing that the byte
-//! ranges used for anchor-secret derivation are byte-for-byte identical to
-//! those the circuit constrains.
+//! `parse_anchor_secret_from_jwt` (crate-private) builds an
+//! [`AnchorSecret`] by calling [`locate_claim`] for `sub`, `iss`, and
+//! `aud` — guaranteeing that the byte ranges used for anchor-secret
+//! derivation are byte-for-byte identical to those the circuit constrains.
 //!
 //! # Whitespace policy
 //!

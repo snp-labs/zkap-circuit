@@ -46,7 +46,7 @@ pub enum ArtifactError {
 
     /// Manifest signature verification failed (or a signature was
     /// required and not present). Emitted by
-    /// [`super::ArtifactSet::load`] when the caller supplies a
+    /// [`super::ArtifactSet::load_signed`] when the caller supplies a
     /// `VerifyingKey` and the manifest signature is missing,
     /// malformed, or rejected by the ed25519 verifier.
     #[error("manifest signature check failed: {0}")]

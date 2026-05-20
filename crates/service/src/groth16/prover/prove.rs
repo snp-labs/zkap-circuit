@@ -306,8 +306,8 @@ pub fn synthesize_witnesses(
 /// # Trust boundary
 ///
 /// `prove` does **not** re-verify any manifest hash. The loader
-/// ([`ArtifactSet::load`]) is the **single** trust gate; production
-/// callers MUST use it.
+/// ([`ArtifactSet::load_signed`]) is the **single** trust gate;
+/// production callers MUST use it.
 ///
 /// # Use
 ///

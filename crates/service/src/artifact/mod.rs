@@ -8,10 +8,10 @@
 //! let response = prove(&set, &request)?;
 //! ```
 //!
-//! [`ArtifactSet::load`] verifies the loaded files against the manifest:
-//! `arcs.body_blake3()` against `manifest.ar1cs_blake3`, and the sha256
-//! of every binary artifact against the corresponding manifest entry.
-//! Mismatches abort with [`ArtifactError::HashMismatch`].
+//! [`ArtifactSet::load_signed`] verifies the loaded files against the
+//! manifest: `arcs.body_blake3()` against `manifest.ar1cs_blake3`, and
+//! the sha256 of every binary artifact against the corresponding
+//! manifest entry. Mismatches abort with [`ArtifactError::HashMismatch`].
 //!
 //! The prove entry point itself lives in [`crate::prove`]; this module
 //! ships only the loader so the trust gate stays separable.

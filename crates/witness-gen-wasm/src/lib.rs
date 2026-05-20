@@ -81,7 +81,8 @@ thread_local! {
 /// The host fills the buffer with input JSON and passes
 /// `(ptr, len)` to [`synthesize_witness`]; afterwards the host
 /// releases the buffer with [`wg_dealloc`]. The allocation is
-/// independent of [`LAST_OUTPUT`] / [`LAST_ERROR`].
+/// independent of the crate-private `LAST_OUTPUT` / `LAST_ERROR`
+/// thread-locals that `synthesize_witness` writes into.
 ///
 /// ## Zero-length contract
 ///
@@ -94,8 +95,8 @@ thread_local! {
 /// # Safety
 ///
 /// The returned pointer is valid for reads/writes of exactly `len`
-/// bytes. It must be released with [`wg_dealloc`](len) and must not
-/// be used after that call.
+/// bytes. It must be released with [`wg_dealloc`] (passing the same
+/// `len`) and must not be used after that call.
 #[unsafe(no_mangle)]
 pub extern "C" fn wg_alloc(len: usize) -> *mut u8 {
     if len == 0 {
@@ -165,8 +166,8 @@ pub unsafe extern "C" fn wg_dealloc(ptr: *mut u8, len: usize) {
 /// containing UTF-8 JSON encoding a [`ProveRequest`]; `cfg_ptr` /
 /// `cfg_len` likewise for [`CircuitConfig`]. The buffers may be
 /// freed by [`wg_dealloc`] immediately after this call returns —
-/// the function copies the data it needs into [`LAST_OUTPUT`] /
-/// [`LAST_ERROR`] before returning.
+/// the function copies the data it needs into the crate-private
+/// `LAST_OUTPUT` / `LAST_ERROR` thread-locals before returning.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn synthesize_witness(
     req_ptr: *const u8,
@@ -235,7 +236,7 @@ pub extern "C" fn wg_last_error_len() -> usize {
 ///
 /// Decode `req_bytes` as JSON-encoded [`ProveRequest`] and
 /// `cfg_bytes` as JSON-encoded [`CircuitConfig`], call
-/// [`synthesize_witnesses`], and return the
+/// `zkap_service::synthesize_witnesses`, and return the
 /// `CanonicalSerialize::serialize_uncompressed` bytes of the
 /// resulting `Vec<WitnessBundle>`.
 ///

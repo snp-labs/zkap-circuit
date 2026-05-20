@@ -17,7 +17,7 @@ use ark_ff::PrimeField;
 /// Failure modes for affine-point and field-coordinate parsing.
 ///
 /// Returned by [`coords_to_affine`] and the underlying field-string conversions
-/// in [`crate::codec::string`]. The `NotOnCurve` / `NotInCorrectSubgroup`
+/// in [`crate::string`]. The `NotOnCurve` / `NotInCorrectSubgroup`
 /// variants are produced by [`FromCoords::validate`] after a candidate point is
 /// constructed; `InvalidDecimal` / `InvalidHex` / `InvalidLength` come from the
 /// string-to-field decoder before construction.

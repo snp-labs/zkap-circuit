@@ -15,9 +15,9 @@
 //! `ark_r1cs_helpers::enforce_less_than`).
 //!
 //! Split out of the legacy `ark-utils` meta-crate during the 2026-05
-//! audit-driven hardening pass (P2 #14c). The companion split is
-//! [`ark-codec`] for field/string/affine codec helpers; the legacy
-//! `ark-utils` no longer exists.
+//! audit-driven hardening pass (P2 #14c). The companion split is the
+//! sibling `ark-codec` crate for field/string/affine codec helpers;
+//! the legacy `ark-utils` no longer exists.
 
 #![warn(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]

@@ -21,7 +21,7 @@ pub fn try_str_to_fields<F: PrimeField>(s: &str) -> Result<Vec<F>, ConvertError>
     let bytes = s.as_bytes();
     let limb_width = (F::MODULUS_BIT_SIZE - 1) as usize / 8;
 
-    if !bytes.len().is_multiple_of(limb_width) {
+    if bytes.len() % limb_width != 0 {
         return Err(ConvertError::InvalidLength {
             expected_multiple: limb_width,
             actual: bytes.len(),
@@ -85,7 +85,7 @@ pub enum ConvertError {
 pub fn try_bytes_to_fields<F: PrimeField>(bytes: &[u8]) -> Result<Vec<F>, ConvertError> {
     let limb_width = (F::MODULUS_BIT_SIZE - 1) as usize / 8;
 
-    if !bytes.len().is_multiple_of(limb_width) {
+    if bytes.len() % limb_width != 0 {
         return Err(ConvertError::InvalidLength {
             expected_multiple: limb_width,
             actual: bytes.len(),

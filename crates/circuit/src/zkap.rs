@@ -55,10 +55,7 @@ use crate::token::jwt_field::{jwt_exp_to_field, jwt_nonce_hex_to_field};
 use crate::types::CircuitConfig;
 use crate::{
     ExposesPublicInputs,
-    token::{
-        ClaimIndices, claim_indices::ClaimIndicesVar, claimverifier::claim_extractor_v2,
-        rsa::RSA2048VerifyGadget,
-    },
+    token::{ClaimIndices, claim_indices::ClaimIndicesVar, claimverifier::claim_extractor_v2},
     witness,
 };
 use ark_r1cs_helpers::{
@@ -89,7 +86,7 @@ use gadget::{
     merkletree::tree_config::{Empty, MerkleTreeParams, MerkleTreeParamsVar},
     signature::rsa::{
         PublicKey, Signature,
-        constraints::{PublicKeyVar, SignatureVar},
+        constraints::{PublicKeyVar, RSA2048VerifyGadget, SignatureVar},
     },
 };
 

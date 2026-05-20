@@ -2,7 +2,7 @@
 //!
 //! Verifies the byte-order contract between `SHA256Gadget::digest` (big-endian output)
 //! and `output_with_prefix` (expects little-endian input). The full path exercised here
-//! is identical to [`RSA2048VerifyGadget::verify_opt`] in the circuit crate:
+//! is identical to [`gadget::signature::rsa::constraints::RSA2048VerifyGadget::verify_opt`]:
 //!
 //! 1. Hash the message with `SHA256Gadget::digest` → big-endian digest (BE)
 //! 2. Reverse the digest bytes → little-endian (LE)

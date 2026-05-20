@@ -201,7 +201,7 @@ impl<F: PrimeField> SHA256Gadget<F> {
     /// **Consumer contract:** [`output_with_prefix`](crate::signature::rsa::constraints::output_with_prefix)
     /// expects its `hashed` argument in **little-endian** order (index 0 = least-significant byte).
     /// The caller is responsible for reversing the digest before passing it to `output_with_prefix`.
-    /// In `RSA2048VerifyGadget::verify_opt` (circuit crate) this reversal is performed with
+    /// In [`RSA2048VerifyGadget::verify_opt`](crate::signature::rsa::constraints::RSA2048VerifyGadget::verify_opt) this reversal is performed with
     /// `message.reverse()` immediately before the call.
     ///
     /// A symmetric reference to this contract lives in the `# Hash byte order` section of the

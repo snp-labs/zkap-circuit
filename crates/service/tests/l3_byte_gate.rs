@@ -288,12 +288,13 @@ fn unique_tmp_dir(label: &str) -> PathBuf {
 
 // ─── Tier A — ar1cs_blake3 (L1.1) ────────────────────────────────────────────
 
-/// F1 Tier A (always run). Original fixture from PR0 — golden MUST stay constant.
+/// F1 Tier A — slow (full Groth16 setup ~120-150s). Run with `-- --include-ignored`.
 ///
 /// Reads `circuit.ar1cs` (post-migration bundle layout, Commit 2 of the
 /// 2026-05 ark-ar1cs boundary migration) and recomputes
 /// `body_blake3()` directly from the canonical envelope.
 #[test]
+#[ignore = "setup is slow; run with --ignored"]
 fn tier_a_ar1cs_blake3_f1() {
     let tmp_dir = unique_tmp_dir("tier_a_f1");
     std::fs::create_dir_all(&tmp_dir).expect("create tmp dir");

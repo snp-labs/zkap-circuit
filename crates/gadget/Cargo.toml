@@ -54,5 +54,8 @@ full = ["crypto", "base64", "rsa"]
 # Debug features
 print-trace = ["ark-std/print-trace"]
 
+[dev-dependencies]
+rand_chacha = { workspace = true }
+
 [lints]
 workspace = true

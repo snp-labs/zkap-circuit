@@ -16,9 +16,8 @@ legacy/
 .omc/
 **/.omc/
 
-# Generated reports & tests
+# Generated reports
 crates/gadget/reports/
-crates/gadget/tests/
 
 # Packages (WIP, not yet tracked)
 packages/

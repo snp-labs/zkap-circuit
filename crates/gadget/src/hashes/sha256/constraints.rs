@@ -191,6 +191,21 @@ impl<F: PrimeField> SHA256Gadget<F> {
 
     /// Computes the digest of the given data. This is a shortcut for `default()` followed by
     /// `update()` followed by `finalize()`.
+    ///
+    /// # Byte order
+    ///
+    /// The returned `DigestVar<F>` (and its inner `Vec<UInt8<F>>`) is in **standard big-endian
+    /// SHA-256 output order**: index 0 holds the most-significant byte of the digest, matching
+    /// the FIPS 180-4 specification and the output of `sha2::Sha256::finalize()`.
+    ///
+    /// **Consumer contract:** [`output_with_prefix`](crate::signature::rsa::constraints::output_with_prefix)
+    /// expects its `hashed` argument in **little-endian** order (index 0 = least-significant byte).
+    /// The caller is responsible for reversing the digest before passing it to `output_with_prefix`.
+    /// In `RSA2048VerifyGadget::verify_opt` (circuit crate) this reversal is performed with
+    /// `message.reverse()` immediately before the call.
+    ///
+    /// A symmetric reference to this contract lives in the `# Hash byte order` section of the
+    /// `output_with_prefix` rustdoc.
     pub fn digest(data: &[UInt8<F>]) -> Result<DigestVar<F>, SynthesisError> {
         let mut sha256_var = Self::default();
         sha256_var.update(data)?;
@@ -203,6 +218,14 @@ impl<F: PrimeField> SHA256Gadget<F> {
     /// Called when the SHA-256 computation starts from a supplied midstate (`self.state`);
     /// the caller must have already applied standard SHA-256 Merkle-Damgård padding.
     /// `nblocks` must equal one of `0..len/64 - 1` — the one-hot constraint enforces this.
+    ///
+    /// # Byte order
+    ///
+    /// The returned `DigestVar<F>` is in **standard big-endian SHA-256 output order**:
+    /// index 0 holds the most-significant byte of the digest, matching FIPS 180-4 and
+    /// the output of `sha2::Sha256::finalize()`.  See [`Self::digest`] for the full
+    /// byte-order contract and the required reversal before calling
+    /// [`output_with_prefix`](crate::signature::rsa::constraints::output_with_prefix).
     // Input data must be padded according to the SHA256 standard.
     pub fn digest_with_pad(
         &mut self,
@@ -449,6 +472,13 @@ impl<F: PrimeField> SHA256Gadget<F> {
     /// Combines `enforce_sha2_pad_verifier` (padding soundness checks) with `digest_with_pad`
     /// (actual compression). Used in Step 3 of the JWT circuit where the prefix blocks are
     /// already consumed by a prior `update` call and only the suffix needs to be verified.
+    ///
+    /// # Byte order
+    ///
+    /// The returned `DigestVar<F>` is in **standard big-endian SHA-256 output order**:
+    /// index 0 holds the most-significant byte of the digest, matching FIPS 180-4.
+    /// See [`Self::digest`] for the full byte-order contract and the required reversal
+    /// before calling [`output_with_prefix`](crate::signature::rsa::constraints::output_with_prefix).
     pub fn digest_with_pad_checked(
         &mut self,
         data: &[UInt8<F>],
@@ -480,6 +510,14 @@ impl<F: PrimeField> SHA256Gadget<F> {
     ///
     /// # Returns
     /// * `DigestVar<F>` - The SHA256 digest
+    ///
+    /// # Byte order
+    ///
+    /// The returned `DigestVar<F>` is in **standard big-endian SHA-256 output order**:
+    /// index 0 holds the most-significant byte of the digest, matching FIPS 180-4 and
+    /// the output of `sha2::Sha256::finalize()`.  See [`Self::digest`] for the full
+    /// byte-order contract and the required reversal before calling
+    /// [`output_with_prefix`](crate::signature::rsa::constraints::output_with_prefix).
     ///
     /// # SHA256 Padding Format
     /// ```text

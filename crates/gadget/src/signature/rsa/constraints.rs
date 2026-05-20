@@ -159,6 +159,28 @@ impl<ConstraintF: PrimeField, BNP: BigNatCircuitParams> ToBytesGadget<Constraint
 /// 04 20`) followed by 0xff padding bytes up to 256 bytes total (per RFC 3447 §9.2).
 /// The returned slice is compared byte-by-byte with the RSA-decrypted signature to
 /// enforce PKCS#1 v1.5 validity inside the R1CS circuit.
+///
+/// # Hash byte order
+///
+/// **`hashed` MUST be in little-endian order** (index 0 = least-significant byte of the
+/// 256-bit digest integer).  This is the *reverse* of the standard big-endian SHA-256
+/// output produced by [`SHA256Gadget::digest`](crate::hashes::sha256::constraints::SHA256Gadget::digest)
+/// and the other `digest*` entry points.
+///
+/// **Why:** The entire 256-byte PKCS#1 EM structure is compared as a little-endian
+/// `BigNat` integer against `sig^e mod n` (itself computed and serialised in LE limb
+/// order by `BigNatVar::to_bytes_le`).  Placing the hash bytes at the *low* end of the
+/// EM integer requires them at index 0..31, which means they must already be in LE order.
+///
+/// **Caller responsibility:** The canonical caller,
+/// `RSA2048VerifyGadget::verify_opt` (in the circuit crate), calls `message.reverse()`
+/// on the BE digest from `SHA256Gadget` before passing it here.  Any other caller must
+/// apply the same reversal.  Passing a BE digest without reversal will produce a
+/// constraint system that is never satisfied for any valid RSA-2048 / PKCS#1 v1.5
+/// signature.
+///
+/// A symmetric reference to this contract lives in the `# Byte order` section of each
+/// `SHA256Gadget::digest*` entry point.
 pub fn output_with_prefix<F: PrimeField>(hashed: &[UInt8<F>]) -> Vec<UInt8<F>> {
     let mut output = Vec::new();
     let prefix1 = UInt8::<F>::constant_vec(&[32, 4, 0, 5, 1, 2, 4, 3]);
@@ -180,7 +202,7 @@ pub fn output_with_prefix<F: PrimeField>(hashed: &[UInt8<F>]) -> Vec<UInt8<F>> {
     output
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "base64"))]
 mod tests {
     use ark_ff::PrimeField;
     use ark_r1cs_std::{GR1CSVar, alloc::AllocVar};

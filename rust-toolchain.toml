@@ -1,0 +1,11 @@
+# Pins toolchain installed by `rustup` and by `dtolnay/rust-toolchain` in CI.
+# Workspace MSRV is 1.86 (`Cargo.toml: rust-version = "1.86"`); stable channel
+# satisfies it. The wasm32 target is required for `zkap-witness-gen-wasm` and
+# is installed eagerly so wasm-build-smoke and the release `build-wasm` job
+# don't need a separate `rustup target add` step.
+
+[toolchain]
+channel = "stable"
+components = ["rustfmt", "clippy"]
+targets = ["wasm32-unknown-unknown"]
+profile = "minimal"

@@ -68,10 +68,16 @@ pub fn load_config_or_exit(path: &Path) -> CircuitConfig {
 pub fn write_json_or_exit<T: Serialize>(path: &str, data: &T) {
     let target = Path::new(path);
     let tmp_path = match target.parent() {
-        Some(dir) if !dir.as_os_str().is_empty() => {
-            dir.join(format!(".{}.tmp.{}", file_name_of(target), std::process::id()))
-        }
-        _ => Path::new(".").join(format!(".{}.tmp.{}", file_name_of(target), std::process::id())),
+        Some(dir) if !dir.as_os_str().is_empty() => dir.join(format!(
+            ".{}.tmp.{}",
+            file_name_of(target),
+            std::process::id()
+        )),
+        _ => Path::new(".").join(format!(
+            ".{}.tmp.{}",
+            file_name_of(target),
+            std::process::id()
+        )),
     };
 
     let file = std::fs::File::create(&tmp_path).unwrap_or_else(|e| {
@@ -105,19 +111,21 @@ pub fn write_json_or_exit<T: Serialize>(path: &str, data: &T) {
 /// [`die`].
 pub fn atomic_write_bytes_or_exit(path: &Path, bytes: &[u8]) {
     let tmp_path = match path.parent() {
-        Some(dir) if !dir.as_os_str().is_empty() => {
-            dir.join(format!(".{}.tmp.{}", file_name_of(path), std::process::id()))
-        }
-        _ => Path::new(".").join(format!(".{}.tmp.{}", file_name_of(path), std::process::id())),
+        Some(dir) if !dir.as_os_str().is_empty() => dir.join(format!(
+            ".{}.tmp.{}",
+            file_name_of(path),
+            std::process::id()
+        )),
+        _ => Path::new(".").join(format!(
+            ".{}.tmp.{}",
+            file_name_of(path),
+            std::process::id()
+        )),
     };
 
     if let Err(e) = std::fs::write(&tmp_path, bytes) {
         let _ = std::fs::remove_file(&tmp_path);
-        die(format!(
-            "Failed to write '{}': {}",
-            tmp_path.display(),
-            e
-        ));
+        die(format!("Failed to write '{}': {}", tmp_path.display(), e));
     }
     if let Err(e) = std::fs::rename(&tmp_path, path) {
         let _ = std::fs::remove_file(&tmp_path);
@@ -251,9 +259,15 @@ mod tests {
 
         // The target directory still exists but no *file* was created at that path.
         assert!(target.exists(), "target directory must still exist");
-        assert!(target.is_dir(), "target must still be a directory, not a file");
+        assert!(
+            target.is_dir(),
+            "target must still be a directory, not a file"
+        );
         // The tmp file must have been cleaned up.
-        assert!(!tmp_path.exists(), "temp file must be removed on rename failure");
+        assert!(
+            !tmp_path.exists(),
+            "temp file must be removed on rename failure"
+        );
 
         // Cleanup.
         fs::remove_dir_all(&dir).unwrap();
@@ -276,7 +290,10 @@ mod tests {
                 found_tmp = true;
             }
         }
-        assert!(!found_tmp, "no temp file should remain after successful write");
+        assert!(
+            !found_tmp,
+            "no temp file should remain after successful write"
+        );
         fs::remove_dir_all(&dir).unwrap();
     }
 }

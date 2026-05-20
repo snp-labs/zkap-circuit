@@ -1,89 +1,262 @@
 name: Release
 
+# Triggered by:
+#   * tag push matching vX.Y.Z (stable) or vX.Y.Z-rc.N (RC).
+#   * workflow_dispatch — only valid from refs/heads/develop (enforced in
+#     `validate`). Stable releases require a tag commit reachable from
+#     origin/develop.
+#
+# develop is the repo's base/release branch (public/develop remote). main is
+# intentionally NOT used as a release base.
 on:
+  # GitHub's `tags:` filter is glob, NOT regex — so the strict SemVer +
+  # RC shape (`v[0-9]+.[0-9]+.[0-9]+(-rc.[0-9]+)?`) cannot be expressed
+  # safely here. Match broadly with `v*`, and let the `validate` job
+  # below enforce the real grammar via `^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$`.
+  # An off-shape tag (e.g. `vfoo`, `v1.2`, `v1.2.3-beta.1`) reaches the
+  # workflow but fails validate immediately, without producing partial
+  # release assets.
   push:
     tags:
-      - 'v*.*.*'
+      - 'v*'
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to release (e.g. 0.1.0)'
+        description: "Version to release (e.g. 1.2.3 or 1.2.3-rc.1)"
         required: true
         type: string
 
-permissions: {}
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # ───────────────────────────────────────────────────────────────────────────
+  # validate — gate before anything builds.
+  # Enforces (in order):
+  #   1. workflow_dispatch must be from refs/heads/develop.
+  #   2. version string parses as stable or RC semver.
+  #   3. tag commit (push only) is reachable from origin/develop
+  #      (via the snp-labs `public` remote).
+  #   4. parsed version matches crates/cli/Cargo.toml.
+  #   5. SOURCE_DATE_EPOCH pinned to the commit timestamp for reproducibility.
+  # ───────────────────────────────────────────────────────────────────────────
   validate:
-    name: Validate
+    name: Validate release
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.version.outputs.version }}
+      version: ${{ steps.parse.outputs.version }}
+      is_prerelease: ${{ steps.parse.outputs.is_prerelease }}
+      source_date_epoch: ${{ steps.parse.outputs.source_date_epoch }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          # Full history is needed for `git merge-base --is-ancestor`
+          # against origin/develop.
+          fetch-depth: 0
 
-      - name: Enforce main branch for manual dispatch
-        if: github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main'
+      - name: Enforce develop-only workflow_dispatch
+        if: github.event_name == 'workflow_dispatch'
         run: |
-          echo "ERROR: Releases can only be triggered from the main branch."
-          exit 1
+          set -euo pipefail
+          if [ "$GITHUB_REF" != "refs/heads/develop" ]; then
+            echo "::error::workflow_dispatch must be invoked from refs/heads/develop (got: $GITHUB_REF)"
+            exit 1
+          fi
+          echo "workflow_dispatch is on refs/heads/develop — OK"
 
-      - name: Extract version
-        id: version
+      - name: Parse + validate version
+        id: parse
         run: |
+          set -euo pipefail
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             VERSION="${{ github.event.inputs.version }}"
           else
             VERSION="${GITHUB_REF#refs/tags/v}"
           fi
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Release version: $VERSION"
 
-      - name: Validate version format
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "ERROR: Invalid version format: $VERSION (expected x.y.z)"
+          if printf '%s' "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$'; then
+            IS_PRERELEASE=true
+          elif printf '%s' "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            IS_PRERELEASE=false
+          else
+            echo "::error::Invalid version format: '$VERSION' (expected X.Y.Z or X.Y.Z-rc.N)"
             exit 1
           fi
 
-  test:
-    name: Test
+          # Reproducible-build epoch from the tagged commit.
+          SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
+
+          {
+            echo "version=$VERSION"
+            echo "is_prerelease=$IS_PRERELEASE"
+            echo "source_date_epoch=$SOURCE_DATE_EPOCH"
+          } >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION  is_prerelease=$IS_PRERELEASE  source_date_epoch=$SOURCE_DATE_EPOCH"
+
+      - name: Verify tag commit is in develop (tag push only)
+        if: github.event_name == 'push'
+        run: |
+          set -euo pipefail
+          # `actions/checkout` fetches the tag commit but not necessarily
+          # the develop branch — fetch it explicitly into a local ref so
+          # ancestry can be checked.
+          git fetch --quiet --no-tags origin develop:refs/remotes/origin/develop
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/develop; then
+            echo "::error::Tag commit $GITHUB_SHA is NOT reachable from origin/develop. Release branch policy requires develop ancestry."
+            exit 1
+          fi
+          echo "Tag commit $GITHUB_SHA is in origin/develop — OK"
+
+      - name: Verify crates/cli/Cargo.toml version matches release version
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.parse.outputs.version }}"
+          # crates/cli/Cargo.toml has a single top-level `version = "x.y.z"`
+          # line; workspace deps use `workspace = true` (no inline version).
+          CARGO_VERSION=$(awk -F'"' '/^version[[:space:]]*=/ {print $2; exit}' crates/cli/Cargo.toml)
+          if [ -z "$CARGO_VERSION" ]; then
+            echo "::error::Could not extract version from crates/cli/Cargo.toml"
+            exit 1
+          fi
+          if [ "$VERSION" != "$CARGO_VERSION" ]; then
+            echo "::error::Release version ($VERSION) does not match crates/cli/Cargo.toml version ($CARGO_VERSION). Bump the Cargo.toml before tagging."
+            exit 1
+          fi
+          echo "Release version matches crates/cli/Cargo.toml ($VERSION)"
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # test-full — re-run clippy + nextest at the tag commit so the release
+  # gate is independent of the merge-time CI run.
+  # ───────────────────────────────────────────────────────────────────────────
+  test-full:
+    name: Test (full, tag commit)
     needs: validate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
-      - uses: taiki-e/install-action@c070f87102a1c75b3183910f391c1cb887fe13c8 # v2
+      - uses: ./.github/actions/setup-rust
         with:
-          tool: cargo-nextest
-      - run: cargo clippy --workspace -- -D warnings
-      # Workspace `[profile.release]` is `panic = "abort"`, which Cargo does
-      # not propagate to test binaries; `cargo test --release` therefore
-      # hits a panic-strategy mismatch (deps=abort vs test crate=unwind)
-      # and fails at link time. The root Cargo.toml defines a
-      # `release-tests` profile (release optimization, LTO off, `panic = "unwind"`)
-      # for exactly this reason — `ci.yml` already uses it. Mirror that
-      # here so the tag-cut path test invocation matches the PR-side one.
-      - run: cargo nextest run --profile ci --cargo-profile release-tests --workspace
+          cache-key: release-test
+          install-nextest: "true"
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo nextest run --profile ci --cargo-profile release-tests --workspace --locked
+      - run: |
+          cargo nextest run --profile ci --cargo-profile release-tests \
+            -p circuit --features integration-tests \
+            --test groth16_integration --locked
 
-  generate-keys:
-    # Mirrors the defence-in-depth guards from `ci.yml`'s
-    # `generate-setup-smoke` job onto the tag-cut path that emits the
-    # actual release artifacts. The 2026-05 ark-ar1cs boundary
-    # migration replaced the legacy `circuit.arzkey + wasm` pair with
-    # the post-migration 7-file bundle (`circuit.ar1cs`, `pk.bin`,
-    # `vk.bin`, `pvk.bin`, `Groth16Verifier.sol`, `config.json`,
-    # `manifest.json`); the manifest is the single trust gate for
-    # downstream consumers.
-    name: Generate CRS bundle (${{ matrix.shape }})
-    needs: test
+  # ───────────────────────────────────────────────────────────────────────────
+  # workspace-build — exercise the real `[profile.release]` (panic=abort,
+  # lto=true) build path that downstream binaries ship.
+  # ───────────────────────────────────────────────────────────────────────────
+  workspace-build:
+    name: Build workspace (release profile)
+    needs: validate
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: ./.github/actions/setup-rust
+        with:
+          cache-key: release-workspace-build
+      - run: cargo build --release --workspace --locked
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # build-cli — produce generate_setup + generate_hash for upload.
+  # ───────────────────────────────────────────────────────────────────────────
+  build-cli:
+    name: Build zkap-cli binaries
+    needs: [validate, test-full, workspace-build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: ./.github/actions/setup-rust
+        with:
+          cache-key: release-build-cli
+      - name: Build zkap-cli (release)
+        # `circuit/integration-tests` enables the setup code path that
+        # generate_setup needs at runtime — same flag CI's
+        # generate-setup-smoke uses.
+        run: |
+          cargo build --release -p zkap-cli \
+            --features circuit/integration-tests --locked
+      - name: Stage CLI artifacts
+        run: |
+          set -euo pipefail
+          mkdir -p stage-cli
+          cp target/release/generate_setup stage-cli/generate_setup
+          cp target/release/generate_hash  stage-cli/generate_hash
+          ls -la stage-cli
+      - name: Upload CLI artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: zkap-cli
+          path: stage-cli/
+          if-no-files-found: error
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # build-wasm — wasm32 cdylib, optional wasm-opt.
+  # ───────────────────────────────────────────────────────────────────────────
+  build-wasm:
+    name: Build witness_gen.wasm
+    needs: [validate, test-full, workspace-build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: ./.github/actions/setup-rust
+        with:
+          cache-key: release-build-wasm
+      - name: Install wasm-opt (binaryen)
+        run: sudo apt-get update && sudo apt-get install -y binaryen
+      - name: Build zkap-witness-gen-wasm (wasm32 release)
+        run: |
+          cargo build -p zkap-witness-gen-wasm \
+            --target wasm32-unknown-unknown --release --locked
+      - name: Stage + optimize wasm artifact
+        run: |
+          set -euo pipefail
+          mkdir -p stage-wasm
+          SRC="target/wasm32-unknown-unknown/release/zkap_witness_gen_wasm.wasm"
+          if [ ! -f "$SRC" ]; then
+            echo "::error::expected $SRC, not found"
+            exit 1
+          fi
+          # -O3 mirrors the perf-driven choice in PERF.md; no `--strip-debug`
+          # because the dev profile already strips for wasm in release.
+          wasm-opt -O3 --enable-bulk-memory --enable-simd \
+            "$SRC" -o stage-wasm/witness_gen.wasm
+          ls -la stage-wasm
+      - name: Upload wasm artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: zkap-witness-wasm
+          path: stage-wasm/
+          if-no-files-found: error
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # generate-release-bundle — per-shape CRS bundle.
+  # Runs `generate_setup` for each shape; on stable releases also signs
+  # `manifest.json` using the GitHub `release` environment's
+  # MANIFEST_SIGNING_KEY (base64-encoded raw 32-byte Ed25519 seed).
+  # ───────────────────────────────────────────────────────────────────────────
+  generate-release-bundle:
+    name: Generate release bundle (${{ matrix.shape }})
+    needs: [validate, test-full, workspace-build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # `release` GitHub Environment hosts MANIFEST_SIGNING_KEY and is where
+    # any required-reviewer policy lives. RC releases neither read the
+    # secret nor need approval gating, so the environment binding is
+    # applied *only* for stable releases. Evaluating to an empty string
+    # makes GitHub skip the environment binding entirely (no protection
+    # rules, no secret exposure).
+    environment: ${{ needs.validate.outputs.is_prerelease == 'false' && 'release' || '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -91,87 +264,230 @@ jobs:
           - 1-of-1
           - 3-of-3
     concurrency:
-      group: generate-keys-${{ github.ref }}-${{ matrix.shape }}
-      cancel-in-progress: true
+      group: generate-release-bundle-${{ github.ref }}-${{ matrix.shape }}
+      cancel-in-progress: false
+    env:
+      SOURCE_DATE_EPOCH: ${{ needs.validate.outputs.source_date_epoch }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+      - uses: ./.github/actions/setup-rust
+        with:
+          cache-key: release-generate-bundle
 
-      - name: Generate CRS bundle
-        run: cargo run --release --features circuit/integration-tests
-          --bin generate_setup --
-          --config configs/release/${{ matrix.shape }}.json --output output/keys
-          --circuit-id zkap-main-${{ matrix.shape }}
-
-      - name: Verify post-migration 7-file layout
-        run: bash scripts/check-bundle-layout.sh output/keys
-
-      - name: CRS artifact size cap
-        # 2 GiB (2 097 152 KiB) per-shape ceiling. Catches a parameter
-        # blow-up here, before the upload-artifact step partially consumes
-        # runner disk. Mirrors the guard `ci.yml` enforces on smoke output.
+      - name: Prepare signing key (stable releases only)
+        if: needs.validate.outputs.is_prerelease == 'false'
+        env:
+          MANIFEST_SIGNING_KEY: ${{ secrets.MANIFEST_SIGNING_KEY }}
         run: |
           set -euo pipefail
-          USED_KIB=$(du -sk output/keys | awk '{print $1}')
-          LIMIT_KIB=2097152  # 2 GiB
-          echo "output/keys total (${{ matrix.shape }}): ${USED_KIB} KiB / limit ${LIMIT_KIB} KiB"
-          if [ "$USED_KIB" -gt "$LIMIT_KIB" ]; then
-            echo "ERROR: output/keys exceeds 2 GiB cap (${USED_KIB} KiB > ${LIMIT_KIB} KiB)"
+          if [ -z "${MANIFEST_SIGNING_KEY:-}" ]; then
+            echo "::error::MANIFEST_SIGNING_KEY secret missing in 'release' environment (required for stable releases)"
             exit 1
           fi
+          KEY_FILE="$(mktemp)"
+          printf '%s' "$MANIFEST_SIGNING_KEY" | base64 -d > "$KEY_FILE"
+          SZ=$(wc -c < "$KEY_FILE" | tr -d ' ')
+          if [ "$SZ" != "32" ]; then
+            echo "::error::Decoded signing key is $SZ bytes; expected 32 (raw Ed25519 seed)"
+            shred -u "$KEY_FILE" 2>/dev/null || rm -f "$KEY_FILE"
+            exit 1
+          fi
+          echo "SIGNING_KEY_FILE=$KEY_FILE" >> "$GITHUB_ENV"
+          echo "Signing key staged (32-byte Ed25519 seed)"
 
-      - name: Upload keys
+      - name: Generate CRS bundle
+        run: |
+          set -euo pipefail
+          mkdir -p output/keys
+          SIGNING_ARGS=()
+          if [ -n "${SIGNING_KEY_FILE:-}" ]; then
+            SIGNING_ARGS=(--signing-key "$SIGNING_KEY_FILE")
+          fi
+          cargo run --release -p zkap-cli --bin generate_setup \
+            --features circuit/integration-tests --locked -- \
+            --config configs/release/${{ matrix.shape }}.json \
+            --output output/keys \
+            --circuit-id zkap-main-${{ matrix.shape }} \
+            "${SIGNING_ARGS[@]}"
+
+      - name: Always cleanup signing key
+        if: always() && env.SIGNING_KEY_FILE != ''
+        run: |
+          shred -u "$SIGNING_KEY_FILE" 2>/dev/null || rm -f "$SIGNING_KEY_FILE"
+
+      - name: Verify 7-file post-migration bundle layout
+        run: bash scripts/check-bundle-layout.sh output/keys
+
+      - name: Enforce 2 GiB bundle size cap
+        run: bash scripts/ci/check-crs-size-cap.sh output/keys
+
+      - name: Write per-bundle SHA256SUMS
+        # Bundle-internal checksum manifest. Restricted to the canonical
+        # 7-file set (+ optional .sig) — not a glob of the whole directory.
+        run: |
+          set -euo pipefail
+          FILES=(
+            output/keys/circuit.ar1cs
+            output/keys/pk.bin
+            output/keys/vk.bin
+            output/keys/pvk.bin
+            output/keys/Groth16Verifier.sol
+            output/keys/config.json
+            output/keys/manifest.json
+          )
+          if [ -f output/keys/manifest.json.sig ]; then
+            FILES+=(output/keys/manifest.json.sig)
+          fi
+          bash scripts/release/sha256sums.sh --files output/keys/SHA256SUMS "${FILES[@]}"
+          cat output/keys/SHA256SUMS
+
+      - name: Upload bundle artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: proving-keys-${{ matrix.shape }}
           path: output/keys/
           if-no-files-found: error
 
-  release:
-    name: Create Release
-    needs: [validate, generate-keys]
+  # ───────────────────────────────────────────────────────────────────────────
+  # solidity-smoke — smoke-compile the emitted Groth16Verifier.sol.
+  # Pulls the 1-of-1 shape (representative; 3-of-3 differs only in public
+  # input shape and uses the same emit path).
+  # ───────────────────────────────────────────────────────────────────────────
+  solidity-smoke:
+    name: Solidity verifier smoke compile
+    needs: generate-release-bundle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Download 1-of-1 bundle
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: proving-keys-1-of-1
+          path: dl/1-of-1
+      - name: Install solc
+        run: sudo apt-get update && sudo apt-get install -y solc
+      - name: solc --bin
+        run: solc --bin dl/1-of-1/Groth16Verifier.sol
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # publish-release — sole job with `contents: write`.
+  # Stages every asset with shape-prefixed names, writes a top-level
+  # SHA256SUMS over the *exact* asset list, and creates the GitHub Release
+  # with that explicit list (no globs).
+  # ───────────────────────────────────────────────────────────────────────────
+  publish-release:
+    name: Publish GitHub Release
+    needs:
+      - validate
+      - test-full
+      - workspace-build
+      - build-cli
+      - build-wasm
+      - generate-release-bundle
+      - solidity-smoke
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - name: Download all artifacts
+      - name: Download all build artifacts
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          path: artifacts/
+          path: dl
 
-      - name: Package shape bundles
-        # Each matrix leg uploaded its `output/keys/` as
-        # `proving-keys-<shape>`, so download-artifact placed them at
-        # `artifacts/proving-keys-<shape>/`. Repack each into a single
-        # `zkap-circuit-<shape>-v<version>.tar.gz` whose top-level
-        # directory matches the archive stem — consumers get a
-        # self-describing folder on extract.
+      - name: Stage release assets (explicit names, no globs)
+        id: stage
+        env:
+          IS_PRERELEASE: ${{ needs.validate.outputs.is_prerelease }}
         run: |
           set -euo pipefail
-          VERSION="${{ needs.validate.outputs.version }}"
-          mkdir -p release-assets
+          mkdir -p release
+          # Common assets — keep canonical names.
+          cp dl/zkap-cli/generate_setup       release/generate_setup
+          cp dl/zkap-cli/generate_hash        release/generate_hash
+          cp dl/zkap-witness-wasm/witness_gen.wasm release/witness_gen.wasm
+
+          # Per-shape assets — prefix with the shape so 1-of-1 and 3-of-3
+          # never collide on the Release page.
+          PER_SHAPE_REQUIRED=(
+            circuit.ar1cs
+            pk.bin
+            vk.bin
+            pvk.bin
+            Groth16Verifier.sol
+            config.json
+            manifest.json
+            SHA256SUMS
+          )
           for shape in 1-of-1 3-of-3; do
-            SRC="artifacts/proving-keys-${shape}"
-            STEM="zkap-circuit-${shape}-v${VERSION}"
-            test -d "${SRC}" || { echo "ERROR: missing ${SRC}"; exit 1; }
-            mkdir -p "staging/${STEM}"
-            cp -r "${SRC}/." "staging/${STEM}/"
-            tar -czf "release-assets/${STEM}.tar.gz" -C staging "${STEM}"
-            sha256sum "release-assets/${STEM}.tar.gz" \
-              > "release-assets/${STEM}.tar.gz.sha256"
+            for f in "${PER_SHAPE_REQUIRED[@]}"; do
+              src="dl/proving-keys-${shape}/${f}"
+              if [ ! -f "$src" ]; then
+                echo "::error::missing required asset: $src"
+                exit 1
+              fi
+              cp "$src" "release/${shape}-${f}"
+            done
+            # Signature exists only for stable releases (decision D11).
+            sigsrc="dl/proving-keys-${shape}/manifest.json.sig"
+            if [ "$IS_PRERELEASE" = "false" ]; then
+              if [ ! -f "$sigsrc" ]; then
+                echo "::error::stable release missing $sigsrc"
+                exit 1
+              fi
+              cp "$sigsrc" "release/${shape}-manifest.json.sig"
+            elif [ -f "$sigsrc" ]; then
+              echo "::error::RC release should not carry $sigsrc — refusing to upload"
+              exit 1
+            fi
           done
-          ls -la release-assets/
+
+          ls -la release
+
+      - name: Write top-level SHA256SUMS
+        run: |
+          set -euo pipefail
+          # Hash every staged asset *except* the SHA256SUMS file itself.
+          MAPFILE_INPUTS=()
+          while IFS= read -r f; do
+            MAPFILE_INPUTS+=("$f")
+          done < <(find release -maxdepth 1 -type f ! -name SHA256SUMS | LC_ALL=C sort)
+          bash scripts/release/sha256sums.sh --files release/SHA256SUMS "${MAPFILE_INPUTS[@]}"
+          echo "------- top-level SHA256SUMS -------"
+          cat release/SHA256SUMS
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2
-        with:
-          tag_name: v${{ needs.validate.outputs.version }}
-          name: v${{ needs.validate.outputs.version }}
-          draft: true
-          generate_release_notes: true
-          files: |
-            release-assets/*.tar.gz
-            release-assets/*.tar.gz.sha256
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.validate.outputs.version }}
+          IS_PRERELEASE: ${{ needs.validate.outputs.is_prerelease }}
+        run: |
+          set -euo pipefail
+          PRE_FLAG=""
+          if [ "$IS_PRERELEASE" = "true" ]; then
+            PRE_FLAG="--prerelease"
+          fi
+
+          # Explicit asset list — built from the staged directory, sorted,
+          # and printed for the audit log. No bare globs handed to `gh`.
+          ASSETS=()
+          while IFS= read -r f; do
+            ASSETS+=("$f")
+          done < <(find release -maxdepth 1 -type f | LC_ALL=C sort)
+
+          echo "Uploading ${#ASSETS[@]} assets to v${VERSION}:"
+          printf '  %s\n' "${ASSETS[@]}"
+
+          NOTES="Automated release of zkap-circuit v${VERSION}.
+
+          Asset integrity is recorded in the top-level SHA256SUMS.
+          Each per-shape bundle additionally carries its own
+          \`<shape>-SHA256SUMS\` over the canonical 7-file CRS layout.
+          Stable releases include \`<shape>-manifest.json.sig\`
+          (Ed25519 over manifest.json)."
+
+          gh release create "v${VERSION}" $PRE_FLAG \
+            --title "v${VERSION}" \
+            --notes "$NOTES" \
+            "${ASSETS[@]}"

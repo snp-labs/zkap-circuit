@@ -31,19 +31,19 @@ fn parity_for_k(k: u64) {
 
     let wasm = WasmModule::from_path(&wasm_artifact_path()).expect("load wasm");
     let mut instance = wasm.instantiate().expect("instantiate wasm");
-    let wasm_bytes = instance
+    let wasm_result = instance
         .synthesize(&req_json, &cfg_json)
         .expect("wasm synthesize");
 
     assert_eq!(
         native.len(),
-        wasm_bytes.len(),
+        wasm_result.len(),
         "k={k}: native vs wasm output length mismatch ({} vs {})",
         native.len(),
-        wasm_bytes.len()
+        wasm_result.len()
     );
     assert!(
-        native == wasm_bytes,
+        native == wasm_result,
         "k={k}: native vs wasm bytes differ (first diff search needed)"
     );
 }

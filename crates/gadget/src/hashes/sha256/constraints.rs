@@ -980,13 +980,9 @@ mod tests {
     // must return `false` in every case.
     // --------------------------------------------------------------
 
-    /// Build a 1024-byte witness buffer carrying a SHA-256-padded copy
-    /// of `message` plus the `(nblocks, total_len, pad_start)` witnesses
-    /// the verifier expects. Allocated into a fresh ConstraintSystem so
-    /// each adversarial test starts from a clean state.
-    fn build_pad_witness(
-        message: &[u8],
-    ) -> (
+    /// Return tuple of [`build_pad_witness`]:
+    /// `(cs, data_vars, nblocks_idx, total_len_var, pad_start_var, padded, message_len)`.
+    type PadWitness = (
         ark_relations::gr1cs::ConstraintSystemRef<Fr>,
         Vec<UInt8<Fr>>,
         FpVar<Fr>,
@@ -994,7 +990,13 @@ mod tests {
         UInt16<Fr>,
         Vec<u8>,
         usize,
-    ) {
+    );
+
+    /// Build a 1024-byte witness buffer carrying a SHA-256-padded copy
+    /// of `message` plus the `(nblocks, total_len, pad_start)` witnesses
+    /// the verifier expects. Allocated into a fresh ConstraintSystem so
+    /// each adversarial test starts from a clean state.
+    fn build_pad_witness(message: &[u8]) -> PadWitness {
         use crate::hashes::sha256::utils::sha256_pad_with_len;
 
         let message_len = message.len();

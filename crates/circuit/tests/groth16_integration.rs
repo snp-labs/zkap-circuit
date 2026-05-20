@@ -262,7 +262,6 @@ fn build_jwt_witness(
     }
 }
 
-
 /// Get the claim value bytes as the circuit would see them (with quotes for strings,
 /// zero-padded to max_len)
 fn claim_value_bytes(payload_str: &str, key: &str, max_len: usize) -> Vec<u8> {
@@ -804,7 +803,10 @@ fn m1_non_power_of_two_jwt_len_returns_unsatisfiable() {
     let cs = ark_relations::gr1cs::ConstraintSystem::<F>::new_ref();
     let result = circuit.generate_constraints(cs.clone());
     assert!(
-        matches!(result, Err(ark_relations::gr1cs::SynthesisError::Unsatisfiable)),
+        matches!(
+            result,
+            Err(ark_relations::gr1cs::SynthesisError::Unsatisfiable)
+        ),
         "non-power-of-two max_jwt_b64_len must return SynthesisError::Unsatisfiable"
     );
 }
@@ -828,7 +830,10 @@ fn m1_2048_byte_jwt_buffer_generate_constraints_runs() {
     // derivation itself).
     let result = circuit.generate_constraints(cs.clone());
     assert!(
-        !matches!(result, Err(ark_relations::gr1cs::SynthesisError::Unsatisfiable)),
+        !matches!(
+            result,
+            Err(ark_relations::gr1cs::SynthesisError::Unsatisfiable)
+        ),
         "max_jwt_b64_len = 2048 (power-of-two) must pass the is_power_of_two gate"
     );
 }

@@ -347,10 +347,7 @@ use zkap_evm_verifier::EvmEmitError;
 /// Helper: build a valid VK and replace one field with the infinity point,
 /// then assert `generate_solidity` returns `EvmEmitError::PointAtInfinity`.
 fn assert_infinity_rejected(vk: VerifyingKey<Bn254>, expected_which_prefix: &str) {
-    let tmp = std::env::temp_dir().join(format!(
-        "zkap_m7_test_{}.sol",
-        std::process::id()
-    ));
+    let tmp = std::env::temp_dir().join(format!("zkap_m7_test_{}.sol", std::process::id()));
     match vk.generate_solidity(&tmp) {
         Err(EvmEmitError::PointAtInfinity { which }) => {
             assert!(

@@ -15,8 +15,8 @@ use crate::manifest::{ArtifactEntry, Manifest, verify_manifest};
 
 /// In-memory bundle of every CRS artifact a `Prover` needs.
 ///
-/// Populated by [`ArtifactSet::load`] — the single manifest-validated
-/// trust gate for the prove flow.
+/// Populated by [`ArtifactSet::load_signed`] — the single
+/// manifest-validated trust gate for the prove flow.
 pub struct ArtifactSet {
     /// Groth16 proving key — loaded from `pk.bin`.
     pub pk: ProvingKey<BN254>,

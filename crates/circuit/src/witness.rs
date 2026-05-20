@@ -46,8 +46,8 @@ pub struct CircuitPublicInputs<F: PrimeField> {
     pub hanchor: F,
     /// Poseidon commitment `H(a, random)` — instance index 1. Decouples the
     /// per-batch `a` value from the on-chain log so the verifier can match
-    /// it against [`crate::token::Claim`]-derived material without seeing
-    /// `a` in clear.
+    /// it against `zkap_service::jwt::Claim`-derived material without
+    /// seeing `a` in clear.
     pub h_a: F,
     /// Merkle root of the per-batch identity tree — instance index 2.
     /// Pins the proof to a specific snapshot of the eligibility set.

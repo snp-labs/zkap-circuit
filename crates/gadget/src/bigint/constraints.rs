@@ -237,6 +237,7 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
         let cs = self.cs().or(other.cs());
 
         let field_char = field_characteristic_to_nat::<ConstraintF>();
+        // LATENT: BigNatVar::sub adds +1 word_size per call. NOT in RSA critical path today; +3 cs/call if a new caller appears. See docs/audit/constraint-audit-2026-05-20.md C1.5.
         let max_word_size = max(&self.word_size, &other.word_size) + BigNat::one();
         if max_word_size >= field_char {
             return Err(SynthesisError::Unsatisfiable);

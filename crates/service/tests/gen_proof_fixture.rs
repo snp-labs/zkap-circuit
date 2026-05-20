@@ -239,8 +239,8 @@ fn gen_proof_fixture_for_manifest_dir() {
     let h_sign_user_op_fr = F::from(67890u64);
     let nonce_hash = generate_poseidon_hash(HashRequest {
         field_elements: vec![
-            ark_utils::field_to_hex(h_sign_user_op_fr),
-            ark_utils::field_to_hex(random_fr),
+            ark_codec::field_to_hex(h_sign_user_op_fr),
+            ark_codec::field_to_hex(random_fr),
         ],
     })
     .expect("nonce poseidon hash")
@@ -293,7 +293,7 @@ fn gen_proof_fixture_for_manifest_dir() {
     }
     let tree = MerkleTree::<MerkleTreeParams<F>>::new_with_leaf_digest(&params, &params, digests)
         .expect("Merkle tree build");
-    let root_hex = ark_utils::field_to_hex(tree.root());
+    let root_hex = ark_codec::field_to_hex(tree.root());
 
     // ── 5. Assemble credentials. ───────────────────────────────────────
     let credentials: Vec<JsProveCredential> = jwts
@@ -302,9 +302,9 @@ fn gen_proof_fixture_for_manifest_dir() {
         .map(|(i, (jwt, priv_key, _))| {
             let proof_path = tree.generate_proof(i).expect("Merkle proof");
             let mut merkle_path = Vec::with_capacity(1 + proof_path.auth_path.len());
-            merkle_path.push(ark_utils::field_to_hex(proof_path.leaf_sibling_hash));
+            merkle_path.push(ark_codec::field_to_hex(proof_path.leaf_sibling_hash));
             for sib in &proof_path.auth_path {
-                merkle_path.push(ark_utils::field_to_hex(*sib));
+                merkle_path.push(ark_codec::field_to_hex(*sib));
             }
             assert_eq!(
                 merkle_path.len(),
@@ -331,8 +331,8 @@ fn gen_proof_fixture_for_manifest_dir() {
         .collect();
 
     let request = JsProofRequest {
-        random: ark_utils::field_to_hex(random_fr),
-        h_sign_user_op: ark_utils::field_to_hex(h_sign_user_op_fr),
+        random: ark_codec::field_to_hex(random_fr),
+        h_sign_user_op: ark_codec::field_to_hex(h_sign_user_op_fr),
         anchor: anchor_resp.anchor_evaluations,
         merkle_root: root_hex,
         credentials,

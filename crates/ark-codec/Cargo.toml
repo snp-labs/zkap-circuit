@@ -1,0 +1,27 @@
+[package]
+name = "ark-codec"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "Arkworks field/string/affine codec helpers — split out of the legacy ark-utils meta-crate during the 2026-05 audit pass."
+repository.workspace = true
+keywords = ["zk", "arkworks", "codec", "field"]
+categories = ["cryptography"]
+
+[dependencies]
+thiserror = { workspace = true }
+ark-ff = { workspace = true }
+
+# Field serde (optional)
+ark-ec = { workspace = true, optional = true }
+hex = { workspace = true, optional = true }
+
+[dev-dependencies]
+ark-bn254 = { workspace = true }
+
+[features]
+default = []
+field-serde = ["dep:ark-ec", "dep:hex"]
+
+[lints]
+workspace = true

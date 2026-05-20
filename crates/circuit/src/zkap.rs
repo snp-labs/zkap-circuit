@@ -29,9 +29,6 @@
 //! `generate_constraints` is an intentional panic-on-host-bug guard — do **not** replace it
 //! with `SynthesisError`; the panic path preserves R1CS variable allocation ordering.
 
-#![allow(unused_variables)]
-#![allow(unused_mut)]
-
 use ark_crypto_primitives::{
     crh::{
         CRHSchemeGadget,
@@ -64,7 +61,7 @@ use crate::{
     },
     witness,
 };
-use ark_utils::{
+use ark_r1cs_helpers::{
     enforce_less_than, pack_decompose_bytes_unchecked, single_multiplexer, slice_efficient,
 };
 use gadget::{
@@ -318,7 +315,7 @@ where
         // sha_pad_jwt_b64_to_fp.len() == MAX_JWT_B64_LEN == 1024 == 2^10, so 10 bits suffice
         let first_dot_bits = first_dot_idx.to_bits_le()?;
         let first_dot_char =
-            ark_utils::select_array_element(&sha_pad_jwt_b64_to_fp, &first_dot_bits[..10])?;
+            ark_r1cs_helpers::select_array_element(&sha_pad_jwt_b64_to_fp, &first_dot_bits[..10])?;
 
         first_dot_char.enforce_equal(&dot_char)?;
 

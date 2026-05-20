@@ -1,0 +1,21 @@
+[package]
+name = "ark-r1cs-helpers"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "Arkworks R1CS gadget helpers (comparison, packing, select, slice, UInt32 ext) — split out of the legacy ark-utils meta-crate during the 2026-05 audit pass."
+repository.workspace = true
+keywords = ["zk", "arkworks", "r1cs", "constraints"]
+categories = ["cryptography"]
+
+[dependencies]
+thiserror = { workspace = true }
+ark-ff = { workspace = true }
+ark-r1cs-std = { workspace = true }
+ark-relations = { workspace = true }
+
+[dev-dependencies]
+ark-bn254 = { workspace = true }
+
+[lints]
+workspace = true

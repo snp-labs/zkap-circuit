@@ -4,7 +4,7 @@
 //! Mirrors the `anchor` / `hash` module conventions: every BN254 Fr value
 //! crosses the boundary as a `String` (accepted as either `0x`-prefixed
 //! lowercase big-endian hex or a plain decimal — parsed via
-//! [`ark_utils::hex_decimal_to_field`]); RSA-2048 bulk bytes cross as
+//! [`ark_codec::hex_decimal_to_field`]); RSA-2048 bulk bytes cross as
 //! base64 (`*_b64` suffix); JWT credentials cross as their compact
 //! serialization. Response field-element strings are always emitted as
 //! `0x`-prefixed lowercase big-endian hex.
@@ -19,7 +19,7 @@
 /// **Field-element string encoding**: every BN254 Fr value (`random`,
 /// `h_sign_user_op`, every entry of `anchor`, `merkle_root`, every entry
 /// of each credential's `merkle_path`) is parsed via
-/// [`ark_utils::hex_decimal_to_field`], which accepts either form:
+/// [`ark_codec::hex_decimal_to_field`], which accepts either form:
 ///
 /// - `0x`-prefixed lowercase big-endian hex (e.g. `"0x1a2b..."`), or
 /// - a plain decimal string (e.g. `"1234567890..."`).

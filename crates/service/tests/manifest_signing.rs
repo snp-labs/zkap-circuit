@@ -300,6 +300,30 @@ fn unsigned_manifest_with_key_required_rejected() {
     );
 }
 
+/// Integration gate: when a caller hands `ArtifactSet::load` a
+/// `verifying_key` but the on-disk manifest has no `signature` field,
+/// loading must reject with `ArtifactError::Signature(SignatureMissing)`
+/// — the audit-required guarantee that signature enforcement runs
+/// before any artifact bytes are touched. The
+/// `unsigned_manifest_with_key_required_rejected` test above only
+/// exercises `verify_manifest` directly; this one pins the full
+/// `ArtifactSet::load(Some(key))` path against the same fixture.
+#[test]
+fn unsigned_manifest_load_with_key_required_rejected() {
+    let scratch = Scratch::new("unsigned_with_key_load");
+    let manifest = scratch.manifest();
+    assert!(manifest.signature.is_none(), "fixture starts unsigned");
+
+    let sk = fresh_signing_key(0x99);
+    let vk = fresh_verifying_key(&sk);
+
+    match ArtifactSet::load(&manifest, scratch.path(), Some(&vk)) {
+        Ok(_) => panic!("ArtifactSet::load accepted unsigned manifest with verifying_key set"),
+        Err(ArtifactError::Signature(ManifestError::SignatureMissing)) => {}
+        Err(other) => panic!("expected Signature(SignatureMissing), got {other:?}"),
+    }
+}
+
 /// **Backward-compat gate**: an unsigned bundle still loads when the
 /// caller passes `verifying_key = None` — preserves the pre-F5
 /// behaviour.

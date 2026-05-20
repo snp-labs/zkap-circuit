@@ -21,7 +21,9 @@ use ark_r1cs_std::{
 };
 use ark_relations::gr1cs::{Namespace, SynthesisError};
 
-use ark_utils::{UInt32Ext, enforce_less_than, is_greater_or_equal, is_less_than, slice_efficient};
+use ark_r1cs_helpers::{
+    UInt32Ext, enforce_less_than, is_greater_or_equal, is_less_than, slice_efficient,
+};
 
 use super::digest::DigestVar;
 use crate::hashes::sha256::{H, K, utils::conditionally_select_vec};
@@ -926,5 +928,218 @@ mod tests {
         println!("Digest: {}", hex::encode(circuit_digest));
 
         Ok(())
+    }
+
+    // --------------------------------------------------------------
+    // enforce_sha2_pad_verifier — adversarial / soundness coverage
+    //
+    // The two happy-path tests above only confirm that a correctly
+    // padded message satisfies the constraints. The padding verifier
+    // is soundness-critical (any accepted malformed padding lets the
+    // prover hash a different message than the verifier expects), so
+    // each of the following four tests builds a valid padded message
+    // and then tampers with one specific invariant. `cs.is_satisfied()`
+    // must return `false` in every case.
+    // --------------------------------------------------------------
+
+    /// Build a 1024-byte witness buffer carrying a SHA-256-padded copy
+    /// of `message` plus the `(nblocks, total_len, pad_start)` witnesses
+    /// the verifier expects. Allocated into a fresh ConstraintSystem so
+    /// each adversarial test starts from a clean state.
+    fn build_pad_witness(
+        message: &[u8],
+    ) -> (
+        ark_relations::gr1cs::ConstraintSystemRef<Fr>,
+        Vec<UInt8<Fr>>,
+        FpVar<Fr>,
+        UInt16<Fr>,
+        UInt16<Fr>,
+        Vec<u8>,
+        usize,
+    ) {
+        use crate::hashes::sha256::utils::sha256_pad_with_len;
+
+        let message_len = message.len();
+        let padded = sha256_pad_with_len(message, message_len);
+        let nblocks = padded.len() / 64 - 1;
+
+        let mut circuit_data = padded.clone();
+        circuit_data.resize(1024, 0);
+
+        let cs = ConstraintSystem::<Fr>::new_ref();
+        let data_vars: Vec<UInt8<Fr>> = circuit_data
+            .iter()
+            .map(|&b| UInt8::new_witness(cs.clone(), || Ok(b)).unwrap())
+            .collect();
+
+        let nblocks_idx =
+            FpVar::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(nblocks as u64))).unwrap();
+        let total_len = UInt16::<Fr>::new_witness(cs.clone(), || Ok(message_len as u16)).unwrap();
+        let pad_start = UInt16::<Fr>::new_witness(cs.clone(), || Ok(message_len as u16)).unwrap();
+
+        (
+            cs,
+            data_vars,
+            nblocks_idx,
+            total_len,
+            pad_start,
+            circuit_data,
+            nblocks,
+        )
+    }
+
+    /// Tampered length field — the last 8 bytes of the selected final block
+    /// (big-endian bit-length encoding) are XOR'd with 0xFF so they no longer
+    /// match `total_len_wo_pad_bytes * 8`. Invariant (1) must reject.
+    #[test]
+    fn test_enforce_sha2_pad_verifier_rejects_tampered_length_field() {
+        let message = b"abcdefghijklmnopqrstuvwxyz";
+        let message_len = message.len();
+        // Manually build a tampered buffer: pad correctly, then flip the
+        // bit-length encoding byte. The witness `total_len_wo_pad_bytes`
+        // stays honest (message_len), so the encoded-vs-expected check
+        // diverges.
+        use crate::hashes::sha256::utils::sha256_pad_with_len;
+        let mut padded = sha256_pad_with_len(message, message_len);
+        let nblocks = padded.len() / 64 - 1;
+        // The encoded bit-length lives in bytes [final_block_base + 56 ..
+        // + 64]. Flip one byte there.
+        let final_block_base = nblocks * 64;
+        padded[final_block_base + 60] ^= 0xFF;
+        let mut circuit_data = padded.clone();
+        circuit_data.resize(1024, 0);
+
+        let cs = ConstraintSystem::<Fr>::new_ref();
+        let data_vars: Vec<UInt8<Fr>> = circuit_data
+            .iter()
+            .map(|&b| UInt8::new_witness(cs.clone(), || Ok(b)).unwrap())
+            .collect();
+        let nblocks_idx =
+            FpVar::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(nblocks as u64))).unwrap();
+        let total_len = UInt16::<Fr>::new_witness(cs.clone(), || Ok(message_len as u16)).unwrap();
+        let pad_start = UInt16::<Fr>::new_witness(cs.clone(), || Ok(message_len as u16)).unwrap();
+
+        // Verifier should add constraints, but cs.is_satisfied() == false.
+        SHA256Gadget::enforce_sha2_pad_verifier(
+            &data_vars,
+            &nblocks_idx,
+            &total_len,
+            &total_len,
+            &pad_start,
+        )
+        .expect("constraint synthesis itself must not error");
+        assert!(
+            !cs.is_satisfied().unwrap(),
+            "tampered length field must violate invariant (1)"
+        );
+    }
+
+    /// Tampered 0x80 marker — replace the pad-start byte with 0x81.
+    /// Invariant (4) `pad_region[0] == SHA256_PAD_MARKER` must reject.
+    #[test]
+    fn test_enforce_sha2_pad_verifier_rejects_wrong_pad_marker() {
+        let message = b"the quick brown fox jumps over the lazy dog";
+        let message_len = message.len();
+        use crate::hashes::sha256::utils::sha256_pad_with_len;
+        let mut padded = sha256_pad_with_len(message, message_len);
+        let nblocks = padded.len() / 64 - 1;
+        assert_eq!(padded[message_len], 0x80);
+        padded[message_len] = 0x81;
+        let mut circuit_data = padded.clone();
+        circuit_data.resize(1024, 0);
+
+        let cs = ConstraintSystem::<Fr>::new_ref();
+        let data_vars: Vec<UInt8<Fr>> = circuit_data
+            .iter()
+            .map(|&b| UInt8::new_witness(cs.clone(), || Ok(b)).unwrap())
+            .collect();
+        let nblocks_idx =
+            FpVar::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(nblocks as u64))).unwrap();
+        let total_len = UInt16::<Fr>::new_witness(cs.clone(), || Ok(message_len as u16)).unwrap();
+        let pad_start = UInt16::<Fr>::new_witness(cs.clone(), || Ok(message_len as u16)).unwrap();
+
+        SHA256Gadget::enforce_sha2_pad_verifier(
+            &data_vars,
+            &nblocks_idx,
+            &total_len,
+            &total_len,
+            &pad_start,
+        )
+        .expect("constraint synthesis itself must not error");
+        assert!(
+            !cs.is_satisfied().unwrap(),
+            "wrong 0x80 marker must violate invariant (4)"
+        );
+    }
+
+    /// Tampered trailing zero — insert a non-zero byte in the padding
+    /// region (between 0x80 and the length field). Invariant (4)'s
+    /// "remaining bytes must be 0" check must reject.
+    #[test]
+    fn test_enforce_sha2_pad_verifier_rejects_nonzero_trailing_pad() {
+        // Use a short message so there is meaningful trailing-zero region
+        // between message_len+1 and final_block_base+56.
+        let message = b"short";
+        let message_len = message.len();
+        use crate::hashes::sha256::utils::sha256_pad_with_len;
+        let mut padded = sha256_pad_with_len(message, message_len);
+        let nblocks = padded.len() / 64 - 1;
+        // Inject a 0xAB at the first trailing-zero position (right after 0x80).
+        padded[message_len + 1] = 0xAB;
+        let mut circuit_data = padded.clone();
+        circuit_data.resize(1024, 0);
+
+        let cs = ConstraintSystem::<Fr>::new_ref();
+        let data_vars: Vec<UInt8<Fr>> = circuit_data
+            .iter()
+            .map(|&b| UInt8::new_witness(cs.clone(), || Ok(b)).unwrap())
+            .collect();
+        let nblocks_idx =
+            FpVar::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(nblocks as u64))).unwrap();
+        let total_len = UInt16::<Fr>::new_witness(cs.clone(), || Ok(message_len as u16)).unwrap();
+        let pad_start = UInt16::<Fr>::new_witness(cs.clone(), || Ok(message_len as u16)).unwrap();
+
+        SHA256Gadget::enforce_sha2_pad_verifier(
+            &data_vars,
+            &nblocks_idx,
+            &total_len,
+            &total_len,
+            &pad_start,
+        )
+        .expect("constraint synthesis itself must not error");
+        assert!(
+            !cs.is_satisfied().unwrap(),
+            "non-zero byte in padding region must violate invariant (4)"
+        );
+    }
+
+    /// Tampered post-final-block region — write a non-zero byte beyond
+    /// the selected final block. Invariant (6) `after_mask * byte = 0`
+    /// must reject.
+    #[test]
+    fn test_enforce_sha2_pad_verifier_rejects_nonzero_post_final_block() {
+        let (cs, mut data_vars, nblocks_idx, total_len, pad_start, _, nblocks) =
+            build_pad_witness(b"abcdef");
+        // Overwrite the very first byte AFTER the final padded block with
+        // a witness whose value is 0xAA (the rest of the buffer is zero).
+        let post_idx = (nblocks + 1) * 64;
+        assert!(
+            post_idx < data_vars.len(),
+            "buffer must extend past padding"
+        );
+        data_vars[post_idx] = UInt8::new_witness(cs.clone(), || Ok(0xAAu8)).unwrap();
+
+        SHA256Gadget::enforce_sha2_pad_verifier(
+            &data_vars,
+            &nblocks_idx,
+            &total_len,
+            &total_len,
+            &pad_start,
+        )
+        .expect("constraint synthesis itself must not error");
+        assert!(
+            !cs.is_satisfied().unwrap(),
+            "non-zero byte after the final block must violate invariant (6)"
+        );
     }
 }

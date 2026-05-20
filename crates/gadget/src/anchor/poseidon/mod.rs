@@ -388,8 +388,17 @@ where
     ))
 }
 
-/// Generate all combinations of k elements chosen from n
-fn generate_combinations(n: usize, k: usize) -> Vec<Vec<usize>> {
+/// Generate all `k`-element index subsets of `0..n` in lexicographic order.
+///
+/// Single source of truth for host-side `C(n, k)` enumeration across the
+/// workspace. Previously this logic was duplicated in
+/// `service::anchor::poseidon` (for `derive_selector_from_x_list_and_anchor`)
+/// and in `circuit/tests/groth16_integration.rs`; both call sites now route
+/// through this `pub` entry point.
+///
+/// Returns `vec![]` if `k > n`, `vec![vec![]]` if `k == 0`, and the single
+/// `(0..n)` tuple if `k == n`.
+pub fn generate_combinations(n: usize, k: usize) -> Vec<Vec<usize>> {
     if k > n {
         return vec![];
     }

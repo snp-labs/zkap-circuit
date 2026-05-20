@@ -2,7 +2,7 @@
 //!
 //! Wire-decoding only. Validates the request's shape against
 //! `CircuitConfig`, decodes every string-encoded field element via
-//! [`ark_utils::codec::string::hex_decimal_to_field`], and decodes the
+//! [`ark_codec::string::hex_decimal_to_field`], and decodes the
 //! base64-encoded RSA modulus and JWT signature segment. Returns lean
 //! F-based DTOs ready for the prover's per-credential streaming loop.
 //!
@@ -15,7 +15,7 @@
 //! [`crate::error::ApplicationError::InvalidProveRequest`] with a precise
 //! dotted field path.
 
-use ark_utils::codec::string::hex_decimal_to_field;
+use ark_codec::string::hex_decimal_to_field;
 use circuit::types::{CircuitConfig, F};
 use gadget::base64::decode_any_base64;
 
@@ -242,7 +242,7 @@ fn decode_jwt_signature_segment(jwt: &str, cred_idx: usize) -> Result<Vec<u8>, A
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ark_utils::codec::field::fe_to_be32;
+    use ark_codec::field::fe_to_be32;
     use base64::Engine as _;
     use base64::engine::general_purpose;
     use circuit::types::CircuitConfig;

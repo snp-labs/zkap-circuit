@@ -12,7 +12,7 @@ categories = ["cryptography"]
 # --- Always required (lightweight, WASM-compatible) ---
 gadget = { workspace = true, default-features = false, features = ["crypto", "base64", "rsa"] }
 circuit = { workspace = true }
-ark-utils = { workspace = true, features = ["field-serde", "io"] }
+ark-codec = { workspace = true, features = ["field-serde"] }
 
 thiserror = { workspace = true }
 serde      = { workspace = true }

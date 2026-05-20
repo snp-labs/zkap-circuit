@@ -1,7 +1,8 @@
 [workspace]
 resolver = "3"
 members = [
-    "crates/ark-utils",
+    "crates/ark-codec",
+    "crates/ark-r1cs-helpers",
     "crates/circuit",
     "crates/cli",
     "crates/gadget",
@@ -40,7 +41,8 @@ missing_docs = "warn"
 # cases or scope the allow per module. Tracked in workspace-hygiene H4.
 
 [workspace.dependencies]
-ark-utils                 = { path = "crates/ark-utils" }
+ark-codec                 = { path = "crates/ark-codec" }
+ark-r1cs-helpers          = { path = "crates/ark-r1cs-helpers" }
 gadget                    = { path = "crates/gadget", default-features = false }
 circuit                   = { path = "crates/circuit" }
 zkap-service              = { path = "crates/service" }

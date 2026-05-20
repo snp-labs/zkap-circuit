@@ -9,7 +9,7 @@ keywords = ["zk", "arkworks", "gadget", "groth16", "jwt"]
 categories = ["cryptography"]
 
 [dependencies]
-ark-utils = { workspace = true, features = ["r1cs"] }
+ark-r1cs-helpers = { workspace = true }
 thiserror = { workspace = true }
 ark-serialize = { workspace = true }
 

@@ -6,8 +6,8 @@
 //! issuer + RSA public-key pairs). All functions use the shared
 //! [`crate::poseidon_params`] singleton.
 
+use ark_codec::{hex_decimal_to_field, str_to_limbs};
 use ark_crypto_primitives::crh::CRHScheme;
-use ark_utils::{hex_decimal_to_field, str_to_limbs};
 use circuit::types::{CircuitConfig, F, PAD_CHAR, PoseidonHash};
 use gadget::{base64::decode_any_base64, signature::rsa::PublicKey};
 

@@ -6,8 +6,8 @@
 //! `ProofGenerationFailed`/`VerifyFailed`, and parse failures use
 //! `InvalidFormat`/`ParseError`.
 
-use ark_utils::ConvertError;
-use ark_utils::error::{FieldParseError, TextError};
+use ark_codec::ConvertError;
+use ark_codec::error::{FieldParseError, TextError};
 use gadget::anchor::error::AnchorError;
 use thiserror::Error;
 

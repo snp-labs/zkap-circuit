@@ -19,8 +19,8 @@ use rsa::signature::{SignatureEncoding, Signer};
 use rsa::traits::PublicKeyParts;
 use sha2::Sha256;
 
-use ark_utils::pad;
-use ark_utils::try_str_to_fields;
+use ark_codec::pad;
+use ark_codec::try_str_to_fields;
 use circuit::{
     token::ClaimIndices,
     types::{BNP, CG, CircuitConfig, PAD_CHAR},
@@ -31,7 +31,7 @@ use gadget::{
     anchor::AnchorScheme,
     anchor::poseidon::{
         PoseidonAnchor, PoseidonAnchorPublicKey, PoseidonAnchorScheme, PoseidonAnchorSecret,
-        build_anchor_witness,
+        build_anchor_witness, generate_combinations,
     },
     base64::{IndexBits, get_base64_table},
     hashes::poseidon::get_poseidon_params,
@@ -284,31 +284,6 @@ fn derive_x(aud: &str, iss: &str, sub: &str, params: &PoseidonConfig<F>, cfg: &C
     CRH::<F>::evaluate(params, limbs).unwrap()
 }
 
-/// Generate all k-element index subsets of 0..n
-fn combinations(n: usize, k: usize) -> Vec<Vec<usize>> {
-    let mut result = Vec::new();
-    let mut combo = vec![0usize; k];
-    fn helper(
-        start: usize,
-        depth: usize,
-        n: usize,
-        k: usize,
-        combo: &mut Vec<usize>,
-        result: &mut Vec<Vec<usize>>,
-    ) {
-        if depth == k {
-            result.push(combo.clone());
-            return;
-        }
-        for i in start..=(n - k + depth) {
-            combo[depth] = i;
-            helper(i + 1, depth + 1, n, k, combo, result);
-        }
-    }
-    helper(0, 0, n, k, &mut combo, &mut result);
-    result
-}
-
 /// Brute-force find a valid selector for the anchor
 fn derive_selector(
     pk: &PoseidonAnchorPublicKey<F>,
@@ -320,7 +295,7 @@ fn derive_selector(
     let n = cfg.n as usize;
     let k = cfg.k as usize;
 
-    for combo in combinations(n, k) {
+    for combo in generate_combinations(n, k) {
         let mut selector = vec![0u8; n];
         for &idx in &combo {
             selector[idx] = 1;
@@ -724,5 +699,82 @@ fn groth16_verify_fails_with_wrong_public_inputs() {
     assert!(
         !valid,
         "Proof should NOT verify with tampered public inputs"
+    );
+}
+
+// ============================================================
+// Negative tests for phase-1 boundary checks (P2 #15b).
+//
+// Each test starts from a valid `ZkapCircuitInput`, tampers with
+// exactly one witness, runs `generate_constraints` directly (no
+// Groth16 setup/prove), and asserts `cs.is_satisfied() == false`.
+// Generate_constraints is L1-locked, so these only confirm that the
+// existing defense-in-depth checks reject malformed witnesses —
+// they do not assert anything about R1CS shape.
+// ============================================================
+
+fn first_valid_input() -> ZkapCircuitInput<F> {
+    let mut inputs = build_valid_circuit_inputs();
+    inputs.swap_remove(0)
+}
+
+fn satisfied_after_constraints(input: ZkapCircuitInput<F>) -> bool {
+    let circuit = TestCircuit::from_input(input);
+    let cs = ark_relations::gr1cs::ConstraintSystem::<F>::new_ref();
+    circuit.generate_constraints(cs.clone()).unwrap();
+    cs.is_satisfied().unwrap()
+}
+
+#[test]
+fn reject_payload_offset_zero() {
+    // pay_offset_b64 == 0 violates "payload_offset >= 1" (the first
+    // dot in `header.payload.sig` cannot be at byte 0).
+    let mut input = first_valid_input();
+    input.jwt.pay_offset_b64 = 0;
+    assert!(
+        !satisfied_after_constraints(input),
+        "payload_offset_b64 == 0 must violate phase-1 boundary"
+    );
+}
+
+#[test]
+fn reject_pad_start_not_at_signing_input_end() {
+    // pad_start_byte_idx must equal pay_offset_b64 + pay_len_b64
+    // (the byte AFTER the JWT's second dot). Bump it by 1.
+    let mut input = first_valid_input();
+    input.jwt.pad_start_byte_idx = input.jwt.pay_offset_b64 + input.jwt.pay_len_b64 + 1;
+    assert!(
+        !satisfied_after_constraints(input),
+        "pad_start_byte_idx desync must violate phase-1 binding"
+    );
+}
+
+#[test]
+fn reject_payload_overshoots_jwt_buffer() {
+    // payload_offset + payload_len must stay below the JWT buffer
+    // bound, otherwise the offset would index past `max_jwt_b64_len`.
+    let mut input = first_valid_input();
+    let cfg = input.params.clone();
+    // Push pay_len_b64 right up against the buffer ceiling so the
+    // (offset + len) sum overflows the bound. The base fixture has
+    // pay_offset_b64 > 0, so any pay_len_b64 == max_jwt_b64_len
+    // guarantees the sum exceeds the bound.
+    input.jwt.pay_len_b64 = cfg.max_jwt_b64_len as usize;
+    assert!(
+        !satisfied_after_constraints(input),
+        "payload_offset + payload_len >= buffer_len must violate phase-1 overrun check"
+    );
+}
+
+#[test]
+fn reject_rsa_exponent_other_than_65537() {
+    // Phase-1 enforces e == 65537. Flip the modulus's exponent bytes
+    // to the next-most-common RSA exponent (3) and the circuit must
+    // reject.
+    let mut input = first_valid_input();
+    input.jwt.pk.e = vec![0x03];
+    assert!(
+        !satisfied_after_constraints(input),
+        "RSA exponent != 65537 must violate phase-1 e==65537 enforcement"
     );
 }

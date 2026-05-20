@@ -53,7 +53,7 @@ rand_chacha           = { workspace = true }
 ark-ar1cs              = { workspace = true }
 
 [dev-dependencies]
-signature = "2"
+signature = { workspace = true }
 ark-std = { workspace = true }
 rsa = { workspace = true }
 base64 = { workspace = true }

@@ -104,6 +104,8 @@ zeroize = { version = "1.8", default-features = false, features = ["alloc"] }
 criterion = "0.5"
 wasmtime = { version = "26", default-features = false, features = ["cranelift", "runtime", "std"] }
 proptest = { version = "1", default-features = false, features = ["std"] }
+anyhow = { version = "1" }
+signature = { version = "2" }
 
 
 [profile.release]

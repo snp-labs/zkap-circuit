@@ -300,14 +300,13 @@ fn unsigned_manifest_with_key_required_rejected() {
     );
 }
 
-/// Integration gate: when a caller hands `ArtifactSet::load` a
-/// `verifying_key` but the on-disk manifest has no `signature` field,
-/// loading must reject with `ArtifactError::Signature(SignatureMissing)`
-/// — the audit-required guarantee that signature enforcement runs
-/// before any artifact bytes are touched. The
-/// `unsigned_manifest_with_key_required_rejected` test above only
-/// exercises `verify_manifest` directly; this one pins the full
-/// `ArtifactSet::load(Some(key))` path against the same fixture.
+/// Integration gate: when a caller uses `ArtifactSet::load_signed` but
+/// the on-disk manifest has no `signature` field, loading must reject with
+/// `ArtifactError::Signature(SignatureMissing)` — the audit-required
+/// guarantee that signature enforcement runs before any artifact bytes are
+/// touched. The `unsigned_manifest_with_key_required_rejected` test above
+/// only exercises `verify_manifest` directly; this one pins the full
+/// `ArtifactSet::load_signed` path against the same fixture.
 #[test]
 fn unsigned_manifest_load_with_key_required_rejected() {
     let scratch = Scratch::new("unsigned_with_key_load");
@@ -317,28 +316,26 @@ fn unsigned_manifest_load_with_key_required_rejected() {
     let sk = fresh_signing_key(0x99);
     let vk = fresh_verifying_key(&sk);
 
-    match ArtifactSet::load(&manifest, scratch.path(), Some(&vk)) {
-        Ok(_) => panic!("ArtifactSet::load accepted unsigned manifest with verifying_key set"),
+    match ArtifactSet::load_signed(&manifest, scratch.path(), &vk) {
+        Ok(_) => panic!("ArtifactSet::load_signed accepted unsigned manifest"),
         Err(ArtifactError::Signature(ManifestError::SignatureMissing)) => {}
         Err(other) => panic!("expected Signature(SignatureMissing), got {other:?}"),
     }
 }
 
-/// **Backward-compat gate**: an unsigned bundle still loads when the
-/// caller passes `verifying_key = None` — preserves the pre-F5
-/// behaviour.
+/// **Backward-compat gate**: an unsigned bundle still loads via
+/// `load_unsigned` — preserves the pre-F5 behaviour for unsigned fixtures.
 #[test]
 fn unsigned_manifest_with_no_key_loads_ok() {
     let scratch = Scratch::new("unsigned_no_key");
     let manifest = scratch.manifest();
     assert!(manifest.signature.is_none());
-    ArtifactSet::load(&manifest, scratch.path(), None)
-        .expect("unsigned manifest + no key must still load");
+    ArtifactSet::load_unsigned(&manifest, scratch.path())
+        .expect("unsigned manifest must load via load_unsigned");
 }
 
-/// A signed bundle still loads when the caller passes
-/// `verifying_key = None` — explicit caller opt-out of verification
-/// is honoured.
+/// A signed bundle still loads via `load_unsigned` — explicit caller
+/// opt-out of verification is honoured.
 #[test]
 fn signed_manifest_with_no_key_loads_ok() {
     let scratch = Scratch::new("signed_no_key");
@@ -346,12 +343,12 @@ fn signed_manifest_with_no_key_loads_ok() {
     let sk = fresh_signing_key(0x66);
     sign_manifest(&mut manifest, &sk).expect("sign");
 
-    ArtifactSet::load(&manifest, scratch.path(), None)
-        .expect("signed manifest with no key must still load (caller opted out)");
+    ArtifactSet::load_unsigned(&manifest, scratch.path())
+        .expect("signed manifest with load_unsigned must still load (caller opted out)");
 }
 
 /// Full happy path: signed bundle + matching key through
-/// `ArtifactSet::load`.
+/// `ArtifactSet::load_signed`.
 #[test]
 fn signed_manifest_with_key_loads_ok() {
     let scratch = Scratch::new("signed_with_key");
@@ -360,7 +357,7 @@ fn signed_manifest_with_key_loads_ok() {
     sign_manifest(&mut manifest, &sk).expect("sign");
     let vk = fresh_verifying_key(&sk);
 
-    ArtifactSet::load(&manifest, scratch.path(), Some(&vk))
+    ArtifactSet::load_signed(&manifest, scratch.path(), &vk)
         .expect("signed manifest + correct key must load");
 }
 
@@ -375,7 +372,7 @@ fn signed_manifest_with_wrong_key_load_rejected() {
     let sk_b = fresh_signing_key(0x99);
     let vk_b = fresh_verifying_key(&sk_b);
 
-    let result = ArtifactSet::load(&manifest, scratch.path(), Some(&vk_b));
+    let result = ArtifactSet::load_signed(&manifest, scratch.path(), &vk_b);
     match result {
         Ok(_) => panic!("wrong key must reject load"),
         Err(ArtifactError::Signature(ManifestError::SignatureInvalid(_))) => {}

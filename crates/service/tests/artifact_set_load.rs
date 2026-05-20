@@ -247,7 +247,7 @@ fn artifact_set_load_trust_boundary() {
     let canonical = build_canonical_manifest(&dir);
 
     // ── Stage 2: acceptance — canonical manifest matches bundle ──────────
-    ArtifactSet::load(&canonical, &dir, None)
+    ArtifactSet::load_unsigned(&canonical, &dir)
         .expect("canonical manifest + matching bundle must load");
 
     // ── Stage 3: manifest-side tamper cases ──────────────────────────────
@@ -297,7 +297,7 @@ fn artifact_set_load_trust_boundary() {
     for (field, mutate) in cases {
         let mut tampered = canonical.clone();
         mutate(&mut tampered);
-        let err = ArtifactSet::load(&tampered, &dir, None)
+        let err = ArtifactSet::load_unsigned(&tampered, &dir)
             .err()
             .unwrap_or_else(|| panic!("tampered manifest field `{field}` must reject"));
         assert_hash_mismatch_on(field, err);
@@ -316,9 +316,9 @@ fn artifact_set_load_trust_boundary() {
     bytes[last] ^= 0xFF;
     std::fs::write(&sol_path, &bytes).expect("rewrite Groth16Verifier.sol");
 
-    let err = ArtifactSet::load(&canonical, &dir, None)
+    let err = ArtifactSet::load_unsigned(&canonical, &dir)
         .err()
-        .expect("ArtifactSet::load must reject a tampered Groth16Verifier.sol");
+        .expect("ArtifactSet::load_unsigned must reject a tampered Groth16Verifier.sol");
     assert_hash_mismatch_on("artifacts.evm_verifier.sha256", err);
 
     let _ = std::fs::remove_dir_all(&dir);

@@ -176,8 +176,8 @@ fn r1cs_preflight_1_of_1_wasm() {
     );
 
     // ── load ArtifactSet (trust-gated by manifest sha256 / ar1cs_blake3) ──
-    let artifact = ArtifactSet::load(&manifest, &bundle_dir, None)
-        .expect("ArtifactSet::load must succeed for the canonical bundle");
+    let artifact = ArtifactSet::load_unsigned(&manifest, &bundle_dir)
+        .expect("ArtifactSet::load_unsigned must succeed for the canonical bundle");
 
     // ── R1CS preflight: prove each bundle ─────────────────────────────
     let mut rng = OsRng;

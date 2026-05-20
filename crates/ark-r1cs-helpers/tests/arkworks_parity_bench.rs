@@ -1,7 +1,9 @@
 //! Arkworks parity bench — C4 rows 1·2·6.
 //!
-//! Measures constraint cost of custom `ark-r1cs-helpers` comparison gadgets and
-//! `UInt32Ext` bitwise ops against their ark-r1cs-std 0.6 equivalents.
+//! Measures constraint cost of custom `ark-r1cs-helpers` comparison gadgets
+//! against their ark-r1cs-std 0.6 equivalents. Row 6 is upstream-only (the
+//! custom `UInt32Ext` trait was removed in AC-7; the C4 bench Δ=0 evidence
+//! it produced is preserved as upstream baseline measurements).
 //!
 //! **Apples-to-apples discipline** (constraint-audit.md §Step 5):
 //! - Every CS is configured with `SynthesisMode::Setup` +
@@ -36,7 +38,7 @@ use ark_ff::PrimeField;
 use core::cmp::Ordering;
 use ark_r1cs_helpers::{
     enforce_less_than, is_less_than, pack_decompose_bytes_checked, select_array_element_be,
-    single_multiplexer, UInt32Ext,
+    single_multiplexer,
 };
 use ark_r1cs_std::{
     alloc::AllocVar,
@@ -201,7 +203,7 @@ fn bench_row_2_is_less_than() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ROW 6 — UInt32Ext::shr / not / bitand  vs  upstream UInt32 ops in 0.6
+// ROW 6 — upstream UInt32 ops (shr / not / bitand) baseline
 // ─────────────────────────────────────────────────────────────────────────────
 //
 // In ark-r1cs-std 0.6, UInt32 = UInt<32, u32, F> which implements:
@@ -209,34 +211,17 @@ fn bench_row_2_is_less_than() {
 //   - `Not` trait      →  `!` operator   (not.rs)
 //   - `BitAnd` trait   →  `&` operator   (and.rs)
 //
-// The upstream ops operate directly on the internal `bits: [Boolean<F>; 32]`
-// array.  The custom `UInt32Ext` methods call `to_bits_le()` first — which for
-// UInt<N,T,F> is a zero-constraint operation (bits are stored internally).
-// Expected: identical constraint counts; delta should be 0 for each op.
+// These ops operate directly on the internal `bits: [Boolean<F>; 32]`. Prior
+// to AC-7 the custom `UInt32Ext` trait wrapped each op with a redundant
+// `to_bits_le()` call; the C4 bench measured Δ=0 (per-op) and the trait was
+// removed. These tests are kept as upstream-only baselines so any future
+// regression in the upstream ops is still caught.
 
-/// Row 6a: `UInt32Ext::shr(8)` vs upstream `>> 8u8`.
+/// Row 6a: upstream `>> 8u8` baseline (custom side removed in AC-7).
 #[test]
 fn bench_row_6a_uint32_shr() {
     let input_val: u32 = 0xFF00_0000;
 
-    // ── CUSTOM SIDE ──────────────────────────────────────────────────────────
-    let cs_custom = ConstraintSystem::<Fr>::new_ref();
-    cs_custom.set_mode(SynthesisMode::Setup);
-    cs_custom.set_optimization_goal(OptimizationGoal::Constraints);
-
-    let val_custom =
-        UInt32::<Fr>::new_witness(cs_custom.clone(), || Ok(input_val)).unwrap();
-    let alloc_cs_custom = cs_custom.num_constraints();
-    let alloc_w_custom = cs_custom.num_witness_variables();
-
-    // UInt32Ext::shr — custom extension method.
-    let _ = val_custom.shr(8).unwrap();
-    cs_custom.finalize();
-    let custom_cs = cs_custom.num_constraints();
-    let custom_w = cs_custom.num_witness_variables();
-
-    // ── ARKWORKS SIDE ────────────────────────────────────────────────────────
-    // Upstream: `>>` operator via `Shr<T2>` impl on UInt<32, u32, F>.
     let cs_ark = ConstraintSystem::<Fr>::new_ref();
     cs_ark.set_mode(SynthesisMode::Setup);
     cs_ark.set_optimization_goal(OptimizationGoal::Constraints);
@@ -252,47 +237,21 @@ fn bench_row_6a_uint32_shr() {
     let ark_cs = cs_ark.num_constraints();
     let ark_w = cs_ark.num_witness_variables();
 
-    let custom_gadget_cs = custom_cs as i64 - alloc_cs_custom as i64;
     let ark_gadget_cs = ark_cs as i64 - alloc_cs_ark as i64;
-    let delta = ark_gadget_cs - custom_gadget_cs;
+    let ark_gadget_w = ark_w as i64 - alloc_w_ark as i64;
 
     println!(
-        "ROW6::UInt32::shr(8): \
-         custom_cs={custom_cs}, custom_witness={custom_w}, \
-         ark_cs={ark_cs}, ark_witness={ark_w}, delta={delta} \
-         [custom_gadget_delta: cs={custom_gadget_cs}, w={}; \
-         ark_gadget_delta: cs={ark_gadget_cs}, w={}]",
-        custom_w as i64 - alloc_w_custom as i64,
-        ark_w as i64 - alloc_w_ark as i64,
+        "ROW6a::UInt32::shr(8) [upstream-only baseline, custom removed in AC-7]: \
+         ark_cs={ark_cs}, ark_witness={ark_w} \
+         [ark_gadget_delta: cs={ark_gadget_cs}, w={ark_gadget_w}]"
     );
 }
 
-/// Row 6b: `UInt32Ext::not()` vs upstream `!` operator.
+/// Row 6b: upstream `!` operator baseline (custom side removed in AC-7).
 #[test]
 fn bench_row_6b_uint32_not() {
     let input_val: u32 = 0xABCD_1234;
 
-    // ── CUSTOM SIDE ──────────────────────────────────────────────────────────
-    let cs_custom = ConstraintSystem::<Fr>::new_ref();
-    cs_custom.set_mode(SynthesisMode::Setup);
-    cs_custom.set_optimization_goal(OptimizationGoal::Constraints);
-
-    let val_custom =
-        UInt32::<Fr>::new_witness(cs_custom.clone(), || Ok(input_val)).unwrap();
-    let alloc_cs_custom = cs_custom.num_constraints();
-    let alloc_w_custom = cs_custom.num_witness_variables();
-
-    // UInt32Ext::not — custom extension method.
-    // NOTE: calling `.not()` without `use std::ops::Not` in scope resolves to
-    // UInt32Ext::not (returns Result<UInt32, SynthesisError>), NOT Not::not
-    // (returns UInt32).  Use `!&val` for the upstream operator path below.
-    let _ = val_custom.not().unwrap();
-    cs_custom.finalize();
-    let custom_cs = cs_custom.num_constraints();
-    let custom_w = cs_custom.num_witness_variables();
-
-    // ── ARKWORKS SIDE ────────────────────────────────────────────────────────
-    // Upstream: `!` operator via `Not` impl on &UInt<32, u32, F>.
     let cs_ark = ConstraintSystem::<Fr>::new_ref();
     cs_ark.set_mode(SynthesisMode::Setup);
     cs_ark.set_optimization_goal(OptimizationGoal::Constraints);
@@ -307,18 +266,13 @@ fn bench_row_6b_uint32_not() {
     let ark_cs = cs_ark.num_constraints();
     let ark_w = cs_ark.num_witness_variables();
 
-    let custom_gadget_cs = custom_cs as i64 - alloc_cs_custom as i64;
     let ark_gadget_cs = ark_cs as i64 - alloc_cs_ark as i64;
-    let delta = ark_gadget_cs - custom_gadget_cs;
+    let ark_gadget_w = ark_w as i64 - alloc_w_ark as i64;
 
     println!(
-        "ROW6::UInt32::not: \
-         custom_cs={custom_cs}, custom_witness={custom_w}, \
-         ark_cs={ark_cs}, ark_witness={ark_w}, delta={delta} \
-         [custom_gadget_delta: cs={custom_gadget_cs}, w={}; \
-         ark_gadget_delta: cs={ark_gadget_cs}, w={}]",
-        custom_w as i64 - alloc_w_custom as i64,
-        ark_w as i64 - alloc_w_ark as i64,
+        "ROW6b::UInt32::not [upstream-only baseline, custom removed in AC-7]: \
+         ark_cs={ark_cs}, ark_witness={ark_w} \
+         [ark_gadget_delta: cs={ark_gadget_cs}, w={ark_gadget_w}]"
     );
 }
 
@@ -640,32 +594,12 @@ fn bench_row_5b_inline_range_check_16() {
     );
 }
 
-/// Row 6c: `UInt32Ext::bitand(&b)` vs upstream `&a & &b`.
+/// Row 6c: upstream `&a & &b` baseline (custom side removed in AC-7).
 #[test]
 fn bench_row_6c_uint32_bitand() {
     let a_val: u32 = 0xFF00_FF00;
     let b_val: u32 = 0x00FF_00FF;
 
-    // ── CUSTOM SIDE ──────────────────────────────────────────────────────────
-    let cs_custom = ConstraintSystem::<Fr>::new_ref();
-    cs_custom.set_mode(SynthesisMode::Setup);
-    cs_custom.set_optimization_goal(OptimizationGoal::Constraints);
-
-    let a_custom =
-        UInt32::<Fr>::new_witness(cs_custom.clone(), || Ok(a_val)).unwrap();
-    let b_custom =
-        UInt32::<Fr>::new_witness(cs_custom.clone(), || Ok(b_val)).unwrap();
-    let alloc_cs_custom = cs_custom.num_constraints();
-    let alloc_w_custom = cs_custom.num_witness_variables();
-
-    // UInt32Ext::bitand — custom extension method.
-    let _ = a_custom.bitand(&b_custom).unwrap();
-    cs_custom.finalize();
-    let custom_cs = cs_custom.num_constraints();
-    let custom_w = cs_custom.num_witness_variables();
-
-    // ── ARKWORKS SIDE ────────────────────────────────────────────────────────
-    // Upstream: `&` operator via `BitAnd` impl on &UInt<32, u32, F>.
     let cs_ark = ConstraintSystem::<Fr>::new_ref();
     cs_ark.set_mode(SynthesisMode::Setup);
     cs_ark.set_optimization_goal(OptimizationGoal::Constraints);
@@ -682,17 +616,12 @@ fn bench_row_6c_uint32_bitand() {
     let ark_cs = cs_ark.num_constraints();
     let ark_w = cs_ark.num_witness_variables();
 
-    let custom_gadget_cs = custom_cs as i64 - alloc_cs_custom as i64;
     let ark_gadget_cs = ark_cs as i64 - alloc_cs_ark as i64;
-    let delta = ark_gadget_cs - custom_gadget_cs;
+    let ark_gadget_w = ark_w as i64 - alloc_w_ark as i64;
 
     println!(
-        "ROW6::UInt32::bitand: \
-         custom_cs={custom_cs}, custom_witness={custom_w}, \
-         ark_cs={ark_cs}, ark_witness={ark_w}, delta={delta} \
-         [custom_gadget_delta: cs={custom_gadget_cs}, w={}; \
-         ark_gadget_delta: cs={ark_gadget_cs}, w={}]",
-        custom_w as i64 - alloc_w_custom as i64,
-        ark_w as i64 - alloc_w_ark as i64,
+        "ROW6c::UInt32::bitand [upstream-only baseline, custom removed in AC-7]: \
+         ark_cs={ark_cs}, ark_witness={ark_w} \
+         [ark_gadget_delta: cs={ark_gadget_cs}, w={ark_gadget_w}]"
     );
 }

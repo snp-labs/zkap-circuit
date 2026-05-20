@@ -165,18 +165,43 @@ pub fn build_anchor_witness<F: PrimeField + Absorb>(
 /// to avoid redundant hashing
 #[derive(Clone, Debug)]
 pub struct HashedSecretsCache<F: PrimeField> {
-    /// Hash values for each index (H(index || secret))
+    /// Hash values for each entry (H(full-n-position, secret)), one per selected secret.
     pub hashes: Vec<F>,
 }
 
 impl<F: PrimeField + Absorb> HashedSecretsCache<F> {
-    /// Create cache by hashing the secret vector all at once
-    pub fn new(params: &PoseidonConfig<F>, secrets: &[F]) -> Result<Self, AnchorError> {
-        let hashes = secrets
+    /// Create a cache of `H(full_n_position, secret)` for each `(position, secret)` pair.
+    ///
+    /// **Indices are full-n positions (matching [`build_anchor_witness`]), NOT k-subset
+    /// positions.** `positions[i]` must be the position of `secrets[i]` within the
+    /// full n-vector, i.e. the index that appears in the circuit's `H(current_idx, secret)`
+    /// computation.
+    ///
+    /// # Safety invariant (§4.2 / M-2)
+    /// Before this fix, `new` used the k-subset enumeration index (0, 1, 2, …) as the
+    /// hash preimage. `build_anchor_witness` uses the full-n selector position. The two
+    /// conventions diverge for any selected index beyond the first (position > 0 in the
+    /// full vector). Full-n position is adopted as the single truth source so that caches
+    /// and witnesses are always interchangeable.
+    pub fn new(
+        params: &PoseidonConfig<F>,
+        positions: &[usize],
+        secrets: &[F],
+    ) -> Result<Self, AnchorError> {
+        if positions.len() != secrets.len() {
+            return Err(AnchorError::DimensionMismatch(format!(
+                "positions length ({}) must match secrets length ({})",
+                positions.len(),
+                secrets.len()
+            )));
+        }
+
+        let hashes = positions
             .iter()
-            .enumerate()
-            .map(|(i, &secret)| {
-                let input = vec![F::from(i as u64), secret];
+            .zip(secrets.iter())
+            .map(|(&pos, &secret)| {
+                // H(full-n-position, secret) — same convention as build_anchor_witness
+                let input = vec![F::from(pos as u64), secret];
                 CRH::<F>::evaluate(params, input)
                     .map_err(|_| AnchorError::CryptoError("Hash failed".to_string()))
             })
@@ -185,13 +210,17 @@ impl<F: PrimeField + Absorb> HashedSecretsCache<F> {
         Ok(Self { hashes })
     }
 
-    /// Get the hash value for a specific index
+    /// Get the hash value for the `index`-th entry in the cache (0-based into the
+    /// internal array, not a full-n position).
     pub fn get(&self, index: usize) -> Option<F> {
         self.hashes.get(index).copied()
     }
 
-    /// Build the h_known vector according to selector
-    /// Fills in hashes of known_secrets in order at positions where selector is 1
+    /// Build the h_known vector according to selector.
+    ///
+    /// Places each cached `H(full-n-position, secret)` at the corresponding selector-1
+    /// position in the output, producing the same `h_known` layout as
+    /// [`build_anchor_witness`].
     pub fn build_h_known(&self, selector: &[u8]) -> Result<Vec<F>, AnchorError> {
         // Verify that the number of 1s in selector matches the number of known secrets (k)
         let ones_count = selector.iter().filter(|&&s| s == 1).count();
@@ -489,11 +518,73 @@ mod tests {
         let mut rng = thread_rng();
         let pk = PAS::setup(&mut rng, 6).unwrap();
 
+        // Use full-n positions [2, 4, 5] for a k=3 subset of n=6
+        let positions = vec![2usize, 4, 5];
         let secrets = vec![F::from(1u64), F::from(2u64), F::from(3u64)];
-        let cache = HashedSecretsCache::new(&pk.params, &secrets).unwrap();
+        let cache = HashedSecretsCache::new(&pk.params, &positions, &secrets).unwrap();
 
         assert_eq!(cache.hashes.len(), 3);
         assert_ne!(cache.get(0).unwrap(), F::from(0u64));
+    }
+
+    /// Regression guard for §4.2 / M-2: cache and `build_anchor_witness` must produce
+    /// identical `H(full-n-position, secret)` values for every selected index.
+    #[test]
+    fn test_hashed_secrets_cache_matches_build_anchor_witness() {
+
+        let mut rng = thread_rng();
+        let n = 6;
+        let k = 3;
+
+        let pk = PAS::setup(&mut rng, n).unwrap();
+        let matrix = VandermondeMatrix::<F>::new(n, k);
+
+        // Full n-vector of secrets
+        let all_secrets: Vec<F> = (1u64..=6).map(F::from).collect();
+
+        // selector: positions 1, 3, 4 are selected (full-n indices)
+        let selector: Vec<u8> = vec![0, 1, 0, 1, 1, 0];
+        let selected_positions: Vec<usize> = selector
+            .iter()
+            .enumerate()
+            .filter_map(|(i, &s)| if s == 1 { Some(i) } else { None })
+            .collect();
+        let selected_secrets: Vec<F> = selected_positions
+            .iter()
+            .map(|&p| all_secrets[p])
+            .collect();
+
+        // Build cache with full-n positions
+        let cache =
+            HashedSecretsCache::new(&pk.params, &selected_positions, &selected_secrets).unwrap();
+
+        // Independently compute H(full-n-position, secret) for each selected entry
+        for (idx, (&pos, &secret)) in selected_positions.iter().zip(selected_secrets.iter()).enumerate() {
+            let expected =
+                CRH::<F>::evaluate(&pk.params, vec![F::from(pos as u64), secret]).unwrap();
+            assert_eq!(
+                cache.get(idx).unwrap(),
+                expected,
+                "cache hash mismatch at k-index={idx}, full-n-pos={pos}"
+            );
+        }
+
+        // Build witness via build_anchor_witness (full-n convention)
+        let witness = build_anchor_witness(&pk.params, &selected_secrets, &selector, &matrix)
+            .unwrap();
+
+        // The h_known entries at selector-1 positions must equal the cache entries
+        let mut cache_idx = 0;
+        for (i, &s) in selector.iter().enumerate() {
+            if s == 1 {
+                assert_eq!(
+                    witness.h_known[i],
+                    cache.get(cache_idx).unwrap(),
+                    "h_known[{i}] from build_anchor_witness != cache entry {cache_idx}"
+                );
+                cache_idx += 1;
+            }
+        }
     }
 
     #[test]

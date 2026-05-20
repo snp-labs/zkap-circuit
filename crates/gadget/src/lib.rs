@@ -37,7 +37,7 @@ pub mod anchor;
 #[cfg(feature = "anchor")]
 pub mod matrix;
 
-#[cfg(feature = "hashes-poseidon")]
+#[cfg(any(feature = "hashes-poseidon", feature = "hashes-sha256"))]
 pub mod hashes;
 
 #[cfg(feature = "merkletree")]

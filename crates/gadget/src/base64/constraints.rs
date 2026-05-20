@@ -87,8 +87,17 @@ impl<F: PrimeField> Base64DecoderGadget<F> {
         enc_asciis: &[FpVar<F>],
         index_bits: &IndexBitsVar<F>,
     ) -> Result<Vec<FpVar<F>>, SynthesisError> {
-        assert_eq!(enc_asciis.len(), index_bits.inner.len());
-        assert!(enc_asciis.len().is_multiple_of(4));
+        // Precondition checks: surfaces a typed `SynthesisError::Unsatisfiable`
+        // instead of panicking the prover process on host-side mis-sizing.
+        // Production callers (service::adapter, circuit::token::claimverifier)
+        // always pass matching lengths divisible by 4, so production R1CS
+        // is unchanged.
+        if enc_asciis.len() != index_bits.inner.len() {
+            return Err(SynthesisError::Unsatisfiable);
+        }
+        if !enc_asciis.len().is_multiple_of(4) {
+            return Err(SynthesisError::Unsatisfiable);
+        }
 
         let padding_char = FpVar::Constant(F::from(65u8)); // ASCII 'A'
         let zero = FpVar::Constant(F::zero());

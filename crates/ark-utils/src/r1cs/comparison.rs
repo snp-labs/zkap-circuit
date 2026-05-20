@@ -95,11 +95,9 @@ pub fn enforce_less_than<F: PrimeField>(
     a_bits: &[Boolean<F>],
     b_bits: &[Boolean<F>],
 ) -> Result<(), SynthesisError> {
-    assert_eq!(
-        a_bits.len(),
-        b_bits.len(),
-        "Bit lengths must be equal for comparison"
-    );
+    if a_bits.len() != b_bits.len() {
+        return Err(SynthesisError::Unsatisfiable);
+    }
 
     let n = a_bits.len();
 
@@ -157,11 +155,9 @@ pub fn compare_bits_raw<F: PrimeField>(
     a_bits: &[Boolean<F>],
     b_bits: &[Boolean<F>],
 ) -> Result<(Boolean<F>, Boolean<F>), SynthesisError> {
-    assert_eq!(
-        a_bits.len(),
-        b_bits.len(),
-        "Bit lengths must be equal for comparison"
-    );
+    if a_bits.len() != b_bits.len() {
+        return Err(SynthesisError::Unsatisfiable);
+    }
 
     let mut less = Boolean::constant(false);
     let mut equal = Boolean::constant(true);

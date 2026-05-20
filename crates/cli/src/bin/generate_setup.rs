@@ -111,14 +111,32 @@ fn main() {
     }
     let (setup_rng, provenance) = pick_rng(cli.rng_seed.as_deref(), cli.allow_test_only);
 
-    // Fail-fast: validate the CLI flags that gate manifest signing BEFORE
+    // Fail-fast: validate every input that doesn't depend on `setup()` BEFORE
     // running the ~60s Groth16 trusted setup. A wrong-length --signing-key
-    // file or a --verifying-key-out without --signing-key should reject
-    // immediately, not after burning a minute on setup.
+    // file, a --verifying-key-out without --signing-key, a malformed
+    // SOURCE_DATE_EPOCH, or an unreadable --config should reject in
+    // milliseconds, not after burning a minute.
     let signing_key = cli.signing_key.as_deref().map(load_signing_key);
     if signing_key.is_none() && cli.verifying_key_out.is_some() {
         die("--verifying-key-out requires --signing-key");
     }
+    // Resolve build metadata before setup — `built_at_now()` consults
+    // `SOURCE_DATE_EPOCH` and returns `Err` on non-numeric inputs.
+    let built_at = built_at_now().unwrap_or_else(|e| die(e));
+    let build_commit = cli
+        .build_commit
+        .clone()
+        .or_else(|| {
+            let resolved = git_head_commit();
+            if resolved.is_none() {
+                eprintln!(
+                    "warning: --build-commit not provided and `git rev-parse HEAD` failed; \
+                     manifest.build.circuit_commit will be \"unknown\""
+                );
+            }
+            resolved
+        })
+        .unwrap_or_else(|| "unknown".into());
 
     let params = load_config_or_exit(Path::new(&cli.config));
     let out = PathBuf::from(&cli.output);
@@ -144,12 +162,6 @@ fn main() {
 
     println!("[2/2] manifest.json emit");
     let ar1cs_blake3 = read_arcs_blake3_hex(&arcs_path);
-    let build_commit = cli
-        .build_commit
-        .clone()
-        .or_else(git_head_commit)
-        .unwrap_or_else(|| "unknown".into());
-    let built_at = built_at_now().unwrap_or_else(|e| die(e));
 
     let mut builder = ManifestBuilder::new(cli.circuit_id.clone(), circuit_tag.clone())
         .with_ar1cs_blake3(ar1cs_blake3.clone())

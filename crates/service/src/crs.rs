@@ -56,12 +56,12 @@ pub(crate) fn persist_setup_output(
 
     write_arcs(arcs, &output_dir.join("circuit.ar1cs"))?;
 
+    // `generate_solidity` returns `std::io::Error`; surface it through the
+    // typed `Io` variant rather than collapsing into `Other(String)` so
+    // callers can match on `source()` like every other IO failure here.
     setup
         .vk
-        .generate_solidity(output_dir.join("Groth16Verifier.sol"))
-        .map_err(|e| {
-            ApplicationError::Other(format!("Failed to write Groth16Verifier.sol: {}", e))
-        })?;
+        .generate_solidity(output_dir.join("Groth16Verifier.sol"))?;
 
     write_config_json(config, &output_dir.join("config.json"))?;
 
@@ -69,6 +69,12 @@ pub(crate) fn persist_setup_output(
 }
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
+//
+// Every IO/serialize failure below funnels through `ApplicationError::Io`
+// (via `?`) instead of `Other(format!(...))`, so callers see a uniform
+// `std::io::Error` source chain. arkworks' `SerializationError` and
+// `serde_json::Error` are wrapped in `io::Error::other` to preserve that
+// uniformity without inventing a new variant.
 
 fn write_canonical_uncompressed<T: CanonicalSerialize>(
     value: &T,
@@ -76,38 +82,23 @@ fn write_canonical_uncompressed<T: CanonicalSerialize>(
     label: &str,
 ) -> Result<(), ApplicationError> {
     let mut cursor = Cursor::new(Vec::new());
-    value.serialize_uncompressed(&mut cursor).map_err(|e| {
-        ApplicationError::Other(format!(
-            "Failed to serialize {label} to '{}': {}",
-            path.display(),
-            e
-        ))
-    })?;
+    value
+        .serialize_uncompressed(&mut cursor)
+        .map_err(|e| std::io::Error::other(format!("serialize {label}: {e}")))?;
     std::fs::write(path, cursor.get_ref())?;
     Ok(())
 }
 
 fn write_arcs(arcs: &ArcsFile<F>, path: &Path) -> Result<(), ApplicationError> {
-    let mut file = std::fs::File::create(path).map_err(|e| {
-        ApplicationError::Other(format!(
-            "Failed to create circuit.ar1cs at '{}': {}",
-            path.display(),
-            e
-        ))
-    })?;
-    arcs.write(&mut file).map_err(|e| {
-        ApplicationError::Other(format!(
-            "Failed to write circuit.ar1cs to '{}': {}",
-            path.display(),
-            e
-        ))
-    })?;
+    let mut file = std::fs::File::create(path)?;
+    arcs.write(&mut file)
+        .map_err(|e| std::io::Error::other(format!("ArcsFile::write: {e}")))?;
     Ok(())
 }
 
 fn write_config_json(config: &CircuitConfig, path: &Path) -> Result<(), ApplicationError> {
     let json = serde_json::to_string_pretty(config)
-        .map_err(|e| ApplicationError::Other(format!("Failed to serialize config.json: {}", e)))?;
+        .map_err(|e| std::io::Error::other(format!("serialize config.json: {e}")))?;
     std::fs::write(path, json)?;
     Ok(())
 }

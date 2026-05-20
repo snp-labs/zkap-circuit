@@ -33,9 +33,9 @@ pub fn pack_bytes_to_field_unchecked<F: PrimeField>(
 ) -> Result<FpVar<F>, SynthesisError> {
     const BITS_PER_BYTE: usize = 8;
 
-    // 1. Validate input length
+    // 1. Validate input length.
     if byte_fps.len() != num_bytes_expected {
-        return Err(SynthesisError::AssignmentMissing);
+        return Err(SynthesisError::Unsatisfiable);
     }
 
     // 2. Pre-compute powers of 256 (no constraints needed since they are constants)
@@ -88,9 +88,9 @@ pub fn pack_decompose_bytes_unchecked<F: PrimeField>(
         return Ok(Vec::new());
     }
 
-    // Verify that the input length is divisible by limb_width
+    // Verify that the input length is divisible by limb_width.
     if !decompose_bytes.len().is_multiple_of(limb_width) {
-        return Err(SynthesisError::AssignmentMissing);
+        return Err(SynthesisError::Unsatisfiable);
     }
 
     let num_chunks = decompose_bytes.len() / limb_width;

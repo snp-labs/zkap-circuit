@@ -44,10 +44,11 @@ where
     F: PrimeField,
     T: GR1CSVar<F> + Clone + CondSelectGadget<F>,
 {
+    if inp.is_empty() {
+        return Err(SynthesisError::Unsatisfiable);
+    }
     let n = inp.len();
     let eq_bits = one_bit_vector(idx, n)?;
-
-    assert!(!inp.is_empty(), "inputs cannot be empty");
 
     let mut res = inp[0].clone();
     for (i, bit) in eq_bits.iter().enumerate().skip(1) {
@@ -94,9 +95,9 @@ pub fn select_array_element<F: PrimeField>(
     input: &[FpVar<F>],
     idx_bits: &[Boolean<F>],
 ) -> Result<FpVar<F>, SynthesisError> {
-    assert!(!input.is_empty());
-
-    assert_eq!(input.len(), 1 << idx_bits.len());
+    if input.is_empty() || input.len() != 1 << idx_bits.len() {
+        return Err(SynthesisError::Unsatisfiable);
+    }
 
     if input.len() == 1 {
         Ok(input[0].clone())
@@ -126,9 +127,9 @@ pub fn select_array_element_be<F: PrimeField>(
     input: &[FpVar<F>],
     idx_bits: &[Boolean<F>],
 ) -> Result<FpVar<F>, SynthesisError> {
-    assert!(!input.is_empty());
-
-    assert_eq!(input.len(), 1 << idx_bits.len());
+    if input.is_empty() || input.len() != 1 << idx_bits.len() {
+        return Err(SynthesisError::Unsatisfiable);
+    }
 
     if input.len() == 1 {
         Ok(input[0].clone())

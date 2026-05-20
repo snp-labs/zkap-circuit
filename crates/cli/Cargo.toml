@@ -20,9 +20,6 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
-thiserror = { workspace = true }
-rand = { workspace = true }
-rand_chacha = { workspace = true }
 time = { workspace = true }
 # F5: `generate_setup --signing-key <PATH>` reads a 32-byte raw seed
 # from disk and emits a signed manifest via

@@ -51,11 +51,12 @@ pub enum ApplicationError {
     #[error("Cryptographic operation failed: {0}")]
     CryptographicError(String),
 
-    /// Poseidon hash evaluation failed — the in-tree implementation is
-    /// total, so this variant is reserved for future Poseidon backends that
-    /// can fail.
-    #[error("Poseidon hash error")]
-    PoseidonHashError,
+    /// Poseidon hash evaluation failed inside the prove pipeline. The
+    /// string carries the upstream gadget description (call site +
+    /// `ark_crypto_primitives` error) so logs can pinpoint which absorbed
+    /// vector or chain step rejected.
+    #[error("Poseidon hash error: {0}")]
+    PoseidonHashError(String),
 
     /// Coordinate or field-element parsing failed (auto-converted from
     /// [`FieldParseError`] via `?`); covers `0x…` decoding, decimal parsing,

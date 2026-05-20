@@ -368,7 +368,10 @@ mod tests {
             expected = PoseidonHash::evaluate(&params, [expected, *v]).unwrap();
         }
 
-        assert_eq!(got, expected, "chain_hash recipe drifted from H(v0)→H(prev,vi)");
+        assert_eq!(
+            got, expected,
+            "chain_hash recipe drifted from H(v0)→H(prev,vi)"
+        );
     }
 
     #[test]

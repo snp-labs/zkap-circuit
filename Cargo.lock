@@ -383,7 +383,6 @@ dependencies = [
  "ark-r1cs-std",
  "ark-relations",
  "ark-serialize",
- "ark-std",
  "hex",
  "thiserror 2.0.17",
 ]
@@ -2882,12 +2881,9 @@ dependencies = [
  "clap",
  "ed25519-dalek",
  "hex",
- "rand 0.8.5",
- "rand_chacha 0.3.1",
  "serde",
  "serde_json",
  "sha2",
- "thiserror 2.0.17",
  "time",
  "zkap-service",
 ]

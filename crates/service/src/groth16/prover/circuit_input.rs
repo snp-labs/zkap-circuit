@@ -18,7 +18,10 @@
 //!      [`ApplicationError::InvalidProveRequest`] with a dotted
 //!      `field_path` injected by the caller
 //!    - Poseidon `CRH::<F>::evaluate(...)` failure →
-//!      [`ApplicationError::PoseidonHashError`]
+//!      [`ApplicationError::PoseidonHashError(String)`] carrying a
+//!      per-call-site label (e.g. `"h_aud"`, `"h_id_inner"`) plus the
+//!      upstream gadget description, so logs identify which absorbed
+//!      vector rejected.
 //!    - gadget [`AnchorError`](gadget::anchor::error::AnchorError) →
 //!      [`ApplicationError::CryptographicError`] via the
 //!      `From<AnchorError>` impl in `crate::error`
@@ -319,7 +322,7 @@ pub(crate) fn build_jwt_stage(
         claim_value_bytes_padded(&payload_bytes, aud_idx, cfg.max_aud_len as usize);
     let aud_packed = pack_bytes_to_field_native(&aud_bytes_padded);
     CRH::<F>::evaluate(poseidon_param, aud_packed.clone())
-        .map_err(|_| ApplicationError::PoseidonHashError)?;
+        .map_err(|e| ApplicationError::PoseidonHashError(format!("aud_packed precheck: {e}")))?;
 
     let jwt_witness = JwtWitness {
         nblocks,
@@ -366,7 +369,7 @@ pub(crate) fn build_audience_stage(
     let num_audience_limit = cfg.num_audience_limit as usize;
 
     let h_aud = CRH::<F>::evaluate(poseidon_param, aud_packed.to_vec())
-        .map_err(|_| ApplicationError::PoseidonHashError)?;
+        .map_err(|e| ApplicationError::PoseidonHashError(format!("h_aud: {e}")))?;
 
     let mut forbidden_bytes = Vec::with_capacity(cfg.forbidden_string.len() + 2);
     forbidden_bytes.push(b'"');
@@ -375,7 +378,7 @@ pub(crate) fn build_audience_stage(
     let forbidden_padded = pad_claim_value_to_max(&forbidden_bytes, cfg.max_aud_len as usize);
     let forbidden_packed = pack_bytes_to_field_native(&forbidden_padded);
     let h_forbidden = CRH::<F>::evaluate(poseidon_param, forbidden_packed)
-        .map_err(|_| ApplicationError::PoseidonHashError)?;
+        .map_err(|e| ApplicationError::PoseidonHashError(format!("h_forbidden: {e}")))?;
 
     let mut aud_list = Vec::with_capacity(num_audience_limit);
     aud_list.push(h_aud);
@@ -383,7 +386,7 @@ pub(crate) fn build_audience_stage(
         aud_list.push(h_forbidden);
     }
     let h_aud_list = CRH::<F>::evaluate(poseidon_param, aud_list.clone())
-        .map_err(|_| ApplicationError::PoseidonHashError)?;
+        .map_err(|e| ApplicationError::PoseidonHashError(format!("h_aud_list: {e}")))?;
 
     let _ = (claim_indices, claims, payload_bytes);
 
@@ -459,7 +462,7 @@ pub(crate) fn compute_public_inputs(
     let mut h_a_inputs = witness.a.clone();
     h_a_inputs.push(random);
     let h_a = CRH::<F>::evaluate(poseidon_param, h_a_inputs)
-        .map_err(|_| ApplicationError::PoseidonHashError)?;
+        .map_err(|e| ApplicationError::PoseidonHashError(format!("h_a: {e}")))?;
 
     let inner: F = witness
         .a
@@ -499,9 +502,9 @@ pub(crate) fn compute_public_inputs(
     h_id_inputs.extend_from_slice(&iss_packed);
     h_id_inputs.extend_from_slice(&sub_packed);
     let h_id_inner = CRH::<F>::evaluate(poseidon_param, h_id_inputs)
-        .map_err(|_| ApplicationError::PoseidonHashError)?;
+        .map_err(|e| ApplicationError::PoseidonHashError(format!("h_id_inner: {e}")))?;
     let h_id = CRH::<F>::evaluate(poseidon_param, [F::from(current_idx as u64), h_id_inner])
-        .map_err(|_| ApplicationError::PoseidonHashError)?;
+        .map_err(|e| ApplicationError::PoseidonHashError(format!("h_id: {e}")))?;
     let partial_rhs = witness.b[current_idx] * h_id * random;
 
     let exp_bytes_padded = claim_value_bytes_padded(

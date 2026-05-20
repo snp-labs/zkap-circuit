@@ -90,12 +90,11 @@ impl<E: Pairing> SolidityContractGenerator for VerifyingKey<E> {
                 "\tfunction _verify(uint256[{}] calldata instance, uint256[8] calldata proof) public view returns (bool) {{",
                 self.gamma_abc_g1.len() - 1
             ),
-            String::from("\t\tif (proof.length != 8) revert InvalidProofLength();"),
-            format!(
-                "\t\tif (instance.length != {}) revert InvalidInstanceLength();",
-                self.gamma_abc_g1.len() - 1
-            ),
-            String::new(),
+            // Fixed-size calldata arrays have a compile-time constant `.length`;
+            // the guards `proof.length != 8` and `instance.length != N` are
+            // always false and therefore unreachable (M-8). Removed to avoid
+            // dead-code confusion; the error declarations are kept so downstream
+            // contracts can reference them if they wrap this verifier.
             String::from("\t\tuint256[24] memory io;"),
             String::from("\t\tbool success = true;"),
             String::new(),

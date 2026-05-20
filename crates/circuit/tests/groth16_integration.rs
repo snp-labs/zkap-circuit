@@ -42,8 +42,18 @@ use gadget::{
 };
 use regex::Regex;
 
+/// Test-local host-only struct equivalent to `zkap_service::jwt::Claim` (§4.4).
+/// Defined here because `circuit` cannot depend on `service` (that would be a
+/// dependency cycle); the integration test only needs the struct to carry
+/// `key`, `value`, and `ClaimIndices` between its own helper functions.
+struct Claim {
+    key: String,
+    value: String,
+    indices: ClaimIndices,
+}
+
 /// Test-local copy of parse_claim_from_str (moved to service crate)
-fn parse_claim_from_str(s: &str, key: &str) -> circuit::token::Claim {
+fn parse_claim_from_str(s: &str, key: &str) -> Claim {
     let escaped_key = regex::escape(key);
     let pattern = format!(r#"\s*("{}")\s*:\s*("?[^",]*"?)\s*([,\}}])"#, escaped_key);
     let re = Regex::new(&pattern).unwrap();
@@ -64,7 +74,7 @@ fn parse_claim_from_str(s: &str, key: &str) -> circuit::token::Claim {
         .unwrap();
     let value_len = captured_value.len();
 
-    circuit::token::Claim {
+    Claim {
         key: key.to_string(),
         value: value_str,
         indices: ClaimIndices {

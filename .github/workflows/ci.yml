@@ -146,7 +146,7 @@ jobs:
   wasm-build-smoke:
     name: WASM build smoke (wasm32-unknown-unknown)
     if: github.event_name != 'schedule'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # G1 — pin for binaryen reproducibility (cf. PERF.md F4 follow-up)
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: ./.github/actions/setup-rust
@@ -155,13 +155,24 @@ jobs:
       # rust-toolchain.toml already lists wasm32-unknown-unknown; the
       # composite action installs it during setup. `.cargo/config.toml`
       # supplies `+simd128,+bulk-memory` for the wasm32 target.
-      - run: cargo build -p zkap-witness-gen-wasm --target wasm32-unknown-unknown --release --locked
+      - name: Install wasm-opt (binaryen)
+        run: sudo apt-get update && sudo apt-get install -y binaryen
+      - name: wasm-opt version
+        run: wasm-opt --version
+      - name: Build + optimise wasm
+        run: bash scripts/ci/build-wasm-artifact.sh stage-wasm/witness_gen.wasm
+      - name: Upload wasm artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ci-wasm
+          path: stage-wasm/
+          if-no-files-found: error
 
   generate-setup-smoke:
     name: generate_setup smoke (example.json bundle)
     if: github.event_name != 'schedule'
-    needs: build-release
-    runs-on: ubuntu-latest
+    needs: [build-release, wasm-build-smoke]
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     concurrency:
       group: generate-setup-smoke-${{ github.ref }}
@@ -171,6 +182,19 @@ jobs:
       - uses: ./.github/actions/setup-rust
         with:
           cache-key: ci-generate-setup-smoke
+      - name: Download wasm artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ci-wasm
+          path: target/wasm32-unknown-unknown/release/
+      - name: Mirror to wasm_artifact_path() canonical filename
+        # `wasm_artifact_path()` (crates/witness-gen-wasm/benches/common/mod.rs:274-291)
+        # is hardcoded to `zkap_witness_gen_wasm.wasm` (cargo cdylib output name).
+        # Our pipeline file name is `witness_gen.wasm` (consumer/release convention).
+        # Mirror so parity_k* finds it. No env-var override exists.
+        run: cp target/wasm32-unknown-unknown/release/witness_gen.wasm target/wasm32-unknown-unknown/release/zkap_witness_gen_wasm.wasm
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
       - name: Run generate_setup against example.json
         # `example.json` is the small smoke config (n=6, k=3, tree_height=4)
         # — full setup completes in a few minutes on the standard runner.
@@ -182,9 +206,12 @@ jobs:
             --features circuit/integration-tests --locked -- \
             --config example.json \
             --output /tmp/ci-crs \
-            --circuit-id zkap-ci-smoke
+            --circuit-id zkap-ci-smoke \
+            --witness-gen-wasm target/wasm32-unknown-unknown/release/witness_gen.wasm
       - name: Verify 7-file post-migration bundle layout
         run: bash scripts/check-bundle-layout.sh /tmp/ci-crs
+      - name: Smoke + Parity (wasm vs native rlib)
+        run: bash scripts/ci/run-wasm-parity.sh /tmp/ci-crs target/wasm32-unknown-unknown/release/witness_gen.wasm
       - name: Enforce 2 GiB bundle size cap
         run: bash scripts/ci/check-crs-size-cap.sh /tmp/ci-crs
 
@@ -204,6 +231,10 @@ jobs:
         run: bash -n scripts/ci/check-crs-size-cap.sh
       - name: scripts/release/sha256sums.sh syntax check
         run: bash -n scripts/release/sha256sums.sh
+      - name: scripts/ci/build-wasm-artifact.sh syntax check
+        run: bash -n scripts/ci/build-wasm-artifact.sh
+      - name: scripts/ci/run-wasm-parity.sh syntax check
+        run: bash -n scripts/ci/run-wasm-parity.sh
 
   # ───────────────────────────────────────────────────────────────────────────
   # develop-push / workflow_dispatch only (skipped on PR by design).

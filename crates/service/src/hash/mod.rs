@@ -17,9 +17,7 @@ use crate::dto::{
 };
 use crate::error::ApplicationError;
 
-/// RSA-2048 modulus byte length (256). Enforced on
-/// [`IssuerKeyHashRequest::rsa_modulus_b64`] after base64 decoding.
-const RSA_2048_MODULUS_BYTES: usize = 256;
+use crate::groth16::prover::RSA_2048_BYTES;
 
 /// Compute a Poseidon hash over a list of field-element strings.
 ///
@@ -105,7 +103,7 @@ pub fn generate_audience_hashes(
 ///
 /// `request.issuer` is padded to `config.max_iss_len` bytes with the circuit
 /// pad character. `request.rsa_modulus_b64` must base64-decode to exactly
-/// `RSA_2048_MODULUS_BYTES` (256) bytes; other lengths return
+/// `RSA_2048_BYTES` (256) bytes; other lengths return
 /// [`ApplicationError::InvalidRsaModulus`]. The RSA public exponent is fixed
 /// at 65537 in-circuit and is sourced from
 /// `gadget::constants::RSA_DEFAULT_EXPONENT_B64` rather than being accepted
@@ -123,10 +121,10 @@ pub fn generate_issuer_key_hash(
 
     let n_decoded = decode_any_base64(&request.rsa_modulus_b64)
         .map_err(|e| ApplicationError::InvalidBase64(format!("rsa_modulus_b64: {}", e)))?;
-    if n_decoded.len() != RSA_2048_MODULUS_BYTES {
+    if n_decoded.len() != RSA_2048_BYTES {
         return Err(ApplicationError::InvalidRsaModulus(format!(
             "expected {} bytes (RSA-2048), got {}",
-            RSA_2048_MODULUS_BYTES,
+            RSA_2048_BYTES,
             n_decoded.len()
         )));
     }

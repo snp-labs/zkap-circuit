@@ -246,7 +246,9 @@ fn main() {
     };
 
     write_json_or_exit(
-        out.join("manifest.json").to_str().unwrap_or_else(|| die("manifest.json path is not valid UTF-8")),
+        out.join("manifest.json")
+            .to_str()
+            .unwrap_or_else(|| die("manifest.json path is not valid UTF-8")),
         &manifest,
     );
 

@@ -30,14 +30,15 @@ use ark_relations::gr1cs::ConstraintSystem;
 use gadget::{
     bigint::constraints::{BigNatCircuitParams, BigNatVar},
     hashes::sha256::constraints::SHA256Gadget,
-    signature::rsa::{PublicKey, Signature, constraints::{PublicKeyVar, SignatureVar, output_with_prefix}},
+    signature::rsa::{
+        PublicKey, Signature,
+        constraints::{PublicKeyVar, SignatureVar, output_with_prefix},
+    },
 };
 use rand_chacha::ChaCha20Rng;
 use rand_chacha::rand_core::SeedableRng;
 use rsa::{
-    RsaPrivateKey, RsaPublicKey,
-    pkcs1v15::SigningKey,
-    signature::RandomizedSigner,
+    RsaPrivateKey, RsaPublicKey, pkcs1v15::SigningKey, signature::RandomizedSigner,
     traits::PublicKeyParts,
 };
 use sha2::Sha256;
@@ -78,11 +79,7 @@ fn keygen_and_sign(message: &[u8]) -> (PublicKey, Signature) {
 /// then run the RSA-2048 PKCS#1 v1.5 verification gadget (mirroring `verify_opt`).
 ///
 /// Returns `cs.is_satisfied()`.
-fn run_verify_gadget(
-    message: &[u8],
-    pk: &PublicKey,
-    sig: &Signature,
-) -> bool {
+fn run_verify_gadget(message: &[u8], pk: &PublicKey, sig: &Signature) -> bool {
     let cs = ConstraintSystem::<Fr>::new_ref();
 
     // Allocate message bytes as witnesses.
@@ -97,10 +94,10 @@ fn run_verify_gadget(
     message_vars = digest.0;
 
     // Allocate public key and signature.
-    let pk_var = PublicKeyVar::<Fr, Rsa2048Params>::new_witness(cs.clone(), || Ok(pk.clone()))
-        .unwrap();
-    let sig_var = SignatureVar::<Fr, Rsa2048Params>::new_witness(cs.clone(), || Ok(sig.clone()))
-        .unwrap();
+    let pk_var =
+        PublicKeyVar::<Fr, Rsa2048Params>::new_witness(cs.clone(), || Ok(pk.clone())).unwrap();
+    let sig_var =
+        SignatureVar::<Fr, Rsa2048Params>::new_witness(cs.clone(), || Ok(sig.clone())).unwrap();
 
     // === Mirror RSA2048VerifyGadget::verify_opt ===
 
@@ -134,7 +131,9 @@ fn run_verify_gadget(
     let result_fp = result_bytes.to_constraint_field().unwrap();
 
     // Step 4: assert equality.
-    result_fp.is_eq(&em_fp).unwrap()
+    result_fp
+        .is_eq(&em_fp)
+        .unwrap()
         .enforce_equal(&ark_r1cs_std::prelude::Boolean::TRUE)
         .unwrap();
 
@@ -221,10 +220,10 @@ fn test_digest_order_reversed_unsatisfied() {
     let message_vars: Vec<UInt8<Fr>> = digest.0;
 
     // Allocate public key and signature.
-    let pk_var = PublicKeyVar::<Fr, Rsa2048Params>::new_witness(cs.clone(), || Ok(pk.clone()))
-        .unwrap();
-    let sig_var = SignatureVar::<Fr, Rsa2048Params>::new_witness(cs.clone(), || Ok(sig.clone()))
-        .unwrap();
+    let pk_var =
+        PublicKeyVar::<Fr, Rsa2048Params>::new_witness(cs.clone(), || Ok(pk.clone())).unwrap();
+    let sig_var =
+        SignatureVar::<Fr, Rsa2048Params>::new_witness(cs.clone(), || Ok(sig.clone())).unwrap();
 
     sig_var.sig.enforce_limb_range_via_bits().unwrap();
     pk_var.n.enforce_limb_range_via_bits().unwrap();
@@ -250,7 +249,9 @@ fn test_digest_order_reversed_unsatisfied() {
         .unwrap();
     let result_fp = result_bytes.to_constraint_field().unwrap();
 
-    result_fp.is_eq(&em_fp).unwrap()
+    result_fp
+        .is_eq(&em_fp)
+        .unwrap()
         .enforce_equal(&ark_r1cs_std::prelude::Boolean::TRUE)
         .unwrap();
 

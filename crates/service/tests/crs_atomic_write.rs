@@ -58,11 +58,17 @@ fn atomic_write_no_partial_file_when_rename_fails() {
 
     // The target directory still exists and was NOT replaced by a file.
     assert!(target.exists(), "target directory must still exist");
-    assert!(target.is_dir(), "target must remain a directory, not a file");
+    assert!(
+        target.is_dir(),
+        "target must remain a directory, not a file"
+    );
 
     // No temp file left behind.
     let tmp_path = dir.join(format!(".{}.tmp.{}", artifact_name, std::process::id()));
-    assert!(!tmp_path.exists(), "temp file must be removed after rename failure");
+    assert!(
+        !tmp_path.exists(),
+        "temp file must be removed after rename failure"
+    );
 
     fs::remove_dir_all(&dir).unwrap();
 }
@@ -77,12 +83,18 @@ fn atomic_write_succeeds_and_leaves_no_temp_file() {
     assert!(result, "atomic write must succeed when target path is free");
 
     let target = dir.join(artifact_name);
-    assert!(target.exists(), "target artifact must exist after successful write");
+    assert!(
+        target.exists(),
+        "target artifact must exist after successful write"
+    );
     assert_eq!(fs::read(&target).unwrap(), bytes);
 
     // No temp file left behind.
     let tmp_path = dir.join(format!(".{}.tmp.{}", artifact_name, std::process::id()));
-    assert!(!tmp_path.exists(), "temp file must be removed after successful rename");
+    assert!(
+        !tmp_path.exists(),
+        "temp file must be removed after successful rename"
+    );
 
     fs::remove_dir_all(&dir).unwrap();
 }

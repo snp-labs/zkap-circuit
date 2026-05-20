@@ -130,5 +130,4 @@ mod tests {
         assert!(cs.is_satisfied().unwrap());
         assert_eq!(result.value().unwrap(), 0x0F00u32);
     }
-
 }

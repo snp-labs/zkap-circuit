@@ -206,7 +206,7 @@ jobs:
   build-wasm:
     name: Build witness_gen.wasm
     needs: [validate, test-full, workspace-build]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: ./.github/actions/setup-rust
@@ -214,24 +214,10 @@ jobs:
           cache-key: release-build-wasm
       - name: Install wasm-opt (binaryen)
         run: sudo apt-get update && sudo apt-get install -y binaryen
-      - name: Build zkap-witness-gen-wasm (wasm32 release)
-        run: |
-          cargo build -p zkap-witness-gen-wasm \
-            --target wasm32-unknown-unknown --release --locked
-      - name: Stage + optimize wasm artifact
-        run: |
-          set -euo pipefail
-          mkdir -p stage-wasm
-          SRC="target/wasm32-unknown-unknown/release/zkap_witness_gen_wasm.wasm"
-          if [ ! -f "$SRC" ]; then
-            echo "::error::expected $SRC, not found"
-            exit 1
-          fi
-          # -O3 mirrors the perf-driven choice in PERF.md; no `--strip-debug`
-          # because the dev profile already strips for wasm in release.
-          wasm-opt -O3 --enable-bulk-memory --enable-simd \
-            "$SRC" -o stage-wasm/witness_gen.wasm
-          ls -la stage-wasm
+      - name: wasm-opt version
+        run: wasm-opt --version
+      - name: Build + optimise wasm
+        run: bash scripts/ci/build-wasm-artifact.sh stage-wasm/witness_gen.wasm
       - name: Upload wasm artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
@@ -247,8 +233,8 @@ jobs:
   # ───────────────────────────────────────────────────────────────────────────
   generate-release-bundle:
     name: Generate release bundle (${{ matrix.shape }})
-    needs: [validate, test-full, workspace-build]
-    runs-on: ubuntu-latest
+    needs: [validate, test-full, workspace-build, build-wasm]
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     # `release` GitHub Environment hosts MANIFEST_SIGNING_KEY and is where
     # any required-reviewer policy lives. RC releases neither read the
@@ -273,6 +259,14 @@ jobs:
       - uses: ./.github/actions/setup-rust
         with:
           cache-key: release-generate-bundle
+
+      - name: Download wasm artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: zkap-witness-wasm
+          path: target/wasm32-unknown-unknown/release/
+      - name: Mirror to wasm_artifact_path() canonical filename
+        run: cp target/wasm32-unknown-unknown/release/witness_gen.wasm target/wasm32-unknown-unknown/release/zkap_witness_gen_wasm.wasm
 
       - name: Prepare signing key (stable releases only)
         if: needs.validate.outputs.is_prerelease == 'false'
@@ -308,6 +302,7 @@ jobs:
             --config configs/release/${{ matrix.shape }}.json \
             --output output/keys \
             --circuit-id zkap-main-${{ matrix.shape }} \
+            --witness-gen-wasm target/wasm32-unknown-unknown/release/witness_gen.wasm \
             "${SIGNING_ARGS[@]}"
 
       - name: Always cleanup signing key
@@ -317,6 +312,11 @@ jobs:
 
       - name: Verify 7-file post-migration bundle layout
         run: bash scripts/check-bundle-layout.sh output/keys
+
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+      - name: Smoke + Parity (wasm vs native rlib)
+        run: bash scripts/ci/run-wasm-parity.sh output/keys target/wasm32-unknown-unknown/release/witness_gen.wasm
 
       - name: Enforce 2 GiB bundle size cap
         run: bash scripts/ci/check-crs-size-cap.sh output/keys
@@ -370,6 +370,56 @@ jobs:
         run: solc --bin dl/1-of-1/Groth16Verifier.sol
 
   # ───────────────────────────────────────────────────────────────────────────
+  # verify-wasm-shape-parity — five-way hash invariant: upstream build-wasm
+  # artifact sha256 == per-shape bundle file sha256 == per-shape manifest entry
+  # sha256, for both shapes.
+  # ───────────────────────────────────────────────────────────────────────────
+  verify-wasm-shape-parity:
+    name: Verify shared-wasm five-way hash invariant
+    needs: [build-wasm, generate-release-bundle]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Download upstream wasm
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: zkap-witness-wasm
+          path: dl/upstream
+      - name: Download 1-of-1 bundle
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: proving-keys-1-of-1
+          path: dl/1-of-1
+      - name: Download 3-of-3 bundle
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: proving-keys-3-of-3
+          path: dl/3-of-3
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+      - name: Assert five-way hash invariant
+        run: |
+          set -euo pipefail
+          H_UP=$(sha256sum dl/upstream/witness_gen.wasm | awk '{print $1}')
+          H_1F=$(sha256sum dl/1-of-1/witness_gen.wasm | awk '{print $1}')
+          H_3F=$(sha256sum dl/3-of-3/witness_gen.wasm | awk '{print $1}')
+          H_1M=$(jq -r '.artifacts.witness_gen.sha256 // empty' dl/1-of-1/manifest.json)
+          H_3M=$(jq -r '.artifacts.witness_gen.sha256 // empty' dl/3-of-3/manifest.json)
+          if [ -z "$H_1M" ] || [ -z "$H_3M" ]; then
+            echo "::error::missing witness_gen.sha256 in one of the manifests" >&2; exit 1
+          fi
+          echo "Upstream wasm sha256:          $H_UP"
+          echo "1-of-1 file wasm sha256:       $H_1F  manifest entry sha256: $H_1M"
+          echo "3-of-3 file wasm sha256:       $H_3F  manifest entry sha256: $H_3M"
+          if [ "$H_UP" != "$H_1F" ] || [ "$H_UP" != "$H_3F" ] || \
+             [ "$H_UP" != "$H_1M" ] || [ "$H_UP" != "$H_3M" ]; then
+            echo "::error::five-way hash invariant violated" >&2; exit 1
+          fi
+          echo "OK: all five hashes agree = $H_UP"
+
+  # ───────────────────────────────────────────────────────────────────────────
   # publish-release — sole job with `contents: write`.
   # Stages every asset with shape-prefixed names, writes a top-level
   # SHA256SUMS over the *exact* asset list, and creates the GitHub Release
@@ -385,6 +435,7 @@ jobs:
       - build-wasm
       - generate-release-bundle
       - solidity-smoke
+      - verify-wasm-shape-parity
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -456,6 +507,21 @@ jobs:
           bash scripts/release/sha256sums.sh --files release/SHA256SUMS "${MAPFILE_INPUTS[@]}"
           echo "------- top-level SHA256SUMS -------"
           cat release/SHA256SUMS
+
+      - name: Assert no per-shape wasm assets staged
+        run: |
+          set -euo pipefail
+          for shape in 1-of-1 3-of-3; do
+            if [ -f "release/${shape}-witness_gen.wasm" ]; then
+              echo "::error::per-shape wasm asset must NOT exist: release/${shape}-witness_gen.wasm" >&2
+              exit 1
+            fi
+          done
+          if [ ! -f release/witness_gen.wasm ]; then
+            echo "::error::common witness_gen.wasm missing from release/" >&2
+            exit 1
+          fi
+          echo "OK: per-shape wasm absent, common wasm present"
 
       - name: Create GitHub Release
         env:

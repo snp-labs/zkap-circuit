@@ -91,21 +91,31 @@ pub fn pad(s: &str, target_len: usize, pad_char: char) -> Result<String, TextErr
 /// Converts a string to field elements after padding.
 ///
 /// Pads the string to `target_len` with `pad` byte, then splits into
-/// limb-sized chunks and converts each to a field element.
-pub fn str_to_limbs<F: PrimeField>(s: &str, target_len: usize, pad: u8) -> Vec<F> {
+/// limb-sized chunks and converts each to a field element. Returns
+/// `Err(TextError::InvalidFormat)` if `s` is longer than `target_len`:
+/// the JWT-claim length invariant the circuit relies on must not be
+/// silently truncated.
+pub fn str_to_limbs<F: PrimeField>(
+    s: &str,
+    target_len: usize,
+    pad: u8,
+) -> Result<Vec<F>, TextError> {
+    if s.len() > target_len {
+        return Err(TextError::InvalidFormat(format!(
+            "String length {} exceeds target length {}",
+            s.len(),
+            target_len
+        )));
+    }
+
     let mut bytes = s.as_bytes().to_vec();
     bytes.resize(target_len, pad);
 
     let limb_width = (F::MODULUS_BIT_SIZE - 1) as usize / 8;
-    let n_limbs = bytes.len().div_ceil(limb_width);
-    let expected_length = n_limbs * limb_width;
-
-    assert_eq!(bytes.len(), expected_length);
-
-    bytes
+    Ok(bytes
         .chunks(limb_width)
         .map(|chunk| F::from_be_bytes_mod_order(chunk))
-        .collect()
+        .collect())
 }
 
 /// Parses an input string as a field element.
@@ -157,15 +167,15 @@ mod tests {
 
     #[test]
     fn test_str_to_limbs_padding_basic() {
-        let result = str_to_limbs::<F>("hi", 31, 0);
+        let result = str_to_limbs::<F>("hi", 31, 0).unwrap();
         assert_eq!(result.len(), 1);
     }
 
     #[test]
     fn test_str_to_limbs_padding_value() {
-        let result = str_to_limbs::<F>("AB", 31, 0x20);
+        let result = str_to_limbs::<F>("AB", 31, 0x20).unwrap();
         assert_eq!(result.len(), 1);
-        let all_space = str_to_limbs::<F>("", 31, 0x20);
+        let all_space = str_to_limbs::<F>("", 31, 0x20).unwrap();
         assert_ne!(result[0], all_space[0]);
     }
 
@@ -173,7 +183,16 @@ mod tests {
     fn test_str_to_limbs_big_endian_consistency() {
         let s = "A".repeat(31);
         let from_fields = try_str_to_fields::<F>(&s).unwrap();
-        let from_limbs = str_to_limbs::<F>(&s, 31, 0);
+        let from_limbs = str_to_limbs::<F>(&s, 31, 0).unwrap();
         assert_eq!(from_fields, from_limbs);
+    }
+
+    #[test]
+    fn test_str_to_limbs_rejects_over_length() {
+        let result = str_to_limbs::<F>("ABCDE", 3, 0x20);
+        assert!(
+            matches!(result, Err(TextError::InvalidFormat(_))),
+            "over-length input must surface as Err, not silent truncation"
+        );
     }
 }

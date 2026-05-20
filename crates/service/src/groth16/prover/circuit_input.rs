@@ -353,19 +353,12 @@ pub(crate) struct AudienceStage {
 }
 
 /// Build the audience stage from `aud_packed` (already produced by
-/// [`build_jwt_stage`]). `payload_bytes`/`claim_indices`/`claims` are
-/// retained for parity with the legacy signature but are not used by
-/// the current algorithm.
+/// [`build_jwt_stage`]).
 pub(crate) fn build_audience_stage(
-    field_path: &str,
-    payload_bytes: &[u8],
-    claim_indices: &[ClaimIndices],
-    claims: &[String],
     aud_packed: &[F],
     cfg: &CircuitConfig,
     poseidon_param: &PoseidonConfig<F>,
 ) -> Result<AudienceStage, ApplicationError> {
-    let _ = field_path;
     let num_audience_limit = cfg.num_audience_limit as usize;
 
     let h_aud = CRH::<F>::evaluate(poseidon_param, aud_packed.to_vec())
@@ -387,8 +380,6 @@ pub(crate) fn build_audience_stage(
     }
     let h_aud_list = CRH::<F>::evaluate(poseidon_param, aud_list.clone())
         .map_err(|e| ApplicationError::PoseidonHashError(format!("h_aud_list: {e}")))?;
-
-    let _ = (claim_indices, claims, payload_bytes);
 
     Ok(AudienceStage {
         aud_list,

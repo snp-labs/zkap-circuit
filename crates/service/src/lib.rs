@@ -85,16 +85,10 @@
 //!
 //! ### Drift safeguard
 //!
-//! Compile-checked guard against accidental signature drift on the
-//! canonical `prove` entry point. Updates to this signature must update
-//! the diagram above (and the flow doc in
-//! `crates/service/src/groth16/prover/mod.rs`).
-//!
-//! ```ignore
-//! use zkap_service::{ArtifactSet, ProveRequest, ProveResponse, prove};
-//! use zkap_service::error::ApplicationError;
-//! let _: fn(&ArtifactSet, &ProveRequest) -> Result<ProveResponse, ApplicationError> = prove;
-//! ```
+//! `prove`'s canonical signature is pinned by the `const _` assertion at
+//! the bottom of this file, so any drift becomes a compile error.
+//! Updates to that signature must also update the diagram above and the
+//! flow doc in `crates/service/src/groth16/prover/mod.rs`.
 
 // Crate-internal `missing_docs` warning, not a `#[deny]`. Workspace-wide
 // flip is deferred until gadget reaches zero missing-docs warnings.
@@ -176,3 +170,9 @@ pub use groth16::prover::{
     WitnessBundle, prove, synthesize_witnesses, synthesize_witnesses_streaming,
 };
 pub use groth16::setup::{SetupOutput, SetupRng, SetupShape, setup};
+
+// Compile-checked signature pin for `prove`.
+const _ASSERT_PROVE_SIGNATURE: fn(
+    &ArtifactSet,
+    &dto::ProveRequest,
+) -> Result<dto::ProveResponse, error::ApplicationError> = prove;

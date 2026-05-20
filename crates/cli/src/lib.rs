@@ -60,12 +60,47 @@ pub fn load_config_or_exit(path: &Path) -> CircuitConfig {
     })
 }
 
-/// Serialise `data` as pretty-printed JSON and write it to `path`.
+/// Serialise `data` as pretty-printed JSON and write it to `path`
+/// atomically: bytes are first written to a sibling `<path>.tmp.<pid>`
+/// file and only then renamed onto `path`, so a mid-write crash leaves
+/// the previous file untouched rather than producing a truncated
+/// half-written manifest.
 pub fn write_json_or_exit<T: Serialize>(path: &str, data: &T) {
-    let file = std::fs::File::create(path)
-        .unwrap_or_else(|e| die(format!("Failed to create output file '{}': {}", path, e)));
-    serde_json::to_writer_pretty(file, data)
-        .unwrap_or_else(|e| die(format!("Failed to write JSON to '{}': {}", path, e)));
+    let target = Path::new(path);
+    let tmp_path = match target.parent() {
+        Some(dir) if !dir.as_os_str().is_empty() => {
+            dir.join(format!(".{}.tmp.{}", file_name_of(target), std::process::id()))
+        }
+        _ => Path::new(".").join(format!(".{}.tmp.{}", file_name_of(target), std::process::id())),
+    };
+
+    let file = std::fs::File::create(&tmp_path).unwrap_or_else(|e| {
+        die(format!(
+            "Failed to create temp file '{}': {}",
+            tmp_path.display(),
+            e
+        ))
+    });
+    if let Err(e) = serde_json::to_writer_pretty(file, data) {
+        let _ = std::fs::remove_file(&tmp_path);
+        die(format!("Failed to write JSON to '{}': {}", path, e));
+    }
+    if let Err(e) = std::fs::rename(&tmp_path, target) {
+        let _ = std::fs::remove_file(&tmp_path);
+        die(format!(
+            "Failed to atomically replace '{}' (temp '{}'): {}",
+            path,
+            tmp_path.display(),
+            e
+        ));
+    }
+}
+
+fn file_name_of(p: &Path) -> String {
+    p.file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("out")
+        .to_string()
 }
 
 /// Read `circuit.ar1cs` at `path` and return its canonical

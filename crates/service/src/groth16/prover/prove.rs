@@ -180,15 +180,7 @@ where
             cfg,
             poseidon_param,
         )?;
-        let audience_stage = build_audience_stage(
-            &path,
-            &jwt_stage.payload_bytes,
-            &jwt_stage.claim_indices,
-            &cfg.claims,
-            &jwt_stage.aud_packed,
-            cfg,
-            poseidon_param,
-        )?;
+        let audience_stage = build_audience_stage(&jwt_stage.aud_packed, cfg, poseidon_param)?;
         let merkle = build_merkle_witness(
             &path,
             cred.merkle_leaf_sibling_hash,

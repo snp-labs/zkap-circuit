@@ -85,7 +85,7 @@ pub fn generate_audience_hashes(
     let aud_fields: Vec<F> = aud_vec
         .iter()
         .map(|a| {
-            let limbs = str_to_limbs(a, config.max_aud_len as usize, PAD_CHAR as u8);
+            let limbs = str_to_limbs(a, config.max_aud_len as usize, PAD_CHAR as u8)?;
             PoseidonHash::evaluate(poseidon_params, limbs)
                 .map_err(|e| ApplicationError::HashFailed(e.to_string()))
         })
@@ -119,7 +119,7 @@ pub fn generate_issuer_key_hash(
 
     let poseidon_params = crate::poseidon_params();
 
-    let iss_limbs = str_to_limbs(&request.issuer, config.max_iss_len as usize, PAD_CHAR as u8);
+    let iss_limbs = str_to_limbs(&request.issuer, config.max_iss_len as usize, PAD_CHAR as u8)?;
 
     let n_decoded = decode_any_base64(&request.rsa_modulus_b64)
         .map_err(|e| ApplicationError::InvalidBase64(format!("rsa_modulus_b64: {}", e)))?;

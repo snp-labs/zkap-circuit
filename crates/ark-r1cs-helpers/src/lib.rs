@@ -32,7 +32,10 @@ pub mod slice;
 pub mod uint32;
 
 // Root re-exports (matches the legacy `ark_utils::*` flat namespace).
-pub use comparison::{enforce_less_than, is_greater_or_equal, is_less_than, lt_bit_vector};
+pub use comparison::{
+    compare_bits_raw, enforce_less_than, is_greater_or_equal, is_less_or_equal, is_less_than,
+    lt_bit_vector,
+};
 pub use packing::{
     pack_bytes_to_field_unchecked, pack_decompose_bytes_checked, pack_decompose_bytes_unchecked,
 };

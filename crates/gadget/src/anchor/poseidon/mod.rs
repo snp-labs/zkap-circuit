@@ -258,7 +258,17 @@ impl<F: PrimeField + Absorb> AnchorScheme for PoseidonAnchorScheme<F> {
     type Matrix = VandermondeMatrix<F>;
     type Secret = PoseidonAnchorSecret<F>;
     type Witness = PoseidonAnchorWitness<F>;
-    fn setup<R: Rng>(_rng: &mut R, _n: usize) -> Result<Self::PublicKey, AnchorError> {
+    /// Build the Poseidon public key. The Poseidon CRH parameters used by
+    /// this scheme are universal (BN254-Fr, fixed rate/capacity), so the
+    /// resulting [`PoseidonAnchorPublicKey`] is intentionally independent
+    /// of both `rng` and the anchor width `n`. The `n` argument is
+    /// validated to keep callers from masking a logic error.
+    fn setup<R: Rng>(_rng: &mut R, n: usize) -> Result<Self::PublicKey, AnchorError> {
+        if n == 0 {
+            return Err(AnchorError::InvalidParameters(
+                "n must be > 0 for a Poseidon anchor scheme".to_string(),
+            ));
+        }
         let params = get_poseidon_params();
         Ok(PoseidonAnchorPublicKey { params })
     }

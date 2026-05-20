@@ -52,7 +52,7 @@ pub mod error {
 // Always-available re-exports
 pub use error::{ConvertError, NonCanonicalFieldError, TextError};
 pub use field::{fe_from_be32_canonical, fe_to_be32, field_to_hex};
-pub use string::{pad, str_to_limbs, try_str_to_fields};
+pub use string::{pad, str_to_limbs, try_bytes_to_fields, try_str_to_fields};
 
 #[cfg(feature = "field-serde")]
 pub use string::hex_decimal_to_field;

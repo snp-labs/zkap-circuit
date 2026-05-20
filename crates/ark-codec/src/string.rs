@@ -70,6 +70,34 @@ pub enum ConvertError {
     InvalidDecimal(String),
 }
 
+/// Pack raw bytes into base-field elements, one limb per
+/// `(MODULUS_BIT_SIZE - 1) / 8` byte chunk.
+///
+/// Identical algorithm to [`try_str_to_fields`] but operates on an
+/// arbitrary byte slice rather than a UTF-8 string. Use this when the
+/// source data is already binary (e.g. SHA-padded JWT buffers, RSA
+/// modulus/signature blocks) rather than an ASCII/UTF-8 string.
+///
+/// The same length-multiple invariant applies: `bytes.len()` must be an
+/// exact multiple of the limb width, otherwise `Err(InvalidLength)` is
+/// returned so callers catch alignment bugs at the boundary rather than
+/// silently dropping trailing bytes.
+pub fn try_bytes_to_fields<F: PrimeField>(bytes: &[u8]) -> Result<Vec<F>, ConvertError> {
+    let limb_width = (F::MODULUS_BIT_SIZE - 1) as usize / 8;
+
+    if !bytes.len().is_multiple_of(limb_width) {
+        return Err(ConvertError::InvalidLength {
+            expected_multiple: limb_width,
+            actual: bytes.len(),
+        });
+    }
+
+    Ok(bytes
+        .chunks(limb_width)
+        .map(|chunk| F::from_be_bytes_mod_order(chunk))
+        .collect())
+}
+
 /// Pads a string to the target length using the given pad character.
 ///
 /// Returns an error if the string is already longer than the target length.
@@ -188,7 +216,54 @@ mod tests {
     }
 
     #[test]
-    fn test_str_to_limbs_rejects_over_length() {
+    fn test_try_bytes_to_fields_exact_limb_width() {
+        let bytes = vec![0x41u8; 31]; // 31 bytes = one BN254 limb
+        let result = try_bytes_to_fields::<F>(&bytes).unwrap();
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn test_try_bytes_to_fields_two_limbs() {
+        let bytes = vec![0x42u8; 62]; // 62 bytes = two BN254 limbs
+        let result = try_bytes_to_fields::<F>(&bytes).unwrap();
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn test_try_bytes_to_fields_non_multiple_returns_error() {
+        let bytes = vec![0x01u8; 5]; // 5 bytes, not a multiple of 31
+        let result = try_bytes_to_fields::<F>(&bytes);
+        assert!(
+            matches!(result, Err(ConvertError::InvalidLength { .. })),
+            "non-multiple-of-limb input must surface as Err(InvalidLength)"
+        );
+    }
+
+    #[test]
+    fn test_try_bytes_to_fields_parity_with_try_str_to_fields_ascii() {
+        // For ASCII input, try_bytes_to_fields and try_str_to_fields must agree.
+        let s = "A".repeat(31);
+        let from_str = try_str_to_fields::<F>(&s).unwrap();
+        let from_bytes = try_bytes_to_fields::<F>(s.as_bytes()).unwrap();
+        assert_eq!(from_str, from_bytes);
+    }
+
+    #[test]
+    fn test_try_bytes_to_fields_parity_two_limbs() {
+        let s = "B".repeat(62);
+        let from_str = try_str_to_fields::<F>(&s).unwrap();
+        let from_bytes = try_bytes_to_fields::<F>(s.as_bytes()).unwrap();
+        assert_eq!(from_str, from_bytes);
+    }
+
+    #[test]
+    fn test_try_bytes_to_fields_zero_length() {
+        let result = try_bytes_to_fields::<F>(&[]).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_try_str_to_fields_rejects_over_length() {
         let result = str_to_limbs::<F>("ABCDE", 3, 0x20);
         assert!(
             matches!(result, Err(TextError::InvalidFormat(_))),

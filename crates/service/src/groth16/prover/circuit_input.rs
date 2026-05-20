@@ -35,7 +35,7 @@ use ark_crypto_primitives::{
     merkle_tree::Path,
     sponge::poseidon::PoseidonConfig,
 };
-use ark_ff::{PrimeField, Zero};
+use ark_ff::Zero;
 
 use circuit::token::ClaimIndices;
 use circuit::types::{CircuitConfig, F};
@@ -47,26 +47,12 @@ use gadget::{
     signature::rsa::{PublicKey, Signature},
 };
 
+use ark_codec::string::try_bytes_to_fields;
+
 use crate::error::ApplicationError;
 use crate::jwt::parser::locate_claim;
 
 use super::RSA_2048_BYTES;
-
-const BN254_LIMB_WIDTH: usize = 31;
-
-fn pack_bytes_to_field_native(bytes: &[u8]) -> Vec<F> {
-    // Invariant guaranteed by CircuitConfig::validate(); assert is defence-in-depth.
-    assert!(
-        bytes.len().is_multiple_of(BN254_LIMB_WIDTH),
-        "pack_bytes_to_field_native: input length {} is not a multiple of {} (BN254 limb width)",
-        bytes.len(),
-        BN254_LIMB_WIDTH,
-    );
-    bytes
-        .chunks(BN254_LIMB_WIDTH)
-        .map(F::from_be_bytes_mod_order)
-        .collect()
-}
 
 fn pad_claim_value_to_max(value: &[u8], max_len: usize) -> Vec<u8> {
     let mut v = value.to_vec();
@@ -320,7 +306,7 @@ pub(crate) fn build_jwt_stage(
         })?;
     let aud_bytes_padded =
         claim_value_bytes_padded(&payload_bytes, aud_idx, cfg.max_aud_len as usize);
-    let aud_packed = pack_bytes_to_field_native(&aud_bytes_padded);
+    let aud_packed = try_bytes_to_fields::<F>(&aud_bytes_padded)?;
     CRH::<F>::evaluate(poseidon_param, aud_packed.clone())
         .map_err(|e| ApplicationError::PoseidonHashError(format!("aud_packed precheck: {e}")))?;
 
@@ -369,7 +355,7 @@ pub(crate) fn build_audience_stage(
     forbidden_bytes.extend_from_slice(cfg.forbidden_string.as_bytes());
     forbidden_bytes.push(b'"');
     let forbidden_padded = pad_claim_value_to_max(&forbidden_bytes, cfg.max_aud_len as usize);
-    let forbidden_packed = pack_bytes_to_field_native(&forbidden_padded);
+    let forbidden_packed = try_bytes_to_fields::<F>(&forbidden_padded)?;
     let h_forbidden = CRH::<F>::evaluate(poseidon_param, forbidden_packed)
         .map_err(|e| ApplicationError::PoseidonHashError(format!("h_forbidden: {e}")))?;
 
@@ -485,8 +471,8 @@ pub(crate) fn compute_public_inputs(
         claim_indices_for("sub")?,
         cfg.max_sub_len as usize,
     );
-    let iss_packed = pack_bytes_to_field_native(&iss_bytes_padded);
-    let sub_packed = pack_bytes_to_field_native(&sub_bytes_padded);
+    let iss_packed = try_bytes_to_fields::<F>(&iss_bytes_padded)?;
+    let sub_packed = try_bytes_to_fields::<F>(&sub_bytes_padded)?;
 
     let mut h_id_inputs: Vec<F> = Vec::new();
     h_id_inputs.extend_from_slice(aud_packed);

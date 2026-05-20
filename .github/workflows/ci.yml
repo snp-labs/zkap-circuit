@@ -1,234 +1,287 @@
 name: CI
 
+# develop is the release/base branch for this repo (public/develop on the
+# snp-labs remote). main is intentionally NOT used.
+#
+# Trigger split (decided 2026-05 review):
+#   pull_request       → PR-required jobs only (no audit, no integration-test).
+#   push develop       → PR-required jobs + integration-test + audit.
+#   workflow_dispatch  → PR-required jobs + integration-test + audit.
+#   schedule (daily)   → audit only (CVE drift gate).
 on:
-  push:
-    branches: [main, develop]
+  # NOTE — no workflow-level `paths-ignore`. branch protection requires
+  # `ci-summary` to report a result on every PR; if path filtering causes
+  # the workflow to be skipped, the required check stays Pending and the
+  # PR cannot merge. Docs-only PRs therefore still trigger this workflow,
+  # and ci-summary closes the loop. Future optimisation should use
+  # job-level `if:` to skip heavy steps while keeping ci-summary green —
+  # never workflow-level path filtering.
   pull_request:
-    branches: [main, develop, "feature/**", "docs/**", "chore/**", "fix/**", "security/**"]
+  push:
+    branches: [develop]
+  workflow_dispatch:
+  schedule:
+    # 06:23 UTC daily — audit runs alone; every other job is gated off
+    # via `if: github.event_name != 'schedule'`.
+    - cron: '23 6 * * *'
 
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  # Cancel duplicate runs on PRs; preserve completion of develop push runs.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   CARGO_TERM_COLOR: always
-  # Bump this token to invalidate Swatinem/rust-cache when stale entries cause
-  # phantom dep-graph errors (e.g. "ark-serialize multiple instances" from a
-  # cache built before a git+rev pin update). Local clean builds pass; bumping
-  # here forces a fresh cache key on the next CI run.
-  CACHE_BUST: "v3"
 
 jobs:
-  clippy:
-    name: Clippy
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-        with:
-          components: clippy
-      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
-      - run: cargo clippy --workspace --all-targets -- -D warnings
-
-  test:
-    name: Test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
-      - uses: taiki-e/install-action@c070f87102a1c75b3183910f391c1cb887fe13c8 # v2
-        with:
-          tool: cargo-nextest
-      # Workspace-wide test sweep on the `release-tests` custom profile,
-      # defined in the root Cargo.toml as release optimization (LTO off) +
-      # unwind panic. The mobile-targeted `[profile.release]` keeps
-      # `panic = "abort"`, which Cargo does not propagate to test
-      # binaries — `cargo test --release` therefore hits a
-      # panic-strategy mismatch (deps=abort vs test crate=unwind). The
-      # custom profile sidesteps that. Nextest's per-test process model
-      # also eliminates env-variable races between parallel tests
-      # (e.g. SOURCE_DATE_EPOCH in crates/cli/tests/manifest_golden.rs).
-      - run: cargo nextest run --profile ci --cargo-profile release-tests --workspace
-
-  build:
-    name: Build (Release)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
-      - run: cargo build --release --workspace
+  # ───────────────────────────────────────────────────────────────────────────
+  # PR-required jobs (also run on develop push + workflow_dispatch).
+  # ───────────────────────────────────────────────────────────────────────────
 
   fmt:
     name: Format
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: ./.github/actions/setup-rust
         with:
-          components: rustfmt
-      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+          cache-key: ci-fmt
       - run: cargo fmt --all -- --check
 
-  examples:
-    name: Examples (compile)
+  clippy:
+    name: Clippy
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
-      - run: cargo build --examples --workspace
+      - uses: ./.github/actions/setup-rust
+        with:
+          cache-key: ci-clippy
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+  test:
+    name: Test (workspace, release-tests profile)
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: ./.github/actions/setup-rust
+        with:
+          cache-key: ci-test
+          install-nextest: "true"
+      # `[profile.release]` uses `panic = "abort"` for mobile binary size.
+      # Cargo cannot propagate that to test binaries (test harness needs
+      # unwind), so `cargo test --release` fails on a panic-strategy
+      # mismatch. The workspace defines `[profile.release-tests]`
+      # (release-opt + `panic = "unwind"`, `lto = false`) for this case;
+      # nextest's `--cargo-profile release-tests` selects it.
+      - run: cargo nextest run --profile ci --cargo-profile release-tests --workspace --locked
+
+  build-release:
+    name: Build (release profile)
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: ./.github/actions/setup-rust
+        with:
+          cache-key: ci-build-release
+      # Distinct from `test`: this exercises the actual `panic=abort, lto=true`
+      # profile the release path will ship. Catches release-profile-only
+      # regressions (LTO-induced symbol resolution, panic=abort codegen, etc.).
+      - run: cargo build --release --workspace --locked
 
   feature-matrix:
     name: Feature matrix
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
-      # ark-utils: 3 combos (H4) — `wire` feature retired with ZkapInputV1
-      - name: ark-utils | no-default-features
-        run: cargo check -p ark-utils --no-default-features
-      - name: ark-utils | r1cs
-        run: cargo check -p ark-utils --no-default-features --features r1cs
-      - name: ark-utils | r1cs,field-serde,io (full)
-        run: cargo check -p ark-utils --no-default-features --features r1cs,field-serde,io
-      # gadget: 3 combos (H4)
+      - uses: ./.github/actions/setup-rust
+        with:
+          cache-key: ci-feature-matrix
+      # Only feature combinations that actually exist in this workspace
+      # (see each crate's `[features]` block). Defaults are covered by
+      # `clippy`, so this leg only adds non-default permutations.
+      - name: ark-codec | no-default
+        run: cargo check -p ark-codec --no-default-features --locked
+      - name: ark-codec | field-serde
+        run: cargo check -p ark-codec --no-default-features --features field-serde --locked
+      - name: ark-r1cs-helpers | default
+        run: cargo check -p ark-r1cs-helpers --locked
       - name: gadget | crypto
-        run: cargo check -p gadget --no-default-features --features crypto
+        run: cargo check -p gadget --features crypto --locked
       - name: gadget | crypto,base64
-        run: cargo check -p gadget --no-default-features --features crypto,base64
-      - name: gadget | crypto,base64,rsa (full)
-        run: cargo check -p gadget --no-default-features --features crypto,base64,rsa
-      # zkap-service: 2 combos — `proof` feature retired; --no-default-features
-      # is now identical to default but keep both as a guard against future drift.
-      - name: zkap-service | no-default-features
-        run: cargo check -p zkap-service --no-default-features
+        run: cargo check -p gadget --features crypto,base64 --locked
+      - name: gadget | crypto,base64,rsa,hashes-sha256
+        run: cargo check -p gadget --features crypto,base64,rsa,hashes-sha256 --locked
+      - name: gadget | full
+        run: cargo check -p gadget --features full --locked
       - name: zkap-service | default
-        run: cargo check -p zkap-service
+        run: cargo check -p zkap-service --locked
+      - name: zkap-service | testing
+        run: cargo check -p zkap-service --features testing --locked
+      - name: circuit | integration-tests
+        run: cargo check -p circuit --features integration-tests --locked
+
+  rustdoc:
+    name: Rustdoc
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    env:
+      RUSTDOCFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: ./.github/actions/setup-rust
+        with:
+          cache-key: ci-rustdoc
+      # Workspace-wide `missing_docs = "warn"` + `-D warnings` here gates
+      # every regression that Phase 7/8/9 cleanup paid down.
+      - run: cargo doc --workspace --no-deps --locked
+
+  wasm-build-smoke:
+    name: WASM build smoke (wasm32-unknown-unknown)
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: ./.github/actions/setup-rust
+        with:
+          cache-key: ci-wasm-build-smoke
+      # rust-toolchain.toml already lists wasm32-unknown-unknown; the
+      # composite action installs it during setup. `.cargo/config.toml`
+      # supplies `+simd128,+bulk-memory` for the wasm32 target.
+      - run: cargo build -p zkap-witness-gen-wasm --target wasm32-unknown-unknown --release --locked
 
   generate-setup-smoke:
-    # Drives `cargo run --bin generate_setup` against `example.json` and
-    # verifies the post-migration 7-file CRS bundle layout
-    # (`circuit.ar1cs`, `pk.bin`, `vk.bin`, `pvk.bin`,
-    # `Groth16Verifier.sol`, `config.json`, `manifest.json`). Pairs with
-    # the `migration-boundary` job, which runs the same
-    # `check-bundle-layout.sh` against the in-tree `dist/` artifacts.
-    #
-    # Phase 7 / P7-ci-concurrency:
-    # - `concurrency:` cancels in-progress runs of this job for the
-    #   same ref so rapid pushes don't queue smoke runs that the next
-    #   push would invalidate anyway.
-    # - `timeout-minutes:` gives the job a hard ceiling so a hung
-    #   `cargo run` cannot consume a full 6-hour runner slot.
-    # - The size cap on `/tmp/ci-crs` is a defence-in-depth check
-    #   against an `n,k` regression that explodes pk.bin: 2 GiB is a
-    #   2× safety margin over the committed shape that still catches
-    #   parameter blow-ups well before the runner runs out of disk.
-    name: generate_setup (PR smoke)
-    needs: test
+    name: generate_setup smoke (example.json bundle)
+    if: github.event_name != 'schedule'
+    needs: build-release
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     concurrency:
       group: generate-setup-smoke-${{ github.ref }}
       cancel-in-progress: true
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+      - uses: ./.github/actions/setup-rust
+        with:
+          cache-key: ci-generate-setup-smoke
       - name: Run generate_setup against example.json
+        # `example.json` is the small smoke config (n=6, k=3, tree_height=4)
+        # — full setup completes in a few minutes on the standard runner.
+        # `circuit/integration-tests` opens the test-only setup path that
+        # generate_setup needs.
         run: |
           mkdir -p /tmp/ci-crs
-          cargo run --release --features circuit/integration-tests \
-            --bin generate_setup -- \
-            --config example.json --output /tmp/ci-crs \
-            --circuit-id zkap-main-v1
+          cargo run --release -p zkap-cli --bin generate_setup \
+            --features circuit/integration-tests --locked -- \
+            --config example.json \
+            --output /tmp/ci-crs \
+            --circuit-id zkap-ci-smoke
       - name: Verify 7-file post-migration bundle layout
         run: bash scripts/check-bundle-layout.sh /tmp/ci-crs
-      - name: CRS artifact size cap
-        # Defence-in-depth against an `n,k` regression that explodes
-        # pk.bin: 2 GiB (2 097 152 KiB) ceiling.
-        run: |
-          set -euo pipefail
-          USED_KIB=$(du -sk /tmp/ci-crs | awk '{print $1}')
-          LIMIT_KIB=2097152  # 2 GiB
-          echo "/tmp/ci-crs total: ${USED_KIB} KiB / limit ${LIMIT_KIB} KiB"
-          if [ "$USED_KIB" -gt "$LIMIT_KIB" ]; then
-            echo "ERROR: /tmp/ci-crs exceeds 2 GiB cap (${USED_KIB} KiB > ${LIMIT_KIB} KiB)"
-            exit 1
-          fi
+      - name: Enforce 2 GiB bundle size cap
+        run: bash scripts/ci/check-crs-size-cap.sh /tmp/ci-crs
 
   migration-boundary:
-    # Required gate: enforces that the 2026-05 ark-ar1cs boundary
-    # migration removals stay removed. `check-removed-api.sh` greps
-    # the working tree for retired symbols / paths / crate names.
-    # The companion `check-bundle-layout.sh` is exercised in
-    # `generate-setup-smoke` against the freshly-generated
-    # `/tmp/ci-crs` bundle (and again in `release.yml` against
-    # `output/keys`); `dist/` is `.gitignored`, so a checkout-only
-    # invocation here would never have a target to inspect.
     name: Migration boundary scripts
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - name: Install ripgrep
+      - name: Install ripgrep (required by check-removed-api.sh)
         run: sudo apt-get update && sudo apt-get install -y ripgrep
       - name: scripts/check-removed-api.sh
         run: bash scripts/check-removed-api.sh
-      - name: scripts/check-bundle-layout.sh (syntax)
+      - name: scripts/check-bundle-layout.sh syntax check
         run: bash -n scripts/check-bundle-layout.sh
+      - name: scripts/ci/check-crs-size-cap.sh syntax check
+        run: bash -n scripts/ci/check-crs-size-cap.sh
+      - name: scripts/release/sha256sums.sh syntax check
+        run: bash -n scripts/release/sha256sums.sh
 
-  rustdoc:
-    # Phase 8 / P8-arkutils-doc-link-audit (Phase 7 critic MINOR #3) seeded
-    # this gate on `ark-utils`. Phase 9 / P9-gadget-rustdoc-audit (Phase 8
-    # critic MINOR #3) extends it to `gadget`, whose H5-staged-4 sweep
-    # (Phase 8 `c630dd78`) added 213 fresh doc strings without `cargo doc`
-    # validation. Both crates carry
-    # `#![deny(rustdoc::broken_intra_doc_links)]` and
-    # `#![deny(rustdoc::invalid_html_tags)]`, so any unresolved
-    # `[`foo`]` link or stray `Foo<T>` (interpreted as HTML) fails
-    # the doc build. Multiple feature configs are exercised because a
-    # link that resolves under one feature set can break under the
-    # other (e.g. `field-serde`-gated re-exports in `ark-utils`,
-    # `rsa`/`base64`-gated submodules in `gadget`). The default build
-    # is the canonical one; the `--features full`/`--all-features`
-    # build also documents the gated items.
-    name: Rustdoc
+  # ───────────────────────────────────────────────────────────────────────────
+  # develop-push / workflow_dispatch only (skipped on PR by design).
+  # ───────────────────────────────────────────────────────────────────────────
+
+  integration-test:
+    name: Integration test (Groth16 prove/verify)
+    # PR skips this (decision D4 in design review). Plain `--workspace`
+    # silently misses it because the target has
+    # `required-features = ["integration-tests"]`.
+    if: github.event_name != 'pull_request' && github.event_name != 'schedule'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
-      - name: Rustdoc (ark-utils, default features)
-        run: cargo doc -p ark-utils --no-deps
-      - name: Rustdoc (ark-utils, all features)
-        run: cargo doc -p ark-utils --no-deps --all-features
-      - name: Rustdoc (gadget, default features)
-        run: cargo doc -p gadget --no-deps
-      # Phase 9 / P9-gadget-rustdoc-matrix-extension: combinations
-      # below mirror the `feature-matrix` job so partial-feature
-      # broken links surface at PR time.
-      - name: Rustdoc (gadget, hashes-poseidon)
-        run: cargo doc -p gadget --no-deps --features hashes-poseidon
-      - name: Rustdoc (gadget, anchor)
-        run: cargo doc -p gadget --no-deps --features anchor
-      - name: Rustdoc (gadget, rsa)
-        run: cargo doc -p gadget --no-deps --features rsa
-      - name: Rustdoc (gadget, crypto bundle)
-        run: cargo doc -p gadget --no-deps --features crypto
-      - name: Rustdoc (gadget, full feature)
-        run: cargo doc -p gadget --no-deps --features full
-      - name: Rustdoc (circuit)
-        run: cargo doc -p circuit --no-deps
+      - uses: ./.github/actions/setup-rust
+        with:
+          cache-key: ci-integration-test
+          install-nextest: "true"
+      - run: |
+          cargo nextest run --profile ci --cargo-profile release-tests \
+            -p circuit --features integration-tests \
+            --test groth16_integration --locked
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # develop-push / schedule / workflow_dispatch only (decision D5).
+  # Permissions intentionally remain `contents: read` (decision D6 — audit
+  # does NOT file GitHub issues).
+  # ───────────────────────────────────────────────────────────────────────────
 
   audit:
-    name: Security Audit
+    name: Security audit (cargo-audit)
+    if: github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      issues: write
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: rustsec/audit-check@69366f33c96575abad1ee0dba8212993eecbe998 # v2.0.0
+      - uses: ./.github/actions/setup-rust
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          cache-key: ci-audit
+          install-cargo-audit: "true"
+      # cargo-audit picks up `.cargo/audit.toml` automatically; the repo
+      # already documents every ignored advisory there.
+      - run: cargo audit --deny warnings
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # ci-summary — single required check for branch protection (decision D8).
+  # Audit is intentionally NOT a dependency: it has different trigger
+  # conditions and runs as an informational gate after merge.
+  # ───────────────────────────────────────────────────────────────────────────
+
+  ci-summary:
+    name: CI summary
+    if: always() && github.event_name != 'schedule'
+    needs:
+      - fmt
+      - clippy
+      - test
+      - build-release
+      - feature-matrix
+      - rustdoc
+      - wasm-build-smoke
+      - generate-setup-smoke
+      - migration-boundary
+      - integration-test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Aggregate required-job results
+        # `integration-test` is intentionally `skipped` on PR — that is OK.
+        # Fail only on `failure` or `cancelled` so branch protection sees a
+        # red ci-summary if and only if a required gate actually broke.
+        run: |
+          set -euo pipefail
+          results='${{ toJSON(needs) }}'
+          echo "$results"
+          if echo "$results" | grep -E '"result":[[:space:]]*"(failure|cancelled)"'; then
+            echo "::error::One or more required CI jobs failed or were cancelled."
+            exit 1
+          fi
+          echo "All required CI jobs succeeded or were intentionally skipped."

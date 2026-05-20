@@ -1,0 +1,49 @@
+name: Setup Rust (zkap-circuit)
+description: |
+  Install Rust per rust-toolchain.toml (stable, with rustfmt+clippy and the
+  wasm32-unknown-unknown target), warm Swatinem/rust-cache, and optionally
+  install cargo-nextest or cargo-audit. All underlying actions are SHA-pinned.
+
+inputs:
+  cache-key:
+    description: >
+      Per-job Swatinem/rust-cache shared-key (e.g. "ci-clippy").
+      Isolates caches between jobs whose dependency graphs diverge.
+    required: true
+  cache-prefix:
+    description: >
+      Manual cache-bust prefix; bump (e.g. "v2") to invalidate every Rust
+      cache without touching job logic.
+    required: false
+    default: "v1"
+  install-nextest:
+    description: Set to "true" to install cargo-nextest.
+    required: false
+    default: "false"
+  install-cargo-audit:
+    description: Set to "true" to install cargo-audit.
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Install Rust toolchain (from rust-toolchain.toml)
+      uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+
+    - name: Warm cargo cache
+      uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+      with:
+        shared-key: ${{ inputs.cache-prefix }}-${{ inputs.cache-key }}
+
+    - name: Install cargo-nextest
+      if: inputs.install-nextest == 'true'
+      uses: taiki-e/install-action@c070f87102a1c75b3183910f391c1cb887fe13c8 # v2
+      with:
+        tool: cargo-nextest
+
+    - name: Install cargo-audit
+      if: inputs.install-cargo-audit == 'true'
+      uses: taiki-e/install-action@c070f87102a1c75b3183910f391c1cb887fe13c8 # v2
+      with:
+        tool: cargo-audit

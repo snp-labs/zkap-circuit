@@ -34,6 +34,35 @@ use zkap_evm_verifier::SolidityContractGenerator;
 use crate::error::ApplicationError;
 use crate::groth16::setup::SetupOutput;
 
+// ── Atomic write helper ───────────────────────────────────────────────────────
+
+/// Write `bytes` to `path` atomically via a sibling temp file and rename.
+///
+/// Creates `<path>.tmp.<pid>` in the same directory, writes `bytes` to it,
+/// then renames it onto `path`.  If either step fails the temp file is
+/// removed and the original `path` is left untouched.  All failures surface
+/// as [`ApplicationError::Io`].
+fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), ApplicationError> {
+    let tmp_path = {
+        let file_name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("artifact");
+        let dir = path.parent().unwrap_or(Path::new("."));
+        dir.join(format!(".{}.tmp.{}", file_name, std::process::id()))
+    };
+
+    if let Err(e) = std::fs::write(&tmp_path, bytes) {
+        let _ = std::fs::remove_file(&tmp_path);
+        return Err(ApplicationError::Io(e));
+    }
+    if let Err(e) = std::fs::rename(&tmp_path, path) {
+        let _ = std::fs::remove_file(&tmp_path);
+        return Err(ApplicationError::Io(e));
+    }
+    Ok(())
+}
+
 // ── Internal API (called by setup()) ─────────────────────────────────────────
 
 /// Persist a [`SetupOutput`] and the originating [`CircuitConfig`] to
@@ -59,9 +88,8 @@ pub(crate) fn persist_setup_output(
     // `generate_solidity` returns `std::io::Error`; surface it through the
     // typed `Io` variant rather than collapsing into `Other(String)` so
     // callers can match on `source()` like every other IO failure here.
-    setup
-        .vk
-        .generate_solidity(output_dir.join("Groth16Verifier.sol"))?;
+    // Write via a temp path and rename to preserve atomicity.
+    write_solidity_atomic(&setup.vk, &output_dir.join("Groth16Verifier.sol"))?;
 
     write_config_json(config, &output_dir.join("config.json"))?;
 
@@ -76,6 +104,29 @@ pub(crate) fn persist_setup_output(
 // `serde_json::Error` are wrapped in `io::Error::other` to preserve that
 // uniformity without inventing a new variant.
 
+fn write_solidity_atomic(
+    vk: &ark_groth16::VerifyingKey<circuit::types::BN254>,
+    path: &Path,
+) -> Result<(), ApplicationError> {
+    let tmp_path = {
+        let file_name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("Groth16Verifier.sol");
+        let dir = path.parent().unwrap_or(Path::new("."));
+        dir.join(format!(".{}.tmp.{}", file_name, std::process::id()))
+    };
+    if let Err(e) = vk.generate_solidity(&tmp_path) {
+        let _ = std::fs::remove_file(&tmp_path);
+        return Err(ApplicationError::Io(e));
+    }
+    if let Err(e) = std::fs::rename(&tmp_path, path) {
+        let _ = std::fs::remove_file(&tmp_path);
+        return Err(ApplicationError::Io(e));
+    }
+    Ok(())
+}
+
 fn write_canonical_uncompressed<T: CanonicalSerialize>(
     value: &T,
     path: &Path,
@@ -85,20 +136,21 @@ fn write_canonical_uncompressed<T: CanonicalSerialize>(
     value
         .serialize_uncompressed(&mut cursor)
         .map_err(|e| std::io::Error::other(format!("serialize {label}: {e}")))?;
-    std::fs::write(path, cursor.get_ref())?;
+    atomic_write(path, cursor.get_ref())?;
     Ok(())
 }
 
 fn write_arcs(arcs: &ArcsFile<F>, path: &Path) -> Result<(), ApplicationError> {
-    let mut file = std::fs::File::create(path)?;
-    arcs.write(&mut file)
+    let mut cursor = Cursor::new(Vec::new());
+    arcs.write(&mut cursor)
         .map_err(|e| std::io::Error::other(format!("ArcsFile::write: {e}")))?;
+    atomic_write(path, cursor.get_ref())?;
     Ok(())
 }
 
 fn write_config_json(config: &CircuitConfig, path: &Path) -> Result<(), ApplicationError> {
     let json = serde_json::to_string_pretty(config)
         .map_err(|e| std::io::Error::other(format!("serialize config.json: {e}")))?;
-    std::fs::write(path, json)?;
+    atomic_write(path, json.as_bytes())?;
     Ok(())
 }

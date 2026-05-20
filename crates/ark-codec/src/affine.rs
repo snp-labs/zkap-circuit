@@ -232,23 +232,43 @@ mod divergence_tests {
         let field_x = field_to_hex(g.x().unwrap());
         let field_y = field_to_hex(g.y().unwrap());
         assert_eq!(
-            field_x,
-            "0x0000000000000000000000000000000000000000000000000000000000000001",
+            field_x, "0x0000000000000000000000000000000000000000000000000000000000000001",
             "field_to_hex(x=1) must be fixed-width 64 hex chars, lowercase"
         );
         assert_eq!(
-            field_y,
-            "0x0000000000000000000000000000000000000000000000000000000000000002",
+            field_y, "0x0000000000000000000000000000000000000000000000000000000000000002",
             "field_to_hex(y=2) must be fixed-width 64 hex chars, lowercase"
         );
 
         // Width divergence is explicit: affine = 18 chars, field = 66 chars.
-        assert_eq!(affine_out[0].len(), 18, "affine x: 0x + 16 hex chars (1 BigInt limb)");
-        assert_eq!(affine_out[1].len(), 18, "affine y: 0x + 16 hex chars (1 BigInt limb)");
-        assert_eq!(field_x.len(), 66, "field x: 0x + 64 hex chars (32-byte field)");
-        assert_eq!(field_y.len(), 66, "field y: 0x + 64 hex chars (32-byte field)");
-        assert_ne!(affine_out[0], field_x, "width divergence: limb-padded ≠ field-padded for x=1");
-        assert_ne!(affine_out[1], field_y, "width divergence: limb-padded ≠ field-padded for y=2");
+        assert_eq!(
+            affine_out[0].len(),
+            18,
+            "affine x: 0x + 16 hex chars (1 BigInt limb)"
+        );
+        assert_eq!(
+            affine_out[1].len(),
+            18,
+            "affine y: 0x + 16 hex chars (1 BigInt limb)"
+        );
+        assert_eq!(
+            field_x.len(),
+            66,
+            "field x: 0x + 64 hex chars (32-byte field)"
+        );
+        assert_eq!(
+            field_y.len(),
+            66,
+            "field y: 0x + 64 hex chars (32-byte field)"
+        );
+        assert_ne!(
+            affine_out[0], field_x,
+            "width divergence: limb-padded ≠ field-padded for x=1"
+        );
+        assert_ne!(
+            affine_out[1], field_y,
+            "width divergence: limb-padded ≠ field-padded for y=2"
+        );
     }
 
     /// Pins the UPPERCASE property of `affine_to_hex_str` using a non-trivial

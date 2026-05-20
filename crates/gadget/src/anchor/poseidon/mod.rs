@@ -445,7 +445,6 @@ mod tests {
     /// identical `H(full-n-position, secret)` values for every selected index.
     #[test]
     fn test_hashed_secrets_cache_matches_build_anchor_witness() {
-
         let mut rng = thread_rng();
         let n = 6;
         let k = 3;
@@ -463,17 +462,18 @@ mod tests {
             .enumerate()
             .filter_map(|(i, &s)| if s == 1 { Some(i) } else { None })
             .collect();
-        let selected_secrets: Vec<F> = selected_positions
-            .iter()
-            .map(|&p| all_secrets[p])
-            .collect();
+        let selected_secrets: Vec<F> = selected_positions.iter().map(|&p| all_secrets[p]).collect();
 
         // Build cache with full-n positions
         let cache =
             HashedSecretsCache::new(&pk.params, &selected_positions, &selected_secrets).unwrap();
 
         // Independently compute H(full-n-position, secret) for each selected entry
-        for (idx, (&pos, &secret)) in selected_positions.iter().zip(selected_secrets.iter()).enumerate() {
+        for (idx, (&pos, &secret)) in selected_positions
+            .iter()
+            .zip(selected_secrets.iter())
+            .enumerate()
+        {
             let expected =
                 CRH::<F>::evaluate(&pk.params, vec![F::from(pos as u64), secret]).unwrap();
             assert_eq!(
@@ -484,8 +484,8 @@ mod tests {
         }
 
         // Build witness via build_anchor_witness (full-n convention)
-        let witness = build_anchor_witness(&pk.params, &selected_secrets, &selector, &matrix)
-            .unwrap();
+        let witness =
+            build_anchor_witness(&pk.params, &selected_secrets, &selector, &matrix).unwrap();
 
         // The h_known entries at selector-1 positions must equal the cache entries
         let mut cache_idx = 0;
@@ -570,5 +570,4 @@ mod tests {
         assert!(combos.contains(&vec![0, 1]));
         assert!(combos.contains(&vec![2, 3]));
     }
-
 }

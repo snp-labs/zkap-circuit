@@ -38,4 +38,3 @@ pub struct ClaimIndices {
     /// Length in bytes of the claim value (excluding any surrounding quotes).
     pub value_len: usize,
 }
-

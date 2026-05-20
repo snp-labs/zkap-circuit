@@ -15,9 +15,9 @@ use ark_r1cs_helpers::{slice_efficient, slice_from_start};
 use ark_r1cs_std::{GR1CSVar, alloc::AllocVar, eq::EqGadget, fields::fp::FpVar, uint16::UInt16};
 use ark_relations::gr1cs::ConstraintSystem;
 
+use circuit::token::ClaimIndices;
 use circuit::token::claim_indices::ClaimIndicesVar;
 use circuit::token::claimverifier::claim_extractor_v2;
-use circuit::token::ClaimIndices;
 
 /// Test-local host-only struct equivalent to `zkap_service::jwt::Claim` (§4.4).
 /// Defined here because `circuit` cannot depend on `service` (dependency cycle).

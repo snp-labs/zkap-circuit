@@ -14,8 +14,8 @@
 //! in `crates/ark-codec/src/affine.rs`.
 
 use ark_bn254::{Fq, Fr};
-use ark_ff::{One, Zero};
 use ark_codec::field_to_hex;
+use ark_ff::{One, Zero};
 use zkap_evm_verifier::Solidity;
 
 // ── BN254 Fr test vectors ─────────────────────────────────────────────────────
@@ -36,11 +36,14 @@ fn parity_fr_zero() {
     // Pinned exact string — guards against both implementations silently
     // changing format in lockstep.
     assert_eq!(
-        codec_hex,
-        "0x0000000000000000000000000000000000000000000000000000000000000000",
+        codec_hex, "0x0000000000000000000000000000000000000000000000000000000000000000",
         "Fr::zero() must encode to 64 hex zeros with 0x prefix (66 chars total)"
     );
-    assert_eq!(codec_hex.len(), 66, "Fr hex string must be 66 chars (0x + 64)");
+    assert_eq!(
+        codec_hex.len(),
+        66,
+        "Fr hex string must be 66 chars (0x + 64)"
+    );
 }
 
 /// `field_to_hex` and `Solidity::to_solidity` must agree on Fr::one().
@@ -58,8 +61,7 @@ fn parity_fr_one() {
     );
     // Pinned exact string.
     assert_eq!(
-        codec_hex,
-        "0x0000000000000000000000000000000000000000000000000000000000000001",
+        codec_hex, "0x0000000000000000000000000000000000000000000000000000000000000001",
         "Fr::one() must encode to 0x followed by 63 zeros and '1'"
     );
     assert_eq!(codec_hex.len(), 66);
@@ -81,8 +83,7 @@ fn parity_fr_255() {
     );
     // Pinned — leading-zero padding must be present in both impls.
     assert_eq!(
-        codec_hex,
-        "0x00000000000000000000000000000000000000000000000000000000000000ff",
+        codec_hex, "0x00000000000000000000000000000000000000000000000000000000000000ff",
         "Fr::from(255) must be zero-padded to 64 hex chars"
     );
     assert_eq!(codec_hex.len(), 66);
@@ -127,7 +128,8 @@ fn parity_fr_neg_one() {
     // Must start with a non-zero hex byte (the modulus fills most bits).
     let without_prefix = codec_hex.strip_prefix("0x").unwrap();
     assert_ne!(
-        &without_prefix[..2], "00",
+        &without_prefix[..2],
+        "00",
         "-Fr::one() must not start with a zero byte"
     );
 }
@@ -173,8 +175,7 @@ fn parity_fq_one() {
     );
     // Pinned — same fixed-width 32-byte BE encoding.
     assert_eq!(
-        codec_hex,
-        "0x0000000000000000000000000000000000000000000000000000000000000001",
+        codec_hex, "0x0000000000000000000000000000000000000000000000000000000000000001",
         "Fq::one() must encode identically to Fr::one()"
     );
     assert_eq!(codec_hex.len(), 66);

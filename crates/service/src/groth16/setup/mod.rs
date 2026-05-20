@@ -64,6 +64,11 @@ pub struct SetupOutput {
     /// here so [`Self::into_artifact_set`] can hand [`crate::prove`]
     /// the same config (via the returned `ArtifactSet`) without
     /// re-reading `config.json`.
+    ///
+    /// Only compiled when `cfg(any(test, feature = "testing"))` — this
+    /// field is solely consumed by [`Self::into_artifact_set`], which is
+    /// gated behind the same predicate.
+    #[cfg(any(test, feature = "testing"))]
     pub(crate) cfg: CircuitConfig,
 }
 
@@ -111,8 +116,16 @@ impl SetupOutput {
     /// freshly-built `pk`/`vk`/`pvk`/`arcs` straight into a
     /// [`crate::prove`] call. Production callers should instead
     /// persist via [`setup`] and re-load through
-    /// [`crate::artifact::ArtifactSet::load`] so the manifest hash
+    /// [`crate::artifact::ArtifactSet::load_signed`] or
+    /// [`crate::artifact::ArtifactSet::load_unsigned`] so the manifest hash
     /// check is exercised on every prove batch.
+    ///
+    /// # Availability
+    ///
+    /// Only compiled when `cfg(test)` or `feature = "testing"` is active —
+    /// this method bypasses the manifest hash-check trust gate and must
+    /// **never** be called from production code.
+    #[cfg(any(test, feature = "testing"))]
     pub fn into_artifact_set(self) -> crate::artifact::ArtifactSet {
         crate::artifact::ArtifactSet {
             pk: self.pk,
@@ -218,6 +231,7 @@ pub fn setup(
         pvk,
         arcs,
         shape,
+        #[cfg(any(test, feature = "testing"))]
         cfg: params.clone(),
     };
     crate::crs::persist_setup_output(&output, params, output_dir, &output.arcs)?;

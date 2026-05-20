@@ -41,68 +41,62 @@ pub struct ArtifactSet {
 }
 
 impl ArtifactSet {
-    /// Load every artifact named in `manifest` from `dir` and verify the
-    /// integrity claims (sha256 + `ar1cs_blake3`) before returning.
+    /// Load every artifact named in `manifest` from `dir`, verify the
+    /// ed25519 signature against `verifying_key`, **and** check all sha256
+    /// / `ar1cs_blake3` integrity claims before returning.
     ///
-    /// This is the **canonical production entry point** — the manifest
-    /// is the trust boundary, and every artifact the prover later sees
-    /// has been hash-checked here. The contract is:
+    /// This is the **primary production entry point** for environments
+    /// that issue signed bundles. The signature gate fires first so a
+    /// tampered hash is caught by the signature before the recomputed-sha256
+    /// gate runs. The hash gates remain in place as defence-in-depth.
     ///
-    /// * `ArcsFile::read(circuit.ar1cs)` succeeds.
-    /// * `arcs.body_blake3() == manifest.ar1cs_blake3`.
-    /// * `sha256(circuit.ar1cs) == manifest.artifacts.ar1cs.sha256`.
-    /// * `sha256(pk.bin)        == manifest.artifacts.pk.sha256`.
-    /// * `sha256(vk.bin)        == manifest.artifacts.vk.sha256`.
-    /// * `sha256(pvk.bin)       == manifest.artifacts.pvk.sha256`.
-    /// * `sha256(config.json)   == manifest.artifacts.circuit_config.sha256`.
-    /// * If `manifest.artifacts.evm_verifier` is `Some`, then
-    ///   `sha256(Groth16Verifier.sol) == manifest.artifacts.evm_verifier.sha256`.
-    /// * If `manifest.artifacts.witness_gen` is `Some`, then
-    ///   `sha256(witness_gen.wasm) == manifest.artifacts.witness_gen.sha256`
-    ///   and the bytes are stashed on
-    ///   [`ArtifactSet::witness_gen_wasm`] (otherwise that field is
-    ///   `None`).
+    /// # Contract
     ///
-    /// Any disagreement returns [`ArtifactError::HashMismatch`] with
-    /// the failing manifest field name carried in the `field` slot
-    /// (e.g. `"ar1cs_blake3"`, `"artifacts.pk.sha256"`,
-    /// `"artifacts.evm_verifier.sha256"`). The downstream
-    /// [`crate::prove`] performs **no** additional hash
-    /// validation; trust gating lives entirely in this loader.
+    /// * `manifest.signature` must be `Some(_)` — if it is `None` the load
+    ///   is rejected with [`ArtifactError::Signature`] (`SignatureMissing`).
+    /// * The signature must verify against `verifying_key`; any mismatch
+    ///   returns [`ArtifactError::Signature`].
+    /// * All sha256 / `ar1cs_blake3` claims must match the on-disk files.
     ///
-    /// ## Manifest signature policy (soft enforce)
-    ///
-    /// The `verifying_key` parameter selects between three states:
-    ///
-    /// * `Some(key)` and `manifest.signature` is `Some(_)` — the
-    ///   signature is verified against `key`. A mismatch (decode
-    ///   failure or ed25519 reject) returns
-    ///   [`ArtifactError::Signature`].
-    /// * `Some(key)` and `manifest.signature` is `None` — the load
-    ///   is rejected with
-    ///   [`ArtifactError::Signature`]([`crate::manifest::ManifestError::SignatureMissing`]).
-    ///   Supplying a key means the caller wants a signed manifest;
-    ///   the absence is treated as a trust failure.
-    /// * `None` — signature verification is skipped entirely.
-    ///   Unsigned and signed manifests both load successfully.
-    ///   This preserves the pre-F5 behaviour: existing unsigned
-    ///   bundles continue to load, and signed bundles can still
-    ///   be loaded by callers that explicitly opt out of
-    ///   verification.
-    ///
-    /// Signature verification happens **before** any hash check —
-    /// a tampered hash on a signed manifest is caught by the
-    /// signature gate, not by the recomputed-sha256 gate. (The
-    /// hash gates remain in place as a defence-in-depth for the
-    /// no-key path.)
-    pub fn load(
+    /// For loading unsigned bundles (e.g. CI test fixtures, pre-F5 legacy
+    /// bundles) use [`ArtifactSet::load_unsigned`] — it is explicit about
+    /// skipping signature authenticity.
+    pub fn load_signed(
         manifest: &Manifest,
         dir: &Path,
-        verifying_key: Option<&VerifyingKey>,
+        verifying_key: &VerifyingKey,
     ) -> Result<Self, ArtifactError> {
-        if let Some(key) = verifying_key {
-            verify_manifest(manifest, key)?;
-        }
+        verify_manifest(manifest, verifying_key)?;
+        Self::load_artifacts(manifest, dir)
+    }
+
+    /// Load every artifact named in `manifest` from `dir` and verify the
+    /// sha256 / `ar1cs_blake3` integrity claims before returning.
+    ///
+    /// # Security
+    ///
+    /// **Signature authenticity is NOT checked.** The manifest's `signature`
+    /// field — and therefore the authenticity of all embedded sha256 hashes —
+    /// is trusted without cryptographic verification. The sha256 / blake3
+    /// gates still protect against accidental corruption or filesystem-level
+    /// tampering after the manifest was written, but they cannot protect
+    /// against an attacker who controls the manifest file itself.
+    ///
+    /// Use this constructor only when:
+    /// * The bundle was produced without a signing key (unsigned CI fixtures,
+    ///   pre-F5 legacy bundles), **or**
+    /// * The caller has authenticated the manifest through an out-of-band
+    ///   channel and explicitly opts out of the in-process signature check.
+    ///
+    /// For production environments that issue signed bundles, prefer
+    /// [`ArtifactSet::load_signed`].
+    pub fn load_unsigned(manifest: &Manifest, dir: &Path) -> Result<Self, ArtifactError> {
+        Self::load_artifacts(manifest, dir)
+    }
+
+    // ── Shared loading logic ──────────────────────────────────────────────
+
+    fn load_artifacts(manifest: &Manifest, dir: &Path) -> Result<Self, ArtifactError> {
         let arcs = load_arcs(dir, &manifest.artifacts.ar1cs, &manifest.ar1cs_blake3)?;
         let pk = load_canonical::<ProvingKey<BN254>>(dir, &manifest.artifacts.pk, "pk")?;
         let vk = load_canonical::<Groth16VerifyingKey<BN254>>(dir, &manifest.artifacts.vk, "vk")?;

@@ -118,7 +118,10 @@ fn write_solidity_atomic(
     };
     if let Err(e) = vk.generate_solidity(&tmp_path) {
         let _ = std::fs::remove_file(&tmp_path);
-        return Err(ApplicationError::Io(e));
+        return Err(match e {
+            zkap_evm_verifier::EvmEmitError::Io(io_err) => ApplicationError::Io(io_err),
+            other => ApplicationError::Other(other.to_string()),
+        });
     }
     if let Err(e) = std::fs::rename(&tmp_path, path) {
         let _ = std::fs::remove_file(&tmp_path);

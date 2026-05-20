@@ -339,3 +339,69 @@ fn assert_g2_neg_pinned(body: &str, tag: &str, pt: &G2Affine) {
         "{tag}Y0 must NOT carry the un-negated y (catches missing .neg() on {tag}_g2)"
     );
 }
+
+// ── M-7: point-at-infinity rejection ─────────────────────────────────────────
+
+use zkap_evm_verifier::EvmEmitError;
+
+/// Helper: build a valid VK and replace one field with the infinity point,
+/// then assert `generate_solidity` returns `EvmEmitError::PointAtInfinity`.
+fn assert_infinity_rejected(vk: VerifyingKey<Bn254>, expected_which_prefix: &str) {
+    let tmp = std::env::temp_dir().join(format!(
+        "zkap_m7_test_{}.sol",
+        std::process::id()
+    ));
+    match vk.generate_solidity(&tmp) {
+        Err(EvmEmitError::PointAtInfinity { which }) => {
+            assert!(
+                which.starts_with(expected_which_prefix) || which.contains(expected_which_prefix),
+                "expected PointAtInfinity {{ which }} to contain '{expected_which_prefix}', got '{which}'"
+            );
+        }
+        Err(other) => panic!("expected PointAtInfinity, got {other}"),
+        Ok(_) => {
+            let _ = std::fs::remove_file(&tmp);
+            panic!("generate_solidity must reject a point-at-infinity VK coordinate");
+        }
+    }
+    // No file should have been written.
+    assert!(
+        !tmp.exists(),
+        "no Solidity file must be emitted when a VK coordinate is at infinity"
+    );
+}
+
+#[test]
+fn m7_alpha_g1_infinity_rejected() {
+    let mut vk = synthetic_vk_distinct(2);
+    vk.alpha_g1 = G1Affine::identity();
+    assert_infinity_rejected(vk, "alpha_g1");
+}
+
+#[test]
+fn m7_beta_g2_infinity_rejected() {
+    let mut vk = synthetic_vk_distinct(2);
+    vk.beta_g2 = G2Affine::identity();
+    assert_infinity_rejected(vk, "beta_g2");
+}
+
+#[test]
+fn m7_gamma_g2_infinity_rejected() {
+    let mut vk = synthetic_vk_distinct(2);
+    vk.gamma_g2 = G2Affine::identity();
+    assert_infinity_rejected(vk, "gamma_g2");
+}
+
+#[test]
+fn m7_delta_g2_infinity_rejected() {
+    let mut vk = synthetic_vk_distinct(2);
+    vk.delta_g2 = G2Affine::identity();
+    assert_infinity_rejected(vk, "delta_g2");
+}
+
+#[test]
+fn m7_ic0_infinity_rejected() {
+    let mut vk = synthetic_vk_distinct(2);
+    vk.gamma_abc_g1[0] = G1Affine::identity();
+    assert_infinity_rejected(vk, "ic[0]");
+}

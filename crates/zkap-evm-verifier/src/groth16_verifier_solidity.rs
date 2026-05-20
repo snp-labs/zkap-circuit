@@ -10,6 +10,53 @@ use ark_ff::Field;
 use ark_groth16::data_structures::VerifyingKey;
 use ark_std::{ops::Neg, path::Path};
 
+/// Errors returned by [`SolidityContractGenerator::generate_solidity`].
+#[derive(Debug)]
+pub enum EvmEmitError {
+    /// A verifying-key coordinate is the point at infinity (identity element).
+    ///
+    /// Emitting zero coordinates for an infinity point would produce a Solidity
+    /// verifier that accepts any proof — a critical soundness failure. The
+    /// `which` field names the offending VK slot (e.g. `"alpha_g1"`,
+    /// `"beta_g2"`, `"gamma_g2"`, `"delta_g2"`, `"ic[0]"`).
+    PointAtInfinity {
+        /// The VK field that contains the point at infinity.
+        which: &'static str,
+    },
+    /// An IO error occurred while writing the Solidity file.
+    Io(std::io::Error),
+}
+
+impl std::fmt::Display for EvmEmitError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EvmEmitError::PointAtInfinity { which } => {
+                write!(
+                    f,
+                    "VK coordinate `{which}` is the point at infinity — emitting zero \
+                     coordinates would produce a verifier that accepts any proof"
+                )
+            }
+            EvmEmitError::Io(e) => write!(f, "IO error writing Solidity contract: {e}"),
+        }
+    }
+}
+
+impl std::error::Error for EvmEmitError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            EvmEmitError::Io(e) => Some(e),
+            _ => None,
+        }
+    }
+}
+
+impl From<std::io::Error> for EvmEmitError {
+    fn from(e: std::io::Error) -> Self {
+        EvmEmitError::Io(e)
+    }
+}
+
 /// Emits a self-contained Solidity verifier contract that embeds the
 /// Groth16 verifying-key constants. Implemented for
 /// [`ark_groth16::VerifyingKey<E>`] so trusted-setup tooling can write
@@ -19,22 +66,42 @@ pub trait SolidityContractGenerator {
     /// is a single library declaration named `Groth16Verifier` with
     /// `_verify(uint256[] proof, uint256[] instance)` plus the
     /// embedded `alphaX/Y`, `betaX0..Y1`, `gammaX0..Y1`, `deltaX0..Y1`,
-    /// and `ic###` curve-point constants. Errors are propagated from
-    /// the underlying `std::fs::write`.
-    fn generate_solidity<P: AsRef<Path>>(&self, path: P) -> Result<(), std::io::Error>;
+    /// and `ic###` curve-point constants.
+    ///
+    /// Returns [`EvmEmitError::PointAtInfinity`] if any VK coordinate is the
+    /// point at infinity — emitting zero coordinates would produce a Solidity
+    /// verifier that accepts any proof (critical soundness failure).
+    /// Returns [`EvmEmitError::Io`] on filesystem write failure.
+    fn generate_solidity<P: AsRef<Path>>(&self, path: P) -> Result<(), EvmEmitError>;
 }
 
-fn g1_constant<E: Pairing>(g1: &E::G1Affine, tag: &str) -> String {
+fn g1_constant<E: Pairing>(
+    g1: &E::G1Affine,
+    tag: &str,
+    which: &'static str,
+) -> Result<String, EvmEmitError> {
+    if g1.is_zero() {
+        return Err(EvmEmitError::PointAtInfinity { which });
+    }
+    // SAFETY: is_zero() == false guarantees x() and y() return Some.
     let x = g1.x().unwrap_or_default();
     let y = g1.y().unwrap_or_default();
-    [
+    Ok([
         format!("\tuint256 private constant {}X = {};", tag, x),
         format!("\tuint256 private constant {}Y = {};", tag, y),
     ]
-    .join("\n")
+    .join("\n"))
 }
 
-fn g2_constant<E: Pairing>(g2: E::G2Affine, tag: &str) -> String {
+fn g2_constant<E: Pairing>(
+    g2: E::G2Affine,
+    tag: &str,
+    which: &'static str,
+) -> Result<String, EvmEmitError> {
+    if g2.is_zero() {
+        return Err(EvmEmitError::PointAtInfinity { which });
+    }
+    // SAFETY: is_zero() == false guarantees x() and y() return Some.
     let x = g2
         .x()
         .unwrap_or_default()
@@ -45,17 +112,17 @@ fn g2_constant<E: Pairing>(g2: E::G2Affine, tag: &str) -> String {
         .unwrap_or_default()
         .to_base_prime_field_elements()
         .collect::<Vec<_>>();
-    [
+    Ok([
         format!("\tuint256 private constant {}X0 = {};", tag, x[1]),
         format!("\tuint256 private constant {}X1 = {};", tag, x[0]),
         format!("\tuint256 private constant {}Y0 = {};", tag, y[1]),
         format!("\tuint256 private constant {}Y1 = {};", tag, y[0]),
     ]
-    .join("\n")
+    .join("\n"))
 }
 
 impl<E: Pairing> SolidityContractGenerator for VerifyingKey<E> {
-    fn generate_solidity<P: AsRef<Path>>(&self, path: P) -> Result<(), std::io::Error> {
+    fn generate_solidity<P: AsRef<Path>>(&self, path: P) -> Result<(), EvmEmitError> {
         let header = [
             "// SPDX-License-Identifier: GPL-3.0".to_string(),
             "pragma solidity ^0.8.0;".to_string(),
@@ -70,16 +137,19 @@ impl<E: Pairing> SolidityContractGenerator for VerifyingKey<E> {
 
         let mut constants = vec![
             String::from("\t// solhint-disable const-name-snakecase"),
-            g1_constant::<E>(&self.alpha_g1, "alpha"),
-            g2_constant::<E>(self.beta_g2.into_group().neg().into(), "beta"),
-            g2_constant::<E>(self.gamma_g2.into_group().neg().into(), "gamma"),
-            g2_constant::<E>(self.delta_g2.into_group().neg().into(), "delta"),
+            g1_constant::<E>(&self.alpha_g1, "alpha", "alpha_g1")?,
+            g2_constant::<E>(self.beta_g2.into_group().neg().into(), "beta", "beta_g2")?,
+            g2_constant::<E>(self.gamma_g2.into_group().neg().into(), "gamma", "gamma_g2")?,
+            g2_constant::<E>(self.delta_g2.into_group().neg().into(), "delta", "delta_g2")?,
             String::new(),
         ];
 
         for (i, gamma_abc) in self.gamma_abc_g1.iter().enumerate() {
+            // Use a static label for ic[0] (the constant-1 wire) and a
+            // generic label for the rest; both get the same infinity check.
+            let which: &'static str = if i == 0 { "ic[0]" } else { "ic[n]" };
             constants.extend([
-                g1_constant::<E>(gamma_abc, &format!("ic{:03}", i)),
+                g1_constant::<E>(gamma_abc, &format!("ic{:03}", i), which)?,
                 String::new(),
             ]);
         }

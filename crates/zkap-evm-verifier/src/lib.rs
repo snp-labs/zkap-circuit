@@ -20,5 +20,5 @@
 pub mod groth16_verifier_solidity;
 pub mod solidity_types;
 
-pub use groth16_verifier_solidity::SolidityContractGenerator;
+pub use groth16_verifier_solidity::{EvmEmitError, SolidityContractGenerator};
 pub use solidity_types::Solidity;

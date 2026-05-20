@@ -86,13 +86,14 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
-      # ark-utils: 3 combos (H4) — `wire` feature retired with ZkapInputV1
-      - name: ark-utils | no-default-features
-        run: cargo check -p ark-utils --no-default-features
-      - name: ark-utils | r1cs
-        run: cargo check -p ark-utils --no-default-features --features r1cs
-      - name: ark-utils | r1cs,field-serde,io (full)
-        run: cargo check -p ark-utils --no-default-features --features r1cs,field-serde,io
+      # ark-codec: 2 combos (post-split from ark-utils, P2 #14b)
+      - name: ark-codec | no-default-features
+        run: cargo check -p ark-codec --no-default-features
+      - name: ark-codec | field-serde
+        run: cargo check -p ark-codec --no-default-features --features field-serde
+      # ark-r1cs-helpers: default only (no features table, post-split from ark-utils, P2 #14c)
+      - name: ark-r1cs-helpers | default
+        run: cargo check -p ark-r1cs-helpers
       # gadget: 3 combos (H4)
       - name: gadget | crypto
         run: cargo check -p gadget --no-default-features --features crypto
@@ -199,10 +200,12 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
-      - name: Rustdoc (ark-utils, default features)
-        run: cargo doc -p ark-utils --no-deps
-      - name: Rustdoc (ark-utils, all features)
-        run: cargo doc -p ark-utils --no-deps --all-features
+      - name: Rustdoc (ark-codec, default features)
+        run: cargo doc -p ark-codec --no-deps
+      - name: Rustdoc (ark-codec, field-serde)
+        run: cargo doc -p ark-codec --no-deps --features field-serde
+      - name: Rustdoc (ark-r1cs-helpers, default features)
+        run: cargo doc -p ark-r1cs-helpers --no-deps
       - name: Rustdoc (gadget, default features)
         run: cargo doc -p gadget --no-deps
       # Phase 9 / P9-gadget-rustdoc-matrix-extension: combinations

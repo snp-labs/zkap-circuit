@@ -146,7 +146,7 @@ impl CircuitConfig {
     /// `max_payload_b64_len <= max_jwt_b64_len`, `num_audience_limit >= 1`,
     /// and that `claims` is non-empty.  Also verifies the in-circuit
     /// witness-width limits implied by `zkap::generate_constraints`:
-    /// - `n <= 256` (current_idx is 8-bit decomposed),
+    /// - `n <= 255` (current_idx is 8-bit decomposed; n=256 overflows the 8-bit comparator),
     /// - `tree_height <= 16` (leaf_idx is a 16-bit witness),
     /// - `max_jwt_b64_len <= 65535` and `max_payload_b64_len <= 65535`
     ///   (16-bit byte-offset witnesses derived from them).
@@ -165,7 +165,7 @@ impl CircuitConfig {
         if self.n < 1 {
             return Err(CircuitConfigError::InvalidN(self.n));
         }
-        if self.n > 256 {
+        if self.n > 255 {
             return Err(CircuitConfigError::NTooLargeFor8BitIdx(self.n));
         }
         if self.tree_height < 1 {
@@ -348,25 +348,40 @@ mod tests {
     // ---------------------------------------------------------------
 
     #[test]
-    fn validate_rejects_n_above_256() {
+    fn validate_rejects_n_above_255() {
         // current_idx is 8-bit-decomposed in `zkap::generate_constraints`;
-        // n must therefore be in 1..=256.
+        // n must therefore be in 1..=255 (n=256 overflows the 8-bit comparator;
+        // see audit C2.3 + tests/n_256_unsatisfiable.rs).
         let mut cfg = valid_config();
-        cfg.n = 257;
+        cfg.n = 300;
         cfg.k = 1;
         match cfg.validate() {
-            Err(CircuitConfigError::NTooLargeFor8BitIdx(value)) => assert_eq!(value, 257),
+            Err(CircuitConfigError::NTooLargeFor8BitIdx(value)) => assert_eq!(value, 300),
             other => panic!("expected NTooLargeFor8BitIdx, got: {other:?}"),
         }
     }
 
     #[test]
-    fn validate_accepts_n_at_256_boundary() {
-        // n = 256 fits the 8-bit decomposition exactly. Boundary case.
+    fn validate_accepts_n_at_255_boundary() {
+        // n = 255 is the largest value that fits the 8-bit decomposition.
+        let mut cfg = valid_config();
+        cfg.n = 255;
+        cfg.k = 1;
+        cfg.validate().expect("n = 255 must validate");
+    }
+
+    #[test]
+    fn validate_rejects_n_at_256_boundary() {
+        // Audit C2.3: n=256 must be rejected by validate() because the in-circuit
+        // 8-bit comparator overflows. Empirical unsatisfiability evidence lives in
+        // crates/circuit/tests/n_256_unsatisfiable.rs.
         let mut cfg = valid_config();
         cfg.n = 256;
         cfg.k = 1;
-        cfg.validate().expect("n = 256 must validate");
+        match cfg.validate() {
+            Err(CircuitConfigError::NTooLargeFor8BitIdx(value)) => assert_eq!(value, 256),
+            other => panic!("expected NTooLargeFor8BitIdx(256), got: {other:?}"),
+        }
     }
 
     #[test]

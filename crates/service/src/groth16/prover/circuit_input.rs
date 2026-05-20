@@ -39,7 +39,7 @@ use circuit::types::{CircuitConfig, F};
 use circuit::witness::{JwtWitness, MerkleWitness};
 use gadget::{
     anchor::poseidon::{PoseidonAnchor, build_anchor_witness},
-    base64::IndexBits,
+    base64::{IndexBits, decode_any_base64},
     matrix::VandermondeMatrix,
     signature::rsa::{PublicKey, Signature},
 };
@@ -260,12 +260,11 @@ pub(crate) fn build_jwt_stage(
             message: format!("base64 index-bits build failed: {:?}", e),
         })?;
 
-    let payload_bytes = base64_url_no_pad_decode(payload_b64.as_bytes()).map_err(|e| {
-        ApplicationError::InvalidProveRequest {
+    let payload_bytes =
+        decode_any_base64(payload_b64).map_err(|e| ApplicationError::InvalidProveRequest {
             field: format!("{}.jwt_bytes", field_path),
             message: format!("payload base64 decode failed: {}", e),
-        }
-    })?;
+        })?;
     let payload_str = core::str::from_utf8(&payload_bytes).map_err(|e| {
         ApplicationError::InvalidProveRequest {
             field: format!("{}.jwt_bytes", field_path),
@@ -290,12 +289,11 @@ pub(crate) fn build_jwt_stage(
         e: vec![0x01, 0x00, 0x01],
     };
 
-    let sig_bytes_decoded = base64_url_no_pad_decode(sig_b64.as_bytes()).map_err(|e| {
-        ApplicationError::InvalidProveRequest {
+    let sig_bytes_decoded =
+        decode_any_base64(sig_b64).map_err(|e| ApplicationError::InvalidProveRequest {
             field: format!("{}.jwt_bytes", field_path),
             message: format!("signature base64 decode failed: {}", e),
-        }
-    })?;
+        })?;
     if sig_bytes_decoded != rsa_signature_bytes {
         return Err(ApplicationError::InvalidProveRequest {
             field: format!("{}.rsa_signature_bytes", field_path),
@@ -456,7 +454,7 @@ pub(crate) fn compute_public_inputs(
 
     let root = merkle_root;
 
-    let hanchor = chain_hash_native(anchor_values, poseidon_param)?;
+    let hanchor = crate::anchor::poseidon::chain_hash(anchor_values, poseidon_param)?;
 
     let mut h_a_inputs = witness.a.clone();
     h_a_inputs.push(random);
@@ -531,22 +529,6 @@ pub(crate) fn compute_public_inputs(
     })
 }
 
-/// Chain Poseidon hash: `H(v[0])`, then `H(prev, v[i])` for `i in 1..len`.
-fn chain_hash_native(values: &[F], params: &PoseidonConfig<F>) -> Result<F, ApplicationError> {
-    if values.is_empty() {
-        return Err(ApplicationError::InvalidProveRequest {
-            field: "anchor_values".into(),
-            message: "chain_hash on empty anchor".into(),
-        });
-    }
-    let mut h =
-        CRH::<F>::evaluate(params, [values[0]]).map_err(|_| ApplicationError::PoseidonHashError)?;
-    for v in &values[1..] {
-        h = CRH::<F>::evaluate(params, [h, *v]).map_err(|_| ApplicationError::PoseidonHashError)?;
-    }
-    Ok(h)
-}
-
 fn decimal_bytes_to_field(bytes: &[u8]) -> Result<F, ApplicationError> {
     if bytes.len() < 10 {
         return Err(ApplicationError::InvalidProveRequest {
@@ -576,56 +558,14 @@ fn decimal_bytes_to_field(bytes: &[u8]) -> Result<F, ApplicationError> {
     Ok(acc)
 }
 
-fn base64_url_no_pad_decode(input: &[u8]) -> Result<Vec<u8>, ApplicationError> {
-    fn val(b: u8) -> Result<u8, ApplicationError> {
-        match b {
-            b'A'..=b'Z' => Ok(b - b'A'),
-            b'a'..=b'z' => Ok(b - b'a' + 26),
-            b'0'..=b'9' => Ok(b - b'0' + 52),
-            b'-' => Ok(62),
-            b'_' => Ok(63),
-            _ => Err(ApplicationError::InvalidProveRequest {
-                field: "jwt_bytes".into(),
-                message: format!("invalid base64-url character 0x{:02x}", b),
-            }),
-        }
-    }
-    let mut out = Vec::with_capacity((input.len() * 3).div_ceil(4));
-    let mut i = 0;
-    while i + 4 <= input.len() {
-        let b0 = val(input[i])?;
-        let b1 = val(input[i + 1])?;
-        let b2 = val(input[i + 2])?;
-        let b3 = val(input[i + 3])?;
-        out.push((b0 << 2) | (b1 >> 4));
-        out.push((b1 << 4) | (b2 >> 2));
-        out.push((b2 << 6) | b3);
-        i += 4;
-    }
-    let rem = input.len() - i;
-    match rem {
-        0 => {}
-        2 => {
-            let b0 = val(input[i])?;
-            let b1 = val(input[i + 1])?;
-            out.push((b0 << 2) | (b1 >> 4));
-        }
-        3 => {
-            let b0 = val(input[i])?;
-            let b1 = val(input[i + 1])?;
-            let b2 = val(input[i + 2])?;
-            out.push((b0 << 2) | (b1 >> 4));
-            out.push((b1 << 4) | (b2 >> 2));
-        }
-        _ => {
-            return Err(ApplicationError::InvalidProveRequest {
-                field: "jwt_bytes".into(),
-                message: "invalid base64-url length (rem 1 mod 4)".into(),
-            });
-        }
-    }
-    Ok(out)
-}
+// NOTE: the local hand-rolled `base64_url_no_pad_decode` was removed in
+// favour of `gadget::base64::decode_any_base64`, which is the single
+// host-side decoder used by `service::adapter` and the JWT parser as
+// well. JWT payload + signature segments are spec-required URL-safe
+// no-pad and always succeed on `URL_SAFE_NO_PAD` (the first variant the
+// gadget tries); the additional fallbacks the gadget decoder accepts
+// (`STANDARD_NO_PAD`, padded variants) are unreachable for conformant
+// input and provide harmless tolerance for nonconforming inputs.
 
 #[cfg(test)]
 mod tests {
@@ -824,28 +764,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn base64_url_decoder_matches_reference() {
-        let decoded = base64_url_no_pad_decode(b"SGVsbG8").expect("decode");
-        assert_eq!(decoded, b"Hello");
-    }
-
-    #[test]
-    fn base64_url_decoder_rejects_invalid_char() {
-        match base64_url_no_pad_decode(b"ABC*") {
-            Err(ApplicationError::InvalidProveRequest { message, .. }) => {
-                assert!(
-                    message.contains("invalid base64-url character"),
-                    "got msg {}",
-                    message
-                );
-            }
-            other => panic!(
-                "expected InvalidProveRequest for invalid base64-url char, got {:?}",
-                other.err()
-            ),
-        }
-    }
+    // The local hand-rolled `base64_url_no_pad_decode` was removed; its
+    // coverage lives in `gadget/src/base64/decoder.rs` tests now.
 
     #[test]
     fn build_merkle_witness_rejects_wrong_path_length() {

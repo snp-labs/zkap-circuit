@@ -1,10 +1,13 @@
-//! R1CS gadgets for Poseidon-based hash chaining and curve anchor verification.
+//! R1CS gadget for sequential Poseidon hash chaining.
 //!
 //! [`chain_hash_gadget`] evaluates a sequential Poseidon hash chain over a slice of
-//! `FpVar` values, matching the native evaluation in `get_poseidon_params`. It is the
-//! circuit equivalent used by the anchor binding check. [`enforce_curve_hanchor`] wraps
-//! elliptic-curve point serialisation and the chain hash for anchor re-derivation inside
-//! the circuit.
+//! `FpVar` values, matching the native recipe used by the host-side anchor binding
+//! (`service::anchor::poseidon::chain_hash`).
+//!
+//! Removed in this revision: the misleadingly-named `enforce_curve_hanchor` helper
+//! that computed but never enforced the chain-hash equality. The function had zero
+//! in-workspace callers; circuits that want curve-anchor enforcement should compose
+//! `chain_hash_gadget` with an explicit `EqGadget::enforce_equal`.
 
 use ark_crypto_primitives::{
     crh::{
@@ -13,45 +16,9 @@ use ark_crypto_primitives::{
     },
     sponge::Absorb,
 };
-use ark_ec::CurveGroup;
 use ark_ff::PrimeField;
-use ark_r1cs_std::{
-    fields::fp::FpVar,
-    groups::{CurveVar, GroupOpsBounds},
-};
+use ark_r1cs_std::fields::fp::FpVar;
 use ark_relations::gr1cs::{ConstraintSystemRef, SynthesisError};
-
-/// Enforces that the Poseidon chain-hash of the serialised `anchor` points equals `_hanchor`
-/// in-circuit.
-///
-/// Each `CV` (curve point variable) is serialised to field elements via
-/// `to_constraint_field()`, then `chain_hash_gadget` is applied. Currently the result is
-/// not enforced equal to `_hanchor` (the reconstruction is computed but the equality
-/// constraint is intentionally left to the caller for composability).
-pub fn enforce_curve_hanchor<C, CV>(
-    cs: ConstraintSystemRef<C::BaseField>,
-    poseidon_param: &CRHParametersVar<C::BaseField>,
-    anchor: &[CV],
-    _hanchor: &FpVar<C::BaseField>,
-) -> Result<(), SynthesisError>
-where
-    C: CurveGroup,
-    CV: CurveVar<C, C::BaseField>,
-    C::BaseField: PrimeField + Absorb,
-    for<'a> &'a CV: GroupOpsBounds<'a, C, CV>,
-{
-    let slice_tag = anchor
-        .iter()
-        .map(|affine| affine.to_constraint_field())
-        .collect::<Result<Vec<_>, SynthesisError>>()?
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>();
-
-    let _reconstructed_hash = chain_hash_gadget(cs.clone(), poseidon_param, &slice_tag)?;
-
-    Ok(())
-}
 
 /// Evaluates a sequential Poseidon hash chain over `values` in-circuit:
 /// `H(H(…H(H(v[0]), v[1])…), v[n-1])`.

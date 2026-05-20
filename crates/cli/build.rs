@@ -1,9 +1,9 @@
 //! Emits build-time env vars consumed by `generate_setup` for
 //! `manifest.json#/build`: `ZKAP_CLI_RUSTC_VERSION` (rustc --version)
-//! and `ZKAP_CLI_ARK_AR1CS_REV` (the `ark-ar1cs-*` workspace git rev).
-//! On parse failure either value falls back to `"unknown"` so the
-//! manifest still emits and the regression surfaces at the smoke
-//! check, not at build time.
+//! and `ZKAP_CLI_ARK_AR1CS_REV` (the `ark-ar1cs` workspace git rev).
+//! On parse failure either value falls back to `"unknown"`; a cargo
+//! warning is emitted so the regression is visible at build time,
+//! and `tests/build_meta.rs` re-asserts at test time.
 
 use std::path::Path;
 use std::process::Command;
@@ -24,24 +24,36 @@ fn main() {
         .ok()
         .and_then(|o| String::from_utf8(o.stdout).ok())
         .map(|s| s.trim().to_string())
-        .unwrap_or_else(|| "unknown".into());
+        .unwrap_or_else(|| {
+            println!(
+                "cargo:warning=zkap-cli build.rs: `rustc --version` failed; ZKAP_CLI_RUSTC_VERSION=unknown"
+            );
+            "unknown".into()
+        });
     println!("cargo:rustc-env=ZKAP_CLI_RUSTC_VERSION={rustc_version}");
 
     let ark_rev = std::fs::read_to_string(&workspace_cargo_toml)
         .ok()
         .as_deref()
         .and_then(parse_ark_ar1cs_rev)
-        .unwrap_or_else(|| "unknown".into());
+        .unwrap_or_else(|| {
+            println!(
+                "cargo:warning=zkap-cli build.rs: failed to parse `ark-ar1cs` rev from workspace Cargo.toml; ZKAP_CLI_ARK_AR1CS_REV=unknown"
+            );
+            "unknown".into()
+        });
     println!("cargo:rustc-env=ZKAP_CLI_ARK_AR1CS_REV={ark_rev}");
 }
 
-/// Pull the first `rev = "…"` off any `ark-ar1cs-…` workspace-dep line.
-/// All four `ark-ar1cs-*` lines are workspace-pinned to the same commit,
-/// so any of them is correct.
+/// Pull the first `rev = "…"` off any line whose dep-name starts with
+/// `ark-ar1cs`. Originally this filtered on `ark-ar1cs-` (with trailing
+/// hyphen) when the upstream was split into `ark-ar1cs-format`/`-prover`/
+/// `-zkey` crates; those have since been fused into a single root
+/// `ark-ar1cs` crate, so the filter is now a prefix-only check.
 fn parse_ark_ar1cs_rev(toml: &str) -> Option<String> {
     for line in toml.lines() {
         let trimmed = line.trim_start();
-        if !trimmed.starts_with("ark-ar1cs-") {
+        if !trimmed.starts_with("ark-ar1cs") {
             continue;
         }
         let needle = "rev = \"";

@@ -25,6 +25,14 @@ pub trait Solidity {
     fn to_solidity(&self) -> Vec<String>;
 }
 
+/// # Cross-reference
+///
+/// Output format is byte-for-byte identical to `ark_codec::field_to_hex`
+/// (both produce `0x`-prefixed lowercase fixed-width hex via BE byte
+/// serialisation of the `BigInt`). Parity is pinned by `tests/hex_parity.rs`.
+///
+/// `ark_codec::affine_to_hex_str` intentionally diverges (UPPERCASE, variable
+/// width — audit §2.6 Option 2).
 impl<P: FpConfig<N>, const N: usize> Solidity for Fp<P, N> {
     fn to_solidity(&self) -> Vec<String> {
         vec![format!(

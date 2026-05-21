@@ -237,6 +237,7 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
         let cs = self.cs().or(other.cs());
 
         let field_char = field_characteristic_to_nat::<ConstraintF>();
+        // LATENT: BigNatVar::sub adds +1 word_size per call. NOT in RSA critical path today; +3 cs/call if a new caller appears. See docs/audit/constraint-audit-2026-05-20.md C1.5.
         let max_word_size = max(&self.word_size, &other.word_size) + BigNat::one();
         if max_word_size >= field_char {
             return Err(SynthesisError::Unsatisfiable);
@@ -1103,6 +1104,16 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
 
         Ok(())
     }
+
+    /// Limb-wise equality — see audit C2.2. Prefer this over `is_eq` because the `#[must_use]`
+    /// attribute below is enforced by rustc on inherent methods.
+    ///
+    /// Returns `Boolean::TRUE` iff every limb pair compares equal. Does NOT compare canonical
+    /// integer values; non-canonical limb representations of the same integer return `Boolean::FALSE`.
+    #[must_use = "BigNatVar::is_eq_limbwise compares limbs without canonicalization — see audit C2.2"]
+    pub fn is_eq_limbwise(&self, other: &Self) -> Result<Boolean<ConstraintF>, SynthesisError> {
+        self.limbs.is_eq(&other.limbs)
+    }
 }
 
 impl<ConstraintF: PrimeField, P: BigNatCircuitParams> CondSelectGadget<ConstraintF>
@@ -1137,10 +1148,13 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> EqGadget<ConstraintF>
         self.limbs.is_eq(&other.limbs)
     }
 }
-// KNOWN LIMITATION: This EqGadget impl uses limb-wise comparison, which is semantically
-// incorrect for BigNatVar values in non-canonical form (i.e., where the same integer
-// can be represented by different limb combinations). Callers that require semantic
-// equality should use `enforce_equal_when_carried` instead of `is_eq`.
+// KNOWN LIMITATION (audit C2.2): This EqGadget impl uses limb-wise comparison, which is semantically
+// incorrect for BigNatVar values in non-canonical form. The 30+ callsite survey in
+// docs/audit/constraint-audit-2026-05-20.md §5 C2.2 confirms zero production callers of is_eq on
+// raw BigNatVar — but is_eq remains an API footgun for future callers. Callers requiring canonical
+// equality MUST use enforce_equal_when_carried. The Rust attribute `#[must_use]` cannot be used on
+// this trait impl method (silently ignored by rustc); callers SHOULD prefer the new inherent method
+// `BigNatVar::is_eq_limbwise` below, which carries `#[must_use]` correctly.
 
 /// Computes `⌈log₂(x)⌉` for `x > 0`, or `0` for `x == 0`.
 ///

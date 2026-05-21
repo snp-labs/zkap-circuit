@@ -8,7 +8,6 @@
 //!   helpers.
 //! - [`mod@slice`] — sliding-window slice extractors used by the JWT claim
 //!   gadgets (`slice_efficient`, `slice_grouped`, `slice_from_start`).
-//! - [`uint32`] — [`uint32::UInt32Ext`] convenience trait.
 //!
 //! All public symbols are re-exported at the crate root for convenience
 //! (e.g. `ark_r1cs_helpers::slice_efficient`,
@@ -29,12 +28,11 @@ pub mod comparison;
 pub mod packing;
 pub mod select;
 pub mod slice;
-pub mod uint32;
 
 // Root re-exports (matches the legacy `ark_utils::*` flat namespace).
 pub use comparison::{
-    compare_bits_raw, enforce_less_than, is_greater_or_equal, is_less_or_equal, is_less_than,
-    lt_bit_vector,
+    compare_bits_raw, enforce_less_or_equal, enforce_less_than, is_greater_or_equal,
+    is_less_or_equal, is_less_than, lt_bit_vector,
 };
 pub use packing::{
     pack_bytes_to_field_unchecked, pack_decompose_bytes_checked, pack_decompose_bytes_unchecked,
@@ -45,4 +43,3 @@ pub use select::{
 pub use slice::{
     num_to_segments_be, segments_to_num_be, slice_efficient, slice_from_start, slice_grouped,
 };
-pub use uint32::UInt32Ext;

@@ -21,9 +21,7 @@ use ark_r1cs_std::{
 };
 use ark_relations::gr1cs::{Namespace, SynthesisError};
 
-use ark_r1cs_helpers::{
-    UInt32Ext, enforce_less_than, is_greater_or_equal, is_less_than, slice_efficient,
-};
+use ark_r1cs_helpers::{enforce_less_than, is_greater_or_equal, is_less_than, slice_efficient};
 
 use super::digest::DigestVar;
 use crate::hashes::sha256::{H, K, utils::conditionally_select_vec};
@@ -126,13 +124,13 @@ impl<F: PrimeField> SHA256Gadget<F> {
             let s0 = {
                 let x1 = w[i - 15].rotate_right(7);
                 let x2 = w[i - 15].rotate_right(18);
-                let x3 = w[i - 15].shr(3)?;
+                let x3 = &w[i - 15] >> 3u8;
                 x1 ^ (x2 ^ x3)
             };
             let s1 = {
                 let x1 = w[i - 2].rotate_right(17);
                 let x2 = w[i - 2].rotate_right(19);
-                let x3 = w[i - 2].shr(10)?;
+                let x3 = &w[i - 2] >> 10u8;
                 x1 ^ (x2 ^ x3)
             };
 
@@ -146,8 +144,8 @@ impl<F: PrimeField> SHA256Gadget<F> {
             // a, b, c = h[0], h[1], h[2]
             let ma = {
                 let a_xor_b = h[0].clone().bitxor(h[1].clone());
-                let c_and_a_xor_b = h[2].bitand(&a_xor_b)?;
-                let a_and_b = h[0].bitand(&h[1])?;
+                let c_and_a_xor_b = &h[2] & &a_xor_b;
+                let a_and_b = &h[0] & &h[1];
                 a_and_b.bitxor(&c_and_a_xor_b)
             };
 

@@ -195,18 +195,18 @@ const GOLDEN_CIRCUIT_CONFIG_F3: &str = concat!(
 // on commit f79e7a26 baseline. SynthesisMode::Setup, OptimizationGoal::Constraints.
 
 /// F1 `n=6, k=3, tree_height=4` constraint counts (frozen).
-const GOLDEN_NUM_CONSTRAINTS_F1: usize = 911941;
-const GOLDEN_NUM_WITNESS_F1: usize = 896800;
+const GOLDEN_NUM_CONSTRAINTS_F1: usize = 911468;
+const GOLDEN_NUM_WITNESS_F1: usize = 896327;
 const GOLDEN_NUM_INSTANCE_F1: usize = 9;
 
 /// F2 `n=8, k=3, tree_height=5` constraint counts (frozen).
-const GOLDEN_NUM_CONSTRAINTS_F2: usize = 912929;
-const GOLDEN_NUM_WITNESS_F2: usize = 897791;
+const GOLDEN_NUM_CONSTRAINTS_F2: usize = 912456;
+const GOLDEN_NUM_WITNESS_F2: usize = 897318;
 const GOLDEN_NUM_INSTANCE_F2: usize = 9;
 
 /// F3 `n=4, k=2, tree_height=3` constraint counts (frozen).
-const GOLDEN_NUM_CONSTRAINTS_F3: usize = 911196;
-const GOLDEN_NUM_WITNESS_F3: usize = 896054;
+const GOLDEN_NUM_CONSTRAINTS_F3: usize = 910723;
+const GOLDEN_NUM_WITNESS_F3: usize = 895581;
 const GOLDEN_NUM_INSTANCE_F3: usize = 9;
 
 // ─── Golden constants — Tier E (R1CS matrix sha256, L1.5) ─────────────────────
@@ -218,15 +218,15 @@ const GOLDEN_NUM_INSTANCE_F3: usize = 9;
 
 /// F1 matrix sha256 (frozen).
 const GOLDEN_MATRIX_SHA256_F1: &str =
-    "4b4bbfeb0cece9d72d5374c8d6b48919e6b45ea49a5e1f4dc7525d2854d60c75";
+    "5b5e243901601d7d078e6861a507e0c13536eb962790edf38e3f969df57e4a27";
 
 /// F2 matrix sha256 (frozen).
 const GOLDEN_MATRIX_SHA256_F2: &str =
-    "86ce5c9831d90f536a7d6573719da41eede738de9f5f57a7861bf1a302f0279d";
+    "0c4588d2d8a429cbe75b872ab0ba278e939dbf20b425be22c45699e1ddc4dd6a";
 
 /// F3 matrix sha256 (frozen).
 const GOLDEN_MATRIX_SHA256_F3: &str =
-    "fc825ea64ef668e1d93098011d41b5d799f3cc553a66a077d23c42be634d7dbb";
+    "fbf3d72fecddd481e682692a85ab4baa5a4f442bad7454046b47ede1db6fbe55";
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 

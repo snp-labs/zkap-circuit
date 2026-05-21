@@ -147,6 +147,79 @@ pub fn enforce_less_than<F: PrimeField>(
     Ok(())
 }
 
+/// Enforces A <= B directly using subtraction-based range proof.
+///
+/// Mirror of [`enforce_less_than`] for the non-strict case. Allocates witness bits
+/// for `diff = b - a` (not `b - a - 1`) and checks they reconstruct in n bits.
+/// Cost: n+1 constraints.
+///
+/// Soundness: If `a <= b`, then `0 <= b - a < 2^n`, so an n-bit decomposition
+/// exists. If `a > b`, then `b - a` wraps in the field to a value `>= 2^n`,
+/// and no valid n-bit decomposition exists, making the constraint system
+/// unsatisfiable.
+///
+/// Precondition: Caller MUST ensure `a_bits.len() == b_bits.len() == n` AND that
+/// both values are bit-bounded by 2^n − 1. Allocating `a_bits` with raw
+/// `Boolean::new_witness` bits that have a set high bit beyond position n violates
+/// this contract and may produce incorrect results (the gadget cannot detect this
+/// client error). The usual safe path is `a.to_bits_le()[..n]` where `a` is a
+/// `UInt<N,T,F>` (range-checked at allocation) or `FpVar` known to be in `[0, 2^n)`.
+///
+/// Returns `Err(SynthesisError::Unsatisfiable)` if the two bit-slices have
+/// different lengths.
+pub fn enforce_less_or_equal<F: PrimeField>(
+    a_bits: &[Boolean<F>],
+    b_bits: &[Boolean<F>],
+) -> Result<(), SynthesisError> {
+    if a_bits.len() != b_bits.len() {
+        return Err(SynthesisError::Unsatisfiable);
+    }
+
+    let n = a_bits.len();
+
+    // Reconstruct field elements from bit vectors (linear combinations, 0 constraints).
+    let mut a_fp = FpVar::<F>::zero();
+    let mut b_fp = FpVar::<F>::zero();
+    let mut power_of_two = F::one();
+    for i in 0..n {
+        a_fp += FpVar::from(a_bits[i].clone()) * power_of_two;
+        b_fp += FpVar::from(b_bits[i].clone()) * power_of_two;
+        power_of_two.double_in_place();
+    }
+
+    // diff = b - a  (no -1: the equal case is admissible).
+    let diff = &b_fp - &a_fp;
+
+    // Allocate witness bits for diff and enforce reconstruction.
+    let diff_val = diff.value().unwrap_or_default();
+    let mut diff_bits = Vec::with_capacity(n);
+    let cs = diff.cs();
+    let mut remaining = diff_val;
+    let two_inv = F::from(2u64).inverse().unwrap();
+    for _ in 0..n {
+        let bigint = remaining.into_bigint();
+        let bit_val = bigint.is_odd();
+        let bit = Boolean::new_witness(cs.clone(), || Ok(bit_val))?;
+        diff_bits.push(bit);
+        remaining = if bit_val {
+            (remaining - F::one()) * two_inv
+        } else {
+            remaining * two_inv
+        };
+    }
+
+    // Enforce: Σ diff_bits[i] * 2^i == diff.
+    let mut reconstructed = FpVar::<F>::zero();
+    let mut power_of_two = F::one();
+    for bit in &diff_bits {
+        reconstructed += FpVar::from(bit.clone()) * power_of_two;
+        power_of_two.double_in_place();
+    }
+    reconstructed.enforce_equal(&diff)?;
+
+    Ok(())
+}
+
 /// Performs a bit-by-bit comparison and returns a (is_less, is_equal) tuple.
 ///
 /// * Input: Boolean vector in Little-Endian order (e.g., result of to_bits_le())

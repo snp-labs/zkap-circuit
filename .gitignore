@@ -30,6 +30,7 @@ packages/
 
 # Security audit reports
 .gstack/
+docs/audit/
 
 # Node
 node_modules/

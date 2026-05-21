@@ -1,6 +1,8 @@
 //! Groth16 integration tests for ZkapCircuit
 //! Run: cargo test -p circuit --test groth16_integration --features integration-tests
 
+#![allow(dead_code)]
+
 use ark_bn254::Bn254;
 use ark_crypto_primitives::{
     crh::{CRHScheme, poseidon::CRH},

@@ -59,15 +59,26 @@ fn total_circuit_count_dev_profile() {
     let num_instance = cs.num_instance_variables();
 
     println!("=== ZkapCircuit total counts (dev profile, audit AC-C3.3) ===");
-    println!("CircuitConfig: n=6, k=3, tree_height=4, max_jwt_b64_len=1024, max_payload_b64_len=640");
+    println!(
+        "CircuitConfig: n=6, k=3, tree_height=4, max_jwt_b64_len=1024, max_payload_b64_len=640"
+    );
     println!("num_constraints       = {num_constraints}");
     println!("num_witness_variables = {num_witness}");
     println!("num_instance_variables= {num_instance}");
     println!("=============================================================");
 
     // Sanity checks — total must be non-trivial.
-    assert_eq!(num_constraints, 911_468, "Circuit R1CS layout sentinel — any change to claim_format_verifier_v2 / SHA-256 / RSA gadgets must update this value (dev-profile n=6,k=3,tree_height=4)");
-    assert!(num_witness > 1000, "expected > 1000 witness vars, got {num_witness}");
+    assert_eq!(
+        num_constraints, 911_468,
+        "Circuit R1CS layout sentinel — any change to claim_format_verifier_v2 / SHA-256 / RSA gadgets must update this value (dev-profile n=6,k=3,tree_height=4)"
+    );
+    assert!(
+        num_witness > 1000,
+        "expected > 1000 witness vars, got {num_witness}"
+    );
     // 8 public inputs per spec; allow for arkworks's implicit ONE.
-    assert!(num_instance >= 8, "expected >= 8 instance vars, got {num_instance}");
+    assert!(
+        num_instance >= 8,
+        "expected >= 8 instance vars, got {num_instance}"
+    );
 }

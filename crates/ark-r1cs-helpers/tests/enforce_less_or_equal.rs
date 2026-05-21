@@ -13,6 +13,7 @@
 #![allow(missing_docs)]
 // Several boundary tests compare literal `0u64 <= MAX/PEN` which rustc flags as
 // trivially true; the literal pairing is the point of the test matrix.
+#![allow(clippy::absurd_extreme_comparisons)]
 #![allow(unused_comparisons)]
 
 use ark_bn254::Fr;
@@ -27,7 +28,10 @@ use ark_relations::gr1cs::ConstraintSystem;
 const N: usize = 16;
 
 /// Build (cs, a_bits, b_bits) at `n = 16` bits for the supplied field values.
-fn build_n16(a_val: u64, b_val: u64) -> (
+fn build_n16(
+    a_val: u64,
+    b_val: u64,
+) -> (
     ark_relations::gr1cs::ConstraintSystemRef<Fr>,
     Vec<Boolean<Fr>>,
     Vec<Boolean<Fr>>,
@@ -37,11 +41,7 @@ fn build_n16(a_val: u64, b_val: u64) -> (
     let b = FpVar::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(b_val))).unwrap();
     let a_bits = a.to_bits_le().unwrap();
     let b_bits = b.to_bits_le().unwrap();
-    (
-        cs,
-        a_bits[..N].to_vec(),
-        b_bits[..N].to_vec(),
-    )
+    (cs, a_bits[..N].to_vec(), b_bits[..N].to_vec())
 }
 
 fn run(a: u64, b: u64) -> bool {
@@ -53,28 +53,76 @@ fn run(a: u64, b: u64) -> bool {
 // ── 16 boundary tests: a, b ∈ {0, 1, 2^16-2, 2^16-1} ────────────────────────
 // Convention: test name = case(a, b); expected satisfiability = (a <= b).
 
-const MAX: u64 = (1u64 << N) - 1;   // 2^16 - 1 = 65535
-const PEN: u64 = (1u64 << N) - 2;   // 2^16 - 2 = 65534
+const MAX: u64 = (1u64 << N) - 1; // 2^16 - 1 = 65535
+const PEN: u64 = (1u64 << N) - 2; // 2^16 - 2 = 65534
 
-#[test] fn case_a0_b0()     { assert_eq!(run(0,   0),   0   <= 0); }
-#[test] fn case_a0_b1()     { assert_eq!(run(0,   1),   0   <= 1); }
-#[test] fn case_a0_bpen()   { assert_eq!(run(0,   PEN), 0   <= PEN); }
-#[test] fn case_a0_bmax()   { assert_eq!(run(0,   MAX), 0   <= MAX); }
+#[test]
+fn case_a0_b0() {
+    assert_eq!(run(0, 0), 0 <= 0);
+}
+#[test]
+fn case_a0_b1() {
+    assert_eq!(run(0, 1), 0 <= 1);
+}
+#[test]
+fn case_a0_bpen() {
+    assert_eq!(run(0, PEN), 0 <= PEN);
+}
+#[test]
+fn case_a0_bmax() {
+    assert_eq!(run(0, MAX), 0 <= MAX);
+}
 
-#[test] fn case_a1_b0()     { assert_eq!(run(1,   0),   1   <= 0); }
-#[test] fn case_a1_b1()     { assert_eq!(run(1,   1),   1   <= 1); }
-#[test] fn case_a1_bpen()   { assert_eq!(run(1,   PEN), 1   <= PEN); }
-#[test] fn case_a1_bmax()   { assert_eq!(run(1,   MAX), 1   <= MAX); }
+#[test]
+fn case_a1_b0() {
+    assert_eq!(run(1, 0), 1 <= 0);
+}
+#[test]
+fn case_a1_b1() {
+    assert_eq!(run(1, 1), 1 <= 1);
+}
+#[test]
+fn case_a1_bpen() {
+    assert_eq!(run(1, PEN), 1 <= PEN);
+}
+#[test]
+fn case_a1_bmax() {
+    assert_eq!(run(1, MAX), 1 <= MAX);
+}
 
-#[test] fn case_apen_b0()   { assert_eq!(run(PEN, 0),   PEN <= 0); }
-#[test] fn case_apen_b1()   { assert_eq!(run(PEN, 1),   PEN <= 1); }
-#[test] fn case_apen_bpen() { assert_eq!(run(PEN, PEN), PEN <= PEN); }
-#[test] fn case_apen_bmax() { assert_eq!(run(PEN, MAX), PEN <= MAX); }
+#[test]
+fn case_apen_b0() {
+    assert_eq!(run(PEN, 0), PEN <= 0);
+}
+#[test]
+fn case_apen_b1() {
+    assert_eq!(run(PEN, 1), PEN <= 1);
+}
+#[test]
+fn case_apen_bpen() {
+    assert_eq!(run(PEN, PEN), PEN <= PEN);
+}
+#[test]
+fn case_apen_bmax() {
+    assert_eq!(run(PEN, MAX), PEN <= MAX);
+}
 
-#[test] fn case_amax_b0()   { assert_eq!(run(MAX, 0),   MAX <= 0); }
-#[test] fn case_amax_b1()   { assert_eq!(run(MAX, 1),   MAX <= 1); }
-#[test] fn case_amax_bpen() { assert_eq!(run(MAX, PEN), MAX <= PEN); }
-#[test] fn case_amax_bmax() { assert_eq!(run(MAX, MAX), MAX <= MAX); }
+#[test]
+fn case_amax_b0() {
+    assert_eq!(run(MAX, 0), MAX <= 0);
+}
+#[test]
+fn case_amax_b1() {
+    assert_eq!(run(MAX, 1), MAX <= 1);
+}
+#[test]
+fn case_amax_bpen() {
+    assert_eq!(run(MAX, PEN), MAX <= PEN);
+}
+#[test]
+fn case_amax_bmax() {
+    assert_eq!(run(MAX, MAX), MAX <= MAX);
+}
 
 // ── Adversarial: caller violates the bit-width precondition ─────────────────
 //

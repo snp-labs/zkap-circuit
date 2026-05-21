@@ -31,6 +31,10 @@
 // the only way to keep `criterion_group!` clean — the macro is
 // out-of-tree.
 #![allow(missing_docs)]
+// `bench_wasmtime_aot` / `bench_wasmtime_pulley` are scoped-in but deferred
+// (see header comment). They're cfg-gated by features that are off by default,
+// so clippy sees them as dead code under the standard build.
+#![allow(dead_code)]
 
 mod common;
 

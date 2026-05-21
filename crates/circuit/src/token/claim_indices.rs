@@ -48,10 +48,7 @@ where
         // creating an aliased low-bits value.
         let offset = UInt16::new_variable(
             cs.clone(),
-            || {
-                u16::try_from(claim_indices.offset)
-                    .map_err(|_| SynthesisError::AssignmentMissing)
-            },
+            || u16::try_from(claim_indices.offset).map_err(|_| SynthesisError::AssignmentMissing),
             mode,
         )?;
         let claim_len = UInt16::new_variable(

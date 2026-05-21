@@ -35,7 +35,6 @@
 
 use ark_bn254::Fr;
 use ark_ff::PrimeField;
-use core::cmp::Ordering;
 use ark_r1cs_helpers::{
     enforce_less_than, is_less_than, pack_decompose_bytes_checked, select_array_element_be,
     single_multiplexer,
@@ -50,6 +49,7 @@ use ark_r1cs_std::{
     uint32::UInt32,
 };
 use ark_relations::gr1cs::{ConstraintSystem, OptimizationGoal, SynthesisMode};
+use core::cmp::Ordering;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ROW 1 — enforce_less_than(a_bits, b_bits) vs FpVar::enforce_cmp  [FpVar-level]
@@ -164,14 +164,10 @@ fn bench_row_2_is_less_than() {
         cs.set_optimization_goal(OptimizationGoal::Constraints);
 
         let a_bits: Vec<Boolean<Fr>> = (0..n_bits)
-            .map(|i| {
-                Boolean::new_witness(cs.clone(), || Ok((a_val >> i) & 1 == 1)).unwrap()
-            })
+            .map(|i| Boolean::new_witness(cs.clone(), || Ok((a_val >> i) & 1 == 1)).unwrap())
             .collect();
         let b_bits: Vec<Boolean<Fr>> = (0..n_bits)
-            .map(|i| {
-                Boolean::new_witness(cs.clone(), || Ok((b_val >> i) & 1 == 1)).unwrap()
-            })
+            .map(|i| Boolean::new_witness(cs.clone(), || Ok((b_val >> i) & 1 == 1)).unwrap())
             .collect();
 
         let alloc_cs = cs.num_constraints();
@@ -226,8 +222,7 @@ fn bench_row_6a_uint32_shr() {
     cs_ark.set_mode(SynthesisMode::Setup);
     cs_ark.set_optimization_goal(OptimizationGoal::Constraints);
 
-    let val_ark =
-        UInt32::<Fr>::new_witness(cs_ark.clone(), || Ok(input_val)).unwrap();
+    let val_ark = UInt32::<Fr>::new_witness(cs_ark.clone(), || Ok(input_val)).unwrap();
     let alloc_cs_ark = cs_ark.num_constraints();
     let alloc_w_ark = cs_ark.num_witness_variables();
 
@@ -256,8 +251,7 @@ fn bench_row_6b_uint32_not() {
     cs_ark.set_mode(SynthesisMode::Setup);
     cs_ark.set_optimization_goal(OptimizationGoal::Constraints);
 
-    let val_ark =
-        UInt32::<Fr>::new_witness(cs_ark.clone(), || Ok(input_val)).unwrap();
+    let val_ark = UInt32::<Fr>::new_witness(cs_ark.clone(), || Ok(input_val)).unwrap();
     let alloc_cs_ark = cs_ark.num_constraints();
     let alloc_w_ark = cs_ark.num_witness_variables();
 
@@ -310,8 +304,7 @@ fn bench_row_3_single_multiplexer() {
         let arr_custom: Vec<FpVar<Fr>> = (0..n)
             .map(|i| FpVar::new_witness(cs_custom.clone(), || Ok(Fr::from(i as u64))).unwrap())
             .collect();
-        let idx_fp =
-            FpVar::new_witness(cs_custom.clone(), || Ok(Fr::from(idx_val))).unwrap();
+        let idx_fp = FpVar::new_witness(cs_custom.clone(), || Ok(Fr::from(idx_val))).unwrap();
 
         let alloc_cs_custom = cs_custom.num_constraints();
         let alloc_w_custom = cs_custom.num_witness_variables();
@@ -335,16 +328,15 @@ fn bench_row_3_single_multiplexer() {
         let pos_bits_be: Vec<Boolean<Fr>> = (0..log_n)
             .rev()
             .map(|bit_pos| {
-                Boolean::new_witness(cs_ark.clone(), || Ok((idx_val >> bit_pos) & 1 == 1))
-                    .unwrap()
+                Boolean::new_witness(cs_ark.clone(), || Ok((idx_val >> bit_pos) & 1 == 1)).unwrap()
             })
             .collect();
 
         let alloc_cs_ark = cs_ark.num_constraints();
         let alloc_w_ark = cs_ark.num_witness_variables();
 
-        let _ = FpVar::<Fr>::conditionally_select_power_of_two_vector(&pos_bits_be, &arr_ark)
-            .unwrap();
+        let _ =
+            FpVar::<Fr>::conditionally_select_power_of_two_vector(&pos_bits_be, &arr_ark).unwrap();
         cs_ark.finalize();
         let ark_cs = cs_ark.num_constraints();
         let ark_w = cs_ark.num_witness_variables();
@@ -419,16 +411,15 @@ fn bench_row_4_select_array_element_be() {
         let pos_bits_ark: Vec<Boolean<Fr>> = (0..log_n)
             .rev()
             .map(|bit_pos| {
-                Boolean::new_witness(cs_ark.clone(), || Ok((idx_val >> bit_pos) & 1 == 1))
-                    .unwrap()
+                Boolean::new_witness(cs_ark.clone(), || Ok((idx_val >> bit_pos) & 1 == 1)).unwrap()
             })
             .collect();
 
         let alloc_cs_ark = cs_ark.num_constraints();
         let alloc_w_ark = cs_ark.num_witness_variables();
 
-        let _ = FpVar::<Fr>::conditionally_select_power_of_two_vector(&pos_bits_ark, &arr_ark)
-            .unwrap();
+        let _ =
+            FpVar::<Fr>::conditionally_select_power_of_two_vector(&pos_bits_ark, &arr_ark).unwrap();
         cs_ark.finalize();
         let ark_cs = cs_ark.num_constraints();
         let ark_w = cs_ark.num_witness_variables();
@@ -485,9 +476,7 @@ fn bench_row_5a_pack_decompose_bytes_checked_31() {
 
     // Allocate n FpVars (no range check at alloc — baseline).
     let byte_fps: Vec<FpVar<Fr>> = (0..n_bytes)
-        .map(|i| {
-            FpVar::new_witness(cs_custom.clone(), || Ok(Fr::from((i % 256) as u64))).unwrap()
-        })
+        .map(|i| FpVar::new_witness(cs_custom.clone(), || Ok(Fr::from((i % 256) as u64))).unwrap())
         .collect();
 
     let alloc_cs_custom = cs_custom.num_constraints();
@@ -507,9 +496,7 @@ fn bench_row_5a_pack_decompose_bytes_checked_31() {
     cs_ark.set_optimization_goal(OptimizationGoal::Constraints);
 
     let _uint8s: Vec<UInt8<Fr>> = (0..n_bytes)
-        .map(|i| {
-            UInt8::new_witness(cs_ark.clone(), || Ok((i % 256) as u8)).unwrap()
-        })
+        .map(|i| UInt8::new_witness(cs_ark.clone(), || Ok((i % 256) as u8)).unwrap())
         .collect();
 
     cs_ark.finalize();
@@ -549,9 +536,7 @@ fn bench_row_5b_inline_range_check_16() {
     cs_custom.set_optimization_goal(OptimizationGoal::Constraints);
 
     let byte_fps: Vec<FpVar<Fr>> = (0..n_bytes)
-        .map(|i| {
-            FpVar::new_witness(cs_custom.clone(), || Ok(Fr::from((i % 256) as u64))).unwrap()
-        })
+        .map(|i| FpVar::new_witness(cs_custom.clone(), || Ok(Fr::from((i % 256) as u64))).unwrap())
         .collect();
 
     let alloc_cs_custom = cs_custom.num_constraints();
@@ -604,10 +589,8 @@ fn bench_row_6c_uint32_bitand() {
     cs_ark.set_mode(SynthesisMode::Setup);
     cs_ark.set_optimization_goal(OptimizationGoal::Constraints);
 
-    let a_ark =
-        UInt32::<Fr>::new_witness(cs_ark.clone(), || Ok(a_val)).unwrap();
-    let b_ark =
-        UInt32::<Fr>::new_witness(cs_ark.clone(), || Ok(b_val)).unwrap();
+    let a_ark = UInt32::<Fr>::new_witness(cs_ark.clone(), || Ok(a_val)).unwrap();
+    let b_ark = UInt32::<Fr>::new_witness(cs_ark.clone(), || Ok(b_val)).unwrap();
     let alloc_cs_ark = cs_ark.num_constraints();
     let alloc_w_ark = cs_ark.num_witness_variables();
 

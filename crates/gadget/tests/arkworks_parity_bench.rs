@@ -18,6 +18,10 @@
 
 #![cfg(all(feature = "anchor", feature = "merkletree"))]
 #![allow(missing_docs)]
+// Bench tests use explicit indexed loops for clarity at fixture-construction
+// time; the equivalent iterator chain would obscure the per-row mapping that
+// the audit documentation references.
+#![allow(clippy::needless_range_loop)]
 
 use ark_bn254::Fr;
 use ark_crypto_primitives::{
@@ -132,9 +136,7 @@ fn bench_row_7_enforce_boolean_selectors() {
         cs_ark.set_optimization_goal(OptimizationGoal::Constraints);
 
         let _bools: Vec<Boolean<Fr>> = (0..k)
-            .map(|i| {
-                Boolean::new_witness(cs_ark.clone(), || Ok((i % 2) == 0)).unwrap()
-            })
+            .map(|i| Boolean::new_witness(cs_ark.clone(), || Ok((i % 2) == 0)).unwrap())
             .collect();
 
         // No gadget call needed — booleanity already enforced.
@@ -197,16 +199,15 @@ fn bench_row_8_enforce_membership() {
     let hash_params_custom =
         CRHParametersVar::<Fr>::new_constant(cs_custom.clone(), poseidon_params.clone()).unwrap();
 
-    let root_var_custom =
-        FpVar::<Fr>::new_witness(cs_custom.clone(), || Ok(root_val)).unwrap();
+    let root_var_custom = FpVar::<Fr>::new_witness(cs_custom.clone(), || Ok(root_val)).unwrap();
 
     let input = MerkleCircuitInput::<Fr> {
         leaf: leaf_digest_val,
         leaf_idx: idx,
         path: path_val.clone(),
     };
-    let mut input_var = MerkleCircuitInputVar::<Fr>::new_witness(cs_custom.clone(), || Ok(input))
-        .unwrap();
+    let mut input_var =
+        MerkleCircuitInputVar::<Fr>::new_witness(cs_custom.clone(), || Ok(input)).unwrap();
 
     let alloc_cs_custom = cs_custom.num_constraints();
     let alloc_w_custom = cs_custom.num_witness_variables();
@@ -227,18 +228,16 @@ fn bench_row_8_enforce_membership() {
     let hash_params_ark =
         CRHParametersVar::<Fr>::new_constant(cs_ark.clone(), poseidon_params.clone()).unwrap();
 
-    let root_var_ark =
-        FpVar::<Fr>::new_witness(cs_ark.clone(), || Ok(root_val)).unwrap();
+    let root_var_ark = FpVar::<Fr>::new_witness(cs_ark.clone(), || Ok(root_val)).unwrap();
 
     // Allocate the same components as MerkleCircuitInputVar manually.
     let leaf_var = FpVar::<Fr>::new_witness(cs_ark.clone(), || Ok(leaf_digest_val)).unwrap();
     let leaf_idx_var = UInt16::<Fr>::new_witness(cs_ark.clone(), || Ok(idx as u16)).unwrap();
-    let mut path_var =
-        PathVar::<MerkleTreeParams<Fr>, Fr, MerkleTreeParamsVar<Fr>>::new_witness(
-            cs_ark.clone(),
-            || Ok(path_val),
-        )
-        .unwrap();
+    let mut path_var = PathVar::<MerkleTreeParams<Fr>, Fr, MerkleTreeParamsVar<Fr>>::new_witness(
+        cs_ark.clone(),
+        || Ok(path_val),
+    )
+    .unwrap();
 
     let alloc_cs_ark = cs_ark.num_constraints();
     let alloc_w_ark = cs_ark.num_witness_variables();

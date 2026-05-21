@@ -57,10 +57,14 @@ pub fn generate_poseidon_hash(request: HashRequest) -> Result<HashResponse, Appl
 /// before hashing; inputs longer than the limit return
 /// [`ApplicationError::AudienceLimitExceeded`].
 ///
-/// Each audience is converted to limbs via `str_to_limbs(max_aud_len,
-/// PAD_CHAR)` (quote-aware byte packing handled internally) and individually
-/// hashed; the per-audience hashes are then themselves Poseidon-hashed to
-/// produce `audience_list_hash`.
+/// Each audience is wrapped with surrounding `"` quotes to match the
+/// JSON-quoted byte form the JWT parser extracts in-circuit (see
+/// `service::jwt::parser` and `service::groth16::prover::circuit_input::
+/// build_audience_stage`), then packed to limbs via
+/// `str_to_limbs(max_aud_len, PAD_CHAR)` and individually hashed. The
+/// per-audience hashes are then themselves Poseidon-hashed to produce
+/// `audience_list_hash`. Callers MUST pass raw, unquoted audience values;
+/// this function adds the quotes internally.
 pub fn generate_audience_hashes(
     config: &CircuitConfig,
     request: AudienceHashRequest,
@@ -83,7 +87,8 @@ pub fn generate_audience_hashes(
     let aud_fields: Vec<F> = aud_vec
         .iter()
         .map(|a| {
-            let limbs = str_to_limbs(a, config.max_aud_len as usize, PAD_CHAR as u8)?;
+            let quoted = format!("\"{}\"", a);
+            let limbs = str_to_limbs(&quoted, config.max_aud_len as usize, PAD_CHAR as u8)?;
             PoseidonHash::evaluate(poseidon_params, limbs)
                 .map_err(|e| ApplicationError::HashFailed(e.to_string()))
         })
@@ -101,8 +106,13 @@ pub fn generate_audience_hashes(
 /// Compute the Merkle-leaf Poseidon hash for an issuer + RSA-2048 public-key
 /// pair.
 ///
-/// `request.issuer` is padded to `config.max_iss_len` bytes with the circuit
-/// pad character. `request.rsa_modulus_b64` must base64-decode to exactly
+/// `request.issuer` is wrapped with surrounding `"` quotes to match the
+/// JSON-quoted byte form the JWT parser extracts in-circuit (see
+/// `service::jwt::parser` and the prover's merkle-leaf construction in
+/// `service::groth16::prover::circuit_input`), then padded to
+/// `config.max_iss_len` bytes with the circuit pad character. Callers MUST
+/// pass raw, unquoted issuer values; this function adds the quotes
+/// internally. `request.rsa_modulus_b64` must base64-decode to exactly
 /// `RSA_2048_BYTES` (256) bytes; other lengths return
 /// [`ApplicationError::InvalidRsaModulus`]. The RSA public exponent is fixed
 /// at 65537 in-circuit and is sourced from
@@ -117,7 +127,8 @@ pub fn generate_issuer_key_hash(
 
     let poseidon_params = crate::poseidon_params();
 
-    let iss_limbs = str_to_limbs(&request.issuer, config.max_iss_len as usize, PAD_CHAR as u8)?;
+    let iss_quoted = format!("\"{}\"", request.issuer);
+    let iss_limbs = str_to_limbs(&iss_quoted, config.max_iss_len as usize, PAD_CHAR as u8)?;
 
     let n_decoded = decode_any_base64(&request.rsa_modulus_b64)
         .map_err(|e| ApplicationError::InvalidBase64(format!("rsa_modulus_b64: {}", e)))?;
@@ -467,5 +478,97 @@ mod tests {
             }
             other => panic!("expected InvalidRsaModulus, got {:?}", other),
         }
+    }
+
+    // ---------------------------------------------------------------------
+    // Quote-wrap parity tests
+    //
+    // Lock the invariant that the host SDK hashes the JSON-quoted byte
+    // form of audience / forbidden / issuer values, matching what the JWT
+    // parser extracts in-circuit and what `groth16::prover::circuit_input`
+    // packs into the witness. Removing the wrap would silently regress the
+    // host-vs-circuit `h_aud_list` / merkle-leaf parity.
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn audience_hash_wraps_audience_value_with_quotes() {
+        let params = test_config();
+        let r = generate_audience_hashes(
+            &params,
+            AudienceHashRequest {
+                audiences: vec!["x".into()],
+            },
+        )
+        .unwrap();
+
+        let poseidon_params = crate::poseidon_params();
+        let quoted_limbs =
+            str_to_limbs::<F>("\"x\"", params.max_aud_len as usize, PAD_CHAR as u8).unwrap();
+        let expected = PoseidonHash::evaluate(poseidon_params, quoted_limbs).unwrap();
+        assert_eq!(r.audience_hashes[0], crate::field_to_hex(expected));
+
+        let raw_limbs =
+            str_to_limbs::<F>("x", params.max_aud_len as usize, PAD_CHAR as u8).unwrap();
+        let raw = PoseidonHash::evaluate(poseidon_params, raw_limbs).unwrap();
+        assert_ne!(
+            r.audience_hashes[0],
+            crate::field_to_hex(raw),
+            "h_aud must hash the quoted form, not the raw value"
+        );
+    }
+
+    #[test]
+    fn audience_hash_forbidden_padding_uses_quoted_form() {
+        let params = test_config();
+        let r = generate_audience_hashes(
+            &params,
+            AudienceHashRequest {
+                audiences: vec!["x".into()],
+            },
+        )
+        .unwrap();
+
+        let poseidon_params = crate::poseidon_params();
+        let quoted_forb = format!("\"{}\"", params.forbidden_string);
+        let forb_limbs =
+            str_to_limbs::<F>(&quoted_forb, params.max_aud_len as usize, PAD_CHAR as u8).unwrap();
+        let expected =
+            crate::field_to_hex(PoseidonHash::evaluate(poseidon_params, forb_limbs).unwrap());
+
+        for (i, h) in r.audience_hashes.iter().enumerate().skip(1) {
+            assert_eq!(
+                *h, expected,
+                "padding slot {i} must equal the hash of the quoted forbidden string"
+            );
+        }
+    }
+
+    #[test]
+    fn issuer_key_hash_wraps_issuer_with_quotes() {
+        let params = test_config();
+        let issuer_raw = "https://accounts.google.com";
+        let r_raw_input = generate_issuer_key_hash(
+            &params,
+            IssuerKeyHashRequest {
+                issuer: issuer_raw.into(),
+                rsa_modulus_b64: rsa_modulus_b64(),
+            },
+        )
+        .unwrap();
+
+        let r_prequoted_input = generate_issuer_key_hash(
+            &params,
+            IssuerKeyHashRequest {
+                issuer: format!("\"{}\"", issuer_raw),
+                rsa_modulus_b64: rsa_modulus_b64(),
+            },
+        )
+        .unwrap();
+
+        assert_ne!(
+            r_raw_input.hash, r_prequoted_input.hash,
+            "pre-quoted input must produce a different (double-wrapped) hash; \
+             equality would mean the SDK is not wrapping internally"
+        );
     }
 }

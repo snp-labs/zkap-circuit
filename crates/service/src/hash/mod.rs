@@ -531,8 +531,7 @@ mod tests {
         let poseidon_params = crate::poseidon_params();
         let quoted_forb = format!("\"{}\"", params.forbidden_string);
         let forb_limbs =
-            str_to_limbs::<F>(&quoted_forb, params.max_aud_len as usize, PAD_CHAR as u8)
-                .unwrap();
+            str_to_limbs::<F>(&quoted_forb, params.max_aud_len as usize, PAD_CHAR as u8).unwrap();
         let expected =
             crate::field_to_hex(PoseidonHash::evaluate(poseidon_params, forb_limbs).unwrap());
 

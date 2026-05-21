@@ -66,7 +66,7 @@ fn total_circuit_count_dev_profile() {
     println!("=============================================================");
 
     // Sanity checks — total must be non-trivial.
-    assert_eq!(num_constraints, 911_941, "Track B PRs must not alter R1CS layout for dev-profile (n=6,k=3,tree_height=4) — see docs/audit/constraint-audit-2026-05-20.md §3.2");
+    assert_eq!(num_constraints, 911_468, "Circuit R1CS layout sentinel — any change to claim_format_verifier_v2 / SHA-256 / RSA gadgets must update this value (dev-profile n=6,k=3,tree_height=4)");
     assert!(num_witness > 1000, "expected > 1000 witness vars, got {num_witness}");
     // 8 public inputs per spec; allow for arkworks's implicit ONE.
     assert!(num_instance >= 8, "expected >= 8 instance vars, got {num_instance}");

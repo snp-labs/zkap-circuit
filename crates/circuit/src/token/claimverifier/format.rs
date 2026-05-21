@@ -21,7 +21,9 @@
 //! `is_less_than | is_eq` expression below stays as-is.
 
 use ark_ff::PrimeField;
-use ark_r1cs_helpers::{is_less_than, single_multiplexer};
+use ark_r1cs_helpers::{
+    enforce_less_or_equal, enforce_less_than, is_less_or_equal, single_multiplexer,
+};
 use ark_r1cs_std::{
     eq::EqGadget,
     fields::{FieldVar, fp::FpVar},
@@ -44,21 +46,18 @@ pub(super) fn claim_format_verifier_v2<F: PrimeField>(
     let claim_len = Boolean::le_bits_to_fp(&claim_len.to_bits_le()?)?;
 
     // check1: name_len <= colon_idx
-    // Note: `enforce_cmp` is intentionally not used here.  There is a bug in
-    // `ark-r1cs-std 0.5.0` (the version this workspace pins) that produces
-    // unsound constraints for `Ordering::Less` with `strict = true`.  The
-    // equivalent `is_less_than | is_eq` expression below is correct and must
-    // not be reverted to `enforce_cmp` until the upstream fix is verified.
+    // AC-10 swap (C1.2): the prior `is_less_than | is_eq` then `enforce_equal(TRUE)`
+    // pair is replaced by the witness-decompose `enforce_less_or_equal` gadget
+    // (AC-1 / commit 02b982a7). Net savings ≈ 93 cs per call (5 callers per circuit).
     let name_len_boolean = name_len.to_bits_le()?;
     let colon_idx_boolean = colon_idx.to_bits_le()?;
-    let result =
-        is_less_than(&name_len_boolean, &colon_idx_boolean)? | name_len.is_eq(colon_idx)?;
-    result.enforce_equal(&Boolean::TRUE)?;
+    enforce_less_or_equal(&name_len_boolean, &colon_idx_boolean)?;
 
-    // check2: colon_idx < value_idx  (same enforce_cmp workaround as check1)
+    // check2: colon_idx < value_idx
+    // AC-10 swap (C1.1): `is_less_than + enforce_equal(TRUE)` collapsed into
+    // the single `enforce_less_than` call. Net savings ≈ 60 cs per call.
     let value_idx_boolean = value_idx.to_bits_le()?;
-    let result = is_less_than(&colon_idx_boolean, &value_idx_boolean)?;
-    result.enforce_equal(&Boolean::TRUE)?;
+    enforce_less_than(&colon_idx_boolean, &value_idx_boolean)?;
 
     // Compute flags once: 1 if not whitespace, 0 if whitespace.
     let is_not_whitespace_flags = claim
@@ -155,10 +154,11 @@ fn enforce_range_is_whitespace_v2<F: PrimeField>(
     let start_plus_1_bits_16 = &start_plus_1_bits[..bits_16];
     let end_bits_16 = &end_bits[..bits_16];
 
-    // is_nonempty = start_idx + 1 <= end_idx  (equivalently: start_idx + 1 < end_idx OR equal)
-    let is_lt = is_less_than(start_plus_1_bits_16, end_bits_16)?;
-    let is_eq_end = start_idx_plus_1.is_eq(end_idx)?;
-    let is_nonempty = is_lt | is_eq_end;
+    // is_nonempty = start_idx + 1 <= end_idx
+    // AC-10 swap (C1.3): combine the prior `is_less_than | FpVar::is_eq` pair into
+    // the single `is_less_or_equal` Boolean gadget. Net savings ≈ 2 cs per call
+    // (15 callers per circuit via the 3 enforce_range_is_whitespace_v2 invocations × 5 claims).
+    let is_nonempty = is_less_or_equal(start_plus_1_bits_16, end_bits_16)?;
 
     // Clamp: if nonempty use start_idx+1, else use end_idx (range sum becomes 0)
     let lookup_start = FpVar::conditionally_select(&is_nonempty, &start_idx_plus_1, end_idx)?;

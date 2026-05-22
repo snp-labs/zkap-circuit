@@ -314,7 +314,7 @@ pub fn synthesize_witnesses(
 /// ```ignore
 /// use zkap_service::{ArtifactSet, ProveRequest, prove};
 ///
-/// let set = ArtifactSet::load(&manifest, dir)?;
+/// let set = ArtifactSet::load_signed(&manifest, dir, &verifying_key)?;
 /// let response = prove(&set, &request)?;
 /// ```
 pub fn prove(

@@ -13,7 +13,8 @@
 //! Canonical post-migration flow:
 //!
 //! ```text
-//!   ArtifactSet::load(manifest, dir)               // trust gate
+//!   ArtifactSet::load_signed(manifest, dir, vk)    // signed trust gate
+//!   # or ArtifactSet::load_unsigned(manifest, dir) // caller-trusted manifest
 //!     → prove(&artifact_set, &prove_request)
 //!         → adapter::prove_request_to_decoded      // ProveRequest → (SharedDecoded, [CredentialDecoded; k])
 //!         → derive_x_from_secret per credential    // x_list: Vec<F>
@@ -30,9 +31,9 @@
 //! ```
 //!
 //! Pure native flow — the host loads the manifest-validated CRS bundle
-//! and the prove function runs in-process. Production callers MUST use
-//! [`crate::artifact::ArtifactSet::load`] + [`prove`] so the manifest
-//! trust gate is exercised on every prove batch.
+//! and the prove function runs in-process. Production signed-bundle callers
+//! MUST use [`crate::artifact::ArtifactSet::load_signed`] + [`prove`] so the
+//! manifest authenticity and artifact hash gates are exercised before proving.
 
 pub(crate) mod adapter;
 pub(crate) mod circuit_input;

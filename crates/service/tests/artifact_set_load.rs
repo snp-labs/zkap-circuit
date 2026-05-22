@@ -249,6 +249,15 @@ fn artifact_set_load_trust_boundary() {
     // ── Stage 2: acceptance — canonical manifest matches bundle ──────────
     ArtifactSet::load_unsigned(&canonical, &dir)
         .expect("canonical manifest + matching bundle must load");
+    let (_, timing) = ArtifactSet::load_unsigned_with_timing(&canonical, &dir)
+        .expect("timed loader must follow the same validation path");
+    assert!(
+        timing.total_ms >= timing.ar1cs_ms
+            && timing.total_ms >= timing.pk_ms
+            && timing.total_ms >= timing.vk_ms
+            && timing.total_ms >= timing.pvk_ms,
+        "total timing should include individual artifact load stages"
+    );
 
     // ── Stage 3: manifest-side tamper cases ──────────────────────────────
     //

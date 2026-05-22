@@ -4,18 +4,26 @@ Benchmarks, resource requirements, and optimization guidance for zkap-circuit.
 
 ## How to Measure
 
-Run the full lifecycle example and observe timing:
+Measure setup through the CLI:
 
 ```bash
-time cargo run -p zkap-service --example groth16_proof --release
+time cargo run --release -p zkap-cli --bin generate_setup -- \
+  --config example.json \
+  --output /tmp/zkap-perf-crs \
+  --circuit-id zkap-perf
 ```
 
-The example prints step markers (`[Step 1]` through `[Step 7]`) that can be used for manual per-phase timing.
+Measure loader cold-start cost with the timed artifact loaders
+(`ArtifactSet::load_signed_with_timing` or
+`ArtifactSet::load_unsigned_with_timing`) from the host that owns the bundle.
 
 For detailed per-phase timing of arkworks internals (FFT, MSM, constraint synthesis, etc.), enable the `print-trace` feature:
 
 ```bash
-time cargo run -p zkap-service --example groth16_proof --release --features print-trace
+time cargo run --release -p zkap-cli --features zkap-service/print-trace --bin generate_setup -- \
+  --config example.json \
+  --output /tmp/zkap-perf-crs \
+  --circuit-id zkap-perf
 ```
 
 This activates `ark-std`'s built-in timer macros, which print elapsed time for each internal operation to stderr.
@@ -32,10 +40,13 @@ Monitor memory during execution with `top`, `htop`, or Activity Monitor.
 
 Proving benefits from multiple cores. The arkworks `parallel` feature is enabled by default, using [Rayon](https://docs.rs/rayon) for work-stealing parallelism.
 
-Control thread count with:
+Control thread count with setup/prove commands:
 
 ```bash
-RAYON_NUM_THREADS=4 cargo run -p zkap-service --example groth16_proof --release
+RAYON_NUM_THREADS=4 cargo run --release -p zkap-cli --bin generate_setup -- \
+  --config example.json \
+  --output /tmp/zkap-perf-crs \
+  --circuit-id zkap-perf
 ```
 
 ### Disk

@@ -1,6 +1,6 @@
 [package]
 name = "zkap-witness-gen-wasm"
-version = "0.1.1"
+version = "0.1.1-rc.1"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "Wasm32 witness generator for the ZKAP circuit — hosts zkap_service::synthesize_witnesses behind a stable C ABI so circuit-agnostic prover packages can call it from any wasm runtime."

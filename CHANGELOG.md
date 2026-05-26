@@ -7,90 +7,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Breaking — 2026-05 ark-ar1cs boundary migration
+## [0.1.1] - 2026-05-27
 
-The proving stack moved off the historical wasm-runtime path and onto
-a native `ark-ar1cs` flow. Every public type and entry point that
-referenced the wasm path is gone; downstream callers must rewire
-once.
+### Breaking
 
-- **CRS bundle layout (7 files).** `setup()` and the `generate_setup`
-  CLI now write a single canonical bundle: `circuit.ar1cs`, `pk.bin`,
-  `vk.bin`, `pvk.bin`, `Groth16Verifier.sol`, `config.json`,
-  `manifest.json`. Older filenames and the wasm artifact that
-  pre-dated the migration are no longer produced or consumed.
-- **`ProveRequest` is the new request type** (renamed from the
-  earlier intermediate-migration `ProofRequest`). Holds wire-format
-  string fields plus a `credentials: Vec<ProveCredential>`; every
-  artifact-path field is gone. Lives in `service::dto::proof`.
-- **Native ar1cs prove path.** The proving entry point is the free
-  function `service::prove(&ArtifactSet, &ProveRequest) ->
-  Result<ProveResponse, ApplicationError>`. Internally chains
-  `groth16::prover::adapter::prove_request_to_decoded` →
-  per-credential `groth16::prover::circuit_input` stage builders →
-  `ZkapCircuit::from_input` → `ark_ar1cs::synthesize_full_assignment`
-  → `ark_ar1cs::prove(&pk, &arcs, &full_assignment, OsRng)`. The
-  earlier `service::prover::Prover` struct (and its companion
-  `prove_from_unverified_paths` shortcut) were removed in the
-  binding-friendly refactor that landed shortly after the initial
-  migration; trust gating lives entirely in `ArtifactSet::load`.
-- **`ArtifactSet::load(manifest, dir)` is the single trust gate.**
-  The loader checks `arcs.body_blake3() == manifest.ar1cs_blake3`
-  plus `sha256` of every artifact (`circuit.ar1cs`, `pk.bin`,
-  `vk.bin`, `pvk.bin`, `config.json`, optional `Groth16Verifier.sol`).
-  Mismatch returns `ArtifactError::HashMismatch { field, expected,
-  got }`. `Prover::prove` performs no manifest lookup, no
-  `body_blake3` recompute, and no sha256 re-check. Tamper tests in
-  `crates/service/tests/artifact_set_load.rs` enforce the contract.
-- **Verify wrapper retired.** The previous in-crate verify helper
-  and its opaque verifying-context handle are gone. Callers borrow
-  the `PreparedVerifyingKey` from `Prover::prepared_verifying_key()`
-  / `SetupOutput::prepared_verifying_key()` and call
-  `ark_groth16::Groth16::<Bn254>::verify_proof(pvk, &proof,
-  &inputs)` directly.
-- **Cargo features purged.** Every wasm-runtime / streaming-prover
-  feature flag is removed. The default `proof` feature now pulls
-  only `ark-ar1cs` (root crate), `ark-groth16`, and the in-tree
-  wire/codec helpers.
-- **Legacy CLI binary removed.** Pre-migration setup binaries were
-  retired; `generate_setup` is the canonical superset that writes
-  the 7-file bundle in one shot.
-- **Wasm witness substrate removed.** The wasm witness-generator
-  crate, its ABI glue, and the host-side wasm runtime are no longer
-  part of the workspace. Production callers depend on the native
-  prove path.
+- Split `ArtifactSet` loading into explicit trust-boundary APIs:
+  `ArtifactSet::load_signed(manifest, dir, verifying_key)` verifies
+  manifest authenticity plus artifact hashes, while
+  `ArtifactSet::load_unsigned(manifest, dir)` keeps hash checks for
+  caller-trusted manifests.
+- Removed the public `Prover` wrapper surface. Proof generation now uses
+  the top-level `zkap_service::prove(&ArtifactSet, &ProveRequest)` free
+  function.
+- Reworked the service public API around binding-friendly DTOs and
+  top-level re-exports. Deprecated module-qualified setup/prove paths and
+  old artifact loader names are no longer part of the public contract.
+- Split the old ark utility crate into focused `ark-codec` and
+  `ark-r1cs-helpers` crates.
 
 ### Added
 
-- **Manifest hash check coverage.** `ArtifactSet::load` enumerates
-  every artifact entry and reports the failing slot via
-  `ArtifactError::HashMismatch::field` (e.g. `"ar1cs_blake3"`,
-  `"artifacts.pk.sha256"`, `"artifacts.evm_verifier.sha256"`). Pinned
-  by 9 active tamper tests in
-  `crates/service/tests/artifact_set_load.rs`.
-- **`SOURCE_DATE_EPOCH` reproducible-builds support.** When set,
-  `manifest.build.built_at` (RFC3339 UTC) is derived from that
-  unix-seconds value instead of wallclock. Combined with `--rng-seed
-  --allow-test-only` + pinned `--build-commit`, two runs against the
-  same config produce a byte-equal `manifest.json` (golden test:
-  `crates/cli/tests/manifest_golden.rs`).
-- **`prove_from_unverified_paths`** — non-canonical shortcut that
-  loads `pk.bin`, `vk.bin`, `pvk.bin`, `circuit.ar1cs`, and
-  `config.json` from a directory via `ArtifactSet::load_unverified`
-  and forwards to `Prover::from_artifact` + `Prover::prove`. The
-  rustdoc explicitly warns that production callers MUST use
-  `ArtifactSet::load(manifest, dir)`.
-- **`scripts/check-removed-api.sh`** and
-  **`scripts/check-bundle-layout.sh`** are wired into CI as required
-  gates on every PR. The bundle-layout gate runs against
-  `dist/1-of-1` and `dist/3-of-3`.
+- Added release and CI workflows for the develop-based release branch,
+  including full release tests, release-profile builds, CRS bundle
+  generation, Solidity smoke checks, and GitHub Release publishing.
+- Added `witness_gen.wasm` as a required release and setup-bundle
+  artifact. Release uploads include one common `witness_gen.wasm`, not
+  per-shape wasm copies.
+- Added signed/unsigned artifact-load timing APIs and manifest coverage
+  for optional `witness_gen.wasm` entries.
+- Added manifest and bundle integrity gates, including tamper tests for
+  artifact hash mismatches and CI checks for the canonical bundle layout.
+- Added reproducible manifest support through `SOURCE_DATE_EPOCH`.
+- Added boundary and adversarial tests for circuit sizing, SHA-256
+  padding, RSA verification, field/Solidity encoding parity, and
+  Groth16 artifact loading.
 
 ### Changed
 
-- **Workspace pin** for `ark-ar1cs` bumped to the rev that fuses the
-  previous sub-crates into a single `ark-ar1cs` root crate and
-  exposes `prove(pk, arcs, full_assignment, rng)` +
-  `synthesize_full_assignment` as the canonical native API.
+- Moved the proving stack onto the native `ark-ar1cs` flow and made
+  `generate_setup` the canonical CLI for producing CRS bundles.
+- Tightened circuit and gadget soundness checks, including `n <= 255`
+  enforcement, checked index conversion, limbwise bigint equality, and
+  safer R1CS comparison helpers.
+- Migrated SHA-256 gadget logic to `ark-r1cs-std` 0.6 boolean operators
+  and removed the legacy `UInt32Ext` helper.
+- Optimized the circuit comparison path by replacing selected
+  `is_less_than` usage with lower-cost less-than-or-equal helpers.
+- Updated host-side audience and issuer hashing to quote-wrap claim
+  strings so service hashes match the circuit byte form.
+- Hardened CLI and setup output writes with atomic temp-file and rename
+  flows.
+- Updated public documentation to match the current artifact loader,
+  setup, prove, manifest, and DTO contracts.
+
+### Security
+
+- Added signed manifest enforcement for production artifact loading and
+  clear unsigned-loading semantics for test or externally authenticated
+  bundles.
+- Rejected point-at-infinity verifying-key coordinates in generated EVM
+  verifier inputs.
+- Zeroized transient signing-key buffers in the CLI signing-key loader.
+- Converted several prover-fatal assertions into typed errors and
+  removed dead or stale public surfaces.
 
 ---
 

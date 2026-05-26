@@ -364,10 +364,10 @@ jobs:
         with:
           name: proving-keys-1-of-1
           path: dl/1-of-1
-      - name: Install solc
-        run: sudo apt-get update && sudo apt-get install -y solc
-      - name: solc --bin
-        run: solc --bin dl/1-of-1/Groth16Verifier.sol
+      - name: Install solc-js
+        run: npm install --global solc@0.8.30
+      - name: solcjs --bin
+        run: solcjs --bin dl/1-of-1/Groth16Verifier.sol
 
   # ───────────────────────────────────────────────────────────────────────────
   # verify-wasm-shape-parity — five-way hash invariant: upstream build-wasm

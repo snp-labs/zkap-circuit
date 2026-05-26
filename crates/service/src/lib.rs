@@ -3,7 +3,7 @@
 //! # Public API
 //!
 //! All entry points are always-on after the 2026-05 binding-friendly
-//! refactor (the `proof` and `dev-unverified-artifacts` Cargo features
+//! refactor (the old `proof` and `dev-unverified-artifacts` Cargo features
 //! were removed; heavy ark-* deps are now unconditional).
 //!
 //! - [`generate_poseidon_hash`], [`generate_audience_hashes`],
@@ -79,9 +79,10 @@
 //! └──────────────────────────────────────────────────────────────────┘
 //! ```
 //!
-//! `ArtifactSet::load(manifest, dir)` is the trust boundary — manifest
-//! hash validation happens before [`prove`] runs, and [`prove`]
-//! does not re-verify any hash.
+//! `ArtifactSet::load_signed(manifest, dir, verifying_key)` is the signed
+//! production trust boundary. `ArtifactSet::load_unsigned(manifest, dir)`
+//! keeps the same artifact hash checks for caller-trusted manifests. [`prove`]
+//! does not re-verify any manifest signature or artifact hash.
 //!
 //! ### Drift safeguard
 //!
@@ -123,7 +124,7 @@ use circuit::types::F;
 use std::sync::OnceLock;
 
 // Field-codec re-export — single source of truth lives in
-// `ark-utils::field_codec` (PR4 / Step 7 of the DTO consolidation plan).
+// `ark-codec::field` (PR4 / Step 7 of the DTO consolidation plan).
 pub(crate) use ark_codec::field::field_to_hex;
 
 /// Cached Poseidon parameters — constructed once, shared across all modules.
@@ -164,7 +165,7 @@ pub use dto::{PUBLIC_INPUT_NAMES, PUBLIC_INPUTS, PublicInputSlot};
 pub use hash::{generate_audience_hashes, generate_issuer_key_hash, generate_poseidon_hash};
 
 // Public API (proof + setup surface — always available after the 2026-05 refactor)
-pub use artifact::{ArtifactError, ArtifactSet};
+pub use artifact::{ArtifactError, ArtifactLoadTiming, ArtifactSet};
 pub use dto::{ProofComponents, ProveCredential, ProveRequest, ProveResponse, SharedPublicInputs};
 pub use groth16::prover::{
     WitnessBundle, prove, synthesize_witnesses, synthesize_witnesses_streaming,

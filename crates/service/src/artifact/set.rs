@@ -2,6 +2,7 @@
 //! and the two caller-facing loaders.
 
 use std::path::Path;
+use std::time::Instant;
 
 use ark_ar1cs::format::ArcsFile;
 use ark_groth16::{PreparedVerifyingKey, ProvingKey, VerifyingKey as Groth16VerifyingKey};
@@ -12,6 +13,27 @@ use sha2::{Digest, Sha256};
 
 use super::error::ArtifactError;
 use crate::manifest::{ArtifactEntry, Manifest, verify_manifest};
+
+/// Wall-clock timing for loading each artifact in a CRS bundle.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ArtifactLoadTiming {
+    /// Total time spent in the shared artifact loader.
+    pub total_ms: f64,
+    /// Time spent reading, sha-checking, and parsing `circuit.ar1cs`.
+    pub ar1cs_ms: f64,
+    /// Time spent reading, sha-checking, and deserializing `pk.bin`.
+    pub pk_ms: f64,
+    /// Time spent reading, sha-checking, and deserializing `vk.bin`.
+    pub vk_ms: f64,
+    /// Time spent reading, sha-checking, and deserializing `pvk.bin`.
+    pub pvk_ms: f64,
+    /// Time spent reading, sha-checking, and parsing `config.json`.
+    pub circuit_config_ms: f64,
+    /// Time spent sha-checking the optional EVM verifier artifact.
+    pub evm_verifier_ms: f64,
+    /// Time spent reading and sha-checking the optional witness WASM.
+    pub witness_gen_wasm_ms: f64,
+}
 
 /// In-memory bundle of every CRS artifact a `Prover` needs.
 ///
@@ -58,6 +80,14 @@ impl ArtifactSet {
     ///   returns [`ArtifactError::Signature`].
     /// * All sha256 / `ar1cs_blake3` claims must match the on-disk files.
     ///
+    /// After the signature + hash gates pass, Groth16 key material is
+    /// deserialized with arkworks' unchecked canonical path. This loader
+    /// treats the manifest-authenticated bytes as the artifact identity and
+    /// does not repeat subgroup / validity checks on every cold load. A
+    /// wrong-but-authentic key cannot produce a valid proof for the expected
+    /// circuit; that failure belongs to proving / verification, not artifact
+    /// identity loading.
+    ///
     /// For loading unsigned bundles (e.g. CI test fixtures, pre-F5 legacy
     /// bundles) use [`ArtifactSet::load_unsigned`] — it is explicit about
     /// skipping signature authenticity.
@@ -68,6 +98,20 @@ impl ArtifactSet {
     ) -> Result<Self, ArtifactError> {
         verify_manifest(manifest, verifying_key)?;
         Self::load_artifacts(manifest, dir)
+    }
+
+    /// Load signed artifacts and return per-artifact timing.
+    ///
+    /// Semantics are identical to [`Self::load_signed`]; the second tuple
+    /// element is only diagnostic timing for callers that need to attribute
+    /// cold-load cost.
+    pub fn load_signed_with_timing(
+        manifest: &Manifest,
+        dir: &Path,
+        verifying_key: &VerifyingKey,
+    ) -> Result<(Self, ArtifactLoadTiming), ArtifactError> {
+        verify_manifest(manifest, verifying_key)?;
+        Self::load_artifacts_with_timing(manifest, dir)
     }
 
     /// Load every artifact named in `manifest` from `dir` and verify the
@@ -94,32 +138,79 @@ impl ArtifactSet {
         Self::load_artifacts(manifest, dir)
     }
 
+    /// Load unsigned artifacts and return per-artifact timing.
+    ///
+    /// Semantics are identical to [`Self::load_unsigned`]; the second tuple
+    /// element is only diagnostic timing for callers that need to attribute
+    /// cold-load cost.
+    pub fn load_unsigned_with_timing(
+        manifest: &Manifest,
+        dir: &Path,
+    ) -> Result<(Self, ArtifactLoadTiming), ArtifactError> {
+        Self::load_artifacts_with_timing(manifest, dir)
+    }
+
     // ── Shared loading logic ──────────────────────────────────────────────
 
     fn load_artifacts(manifest: &Manifest, dir: &Path) -> Result<Self, ArtifactError> {
+        Ok(Self::load_artifacts_with_timing(manifest, dir)?.0)
+    }
+
+    fn load_artifacts_with_timing(
+        manifest: &Manifest,
+        dir: &Path,
+    ) -> Result<(Self, ArtifactLoadTiming), ArtifactError> {
+        let total_start = Instant::now();
+        let mut timing = ArtifactLoadTiming::default();
+
+        let start = Instant::now();
         let arcs = load_arcs(dir, &manifest.artifacts.ar1cs, &manifest.ar1cs_blake3)?;
+        timing.ar1cs_ms = elapsed_ms(start);
+
+        let start = Instant::now();
         let pk = load_canonical::<ProvingKey<BN254>>(dir, &manifest.artifacts.pk, "pk")?;
+        timing.pk_ms = elapsed_ms(start);
+
+        let start = Instant::now();
         let vk = load_canonical::<Groth16VerifyingKey<BN254>>(dir, &manifest.artifacts.vk, "vk")?;
+        timing.vk_ms = elapsed_ms(start);
+
+        let start = Instant::now();
         let pvk =
             load_canonical::<PreparedVerifyingKey<BN254>>(dir, &manifest.artifacts.pvk, "pvk")?;
+        timing.pvk_ms = elapsed_ms(start);
+
+        let start = Instant::now();
         let cfg = load_circuit_config(dir, &manifest.artifacts.circuit_config)?;
+        timing.circuit_config_ms = elapsed_ms(start);
+
         if let Some(entry) = manifest.artifacts.evm_verifier.as_ref() {
+            let start = Instant::now();
             verify_sha256(dir, entry, "artifacts.evm_verifier.sha256")?;
+            timing.evm_verifier_ms = elapsed_ms(start);
         }
+
+        let start = Instant::now();
         let witness_gen_wasm = manifest
             .artifacts
             .witness_gen
             .as_ref()
             .map(|entry| load_bytes_with_sha(dir, entry, "artifacts.witness_gen.sha256"))
             .transpose()?;
-        Ok(Self {
-            pk,
-            vk,
-            pvk,
-            arcs,
-            cfg,
-            witness_gen_wasm,
-        })
+        timing.witness_gen_wasm_ms = elapsed_ms(start);
+        timing.total_ms = elapsed_ms(total_start);
+
+        Ok((
+            Self {
+                pk,
+                vk,
+                pvk,
+                arcs,
+                cfg,
+                witness_gen_wasm,
+            },
+            timing,
+        ))
     }
 }
 
@@ -168,10 +259,12 @@ fn load_arcs(
         });
     }
 
-    // Parse, then verify the body_blake3 claim.
+    // Parse verifies the 32-byte trailer against the body. Once that
+    // succeeds, the trailer itself is the body Blake3 hash, so avoid
+    // `arcs.body_blake3()` here; that would reserialize the full matrix set.
     let arcs = ArcsFile::<F>::read(&mut &bytes[..])
         .map_err(|e| ArtifactError::ArcsFormat(format!("{e}")))?;
-    let body_blake3_hex = hex::encode(arcs.body_blake3());
+    let body_blake3_hex = hex::encode(&bytes[bytes.len() - 32..]);
     if body_blake3_hex != expected_body_blake3_hex {
         return Err(ArtifactError::HashMismatch {
             field: "ar1cs_blake3",
@@ -208,10 +301,20 @@ fn load_canonical<T: CanonicalDeserialize>(
         });
     }
 
-    T::deserialize_uncompressed(&bytes[..]).map_err(|e| ArtifactError::Deserialize {
+    // Trust model: sha256 has already bound these bytes to the caller's
+    // manifest (and `load_signed` authenticated that manifest before this
+    // point). Use the unchecked canonical decoder to avoid repeating expensive
+    // subgroup / curve-validity checks during every bundle load; malformed
+    // wire bytes still fail to decode, and semantically wrong keys fail later
+    // when proving or verifying against the expected circuit.
+    T::deserialize_uncompressed_unchecked(&bytes[..]).map_err(|e| ArtifactError::Deserialize {
         what,
         message: format!("{e}"),
     })
+}
+
+fn elapsed_ms(start: Instant) -> f64 {
+    start.elapsed().as_secs_f64() * 1_000.0
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {

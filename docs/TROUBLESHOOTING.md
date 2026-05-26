@@ -7,7 +7,8 @@ Common errors and their solutions when working with zkap-circuit.
 ### `error[E0658]: edition 2024 is not yet stable`
 
 **Cause:** Rust version is too old.
-**Fix:** Install Rust 1.85+ (`rustup update stable`).
+**Fix:** Install a stable Rust toolchain satisfying the workspace MSRV (`1.86`;
+`rustup update stable`).
 
 ### Linker errors on macOS (Apple Silicon)
 
@@ -21,23 +22,20 @@ Common errors and their solutions when working with zkap-circuit.
 **Cause:** Running in debug mode.
 **Fix:** Always use `--release`. Debug field arithmetic is orders of magnitude slower than release mode.
 
-```bash
-# Wrong — will be extremely slow
-cargo run --example groth16_proof
-
-# Correct
-cargo run -p zkap-service --example groth16_proof --release
-```
+Use `cargo run --release ...` for CLI/setup commands and release-profile test
+commands for prove-heavy paths.
 
 ### `All input vectors must have length K=...`
 
-**Cause:** `ProofRequest` vector field lengths do not match `config.k`.
-**Fix:** Ensure `jwts`, `pk_ops`, `merkle_paths`, and `leaf_indices` all have exactly K entries.
+**Cause:** `ProofRequest::credentials.len()` does not match `config.k`.
+**Fix:** Ensure `credentials` has exactly K entries.
 
-### `Invalid anchor_evals length: expected ..., got ...`
+### `invalid prove request at anchor: ...`
 
-**Cause:** `anchor_evals` length does not equal N - K + 1.
-**Fix:** Check that `generate_anchor()` output has the correct number of evaluations for your `(n, k)` configuration. For example, with N=6 and K=3, `anchor_evals` must have 4 entries.
+**Cause:** `ProveRequest::anchor` length does not equal N - K + 1.
+**Fix:** Check that `generate_anchor()` output has the correct number of
+`anchor_evaluations` for your `(n, k)` configuration. For example, with N=6
+and K=3, `anchor_evaluations` must have 4 entries.
 
 ### `JWT parsing failed`
 
@@ -49,7 +47,7 @@ cargo run -p zkap-service --example groth16_proof --release
 
 ### `Input audience count (...) exceeds the limit (...)`
 
-**Cause:** `aud_list` passed to `generate_aud_hash()` has more entries than `config.num_audience_limit`.
+**Cause:** `AudienceHashRequest::audiences` passed to `generate_audience_hashes()` has more entries than `config.num_audience_limit`.
 **Fix:** Reduce the audience list or increase `num_audience_limit` in the config. Changing `num_audience_limit` requires re-running `setup()` to generate new CRS artifacts.
 
 ### `Proof generation failed` / constraint not satisfied
@@ -57,21 +55,22 @@ cargo run -p zkap-service --example groth16_proof --release
 **Cause:** Circuit witness is inconsistent with public inputs. This is the most common proof failure.
 **Fix:** Check each of these in order:
 
-1. **JSON quote mismatch** — The circuit extracts JWT claim values with surrounding `"` characters. All hash inputs must match. See [JSON Quote Gotcha](#json-quote-gotcha) below.
-2. **Merkle root mismatch** — The `root` in `ProofRequest` must match the tree built from `generate_leaf_hash()` results.
-3. **hanchor mismatch** — `hanchor` must be the chain hash of `anchor_evals` computed via `generate_hash()`.
-4. **Audience hash mismatch** — `aud_hash_list` must come from `generate_aud_hash().individual`.
-5. **Config mismatch** — The `CircuitConfig` passed to `prove()` must be identical to the one used in `setup()`.
+1. **Raw claim / quote boundary mismatch** — helper APIs expect raw claim strings and add JSON quotes internally. Do not pre-wrap values in escaped quotes. See [Claim Quote Boundary](#claim-quote-boundary) below.
+2. **Merkle root mismatch** — The `merkle_root` in `ProveRequest` must match the tree built from `generate_issuer_key_hash()` results.
+3. **Anchor mismatch** — `ProveRequest::anchor` must come from `generate_anchor().anchor_evaluations`.
+4. **Audience hash mismatch** — Audience public inputs must come from `generate_audience_hashes().audience_hashes` and `.audience_list_hash`.
+5. **Config mismatch** — `ArtifactSet::cfg` must be the config used during setup.
 
-### `verify()` returns `false`
+### `Groth16::verify_proof` returns `false`
 
 **Cause:** Public inputs do not match those embedded in the proof.
-**Fix:** Use `ZkapProofResult::public_inputs_for(index)` to construct the correct 8-element input vector. Do not reorder, omit, or modify elements.
+**Fix:** Use `ProveResponse::public_inputs_for(index)` to construct the correct 8-element input vector. Do not reorder, omit, or modify elements.
 
 ```rust
 // Correct
-let inputs = proof_result.public_inputs_for(0);
-let valid = verify(&ctx, &proof_result.proofs[0], &inputs)?;
+let input_hex = prove_response.public_inputs_for(0);
+let inputs = decode_public_inputs(input_hex)?;
+let valid = ark_groth16::Groth16::<BN254>::verify_proof(&set.pvk, &proof, &inputs)?;
 
 // Wrong — manually constructing inputs risks ordering errors
 let inputs = vec![hanchor, root, ...];
@@ -82,29 +81,32 @@ let inputs = vec![hanchor, root, ...];
 **Cause:** The JSON config file is missing, malformed, or contains invalid values.
 **Fix:** Verify the file exists and matches the `RawCircuitConfig` schema. See [`example.json`](../example.json) for a complete example.
 
-## JSON Quote Gotcha
+## Claim Quote Boundary
 
-The circuit extracts JWT claim values **with JSON quote characters**. When using `generate_leaf_hash()`, `generate_anchor()`, and `generate_aud_hash()`, claim values must be wrapped in escaped quotes:
+The circuit extracts JWT claim values with JSON quote characters. Current
+service helper APIs accept **raw** claim values and add those quotes internally:
 
 ```rust
-// Correct — matches what the circuit extracts from the JWT payload
-let iss = "\"https://accounts.google.com\"";
-let secret = Secret {
-    sub: "\"user_0\"".into(),
-    iss: "\"https://accounts.google.com\"".into(),
-    aud: "\"my-app\"".into(),
+use zkap_service::{
+    AnchorSecret, AudienceHashRequest, IssuerKeyHashRequest,
+    generate_audience_hashes, generate_issuer_key_hash,
 };
 
-// Wrong — will produce different hashes, causing proof failure
-let iss = "https://accounts.google.com";
-let secret = Secret {
-    sub: "user_0".into(),       // missing quotes
-    iss: "issuer".into(),       // missing quotes
-    aud: "my-app".into(),       // missing quotes
+// Correct — raw values, no escaped JSON quotes.
+let secret = AnchorSecret {
+    subject: "user_0".into(),
+    issuer: "https://accounts.google.com".into(),
+    audience: "my-app".into(),
+};
+let aud = AudienceHashRequest { audiences: vec!["my-app".into()] };
+let leaf = IssuerKeyHashRequest {
+    issuer: "https://accounts.google.com".into(),
+    rsa_modulus_b64,
 };
 ```
 
-This is the single most common cause of proof generation failures. If `prove()` returns a constraint error, check quotes first.
+Do not pass values like `"\"my-app\""`. That double-quotes the claim relative
+to the circuit and can cause proof failures.
 
 ## Getting Help
 

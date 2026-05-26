@@ -22,7 +22,7 @@ pub enum ArtifactError {
     #[error("circuit.ar1cs parse error: {0}")]
     ArcsFormat(String),
 
-    /// `CanonicalDeserialize` failed for one of pk / vk / pvk.
+    /// Canonical decoding failed for one of pk / vk / pvk.
     #[error("{what} deserialize error: {message}")]
     Deserialize {
         /// Logical artifact name (`"pk"`, `"vk"`, `"pvk"`).

@@ -20,11 +20,13 @@ rust-version = "1.86"
 # so any `warn` here becomes a hard error on PRs.
 [workspace.lints.rust]
 # No unsafe Rust anywhere in this workspace except the explicit
-# `unsafe extern "C"` FFI binding for mobile mi_collect (allowlisted at
-# its module). New unsafe must be justified and locally allowed.
+# wasm32 C ABI surface in `crates/witness-gen-wasm` (allowlisted at
+# its crate root) and tightly scoped test-only helpers. New unsafe must
+# be justified and locally allowed.
 unsafe_code = "deny"
-# Phase 8 H5-finalize: every lib crate (`ark-utils`, `circuit`,
-# `gadget`, `zkap-service`) hit zero `missing_docs` warnings as of
+# Phase 8 H5-finalize: every lib crate (`ark-codec`,
+# `ark-r1cs-helpers`, `circuit`, `gadget`, `zkap-service`) hit zero
+# `missing_docs` warnings as of
 # Phase 7 (H5-staged-1/2/3) and Phase 8 H5-staged-4. Promote the
 # workspace-wide warn so future PRs surface a regression at the same
 # CI gate (`cargo clippy --workspace --all-targets -- -D warnings`)

@@ -2,14 +2,12 @@
 
 Public API of the `zkap-service` crate.
 
-All functions return `Result<T, ApplicationError>`.
-Field-element parameters accept decimal strings or `0x`-prefixed hex strings.
+The current service surface is always available after the 2026-05 refactor:
+the old `proof` / `dev-unverified-artifacts` feature split was removed.
 
-For the full proof lifecycle walkthrough, see the [Example Guide](EXAMPLE_GUIDE.md).
+For the proof lifecycle, see [Example Guide](EXAMPLE_GUIDE.md).
 
----
-
-## Functions — Always Available
+## Helper Functions
 
 ### `load_circuit_config`
 
@@ -17,201 +15,117 @@ For the full proof lifecycle walkthrough, see the [Example Guide](EXAMPLE_GUIDE.
 pub fn load_circuit_config(path: &Path) -> Result<CircuitConfig, ApplicationError>
 ```
 
-Load and validate a [`CircuitConfig`](#circuitconfig) from a JSON file.
+Loads a JSON `CircuitConfig` and runs `CircuitConfig::validate()`.
 
-**Parameters:**
-
-| Name | Type | Description |
-|------|------|-------------|
-| `path` | `&Path` | Path to a JSON file in `RawCircuitConfig` format, or a `config.json` written by `setup()` |
-
-**Errors:**
-- `InvalidFormat` — File not found, invalid JSON, or validation failure (e.g. `k > n`, `tree_height < 1`).
-
-**Example:**
-```rust
-use std::path::Path;
-use zkap_service::load_circuit_config;
-
-let config = load_circuit_config(Path::new("example.json"))?;
-assert!(config.k <= config.n);
-```
-
----
-
-### `generate_hash`
+### `generate_poseidon_hash`
 
 ```rust
-pub fn generate_hash(messages: Vec<String>) -> Result<String, ApplicationError>
+pub fn generate_poseidon_hash(
+    request: HashRequest,
+) -> Result<HashResponse, ApplicationError>
 ```
 
-Compute a Poseidon hash of one or more field-element strings.
-
-**Parameters:**
-
-| Name | Type | Description |
-|------|------|-------------|
-| `messages` | `Vec<String>` | One or more field-element strings (hex or decimal) |
-
-**Returns:** `0x`-prefixed hex string representing the hash result.
-
-**Errors:**
-- `InvalidFormat` — A string could not be parsed as a field element.
-
-**Example:**
-```rust
-use zkap_service::generate_hash;
-
-let h = generate_hash(vec!["42".into(), "123".into()])?;
-assert!(h.starts_with("0x"));
-
-// Deterministic: same inputs always produce the same hash
-let h2 = generate_hash(vec!["42".into(), "123".into()])?;
-assert_eq!(h, h2);
-```
-
-**Lifecycle context:** Used in Step 3 (nonce = Poseidon(h_sign_user_op, random)) and Step 5 (hanchor chain hash of anchor evaluations).
-
----
-
-### `generate_aud_hash`
+Computes a Poseidon hash over field-element strings. Each input accepts either
+`0x`-prefixed lowercase big-endian hex or decimal.
 
 ```rust
-pub fn generate_aud_hash(
-    params: &CircuitConfig,
-    aud_list: Vec<String>,
-) -> Result<AudHashResult, ApplicationError>
+use zkap_service::{HashRequest, generate_poseidon_hash};
+
+let result = generate_poseidon_hash(HashRequest {
+    field_elements: vec!["0x1".into(), "42".into()],
+})?;
+assert!(result.hash.starts_with("0x"));
 ```
 
-Compute per-audience Poseidon hashes and a combined audience-list hash.
-
-Each audience string is padded to `params.max_aud_len` and individually hashed. The list is padded with `params.forbidden_string` up to `params.num_audience_limit`. All individual hashes are then hashed together to produce `h_aud_list`.
-
-**Parameters:**
-
-| Name | Type | Description |
-|------|------|-------------|
-| `params` | `&CircuitConfig` | Circuit configuration |
-| `aud_list` | `Vec<String>` | Audience strings (must include JSON quotes if circuit extracts with quotes) |
-
-**Returns:** [`AudHashResult`](#audhashresult) with `individual` hashes and `combined` hash.
-
-**Errors:**
-- `InvalidFormat` — `aud_list.len()` exceeds `params.num_audience_limit`.
-
-**Example:**
-```rust
-use zkap_service::{generate_aud_hash, load_circuit_config};
-use std::path::Path;
-
-let config = load_circuit_config(Path::new("example.json"))?;
-let result = generate_aud_hash(&config, vec!["\"my-audience\"".into()])?;
-// Padded to num_audience_limit
-assert_eq!(result.individual.len(), config.num_audience_limit as usize);
-assert!(result.combined.starts_with("0x"));
-```
-
-**Lifecycle context:** Used in Step 6. Pass `result.individual` as the audience-hash list when assembling the per-JWT byte buffers that flow into `ProofRequest`.
-
----
-
-### `generate_leaf_hash`
+### `generate_audience_hashes`
 
 ```rust
-pub fn generate_leaf_hash(
-    params: &CircuitConfig,
-    iss: &str,
-    pk_b64: &str,
-) -> Result<String, ApplicationError>
+pub fn generate_audience_hashes(
+    config: &CircuitConfig,
+    request: AudienceHashRequest,
+) -> Result<AudienceHashResponse, ApplicationError>
 ```
 
-Compute a Merkle tree leaf hash from an (issuer, RSA public key) pair.
+Computes one Poseidon hash per audience slot and a combined
+`audience_list_hash`. Inputs are raw audience strings; the service adds JSON
+quotes internally before padding/hashing so the bytes match the circuit's JWT
+claim extraction.
 
-The issuer string is padded to `params.max_iss_len`. The Base64-encoded RSA modulus is decoded and converted to BigNat limbs. Both are concatenated and hashed with Poseidon.
-
-**Parameters:**
-
-| Name | Type | Description |
-|------|------|-------------|
-| `params` | `&CircuitConfig` | Circuit configuration |
-| `iss` | `&str` | Issuer string. **Must include JSON quotes** if the circuit extracts claims with quotes (e.g. `"\"https://accounts.google.com\""`) |
-| `pk_b64` | `&str` | RSA public key modulus, Base64-encoded |
-
-**Returns:** `0x`-prefixed hex string (leaf field element).
-
-**Errors:**
-- `InvalidFormat` — Invalid Base64 in `pk_b64`.
-
-**Example:**
 ```rust
-use zkap_service::{generate_leaf_hash, load_circuit_config};
-use std::path::Path;
+use zkap_service::{AudienceHashRequest, generate_audience_hashes};
 
-let config = load_circuit_config(Path::new("example.json"))?;
-let leaf = generate_leaf_hash(&config, "\"https://accounts.google.com\"", &pk_b64)?;
-assert!(leaf.starts_with("0x"));
+let result = generate_audience_hashes(
+    &config,
+    AudienceHashRequest {
+        audiences: vec!["my-client-id".into()],
+    },
+)?;
+assert_eq!(result.audience_hashes.len(), config.num_audience_limit as usize);
 ```
 
-**Lifecycle context:** Used in Step 4 to compute leaf hashes for building the issuer Merkle tree.
+### `generate_issuer_key_hash`
 
----
+```rust
+pub fn generate_issuer_key_hash(
+    config: &CircuitConfig,
+    request: IssuerKeyHashRequest,
+) -> Result<IssuerKeyHashResponse, ApplicationError>
+```
+
+Computes the issuer-key Merkle leaf hash for an issuer plus RSA-2048 modulus.
+`issuer` is a raw string; the service adds JSON quotes internally.
+`rsa_modulus_b64` must decode to exactly 256 bytes.
+
+```rust
+use zkap_service::{IssuerKeyHashRequest, generate_issuer_key_hash};
+
+let leaf = generate_issuer_key_hash(
+    &config,
+    IssuerKeyHashRequest {
+        issuer: "https://accounts.example".into(),
+        rsa_modulus_b64: rsa_n_b64,
+    },
+)?;
+assert!(leaf.hash.starts_with("0x"));
+```
 
 ### `generate_anchor`
 
 ```rust
 pub fn generate_anchor(
-    params: &CircuitConfig,
-    secrets: Vec<Secret>,
-) -> Result<GenerateAnchorResCore, ApplicationError>
+    config: &CircuitConfig,
+    request: GenerateAnchorRequest,
+) -> Result<GenerateAnchorResponse, ApplicationError>
 ```
 
-Generate threshold anchor polynomial evaluations from JWT claim secrets.
+Generates threshold anchor polynomial evaluations and their sequential
+Poseidon chain hash `hanchor`.
 
-Each [`Secret`](#secret)'s `(sub, iss, aud)` is hashed via Poseidon into a scalar `x`. The resulting `x` values are combined using the Vandermonde-based anchor scheme to produce polynomial evaluations. The anchor encodes threshold membership without revealing which K of the N credentials were used.
-
-**Parameters:**
-
-| Name | Type | Description |
-|------|------|-------------|
-| `params` | `&CircuitConfig` | Circuit configuration (uses `n`, `k`, max claim lengths) |
-| `secrets` | `Vec<Secret>` | Exactly N secrets (K real + N-K dummy). **Claim values must include JSON quotes** |
-
-**Returns:** [`GenerateAnchorResCore`](#generateanchorrescore) with N-K+1 anchor evaluations (hex strings).
-
-**Errors:**
-- `InvalidFormat` — Claim padding exceeds max length.
-- `CryptographicError` — Anchor scheme failure (e.g. dimension mismatch).
-
-**Example:**
-```rust
-use zkap_service::{generate_anchor, load_circuit_config, Secret};
-use std::path::Path;
-
-let config = load_circuit_config(Path::new("example.json"))?;
-let secrets = vec![
-    Secret { sub: "\"user_0\"".into(), iss: "\"https://issuer.com\"".into(), aud: "\"my-app\"".into() },
-    Secret { sub: "\"user_1\"".into(), iss: "\"https://issuer.com\"".into(), aud: "\"my-app\"".into() },
-    Secret { sub: "\"user_2\"".into(), iss: "\"https://issuer.com\"".into(), aud: "\"my-app\"".into() },
-    // ... N-K dummy secrets
-];
-let result = generate_anchor(&config, secrets)?;
-// result.anchor has N-K+1 evaluations
-```
-
-**Lifecycle context:** Used in Step 5. After generating the anchor, compute `hanchor` by chaining `generate_hash()` calls over the evaluations:
+`request.secrets.len()` must equal `config.n`. `AnchorSecret` fields are raw
+claim strings; the service adds JSON quotes internally.
 
 ```rust
-let mut hanchor = generate_hash(vec![result.anchor[0].clone()])?;
-for v in &result.anchor[1..] {
-    hanchor = generate_hash(vec![hanchor, v.clone()])?;
-}
+use zkap_service::{
+    AnchorSecret, GenerateAnchorRequest, generate_anchor,
+};
+
+let anchor = generate_anchor(
+    &config,
+    GenerateAnchorRequest {
+        secrets: vec![AnchorSecret {
+            subject: "user_0".into(),
+            issuer: "https://accounts.example".into(),
+            audience: "my-client-id".into(),
+        }],
+    },
+)?;
+assert_eq!(
+    anchor.anchor_evaluations.len(),
+    (config.n - config.k + 1) as usize,
+);
 ```
 
----
-
-## Functions — `proof` Feature (default)
-
-These functions are only available when the `proof` feature is enabled (it is enabled by default).
+## Setup
 
 ### `setup`
 
@@ -219,321 +133,288 @@ These functions are only available when the `proof` feature is enabled (it is en
 pub fn setup(
     params: &CircuitConfig,
     output_dir: &Path,
-    rng: &mut dyn rand::RngCore,
+    rng: SetupRng,
     ptau: Option<&Path>,
 ) -> Result<SetupOutput, ApplicationError>
 ```
 
-Perform Groth16 trusted setup and persist the 7-file CRS bundle to `output_dir`.
+Runs Groth16 trusted setup and writes the setup artifacts that the CLI later
+wraps in `manifest.json`.
 
-**Parameters:**
+`SetupRng` is typed:
 
-| Name | Type | Description |
-|------|------|-------------|
-| `params` | `&CircuitConfig` | Circuit configuration |
-| `output_dir` | `&Path` | Directory to write CRS artifacts |
-| `rng` | `&mut dyn RngCore` | Caller-supplied randomness (`OsRng` in production, `ChaCha20Rng` from a fixed seed for reproducible CI runs) |
-| `ptau` | `Option<&Path>` | Stage-2 placeholder; always `None` today, returns an explicit error if `Some(_)` |
+| Variant | Use |
+|---|---|
+| `SetupRng::OsRng` | Production setup. Uses the OS CSPRNG. |
+| `SetupRng::ChaCha20 { seed }` | Deterministic test/reproducible setup only. |
 
-**Output files** (6 written by `setup` itself; `manifest.json` is added by the `generate_setup` CLI binary):
+`ptau` is a Stage 2 placeholder and must be `None` today.
+
+Files written by `setup()`:
 
 | File | Contents |
-|------|----------|
-| `circuit.ar1cs` | R1CS matrices in ark-ar1cs canonical envelope (`ArcsFile`) |
-| `pk.bin` | Proving key — arkworks `CanonicalSerialize` uncompressed |
-| `vk.bin` | Verifying key — arkworks `CanonicalSerialize` uncompressed |
-| `pvk.bin` | Prepared verifying key — arkworks `CanonicalSerialize` uncompressed |
-| `Groth16Verifier.sol` | Solidity on-chain verifier contract |
-| `config.json` | Input `params` serialized as JSON |
+|---|---|
+| `circuit.ar1cs` | R1CS matrices in the ark-ar1cs envelope |
+| `pk.bin` | Groth16 proving key |
+| `vk.bin` | Groth16 verifying key |
+| `pvk.bin` | Prepared verifying key |
+| `Groth16Verifier.sol` | Solidity verifier |
+| `config.json` | Circuit config used for setup |
 
-**Returns:** [`SetupOutput`](#setupoutput) for immediate use (e.g. through `SetupOutput::into_artifact_set()` → `Prover::from_artifact`).
+The `generate_setup` CLI writes `manifest.json` and may attach
+`witness_gen.wasm`.
 
-**Errors:**
-- `InvalidFormat` — Groth16 setup failed, or `ptau = Some(_)`.
+## Artifact Loading
 
-**Lifecycle context:** Step 2 — run once per configuration. For pre-built bundles, see `dist/` in the repository root.
-
----
-
-### `Prover` (native ar1cs prove flow)
+### `ArtifactSet`
 
 ```rust
-pub struct Prover { /* pk, vk, pvk, arcs, cfg */ }
-
-impl Prover {
-    pub fn from_artifact(set: ArtifactSet) -> Self;
-
-    pub fn prove<R: Rng + CryptoRng>(
-        &self,
-        req: &ProofRequest,
-        rng: &mut R,
-    ) -> Result<ZkapProofResult, ApplicationError>;
-
-    pub fn verifying_key(&self) -> &VerifyingKey<BN254>;
-    pub fn prepared_verifying_key(&self) -> &PreparedVerifyingKey<BN254>;
-    pub fn circuit_config(&self) -> &CircuitConfig;
+pub struct ArtifactSet {
+    pub pk: ProvingKey<BN254>,
+    pub vk: VerifyingKey<BN254>,
+    pub pvk: PreparedVerifyingKey<BN254>,
+    pub arcs: ArcsFile<F>,
+    pub cfg: CircuitConfig,
+    pub witness_gen_wasm: Option<Vec<u8>>,
 }
 ```
 
-Canonical post-migration prove entry point (free function, replacing the earlier intermediate-migration `Prover` struct). Internally chains:
+`ArtifactSet` is the in-memory bundle consumed by `prove`.
 
-1. `groth16::prover::adapter::prove_request_to_decoded(&req, &cfg)` → `(SharedDecoded, Vec<CredentialDecoded>)`
-2. Pre-batch: per-credential `derive_x_from_secret` → `x_list`; `derive_selector_from_x_list_and_anchor` → `selector` + `one_positions`
-3. Per credential: `circuit_input::{build_anchor_stage, build_jwt_stage, build_audience_stage, build_merkle_witness, compute_public_inputs}` → `ZkapCircuitInput<F>`
-4. `ZkapCircuit::from_input(circuit_input)` → `ConstraintSynthesizer`
-5. `ark_ar1cs::synthesize_full_assignment(circuit)` → `[F::ONE, instance…, witness…]`
-6. `ark_ar1cs::prove(&pk, &arcs, &full_assignment, OsRng)` → `Proof<BN254>`
-
-**Trust gating** lives entirely in [`ArtifactSet::load`](#artifactsetload). `prove` performs no manifest lookup, no `arcs.body_blake3` recompute, and no sha256 re-check. The `Manifest`/`hash` validation is the loader's job; `prove` trusts the set that built it.
-
-**Returns:** [`ProveResponse`](#proveresponse) containing K proofs and the deterministic public-input bundle.
-
-**Errors:**
-- `InvalidProveRequest { field, message }` — shape / decode / config-validation failure with the offending dotted field path. Replaces the earlier intermediate-migration `InvalidFormat(String)` wrapper for these classes of failure.
-- `PoseidonHashError` — reserved for future fallible Poseidon backends (structurally unreachable on the BN254 implementation but mapped for completeness).
-- `CryptographicError(...)` — surfaces gadget-layer errors (e.g. `AnchorError`) via the `From<AnchorError>` impl.
-- `ProofGenerationFailed` — `synthesize_full_assignment` failed or `ark_ar1cs::prove` rejected the assignment at R1CS preflight.
-
-**Non-canonical shortcut:**
+### `ArtifactSet::load_signed`
 
 ```rust
-pub fn prove_from_unverified_paths<R: Rng + CryptoRng>(
-    bundle_dir: &Path,
-    req: &ProofRequest,
-    rng: &mut R,
-) -> Result<ZkapProofResult, ApplicationError>;
+pub fn load_signed(
+    manifest: &Manifest,
+    dir: &Path,
+    verifying_key: &ed25519_dalek::VerifyingKey,
+) -> Result<ArtifactSet, ArtifactError>
 ```
 
-Loads `pk.bin`, `vk.bin`, `pvk.bin`, `circuit.ar1cs`, `config.json` from `bundle_dir` via [`ArtifactSet::load_unverified`](#artifactset) (no manifest hash gating) and forwards to `Prover::from_artifact` + `Prover::prove`. **Tests / dev tools only**; production callers MUST use `ArtifactSet::load(manifest, dir)` + `Prover::from_artifact` + `Prover::prove`.
+Production loader for signed bundles. It verifies:
 
----
+- `manifest.signature` exists and verifies against `verifying_key`.
+- sha256 of every manifest-listed artifact matches.
+- `circuit.ar1cs` parses as `ArcsFile`.
+- `.ar1cs` body Blake3 matches `manifest.ar1cs_blake3`.
 
-### Verifying a proof
+### `ArtifactSet::load_unsigned`
 
-There is no `zkap_service::verify` wrapper — call `ark_groth16::Groth16::verify_proof` directly:
+```rust
+pub fn load_unsigned(
+    manifest: &Manifest,
+    dir: &Path,
+) -> Result<ArtifactSet, ArtifactError>
+```
+
+Loader for unsigned legacy bundles, CI fixtures, or deployments that
+authenticate the manifest out of band. It performs the same artifact sha256 and
+`ar1cs_blake3` validation as `load_signed`, but it does not verify manifest
+authenticity.
+
+### Timed Loaders
+
+```rust
+pub fn load_signed_with_timing(
+    manifest: &Manifest,
+    dir: &Path,
+    verifying_key: &ed25519_dalek::VerifyingKey,
+) -> Result<(ArtifactSet, ArtifactLoadTiming), ArtifactError>
+
+pub fn load_unsigned_with_timing(
+    manifest: &Manifest,
+    dir: &Path,
+) -> Result<(ArtifactSet, ArtifactLoadTiming), ArtifactError>
+```
+
+Timed loaders have identical validation semantics. The timing value is
+diagnostic only.
+
+## Proving
+
+### `prove`
+
+```rust
+pub fn prove(
+    artifact: &ArtifactSet,
+    request: &ProveRequest,
+) -> Result<ProveResponse, ApplicationError>
+```
+
+Generates one Groth16 proof per credential in `request.credentials`.
+
+`prove` does not load artifacts and does not verify manifest claims. The trust
+gate is the loader that created the `ArtifactSet`.
+
+Internal flow:
+
+1. Decode and validate `ProveRequest` against `artifact.cfg`.
+2. Derive anchor selectors and per-credential witness bundles.
+3. Build a full assignment for each credential.
+4. Call `ark_ar1cs::prove` with `artifact.pk`, `artifact.arcs`, and `OsRng`.
+5. Return `ProveResponse`.
+
+## Verification
+
+There is no `zkap_service::verify` wrapper. Call arkworks directly:
 
 ```rust
 use ark_groth16::Groth16;
 use circuit::types::BN254;
 
-let pvk = prover.prepared_verifying_key();          // or set.pvk, or setup_output.prepared_verifying_key()
-let proof: Proof<BN254>          = /* from Prover::prove via dto reconstruction */;
-let public_inputs: Vec<F>        = /* per-proof 8-element instance vector */;
-let ok = Groth16::<BN254>::verify_proof(pvk, &proof, &public_inputs)?;
+let proof = /* reconstruct or retain ark_groth16::Proof<BN254> */;
+let public_inputs = /* Vec<F> matching ProveResponse::public_inputs_for(i) */;
+let ok = Groth16::<BN254>::verify_proof(&artifact_set.pvk, &proof, &public_inputs)?;
 ```
 
----
-
-## Types
+## DTOs
 
 ### `CircuitConfig`
 
-Runtime circuit parameters. Load from JSON via `load_circuit_config()` or construct from `RawCircuitConfig` via `Into`.
+Runtime circuit parameters. Important fields:
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `n` | `u64` | Total number of credentials (N) |
-| `k` | `u64` | Threshold — minimum credentials required (K) |
-| `max_jwt_b64_len` | `u64` | Maximum JWT length in Base64 bytes |
-| `max_payload_b64_len` | `u64` | Maximum payload length in Base64 bytes |
-| `max_aud_len` | `u64` | Maximum `aud` claim length |
-| `max_exp_len` | `u64` | Maximum `exp` claim length |
-| `max_iss_len` | `u64` | Maximum `iss` claim length |
-| `max_nonce_len` | `u64` | Maximum `nonce` claim length |
-| `max_sub_len` | `u64` | Maximum `sub` claim length |
-| `tree_height` | `u64` | Merkle tree height (supports up to 2^h issuers) |
-| `num_audience_limit` | `u64` | Maximum audience list size |
-| `claims` | `Vec<Vec<u8>>` | JWT claim names to extract |
-| `forbidden_string` | `Vec<u8>` | Padding / injection guard string |
+| Field | Meaning |
+|---|---|
+| `n` | Total credential slots |
+| `k` | Required threshold |
+| `max_jwt_b64_len` | Maximum JWT length in base64 bytes |
+| `max_payload_b64_len` | Maximum payload length in base64 bytes |
+| `max_aud_len` / `max_exp_len` / `max_iss_len` / `max_nonce_len` / `max_sub_len` | Claim length bounds |
+| `tree_height` | Issuer Merkle tree height |
+| `num_audience_limit` | Audience allowlist slot count |
+| `claims` | Claim names extracted by the circuit |
+| `forbidden_string` | Padding / injection guard string |
 
-**Validation rules** (enforced by `validate()`):
-- `k >= 1`, `k <= n`, `n >= 1`
-- `tree_height >= 1`
-- `max_payload_b64_len <= max_jwt_b64_len`
-- `num_audience_limit >= 1`
-- `claims` must be non-empty
+### Hash DTOs
 
-**JSON format** (`RawCircuitConfig`): String-typed fields (`claims` as `Vec<String>`, `forbidden_string` as `String`). See [`example.json`](../example.json) for a complete example.
+```rust
+pub struct HashRequest {
+    pub field_elements: Vec<String>,
+}
 
----
+pub struct HashResponse {
+    pub hash: String,
+}
 
-### `ProveRequest` / `ProveCredential`
+pub struct AudienceHashRequest {
+    pub audiences: Vec<String>,
+}
 
-Native-path prove request — carries **no** artifact paths. The post-migration request describes only the credentials being proven; the CRS bundle reaches the prover through [`ArtifactSet::load`](#artifactsetload) (canonical) or `ArtifactSet::load_unverified` (non-canonical shortcut).
+pub struct AudienceHashResponse {
+    pub audience_hashes: Vec<String>,
+    pub audience_list_hash: String,
+}
+
+pub struct IssuerKeyHashRequest {
+    pub issuer: String,
+    pub rsa_modulus_b64: String,
+}
+
+pub struct IssuerKeyHashResponse {
+    pub hash: String,
+}
+```
+
+### Anchor DTOs
+
+```rust
+pub struct AnchorSecret {
+    pub subject: String,
+    pub issuer: String,
+    pub audience: String,
+}
+
+pub struct GenerateAnchorRequest {
+    pub secrets: Vec<AnchorSecret>,
+}
+
+pub struct GenerateAnchorResponse {
+    pub anchor_evaluations: Vec<String>,
+    pub hanchor: String,
+}
+```
+
+### Prove DTOs
 
 ```rust
 pub struct ProveRequest {
-    pub random: String,            // hex or decimal field-element string
-    pub h_sign_user_op: String,    // hex or decimal field-element string
-    pub anchor: Vec<String>,       // len = n - k + 1, hex/decimal field strings
+    pub random: String,
+    pub h_sign_user_op: String,
+    pub anchor: Vec<String>,
     pub merkle_root: String,
-    pub credentials: Vec<ProveCredential>,    // len = k
+    pub credentials: Vec<ProveCredential>,
 }
 
 pub struct ProveCredential {
-    pub jwt: String,               // compact-serialization "header.payload.signature"
-    pub rsa_modulus_b64: String,   // base64 — must decode to 256 bytes
-    pub merkle_path: Vec<String>,  // len = tree_height; [0] = leaf sibling, [1..] = inner siblings
-    pub merkle_leaf_idx: u64,      // 0 .. 2^tree_height
+    pub jwt: String,
+    pub rsa_modulus_b64: String,
+    pub merkle_path: Vec<String>,
+    pub merkle_leaf_idx: u64,
 }
 ```
 
-Shape and decoding checks live in
-`groth16::prover::adapter::prove_request_to_decoded`: it runs
-`CircuitConfig::validate`, then validates `credentials.len() == k`,
-`anchor.len() == n - k + 1`, `merkle_path.len() == tree_height`, and
-`merkle_leaf_idx < 2^tree_height`. Wire-string decoding rejects
-non-canonical field encodings at the boundary, so the downstream stage
-builders see only F-typed values.
+Shape checks:
 
----
+- `credentials.len() == config.k`
+- `anchor.len() == config.n - config.k + 1`
+- each `merkle_path.len() == config.tree_height`
+- each `merkle_leaf_idx < 2^config.tree_height`
 
-### `Secret`
-
-JWT claim triple for anchor generation. Implements `serde::Serialize` + `Deserialize`.
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `sub` | `String` | JWT subject claim (with JSON quotes) |
-| `iss` | `String` | JWT issuer claim (with JSON quotes) |
-| `aud` | `String` | JWT audience claim (with JSON quotes) |
-
----
-
-### `SetupOutput`
-
-Output of `setup()`. Not serializable — use the persisted bundle files for storage. Convert to an [`ArtifactSet`](#artifactsetload) in-memory via `SetupOutput::into_artifact_set()` to feed `Prover::from_artifact` without going through disk.
-
-| Method | Returns | Description |
-|--------|---------|-------------|
-| `prepared_verifying_key()` | `&PreparedVerifyingKey<BN254>` | Borrow for direct `Groth16::verify_proof` calls |
-| `public_input_count()` | `usize` | Number of public inputs in the verifying key (includes constant "1" element) |
-| `into_artifact_set()` | `ArtifactSet` | Hand `(pk, vk, pvk, arcs, cfg)` straight to `Prover::from_artifact` |
-
----
-
-### `ArtifactSet::load`
+### `ProveResponse`
 
 ```rust
-pub struct ArtifactSet {
-    pub pk:   ProvingKey<BN254>,
-    pub vk:   VerifyingKey<BN254>,
-    pub pvk:  PreparedVerifyingKey<BN254>,
-    pub arcs: ArcsFile<F>,
-    pub cfg:  CircuitConfig,
+pub struct ProveResponse {
+    pub proofs: Vec<ProofComponents>,
+    pub shared_public_inputs: SharedPublicInputs,
+    pub jwt_exp: Vec<String>,
+    pub verification_rhs: Vec<String>,
 }
 
-impl ArtifactSet {
-    pub fn load(manifest: &Manifest, dir: &Path) -> Result<Self, ArtifactError>;
-    pub fn load_unverified(dir: &Path)            -> Result<Self, ArtifactError>;
+impl ProveResponse {
+    pub fn public_inputs_for(&self, index: usize) -> Vec<String>;
 }
 ```
 
-Manifest-validated CRS bundle loader. `load(manifest, dir)` is the **single trust gate** for the prove path; it asserts:
+Public input order:
 
-* `ArcsFile::read(circuit.ar1cs)` succeeds.
-* `arcs.body_blake3() == manifest.ar1cs_blake3`.
-* `sha256(circuit.ar1cs / pk.bin / vk.bin / pvk.bin / config.json) == manifest.artifacts.<slot>.sha256`.
-* If `manifest.artifacts.evm_verifier` is `Some`, `sha256(Groth16Verifier.sol) == manifest.artifacts.evm_verifier.sha256`.
-
-Any disagreement returns `ArtifactError::HashMismatch { field, expected, got }` with the failing manifest path named in `field`.
-
-`load_unverified(dir)` is the non-canonical, caller-trusted shortcut: it reads the same files but runs **no** sha256 / `ar1cs_blake3` / `evm_verifier` validation. Use only in tests, dev tools, and caller-trusted environments.
-
----
+```text
+[hanchor, h_a, root, h_sign_user_op, jwt_exp, verification_rhs, lhs, h_aud_list]
+```
 
 ### `ProofComponents`
 
-Groth16 proof in Solidity-compatible hex string format. Implements `serde::Serialize` + `Deserialize`.
+Solidity-compatible Groth16 proof components:
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `a` | `[String; 2]` | BN254 G1 affine point `[x, y]` |
-| `b` | `[String; 4]` | BN254 G2 affine point `[bx_c1, bx_c0, by_c1, by_c0]` |
-| `c` | `[String; 2]` | BN254 G1 affine point `[x, y]` |
-
----
-
-### `ZkapProofResult`
-
-Complete proof output. Implements `serde::Serialize` + `Deserialize`.
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `proofs` | `Vec<ProofComponents>` | K proof components |
-| `shared_inputs` | `Vec<String>` | 6 shared public inputs: `[hanchor, h_a, root, h_sign_user_op, lhs, h_aud_list]` |
-| `jwt_exp_list` | `Vec<String>` | Per-proof JWT expiration timestamps |
-| `verification_rhs_list` | `Vec<String>` | Per-proof verification RHS values |
-
-| Method | Returns | Description |
-|--------|---------|-------------|
-| `public_inputs_for(index)` | `Vec<String>` | Reconstruct 8-element public input vector for proof at `index` |
-
-**Public input layout** (8 elements, order matters for on-chain verification):
-
-```
-[hanchor, h_a, root, h_sign_user_op, jwt_exp, verification_rhs, lhs, h_aud_list]
- ─────────────shared_inputs──────────────────  ──per-proof──  ──shared──
-         [0]   [1]   [2]        [3]               [4]    [5]     [4]     [5]
-                                                   ↑      ↑       ↑       ↑
-                                             jwt_exp_list  │  shared[4] shared[5]
-                                                   verification_rhs_list
+```rust
+pub struct ProofComponents {
+    pub a: [String; 2],
+    pub b: [String; 4],
+    pub c: [String; 2],
+}
 ```
 
----
+## Error Types
 
-### `AudHashResult`
+All public APIs return `ApplicationError` except artifact loaders, which return
+`ArtifactError`.
 
-Audience hash result. Implements `serde::Serialize` + `Deserialize`.
+Common `ApplicationError` variants:
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `individual` | `Vec<String>` | Per-audience Poseidon hashes (hex strings, padded to `num_audience_limit`) |
-| `combined` | `String` | Combined hash of all individual hashes (h_aud_list, hex string) |
+- `InvalidFormat`
+- `InvalidFieldElement`
+- `AudienceLimitExceeded`
+- `InvalidClaimValue`
+- `InvalidBase64`
+- `InvalidRsaModulus`
+- `AnchorDimensionMismatch`
+- `InvalidProveRequest`
+- `ProofGenerationFailed`
 
----
+Common `ArtifactError` variants:
 
-### `GenerateAnchorResCore`
-
-Anchor generation result.
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `anchor` | `Vec<String>` | N-K+1 anchor polynomial evaluations (hex strings) |
-
----
-
-### `ApplicationError`
-
-Top-level error enum. All public functions return this type.
-
-| Variant | Description |
-|---------|-------------|
-| `InvalidFormat(String)` | Input format or parameter violation |
-| `InternalError` | Internal processing error |
-| `Other(String)` | Miscellaneous error |
-| `CryptographicError(String)` | Cryptographic operation failed |
-| `PoseidonHashError` | Poseidon hash evaluation failed |
-| `FieldParsingError(FieldParseError)` | Field element parsing failed |
-| `TextEncodingError(String)` | Text encoding error |
-| `ParseError(String)` | General parse error |
-| `ProofGenerationFailed(String)` | Groth16 proving failed |
-| `VerifyFailed` | Proof verification failed |
-
----
-
-## Feature Flags
-
-| Feature | Default | Effect |
-|---------|---------|--------|
-| `proof` | **on** | Enables `setup`, `Prover`, `ArtifactSet`, and the heavyweight `ark-ar1cs` / `ark-groth16` dependencies |
-
-Without `proof`: only hash/anchor functions, data types, and `load_circuit_config` are available. Use this for platforms where proof generation happens server-side.
-
-```toml
-# Full build (default)
-zkap-service = { git = "https://github.com/snp-labs/zkap-circuit" }
-
-# Lightweight build (no proving)
-zkap-service = { git = "https://github.com/snp-labs/zkap-circuit", default-features = false }
-```
+- `Io`
+- `MissingArtifact`
+- `HashMismatch`
+- `ArcsFormat`
+- `Deserialize`
+- `Signature`

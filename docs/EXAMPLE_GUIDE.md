@@ -1,138 +1,255 @@
-# Example Guide: Proof Lifecycle Walkthrough
+# Example Guide: Setup -> Load -> Prove -> Verify
 
-A step-by-step guide to running the complete setup → prove → verify lifecycle.
+This guide describes the current ZKAP proof lifecycle. It is written as an
+integration flow, not as a single in-tree runnable example binary.
 
-## Prerequisites
+## 1. Build Or Obtain A CRS Bundle
 
-- Rust 1.85+ (stable, required for the 2024 edition)
-- Release mode build (`--release` is required)
-
-## Run the Example
+For a new circuit configuration, run trusted setup through the CLI:
 
 ```bash
-git clone https://github.com/snp-labs/zkap-circuit.git
-cd zkap-circuit
-cargo run -p zkap-service --example groth16_proof --release
+cargo run --release -p zkap-cli --bin generate_setup -- \
+  --config example.json \
+  --output crs/example \
+  --circuit-id zkap-main-v1
 ```
 
-> **`--release` is required.** Debug mode is orders of magnitude slower due to
-> unoptimized field arithmetic.
+This produces:
 
-## Expected Output
-
-```
-=== ZKAP Groth16 Proof Lifecycle Example ===
-
-[Step 1] Creating circuit configuration (N=6, K=3)...
-  Circuit params: JWT max=1024B, payload max=640B, tree_height=4
-
-[Step 2] Running Groth16 trusted setup (CRS generation)...
-  Setup complete: 9 public inputs, CRS written to /tmp/zkap-example
-
-[Step 3] Generating 3 RSA-2048 keys and signing JWTs...
-  JWT[0]: sub=user_0, signed with RSA-2048
-  JWT[1]: sub=user_1, signed with RSA-2048
-  JWT[2]: sub=user_2, signed with RSA-2048
-
-[Step 4] Building issuer Merkle tree (height=4)...
-  Tree root: 20702506484442991074...
-  3 merkle proofs extracted
-
-[Step 5] Generating threshold anchor (N=6, K=3)...
-  Anchor: 4 evals, hanchor computed via generate_hash()
-
-[Step 6] Generating 3 Groth16 proofs via prove() API...
-  Proof 1/3 generated
-  Proof 2/3 generated
-  Proof 3/3 generated
-
-[Step 7] Verifying proofs...
-  Proof 1/3: VALID
-  Proof 2/3: VALID
-  Proof 3/3: VALID
-  Tampered proof: INVALID (expected)
-
-=== All steps completed successfully! ===
+```text
+crs/example/
+  circuit.ar1cs
+  pk.bin
+  vk.bin
+  pvk.bin
+  Groth16Verifier.sol
+  config.json
+  manifest.json
 ```
 
-## What Each Step Does
+Optional production signing:
 
-The example exercises all 7 public API functions of `zkap-service`:
-
-| Step | API Function(s) | What Happens |
-|------|-----------------|--------------|
-| 1 | `CircuitConfig::from(RawCircuitConfig)` | Build circuit parameters: N=6 total credentials, K=3 threshold, tree height 4 |
-| 2 | **`setup()`** | Groth16 trusted setup — generates the 7-file bundle (`circuit.ar1cs`, `pk.bin`, `vk.bin`, `pvk.bin`, `Groth16Verifier.sol`, `config.json`, plus `manifest.json` from the CLI) |
-| 3 | **`generate_hash()`** | Compute nonce = Poseidon(h_sign_user_op, random). Also generates 3 RSA-2048 key pairs and signs JWTs |
-| 4 | **`generate_leaf_hash()`** | Compute Merkle leaf hash for each (issuer, RSA public key) pair, then build the Merkle tree |
-| 5 | **`generate_anchor()`** + **`generate_hash()`** | Generate threshold anchor from N secrets (K real + N-K dummy), then chain-hash into hanchor |
-| 6 | **`generate_aud_hash()`** + **`Prover::prove()`** | Compute audience hashes, assemble `ProofRequest`, generate K Groth16 proofs via `ArtifactSet::load` → `Prover::from_artifact` → `Prover::prove` |
-| 7 | `Groth16::<Bn254>::verify_proof` | Verify each proof against public inputs by handing the bundled `PreparedVerifyingKey` borrow to `ark_groth16::Groth16::verify_proof`. Also demonstrates that a tampered proof fails |
-
-## Understanding the Input Flow
-
-The `ProofRequest` carries no artifact paths; the bundle reaches the
-prover through `ArtifactSet::load(manifest, dir)`. Each field of the
-request comes from a specific preparation step:
-
-```
-  setup() / cli generate_setup
-    └→ dist/<shape>/{circuit.ar1cs, pk.bin, vk.bin, pvk.bin,
-                     Groth16Verifier.sol, config.json, manifest.json}
-       (loaded by `ArtifactSet::load(manifest, dir)`)
-
-  RSA key generation + JWT signing
-    ├→ per_jwt[i].jwt_bytes
-    ├→ per_jwt[i].rsa_modulus_be       (RSA-2048 modulus, 256 BE bytes)
-    └→ per_jwt[i].rsa_signature_be     (RSA-2048 signature, 256 BE bytes)
-
-  generate_leaf_hash() → Merkle tree
-    ├→ per_jwt[i].merkle_leaf_sibling_hash_be
-    ├→ per_jwt[i].merkle_auth_path_be  (tree_height - 1 entries)
-    ├→ per_jwt[i].merkle_leaf_idx
-    └→ shared.merkle_root_be           (Merkle root, 32 BE bytes)
-
-  generate_anchor() + generate_hash()
-    ├→ shared.anchor_values_be         (n - k + 1 evaluations, 32 BE bytes each)
-    ├→ shared.anchor_known_x_be        (k known x values)
-    ├→ shared.anchor_selector          (n bytes, cardinality = k)
-    └→ per_jwt[i].anchor_current_idx
-
-  Application-specific
-    ├→ shared.h_sign_user_op_be        (UserOperation binding)
-    └→ shared.random_be                (blinding factor, must be non-zero)
+```bash
+cargo run --release -p zkap-cli --bin generate_setup -- \
+  --config example.json \
+  --output crs/example \
+  --circuit-id zkap-main-v1 \
+  --signing-key signing.key \
+  --verifying-key-out verifying.key
 ```
 
-## Using Pre-built CRS
+Optional WASM witness artifact:
 
-The example runs `setup()` each time, but for repeated use you can
-skip the trusted setup by loading the pre-built bundle from `dist/`:
+```bash
+bash scripts/ci/build-wasm-artifact.sh stage-wasm/witness_gen.wasm
 
-- `dist/1-of-1/` — single-signer configuration (N=1, K=1)
-- `dist/3-of-3/` — three-of-three configuration (N=3, K=3)
+cargo run --release -p zkap-cli --bin generate_setup -- \
+  --config example.json \
+  --output crs/example \
+  --circuit-id zkap-main-v1 \
+  --witness-gen-wasm stage-wasm/witness_gen.wasm
+```
+
+## 2. Load The Bundle
+
+Signed production bundle:
 
 ```rust
 use std::path::Path;
-use zkap_service::{ArtifactSet, Prover};
-use zkap_service::manifest::Manifest;
+use ed25519_dalek::VerifyingKey;
+use zkap_service::{ArtifactSet, manifest::Manifest};
 
-let dir = Path::new("dist/1-of-1");
-let manifest_bytes = std::fs::read(dir.join("manifest.json"))?;
-let manifest: Manifest = serde_json::from_slice(&manifest_bytes)?;
-let set = ArtifactSet::load(&manifest, dir)?;          // single trust gate
-let prover = Prover::from_artifact(set);
-let proofs = prover.prove(&request, &mut rand::rngs::OsRng)?;
+let dir = Path::new("crs/example");
+let manifest: Manifest = serde_json::from_slice(&std::fs::read(dir.join("manifest.json"))?)?;
+let verifying_key_bytes = std::fs::read("verifying.key")?;
+let verifying_key = VerifyingKey::from_bytes(
+    verifying_key_bytes.as_slice().try_into().expect("32-byte ed25519 key"),
+)?;
+
+let set = ArtifactSet::load_signed(&manifest, dir, &verifying_key)?;
 ```
 
-## Next Steps
+Unsigned fixture or out-of-band authenticated manifest:
 
-- **Integrate into your project** — See [API Reference](API_REFERENCE.md)
-  for detailed function signatures, parameters, error handling, and type specs.
-- **Understand the circuit** — See [Circuit Design](CIRCUIT_DESIGN.md)
-  for constraint structure and security properties.
-- **Diagnose errors** — See [Troubleshooting](TROUBLESHOOTING.md)
-  for common error messages and solutions.
+```rust
+let set = ArtifactSet::load_unsigned(&manifest, dir)?;
+```
 
-## Source
+Both loaders validate artifact sha256 claims and `ar1cs_blake3`. Only
+`load_signed` verifies manifest authenticity.
 
-[`crates/service/examples/groth16_proof.rs`](../crates/service/examples/groth16_proof.rs)
+## 3. Prepare Helper Outputs
+
+The service helper APIs accept raw claim strings and add JWT JSON quotes
+internally where needed.
+
+### Nonce / generic Poseidon hash
+
+```rust
+use zkap_service::{HashRequest, generate_poseidon_hash};
+
+let nonce = generate_poseidon_hash(HashRequest {
+    field_elements: vec![h_sign_user_op.clone(), random.clone()],
+})?;
+```
+
+### Audience allowlist
+
+```rust
+use zkap_service::{AudienceHashRequest, generate_audience_hashes};
+
+let audience_hashes = generate_audience_hashes(
+    &set.cfg,
+    AudienceHashRequest {
+        audiences: vec!["my-client-id".into()],
+    },
+)?;
+```
+
+Use `audience_hashes.audience_hashes` as the padded per-slot list and
+`audience_hashes.audience_list_hash` as `h_aud_list`.
+
+### Issuer-key Merkle leaves
+
+```rust
+use zkap_service::{IssuerKeyHashRequest, generate_issuer_key_hash};
+
+let leaf = generate_issuer_key_hash(
+    &set.cfg,
+    IssuerKeyHashRequest {
+        issuer: "https://accounts.example".into(),
+        rsa_modulus_b64,
+    },
+)?;
+```
+
+Build the issuer Merkle tree from these leaf hashes. The resulting Merkle root
+and per-credential authentication paths go into `ProveRequest`.
+
+### Threshold anchor
+
+```rust
+use zkap_service::{
+    AnchorSecret, GenerateAnchorRequest, generate_anchor,
+};
+
+let anchor = generate_anchor(
+    &set.cfg,
+    GenerateAnchorRequest {
+        secrets: vec![
+            AnchorSecret {
+                subject: "user_0".into(),
+                issuer: "https://accounts.example".into(),
+                audience: "my-client-id".into(),
+            },
+            // ... exactly set.cfg.n entries
+        ],
+    },
+)?;
+```
+
+Use `anchor.anchor_evaluations` in `ProveRequest::anchor`.
+`anchor.hanchor` is returned for callers that need to compare or log the public
+input; `prove` recomputes it from `anchor` and does not accept caller-supplied
+`hanchor`.
+
+## 4. Assemble `ProveRequest`
+
+`ProveRequest` carries no artifact paths. Artifact identity has already been
+checked by `ArtifactSet::load_signed` or `ArtifactSet::load_unsigned`.
+
+```rust
+use zkap_service::{ProveCredential, ProveRequest};
+
+let request = ProveRequest {
+    random,
+    h_sign_user_op,
+    anchor: anchor.anchor_evaluations,
+    merkle_root,
+    credentials: vec![
+        ProveCredential {
+            jwt,
+            rsa_modulus_b64,
+            merkle_path,
+            merkle_leaf_idx,
+        },
+        // ... exactly set.cfg.k credentials
+    ],
+};
+```
+
+Boundary validation checks:
+
+- `credentials.len() == set.cfg.k`
+- `anchor.len() == set.cfg.n - set.cfg.k + 1`
+- each `merkle_path.len() == set.cfg.tree_height`
+- each `merkle_leaf_idx < 2^set.cfg.tree_height`
+- RSA modulus base64 decodes to 256 bytes
+- field strings parse as BN254 Fr values
+
+## 5. Prove
+
+```rust
+use zkap_service::prove;
+
+let response = prove(&set, &request)?;
+```
+
+The prove path:
+
+1. Decodes and validates the request.
+2. Derives witness bundles from JWT claims, Merkle paths, audience hashes, and
+   anchor data.
+3. Synthesizes full assignments.
+4. Calls `ark_ar1cs::prove` once per credential.
+5. Returns `ProveResponse`.
+
+The prove path does not re-check artifact hashes.
+
+## 6. Verify
+
+There is no `zkap_service::verify` wrapper. Reconstruct public inputs from the
+response and verify with arkworks directly.
+
+```rust
+use ark_groth16::Groth16;
+use circuit::types::BN254;
+
+let public_inputs_hex = response.public_inputs_for(0);
+// Convert the hex strings to Vec<F> using the same field codec used by the host.
+
+let ok = Groth16::<BN254>::verify_proof(
+    &set.pvk,
+    &proof,
+    &public_inputs,
+)?;
+assert!(ok);
+```
+
+Public input order:
+
+```text
+[hanchor, h_a, root, h_sign_user_op, jwt_exp, verification_rhs, lhs, h_aud_list]
+```
+
+## 7. Useful Checks
+
+For documentation/API changes:
+
+```bash
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked
+```
+
+For service loader/prove changes:
+
+```bash
+cargo test -p zkap-service --locked
+```
+
+For full CI parity:
+
+```bash
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo nextest run --profile ci --cargo-profile release-tests --workspace --locked
+```

@@ -1,34 +1,12 @@
-//! F-based per-stage witness builders for the ZKAP groth16 prove flow.
+//! Per-credential witness stage builders for the native Groth16 prove flow.
 //!
-//! This module owns the per-credential algorithm that the wire-decoded
-//! `(SharedDecoded, Vec<CredentialDecoded>)` tuple is folded through.
-//! Key design points:
-//!
-//! 1. Stage builders are `pub(crate)` (callable directly by `prove()`),
-//!    not just package-private helpers wrapped in a single batch-level
-//!    free function.
-//! 2. Builder signatures take field elements (`F`) directly for fields
-//!    that *are* field elements (anchor_values, anchor_known_x, merkle_root,
-//!    merkle_leaf_sibling_hash, merkle_auth_path, random). The previous
-//!    `*_be: &[[u8; 32]]` byte intermediate representation is gone.
-//!    Genuine byte sequences (`jwt_bytes`, `rsa_modulus_bytes`,
-//!    `rsa_signature_bytes`) remain `&[u8]`.
-//! 3. Errors map directly onto [`ApplicationError`]:
-//!    - input validation (shape, length, JWT parse, claim missing) →
-//!      [`ApplicationError::InvalidProveRequest`] with a dotted
-//!      `field_path` injected by the caller
-//!    - Poseidon `CRH::<F>::evaluate(...)` failure →
-//!      [`ApplicationError::PoseidonHashError(String)`] carrying a
-//!      per-call-site label (e.g. `"h_aud"`, `"h_id_inner"`) plus the
-//!      upstream gadget description, so logs identify which absorbed
-//!      vector rejected.
-//!    - gadget [`AnchorError`](gadget::anchor::error::AnchorError) →
-//!      [`ApplicationError::CryptographicError`] via the
-//!      `From<AnchorError>` impl in `crate::error`
-//! 4. Non-canonical field encoding detection is intentionally absent —
-//!    that responsibility now lives entirely in the adapter's
-//!    `decode_field_string`, which decodes wire strings to `F` and rejects
-//!    inputs `>= F::MODULUS` before they reach these builders.
+//! The adapter owns wire decoding and field canonicality checks; this module
+//! receives decoded `F` values plus genuine byte sequences and builds the
+//! anchor, JWT, audience, Merkle, and public-input witnesses. Stage builders
+//! stay `pub(crate)` so `prove()` and golden tests can exercise each boundary.
+//! Validation failures map to `InvalidProveRequest` with the caller's dotted
+//! `field_path`; Poseidon and gadget failures keep their crypto-specific
+//! error variants.
 
 use ark_crypto_primitives::{
     crh::{CRHScheme, poseidon::CRH},
@@ -53,6 +31,19 @@ use crate::error::ApplicationError;
 use crate::jwt::parser::locate_claim;
 
 use super::RSA_2048_BYTES;
+
+// Common helpers.
+
+fn invalid_prove_request(
+    field_path: &str,
+    suffix: &str,
+    message: impl Into<String>,
+) -> ApplicationError {
+    ApplicationError::InvalidProveRequest {
+        field: format!("{field_path}.{suffix}"),
+        message: message.into(),
+    }
+}
 
 fn pad_claim_value_to_max(value: &[u8], max_len: usize) -> Vec<u8> {
     let mut v = value.to_vec();
@@ -90,6 +81,26 @@ fn claim_value_bytes_padded(
     bytes
 }
 
+fn claim_indices_for<'a>(
+    field_path: &str,
+    claim_indices: &'a [ClaimIndices],
+    claims: &[String],
+    key: &str,
+) -> Result<&'a ClaimIndices, ApplicationError> {
+    for (idx, claim) in claim_indices.iter().zip(claims.iter()) {
+        if claim == key {
+            return Ok(idx);
+        }
+    }
+    Err(invalid_prove_request(
+        field_path,
+        "jwt_bytes",
+        format!("claim `{}` not found in JWT payload", key),
+    ))
+}
+
+// Anchor stage.
+
 /// Anchor stage output: decoded anchor values, the gadget anchor
 /// witness, the anchor object, and the resolved current index.
 pub(crate) struct AnchorStage {
@@ -118,43 +129,48 @@ pub(crate) fn build_anchor_stage(
 ) -> Result<AnchorStage, ApplicationError> {
     let m_anchor = n - k + 1;
     if anchor_values.len() != m_anchor {
-        return Err(ApplicationError::InvalidProveRequest {
-            field: format!("{}.anchor_values", field_path),
-            message: format!(
+        return Err(invalid_prove_request(
+            field_path,
+            "anchor_values",
+            format!(
                 "length {} but n - k + 1 = {}",
                 anchor_values.len(),
                 m_anchor
             ),
-        });
+        ));
     }
     if anchor_known_x.len() != k {
-        return Err(ApplicationError::InvalidProveRequest {
-            field: format!("{}.anchor_known_x", field_path),
-            message: format!("length {} but k = {}", anchor_known_x.len(), k),
-        });
+        return Err(invalid_prove_request(
+            field_path,
+            "anchor_known_x",
+            format!("length {} but k = {}", anchor_known_x.len(), k),
+        ));
     }
     if anchor_selector.len() != n {
-        return Err(ApplicationError::InvalidProveRequest {
-            field: format!("{}.anchor_selector", field_path),
-            message: format!("length {} but n = {}", anchor_selector.len(), n),
-        });
+        return Err(invalid_prove_request(
+            field_path,
+            "anchor_selector",
+            format!("length {} but n = {}", anchor_selector.len(), n),
+        ));
     }
     let cardinality = anchor_selector.iter().filter(|&&s| s == 1).count();
     if cardinality != k {
-        return Err(ApplicationError::InvalidProveRequest {
-            field: format!("{}.anchor_selector", field_path),
-            message: format!("cardinality = {} but k = {}", cardinality, k),
-        });
+        return Err(invalid_prove_request(
+            field_path,
+            "anchor_selector",
+            format!("cardinality = {} but k = {}", cardinality, k),
+        ));
     }
     let current_idx = anchor_current_idx as usize;
     if current_idx >= n || anchor_selector.get(current_idx).copied().unwrap_or(0) != 1 {
-        return Err(ApplicationError::InvalidProveRequest {
-            field: format!("{}.anchor_current_idx", field_path),
-            message: format!(
+        return Err(invalid_prove_request(
+            field_path,
+            "anchor_current_idx",
+            format!(
                 "anchor_current_idx={} not in 0..n or selector[idx] != 1",
                 current_idx
             ),
-        });
+        ));
     }
 
     let anchor_witness =
@@ -168,6 +184,8 @@ pub(crate) fn build_anchor_stage(
         current_idx,
     })
 }
+
+// JWT stage.
 
 /// JWT stage output: full circuit JWT witness plus the decoded payload
 /// bytes, claim indices, and packed audience bytes downstream stages
@@ -192,37 +210,37 @@ pub(crate) fn build_jwt_stage(
     poseidon_param: &PoseidonConfig<F>,
 ) -> Result<JwtStage, ApplicationError> {
     if rsa_modulus_bytes.len() != RSA_2048_BYTES {
-        return Err(ApplicationError::InvalidProveRequest {
-            field: format!("{}.rsa_modulus_bytes", field_path),
-            message: format!(
+        return Err(invalid_prove_request(
+            field_path,
+            "rsa_modulus_bytes",
+            format!(
                 "length {} but RSA-2048 requires exactly {} bytes",
                 rsa_modulus_bytes.len(),
                 RSA_2048_BYTES
             ),
-        });
+        ));
     }
     if rsa_signature_bytes.len() != RSA_2048_BYTES {
-        return Err(ApplicationError::InvalidProveRequest {
-            field: format!("{}.rsa_signature_bytes", field_path),
-            message: format!(
+        return Err(invalid_prove_request(
+            field_path,
+            "rsa_signature_bytes",
+            format!(
                 "length {} but RSA-2048 requires exactly {} bytes",
                 rsa_signature_bytes.len(),
                 RSA_2048_BYTES
             ),
-        });
+        ));
     }
 
-    let jwt_str =
-        core::str::from_utf8(jwt_bytes).map_err(|e| ApplicationError::InvalidProveRequest {
-            field: format!("{}.jwt_bytes", field_path),
-            message: format!("not UTF-8: {}", e),
-        })?;
+    let jwt_str = core::str::from_utf8(jwt_bytes)
+        .map_err(|e| invalid_prove_request(field_path, "jwt_bytes", format!("not UTF-8: {}", e)))?;
     let parts: Vec<&str> = jwt_str.split('.').collect();
     if parts.len() != 3 {
-        return Err(ApplicationError::InvalidProveRequest {
-            field: format!("{}.jwt_bytes", field_path),
-            message: format!("expected 3 dot-separated segments, got {}", parts.len()),
-        });
+        return Err(invalid_prove_request(
+            field_path,
+            "jwt_bytes",
+            format!("expected 3 dot-separated segments, got {}", parts.len()),
+        ));
     }
     let header_b64 = parts[0];
     let payload_b64 = parts[1];
@@ -244,33 +262,33 @@ pub(crate) fn build_jwt_stage(
     let pay_len_b64 = payload_b64.len();
 
     let index_bits = IndexBits::from_base64_url(payload_b64, cfg.max_payload_b64_len as usize)
-        .map_err(|e| ApplicationError::InvalidProveRequest {
-            field: format!("{}.jwt_bytes", field_path),
-            message: format!("base64 index-bits build failed: {:?}", e),
+        .map_err(|e| {
+            invalid_prove_request(
+                field_path,
+                "jwt_bytes",
+                format!("base64 index-bits build failed: {:?}", e),
+            )
         })?;
 
-    let payload_bytes =
-        decode_any_base64(payload_b64).map_err(|e| ApplicationError::InvalidProveRequest {
-            field: format!("{}.jwt_bytes", field_path),
-            message: format!("payload base64 decode failed: {}", e),
-        })?;
+    let payload_bytes = decode_any_base64(payload_b64).map_err(|e| {
+        invalid_prove_request(
+            field_path,
+            "jwt_bytes",
+            format!("payload base64 decode failed: {}", e),
+        )
+    })?;
     let payload_str = core::str::from_utf8(&payload_bytes).map_err(|e| {
-        ApplicationError::InvalidProveRequest {
-            field: format!("{}.jwt_bytes", field_path),
-            message: format!("payload not UTF-8: {}", e),
-        }
+        invalid_prove_request(field_path, "jwt_bytes", format!("payload not UTF-8: {}", e))
     })?;
 
     let mut claim_indices: Vec<ClaimIndices> = Vec::with_capacity(cfg.claims.len());
     for key in &cfg.claims {
         // locate_claim (jwt::parser) returns TokenError; convert to
         // ApplicationError::InvalidProveRequest with the credential field_path prefix.
-        claim_indices.push(locate_claim(payload_str, key).map_err(|e| {
-            ApplicationError::InvalidProveRequest {
-                field: format!("{}.jwt_bytes", field_path),
-                message: e.to_string(),
-            }
-        })?);
+        claim_indices.push(
+            locate_claim(payload_str, key)
+                .map_err(|e| invalid_prove_request(field_path, "jwt_bytes", e.to_string()))?,
+        );
     }
 
     let pk = PublicKey {
@@ -278,20 +296,23 @@ pub(crate) fn build_jwt_stage(
         e: vec![0x01, 0x00, 0x01],
     };
 
-    let sig_bytes_decoded =
-        decode_any_base64(sig_b64).map_err(|e| ApplicationError::InvalidProveRequest {
-            field: format!("{}.jwt_bytes", field_path),
-            message: format!("signature base64 decode failed: {}", e),
-        })?;
+    let sig_bytes_decoded = decode_any_base64(sig_b64).map_err(|e| {
+        invalid_prove_request(
+            field_path,
+            "jwt_bytes",
+            format!("signature base64 decode failed: {}", e),
+        )
+    })?;
     if sig_bytes_decoded != rsa_signature_bytes {
-        return Err(ApplicationError::InvalidProveRequest {
-            field: format!("{}.rsa_signature_bytes", field_path),
-            message: format!(
+        return Err(invalid_prove_request(
+            field_path,
+            "rsa_signature_bytes",
+            format!(
                 "rsa_signature_bytes ({} bytes) != base64_decode(jwt sig_b64) ({} bytes)",
                 rsa_signature_bytes.len(),
                 sig_bytes_decoded.len()
             ),
-        });
+        ));
     }
     let sig = Signature(rsa_signature_bytes.to_vec());
 
@@ -300,9 +321,12 @@ pub(crate) fn build_jwt_stage(
         .zip(cfg.claims.iter())
         .find(|(_, k)| *k == "aud")
         .map(|(idx, _)| idx)
-        .ok_or_else(|| ApplicationError::InvalidProveRequest {
-            field: format!("{}.jwt_bytes", field_path),
-            message: "claim `aud` not found in JWT payload".into(),
+        .ok_or_else(|| {
+            invalid_prove_request(
+                field_path,
+                "jwt_bytes",
+                "claim `aud` not found in JWT payload",
+            )
         })?;
     let aud_bytes_padded =
         claim_value_bytes_padded(&payload_bytes, aud_idx, cfg.max_aud_len as usize);
@@ -330,6 +354,8 @@ pub(crate) fn build_jwt_stage(
         aud_packed,
     })
 }
+
+// Audience stage.
 
 /// Audience stage output: padded audience list and its chained
 /// Poseidon hash.
@@ -373,6 +399,8 @@ pub(crate) fn build_audience_stage(
     })
 }
 
+// Merkle stage.
+
 /// Build the merkle witness from already-decoded F leaf-sibling-hash
 /// and auth path. `merkle_leaf_idx` is the 0-based leaf index.
 pub(crate) fn build_merkle_witness(
@@ -384,14 +412,15 @@ pub(crate) fn build_merkle_witness(
 ) -> Result<MerkleWitness<F>, ApplicationError> {
     let expected_path_len = tree_height.saturating_sub(1);
     if auth_path.len() != expected_path_len {
-        return Err(ApplicationError::InvalidProveRequest {
-            field: format!("{}.auth_path", field_path),
-            message: format!(
+        return Err(invalid_prove_request(
+            field_path,
+            "auth_path",
+            format!(
                 "length {} but tree_height - 1 = {}",
                 auth_path.len(),
                 expected_path_len
             ),
-        });
+        ));
     }
 
     Ok(MerkleWitness {
@@ -403,6 +432,8 @@ pub(crate) fn build_merkle_witness(
         leaf_idx: merkle_leaf_idx as usize,
     })
 }
+
+// Public inputs.
 
 /// Public inputs assembled from the prior stages plus the F-decoded
 /// `merkle_root` and `random`.
@@ -449,26 +480,14 @@ pub(crate) fn compute_public_inputs(
         .sum();
     let lhs = inner * random;
 
-    let claim_indices_for = |key: &str| -> Result<&ClaimIndices, ApplicationError> {
-        for (i, k) in claims.iter().enumerate() {
-            if k == key {
-                return Ok(&claim_indices[i]);
-            }
-        }
-        Err(ApplicationError::InvalidProveRequest {
-            field: format!("{}.jwt_bytes", field_path),
-            message: format!("claim `{}` not found in JWT payload", key),
-        })
-    };
-
     let iss_bytes_padded = claim_value_bytes_padded(
         payload_bytes,
-        claim_indices_for("iss")?,
+        claim_indices_for(field_path, claim_indices, claims, "iss")?,
         cfg.max_iss_len as usize,
     );
     let sub_bytes_padded = claim_value_bytes_padded(
         payload_bytes,
-        claim_indices_for("sub")?,
+        claim_indices_for(field_path, claim_indices, claims, "sub")?,
         cfg.max_sub_len as usize,
     );
     let iss_packed = try_bytes_to_fields::<F>(&iss_bytes_padded)?;
@@ -486,7 +505,7 @@ pub(crate) fn compute_public_inputs(
 
     let exp_bytes_padded = claim_value_bytes_padded(
         payload_bytes,
-        claim_indices_for("exp")?,
+        claim_indices_for(field_path, claim_indices, claims, "exp")?,
         cfg.max_exp_len as usize,
     );
     let jwt_exp = decimal_bytes_to_field(&exp_bytes_padded).map_err(|e| match e {
@@ -538,14 +557,8 @@ fn decimal_bytes_to_field(bytes: &[u8]) -> Result<F, ApplicationError> {
     Ok(acc)
 }
 
-// NOTE: the local hand-rolled `base64_url_no_pad_decode` was removed in
-// favour of `gadget::base64::decode_any_base64`, which is the single
-// host-side decoder used by `service::adapter` and the JWT parser as
-// well. JWT payload + signature segments are spec-required URL-safe
-// no-pad and always succeed on `URL_SAFE_NO_PAD` (the first variant the
-// gadget tries); the additional fallbacks the gadget decoder accepts
-// (`STANDARD_NO_PAD`, padded variants) are unreachable for conformant
-// input and provide harmless tolerance for nonconforming inputs.
+// The removed local base64 decoder is covered in `gadget` tests; this module
+// now uses the same decoder as the adapter and JWT parser.
 
 #[cfg(test)]
 mod tests {

@@ -28,7 +28,7 @@ use ark_r1cs_std::{
 };
 use ark_relations::gr1cs::ConstraintSystem;
 use gadget::{
-    bigint::constraints::{BigNatCircuitParams, BigNatVar},
+    bigint::{BigNatCircuitParams, constraints::BigNatVar},
     hashes::sha256::constraints::SHA256Gadget,
     signature::rsa::{
         PublicKey, Signature,

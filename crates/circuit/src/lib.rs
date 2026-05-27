@@ -19,15 +19,20 @@
 #![deny(rustdoc::broken_intra_doc_links)]
 #![deny(rustdoc::invalid_html_tags)]
 
+#[cfg(feature = "constraints")]
 use ark_ff::Field;
 
+#[cfg(feature = "constraints")]
 pub mod token;
+#[cfg(feature = "constraints")]
 pub mod witness;
+#[cfg(feature = "constraints")]
 pub mod zkap;
 
 pub mod types;
 
 // Re-export circuit witness types
+#[cfg(feature = "constraints")]
 pub use witness::{
     AnchorWitness, AudienceWitness, CircuitConstants, CircuitPublicInputs, JwtWitness,
     MerkleWitness, MiscWitness, ZkapCircuitInput,
@@ -38,6 +43,7 @@ pub use witness::{
 /// for [`ZkapCircuit`](crate::zkap::ZkapCircuit) and used by
 /// `zkap-service::proof::verify` to assemble the verifier input from a
 /// completed prover side.
+#[cfg(feature = "constraints")]
 pub trait ExposesPublicInputs<F: Field> {
     /// Return the ordered public inputs for this circuit instance.
     /// The element order must match

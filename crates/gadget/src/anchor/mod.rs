@@ -9,6 +9,7 @@ use ark_std::rand::Rng;
 
 use crate::anchor::error::AnchorError;
 
+#[cfg(feature = "constraints")]
 pub mod constraints;
 pub mod error;
 pub mod poseidon;

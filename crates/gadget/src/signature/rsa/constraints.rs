@@ -27,7 +27,8 @@ use num_bigint::BigUint as NumBigUint;
 
 use crate::{
     bigint::{
-        constraints::{BigNatCircuitParams, BigNatTrait, BigNatVar},
+        BigNatCircuitParams,
+        constraints::{BigNatTrait, BigNatVar},
         utils::{BigNat, nat_to_limbs},
     },
     signature::rsa::{PublicKey, Signature},
@@ -269,7 +270,8 @@ mod tests {
     use crate::{
         base64::decode_any_base64,
         bigint::{
-            constraints::{BigNatCircuitParams, BigNatTrait, BigNatVar},
+            BigNatCircuitParams,
+            constraints::{BigNatTrait, BigNatVar},
             utils::{BigNat, nat_to_limbs},
         },
         signature::rsa::{PublicKey, Signature, constraints::SignatureVar},

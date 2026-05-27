@@ -7,6 +7,7 @@
 //! Gaussian elimination with partial pivoting. The R1CS gadget for in-circuit
 //! matrix-vector products is in [`constraints`].
 
+#[cfg(feature = "constraints")]
 pub mod constraints;
 pub mod error;
 

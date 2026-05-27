@@ -10,8 +10,8 @@ categories = ["cryptography"]
 
 [dependencies]
 # --- Always required (lightweight, WASM-compatible) ---
-gadget = { workspace = true, default-features = false, features = ["crypto", "base64", "rsa"] }
-circuit = { workspace = true }
+gadget = { workspace = true, default-features = false }
+circuit = { workspace = true, default-features = false, features = ["types"] }
 ark-codec = { workspace = true, features = ["field-serde"] }
 
 thiserror = { workspace = true }
@@ -19,38 +19,38 @@ serde      = { workspace = true }
 serde_json = { workspace = true }
 
 ark-ff                = { workspace = true }
-ark-std               = { workspace = true }
-ark-crypto-primitives = { workspace = true }
+ark-std               = { workspace = true, optional = true }
+ark-crypto-primitives = { workspace = true, features = ["crh"] }
 ark-bn254             = { workspace = true }
 hex = { workspace = true }
 # Always-on: `manifest` module needs sha2 (ceremony chain_hash,
 # compute_circuit_tag) and must stay proof-feature-independent so light
 # bindings can depend on it cheaply. The runtime cost of pulling sha2
 # unconditionally is negligible.
-sha2 = { workspace = true }
+sha2 = { workspace = true, optional = true }
 # Manifest signing (F5 soft-enforce policy). `manifest` module exposes
 # `sign_manifest` / `verify_manifest`; `ArtifactSet::load` calls
 # `verify_manifest` when the caller supplies a `VerifyingKey`. Stays
 # proof-feature-independent (no ark-* coupling).
-ed25519-dalek = { workspace = true }
+ed25519-dalek = { workspace = true, optional = true }
 
-# --- Proof / Groth16 dependencies (always-on after the 2026-05
-#     binding-friendly refactor; previously gated behind the `proof`
-#     Cargo feature). ---
-zkap-evm-verifier     = { workspace = true }
-ark-ec                = { workspace = true }
-ark-groth16           = { workspace = true }
-ark-poly              = { workspace = true }
-ark-r1cs-std          = { workspace = true }
-ark-relations         = { workspace = true }
-ark-serialize         = { workspace = true }
-rand                  = { workspace = true }
-rand_chacha           = { workspace = true }
+# --- Proof / Groth16 dependencies. These are feature-gated so SDK hosts
+#     can use host-primitives and artifact-loader without native
+#     constraint synthesis.
+zkap-evm-verifier     = { workspace = true, optional = true }
+ark-ec                = { workspace = true, optional = true }
+ark-groth16           = { workspace = true, optional = true }
+ark-poly              = { workspace = true, optional = true }
+ark-r1cs-std          = { workspace = true, optional = true }
+ark-relations         = { workspace = true, optional = true }
+ark-serialize         = { workspace = true, optional = true }
+rand                  = { workspace = true, optional = true }
+rand_chacha           = { workspace = true, optional = true }
 # Native prove flow — Commit 4 of the 2026-05 ark-ar1cs boundary
 # migration. The `ark-ar1cs` root crate exposes `prove`,
 # `synthesize_full_assignment`, and the `format::ArcsFile` envelope
 # that `ArtifactSet` loads from `circuit.ar1cs`.
-ark-ar1cs              = { workspace = true }
+ark-ar1cs              = { workspace = true, optional = true }
 
 [dev-dependencies]
 signature = { workspace = true }
@@ -60,7 +60,7 @@ base64 = { workspace = true }
 hex = { workspace = true }
 sha2 = { workspace = true }
 ark-relations = { workspace = true }
-circuit = { workspace = true }
+circuit = { workspace = true, features = ["constraints"] }
 proptest = { workspace = true }
 serde_json = { workspace = true }
 # Enable the `testing` feature when building test binaries so that
@@ -77,14 +77,45 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 # the slow `circuit::tests::groth16_integration` suite.
 
 [features]
-# `proof` and `dev-unverified-artifacts` features were removed in the
-# 2026-05 binding-friendly refactor. Heavy ark-* deps are always-on.
-print-trace = ["circuit/print-trace"]
+default = ["native-prove", "setup"]
+host-primitives = [
+    "gadget/hashes-poseidon",
+    "gadget/anchor",
+    "gadget/base64",
+    "gadget/rsa",
+]
+manifest = ["dep:sha2", "dep:ed25519-dalek"]
+proof-types = ["dep:ark-groth16", "dep:ark-serialize", "dep:zkap-evm-verifier"]
+artifact-loader = [
+    "manifest",
+    "proof-types",
+    "dep:ark-ar1cs",
+    "dep:sha2",
+]
+native-witness = [
+    "host-primitives",
+    "proof-types",
+    "circuit/constraints",
+    "gadget/full",
+    "dep:ark-ar1cs",
+    "dep:ark-ec",
+    "dep:ark-r1cs-std",
+    "dep:ark-relations",
+    "dep:ark-std",
+    "dep:rand",
+]
+native-prove = ["artifact-loader", "native-witness"]
+setup = [
+    "native-prove",
+    "dep:ark-poly",
+    "dep:rand_chacha",
+]
+print-trace = ["native-witness", "circuit/print-trace"]
 # Enables `SetupOutput::into_artifact_set` — a convenience that converts
 # a freshly-built `SetupOutput` into an `ArtifactSet` in memory without
 # going through disk.  Bypasses the manifest hash-check trust gate, so it
 # must ONLY be used in tests / CI tooling, never in production code paths.
-testing = []
+testing = ["setup"]
 
 # Example temporarily disabled — see comment above the [features] block.
 # [[example]]

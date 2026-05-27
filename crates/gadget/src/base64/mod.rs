@@ -5,11 +5,13 @@
 //! helpers are in [`decoder`]. NULL-padding characters are normalised to index 0 (`'A'`)
 //! so that padded JWT segments round-trip correctly through the gadget.
 
+#[cfg(feature = "constraints")]
 pub mod constraints;
 pub mod decoder;
 /// Error types for Base64 URL-safe decoding failures.
 pub mod error;
 
+#[cfg(feature = "constraints")]
 pub use constraints::*;
 pub use decoder::*;
 pub use error::*;

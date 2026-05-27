@@ -1,10 +1,13 @@
-use ark_relations::gr1cs::SynthesisError;
 use thiserror::Error;
+
+#[cfg(feature = "constraints")]
+use ark_relations::gr1cs::SynthesisError;
 
 /// Error type for both native and in-circuit hash evaluations.
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum HashError {
     /// Propagated from the arkworks R1CS synthesis layer when constraint allocation fails.
+    #[cfg(feature = "constraints")]
     #[error("Synthesis error: {0}")]
     SynthesisError(#[from] SynthesisError),
 

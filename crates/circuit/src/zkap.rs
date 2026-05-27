@@ -74,10 +74,7 @@ use gadget::{
         constraints::{Base64DecoderGadget, IndexBitsVar},
         get_base64_table,
     },
-    bigint::{
-        constraints::{BigNatCircuitParams, BigNatVar},
-        utils::BigNat,
-    },
+    bigint::{BigNatCircuitParams, constraints::BigNatVar, utils::BigNat},
     hashes::{
         poseidon::{constraints::chain_hash_gadget, get_poseidon_params},
         sha256::constraints::SHA256Gadget,

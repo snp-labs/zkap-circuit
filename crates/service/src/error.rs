@@ -8,8 +8,10 @@
 
 use ark_codec::ConvertError;
 use ark_codec::error::{FieldParseError, TextError};
-use gadget::anchor::error::AnchorError;
 use thiserror::Error;
+
+#[cfg(feature = "host-primitives")]
+use gadget::anchor::error::AnchorError;
 
 /// Top-level error type for the zkap-service layer.
 ///
@@ -162,6 +164,7 @@ pub enum ApplicationError {
     },
 }
 
+#[cfg(feature = "host-primitives")]
 impl From<AnchorError> for ApplicationError {
     fn from(e: AnchorError) -> Self {
         ApplicationError::CryptographicError(e.to_string())
@@ -180,6 +183,7 @@ impl From<ConvertError> for ApplicationError {
     }
 }
 
+#[cfg(feature = "native-witness")]
 impl From<crate::jwt::parser::TokenError> for ApplicationError {
     fn from(e: crate::jwt::parser::TokenError) -> Self {
         ApplicationError::ParseError(e.to_string())

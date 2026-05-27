@@ -23,7 +23,6 @@
 //! `pk` / `vk` hash.
 
 use ark_ar1cs::{prove as ar1cs_prove, synthesize_full_assignment};
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::rand::rngs::OsRng;
 use circuit::types::{BN254, BNP, CG, CircuitConfig, F};
 use circuit::witness::{
@@ -38,7 +37,7 @@ use gadget::matrix::VandermondeMatrix;
 use crate::anchor::AnchorConfig;
 use crate::anchor::poseidon::{derive_selector_from_x_list_and_anchor, derive_x_from_secret};
 use crate::artifact::ArtifactSet;
-use crate::dto::{PUBLIC_INPUTS, ProveRequest, ProveResponse, PublicInputSlot};
+use crate::dto::{PUBLIC_INPUTS, ProveRequest, ProveResponse, PublicInputSlot, WitnessBundle};
 use crate::error::ApplicationError;
 use crate::jwt::parser::parse_anchor_secret_from_jwt;
 
@@ -47,30 +46,6 @@ use super::circuit_input::{
     build_anchor_stage, build_audience_stage, build_jwt_stage, build_merkle_witness,
     compute_public_inputs,
 };
-
-/// One credential's worth of circuit-synthesis output.
-///
-/// `full_assignment` is the flat wire-value vector produced by
-/// `ark_ar1cs::synthesize_full_assignment` — feed it directly to
-/// `ark_ar1cs::prove`.
-///
-/// `public_inputs` is the canonical 8-element layout that the on-chain
-/// verifier consumes:
-///
-/// `[hanchor, h_a, root, h_sign_user_op, jwt_exp, partial_rhs, lhs,
-///   h_aud_list]`
-///
-/// Both vectors are circuit-agnostic at the type level (just `Vec<F>`),
-/// so a WASM module can serialize them via [`CanonicalSerialize`] and a
-/// native host can [`CanonicalDeserialize`] and prove without touching
-/// circuit code.
-#[derive(Debug, Clone, CanonicalSerialize, CanonicalDeserialize)]
-pub struct WitnessBundle {
-    /// Flat wire-value vector from `synthesize_full_assignment`.
-    pub full_assignment: Vec<F>,
-    /// 8-element canonical public-input layout (see struct docs).
-    pub public_inputs: Vec<F>,
-}
 
 /// Circuit-dependent half of the prove pipeline — emit one
 /// [`WitnessBundle`] per credential via a caller-supplied sink.

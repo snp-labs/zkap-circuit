@@ -9,19 +9,19 @@ keywords = ["zk", "arkworks", "gadget", "groth16", "jwt"]
 categories = ["cryptography"]
 
 [dependencies]
-ark-r1cs-helpers = { workspace = true }
+ark-r1cs-helpers = { workspace = true, optional = true }
 thiserror = { workspace = true }
 ark-serialize = { workspace = true }
 
 # Always required (WASM-compatible)
 ark-ec = { workspace = true }
 ark-ff = { workspace = true }
-ark-r1cs-std = { workspace = true }
-ark-relations = { workspace = true }
+ark-r1cs-std = { workspace = true, optional = true }
+ark-relations = { workspace = true, optional = true }
 ark-std = { workspace = true }
-ark-crypto-primitives = { workspace = true, features = ["crh", "constraints", "prf", "merkle_tree"] }
+ark-crypto-primitives = { workspace = true, features = ["crh", "prf", "merkle_tree"] }
 ark-bn254 = { workspace = true }
-ark-ed-on-bn254 = { workspace = true, features = ["r1cs"] }
+ark-ed-on-bn254 = { workspace = true, optional = true }
 
 # Optional — only needed by full feature (non-WASM modules)
 hex = { workspace = true, optional = true }
@@ -42,14 +42,23 @@ default = []
 # Core module features
 anchor = ["hashes-poseidon"]
 base64 = ["dep:base64"]
+bigint = ["dep:num-bigint", "dep:num-integer", "dep:num-traits"]
 hashes-poseidon = []
 hashes-sha256 = ["dep:sha2"]
 merkletree = ["hashes-poseidon"]
-rsa = ["dep:rsa", "dep:num-bigint", "dep:num-integer", "dep:num-traits", "dep:num", "dep:sha2", "dep:hex", "dep:rand"]
+rsa = ["bigint", "dep:rsa", "dep:num", "dep:sha2", "dep:hex", "dep:rand"]
+constraints = [
+    "dep:ark-r1cs-helpers",
+    "dep:ark-r1cs-std",
+    "dep:ark-relations",
+    "dep:ark-ed-on-bn254",
+    "ark-crypto-primitives/constraints",
+    "ark-ed-on-bn254/r1cs",
+]
 
 # Bundle features
 crypto = ["hashes-poseidon", "hashes-sha256", "anchor", "merkletree"]
-full = ["crypto", "base64", "rsa"]
+full = ["crypto", "base64", "rsa", "constraints"]
 
 # Debug features
 print-trace = ["ark-std/print-trace"]

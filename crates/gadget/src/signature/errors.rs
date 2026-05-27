@@ -16,6 +16,7 @@ use thiserror::Error;
 pub enum SignatureError {
     /// Propagated from arkworks R1CS constraint allocation; wraps any
     /// [`ark_relations::gr1cs::SynthesisError`] encountered while building the gadget.
+    #[cfg(feature = "constraints")]
     #[error("Synthesis error: {0}")]
     SynthesisError(#[from] ark_relations::gr1cs::SynthesisError),
 

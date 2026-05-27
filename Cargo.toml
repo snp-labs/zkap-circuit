@@ -46,7 +46,7 @@ missing_docs = "warn"
 ark-codec                 = { path = "crates/ark-codec" }
 ark-r1cs-helpers          = { path = "crates/ark-r1cs-helpers" }
 gadget                    = { path = "crates/gadget", default-features = false }
-circuit                   = { path = "crates/circuit" }
+circuit                   = { path = "crates/circuit", default-features = false }
 zkap-service              = { path = "crates/service" }
 zkap-evm-verifier         = { path = "crates/zkap-evm-verifier" }
 # `ark-ar1cs` exposes the post-migration prover surface: `prove`,

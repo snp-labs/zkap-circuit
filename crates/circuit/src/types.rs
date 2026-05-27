@@ -19,7 +19,7 @@ use std::fmt::Debug;
 
 use ark_crypto_primitives::crh::poseidon::CRH;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-use gadget::bigint::constraints::BigNatCircuitParams;
+use gadget::bigint::BigNatCircuitParams;
 use serde::{Deserialize, Serialize};
 
 /// SHA-256 padding sentinel character used by host-side string→field

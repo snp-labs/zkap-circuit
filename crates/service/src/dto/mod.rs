@@ -5,15 +5,21 @@
 
 mod anchor;
 mod hash;
+#[cfg(feature = "proof-types")]
 mod proof;
 mod prove;
 pub mod public_inputs;
+#[cfg(feature = "proof-types")]
+mod witness;
 
 pub use anchor::*;
 pub use hash::*;
+#[cfg(feature = "proof-types")]
 pub use proof::*;
 pub use prove::{ProveCredential, ProveRequest};
 pub use public_inputs::{PUBLIC_INPUT_NAMES, PUBLIC_INPUTS, PublicInputSlot};
+#[cfg(feature = "proof-types")]
+pub use witness::WitnessBundle;
 
 // `dto/proof.rs` exports `ProofComponents`, `SharedPublicInputs`, and
 // `ProveResponse`. The earlier `ZkapProofResult` / `PerProofPublicInputs`

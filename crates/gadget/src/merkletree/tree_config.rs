@@ -8,17 +8,19 @@
 
 use ark_crypto_primitives::sponge::Absorb;
 use ark_ff::PrimeField;
-use ark_r1cs_std::fields::fp::FpVar;
 use core::marker::PhantomData;
 
-use ark_crypto_primitives::merkle_tree::{
-    Config, IdentityDigestConverter, Path, constraints::ConfigGadget,
-};
+use ark_crypto_primitives::merkle_tree::{Config, IdentityDigestConverter, Path};
 
-use ark_crypto_primitives::crh::poseidon::{
-    self,
-    constraints::{CRHGadget, TwoToOneCRHGadget},
+use ark_crypto_primitives::crh::poseidon;
+
+#[cfg(feature = "constraints")]
+use ark_crypto_primitives::{
+    crh::poseidon::constraints::{CRHGadget, TwoToOneCRHGadget},
+    merkle_tree::constraints::ConfigGadget,
 };
+#[cfg(feature = "constraints")]
+use ark_r1cs_std::fields::fp::FpVar;
 
 /// Poseidon-based Merkle tree configuration for BN254-Fr membership proofs.
 ///
@@ -40,10 +42,12 @@ impl<F: PrimeField + Absorb> Config for MerkleTreeParams<F> {
 
 /// R1CS configuration gadget for [`MerkleTreeParams`]: maps each native type to
 /// its in-circuit `FpVar` / `CRHGadget` counterpart.
+#[cfg(feature = "constraints")]
 pub struct MerkleTreeParamsVar<F: PrimeField> {
     _field: PhantomData<F>,
 }
 
+#[cfg(feature = "constraints")]
 impl<F> ConfigGadget<MerkleTreeParams<F>, F> for MerkleTreeParamsVar<F>
 where
     F: PrimeField + Absorb,

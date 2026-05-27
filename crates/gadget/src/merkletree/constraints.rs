@@ -141,7 +141,7 @@ mod tests {
     use ark_relations::gr1cs::{ConstraintSystemRef, SynthesisError};
 
     use crate::{
-        bigint::constraints::BigNatCircuitParams,
+        bigint::BigNatCircuitParams,
         hashes::poseidon::get_poseidon_params,
         merkletree::tree_config::{MerkleTreeParams, MerkleTreeParamsVar},
     };

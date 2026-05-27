@@ -11,6 +11,7 @@ use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 
 use crate::merkletree::tree_config::{Empty, MerkleTreeParams};
 
+#[cfg(feature = "constraints")]
 pub mod constraints;
 pub mod tree_config;
 

@@ -39,9 +39,6 @@ pub(crate) mod adapter;
 pub(crate) mod circuit_input;
 mod prove;
 
-/// Required wire-format length for `rsa_modulus_b64` and the JWT signature
-/// segment. RSA-2048 keys/signatures are exactly 256 bytes; any other
-/// length is a host bug or a malformed payload.
-pub(crate) const RSA_2048_BYTES: usize = 256;
+pub(crate) use crate::RSA_2048_BYTES;
 
-pub use prove::{WitnessBundle, prove, synthesize_witnesses, synthesize_witnesses_streaming};
+pub use prove::{prove, synthesize_witnesses, synthesize_witnesses_streaming};

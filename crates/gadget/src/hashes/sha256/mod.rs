@@ -9,10 +9,14 @@
 //! `digest_full_with_pad_checked` (full padded input with explicit block index
 //! enforcement).
 
+#[cfg(feature = "constraints")]
 pub mod constraints;
+#[cfg(feature = "constraints")]
 pub mod digest;
+#[cfg(feature = "constraints")]
 pub mod utils;
 
+#[cfg(feature = "constraints")]
 pub use digest::DigestVar;
 
 use std::{borrow::Borrow, marker::PhantomData};

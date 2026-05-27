@@ -22,26 +22,14 @@ use num::Zero;
 use num_integer::Integer;
 use num_traits::One;
 
-use std::fmt::Debug;
-
 use crate::bigint::utils::{
     fe_to_nat, field_characteristic_to_nat, fit_nat_to_limbs, limbs_to_nat, nat_to_fe,
 };
 
-use super::utils::{BigNat, nat_to_limbs};
-
-/// Compile-time constants fixing the limb representation for a multi-limb big integer.
-///
-/// For RSA-2048 over BN254, the canonical choice is `LIMB_WIDTH = 64` and
-/// `N_LIMBS = 32` (giving 2048 bits total). Different instantiations can use wider
-/// limbs to reduce constraint count at the cost of larger field elements.
-pub trait BigNatCircuitParams: Clone + Debug + Eq + PartialEq + Send + Sync {
-    /// Width of each limb in bits; must satisfy `LIMB_WIDTH < |F|` so each limb
-    /// fits in a single field element without overflow.
-    const LIMB_WIDTH: usize;
-    /// Number of limbs; total bit width = `LIMB_WIDTH * N_LIMBS`.
-    const N_LIMBS: usize;
-}
+use super::{
+    BigNatCircuitParams,
+    utils::{BigNat, nat_to_limbs},
+};
 
 /// Controls whether limb-range checks are applied during modular exponentiation.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]

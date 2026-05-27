@@ -17,7 +17,7 @@ use crate::dto::{
 };
 use crate::error::ApplicationError;
 
-use crate::groth16::prover::RSA_2048_BYTES;
+use crate::RSA_2048_BYTES;
 
 /// Compute a Poseidon hash over a list of field-element strings.
 ///

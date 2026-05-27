@@ -5,6 +5,7 @@
 //! the selector cardinality must equal `k`, and the secrets slice must have length `n`.
 //! [`HashedSecretsCache`] stores pre-hashed secrets to avoid redundant hash evaluations.
 
+#[cfg(feature = "constraints")]
 pub mod constraints;
 
 use ark_crypto_primitives::{

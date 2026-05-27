@@ -6,11 +6,12 @@
 //! `sign`, and `verify` methods use the `rsa` crate internally. The corresponding
 //! R1CS gadget that enforces PKCS#1 v1.5 verification in-circuit is in [`constraints`].
 
+#[cfg(feature = "constraints")]
 pub mod constraints;
 
 use std::marker::PhantomData;
 
-use crate::bigint::{constraints::BigNatCircuitParams, utils::nat_to_limbs};
+use crate::bigint::{BigNatCircuitParams, utils::nat_to_limbs};
 use crate::signature::{SignatureScheme, errors::SignatureError};
 use ark_ec::CurveGroup;
 use ark_ff::PrimeField;
@@ -241,7 +242,7 @@ mod tests {
     use rand::rngs::OsRng;
     use sha2::Sha256;
 
-    use crate::{bigint::constraints::BigNatCircuitParams, signature::rsa::Rsa};
+    use crate::{bigint::BigNatCircuitParams, signature::rsa::Rsa};
 
     const LAMBDA: usize = 2048; // 2048 bits
 

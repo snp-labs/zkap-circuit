@@ -14,6 +14,7 @@ use core::borrow::Borrow;
 use core::fmt::Debug;
 use error::HashError;
 
+#[cfg(feature = "constraints")]
 pub mod constraints;
 /// Error types for all hash operations (native and in-circuit).
 pub mod error;

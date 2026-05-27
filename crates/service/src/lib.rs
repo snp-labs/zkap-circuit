@@ -2,9 +2,10 @@
 //!
 //! # Public API
 //!
-//! All entry points are always-on after the 2026-05 binding-friendly
-//! refactor (the old `proof` and `dev-unverified-artifacts` Cargo features
-//! were removed; heavy ark-* deps are now unconditional).
+//! The crate is feature-split so SDK hosts can depend on hash/anchor helpers,
+//! manifest parsing, and artifact loading without compiling native constraint
+//! synthesis. The default feature set keeps the full setup/prove API available
+//! for existing zkap-circuit callers.
 //!
 //! - [`generate_poseidon_hash`], [`generate_audience_hashes`],
 //!   [`generate_issuer_key_hash`] — Poseidon hashing (Request/Response DTOs
@@ -95,18 +96,24 @@
 // flip is deferred until gadget reaches zero missing-docs warnings.
 #![warn(missing_docs)]
 
+#[cfg(feature = "host-primitives")]
 pub(crate) mod anchor;
 pub(crate) mod dto;
 pub mod error;
+#[cfg(feature = "host-primitives")]
 pub(crate) mod hash;
 
 // Manifest schema — proof-feature-independent. Hosts that consume the
 // manifest without pulling ark-groth16 (lightweight bindings, manifest
 // inspectors, dev tools) can depend on the module cheaply.
+#[cfg(feature = "manifest")]
 pub mod manifest;
 
+#[cfg(feature = "artifact-loader")]
 pub mod artifact;
+#[cfg(feature = "setup")]
 pub(crate) mod crs;
+#[cfg(feature = "native-witness")]
 pub mod jwt;
 
 // Groth16 lifecycle parent — `pub(crate)` so module-qualified paths
@@ -117,17 +124,27 @@ pub mod jwt;
 // (circuit_input), and the ar1cs orchestrator (prove). Boundary callers
 // reach the SNARK layer through `ProveRequest` and never see raw
 // F-decoded bundles.
+#[cfg(feature = "native-witness")]
 pub(crate) mod groth16;
 
+#[cfg(feature = "host-primitives")]
 use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;
+#[cfg(feature = "host-primitives")]
 use circuit::types::F;
+#[cfg(feature = "host-primitives")]
 use std::sync::OnceLock;
 
 // Field-codec re-export — single source of truth lives in
 // `ark-codec::field` (PR4 / Step 7 of the DTO consolidation plan).
+#[cfg(any(feature = "host-primitives", feature = "proof-types"))]
 pub(crate) use ark_codec::field::field_to_hex;
 
+/// Required wire-format length for RSA-2048 modulus and signature bytes.
+#[cfg(any(feature = "host-primitives", feature = "native-witness"))]
+pub(crate) const RSA_2048_BYTES: usize = 256;
+
 /// Cached Poseidon parameters — constructed once, shared across all modules.
+#[cfg(feature = "host-primitives")]
 pub(crate) fn poseidon_params() -> &'static PoseidonConfig<F> {
     static PARAMS: OnceLock<PoseidonConfig<F>> = OnceLock::new();
     PARAMS.get_or_init(gadget::hashes::poseidon::get_poseidon_params::<F>)
@@ -155,6 +172,7 @@ pub fn load_circuit_config(
 pub use circuit::types;
 
 // Public API (always available)
+#[cfg(feature = "host-primitives")]
 pub use anchor::poseidon::generate_anchor;
 pub use circuit::types::CircuitConfig;
 pub use dto::{
@@ -162,17 +180,21 @@ pub use dto::{
     GenerateAnchorResponse, HashRequest, HashResponse, IssuerKeyHashRequest, IssuerKeyHashResponse,
 };
 pub use dto::{PUBLIC_INPUT_NAMES, PUBLIC_INPUTS, PublicInputSlot};
+#[cfg(feature = "host-primitives")]
 pub use hash::{generate_audience_hashes, generate_issuer_key_hash, generate_poseidon_hash};
 
-// Public API (proof + setup surface — always available after the 2026-05 refactor)
+#[cfg(feature = "artifact-loader")]
 pub use artifact::{ArtifactError, ArtifactLoadTiming, ArtifactSet};
-pub use dto::{ProofComponents, ProveCredential, ProveRequest, ProveResponse, SharedPublicInputs};
-pub use groth16::prover::{
-    WitnessBundle, prove, synthesize_witnesses, synthesize_witnesses_streaming,
-};
+#[cfg(feature = "proof-types")]
+pub use dto::{ProofComponents, ProveResponse, SharedPublicInputs, WitnessBundle};
+pub use dto::{ProveCredential, ProveRequest};
+#[cfg(feature = "native-witness")]
+pub use groth16::prover::{prove, synthesize_witnesses, synthesize_witnesses_streaming};
+#[cfg(feature = "setup")]
 pub use groth16::setup::{SetupOutput, SetupRng, SetupShape, setup};
 
 // Compile-checked signature pin for `prove`.
+#[cfg(feature = "native-prove")]
 const _ASSERT_PROVE_SIGNATURE: fn(
     &ArtifactSet,
     &dto::ProveRequest,

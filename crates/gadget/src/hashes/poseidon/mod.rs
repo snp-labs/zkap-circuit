@@ -5,6 +5,7 @@
 //! width t=3, alpha=5, over BN254-Fr). Circuit-level helpers (`enforce_curve_hanchor`,
 //! `chain_hash_gadget`) live in [`constraints`].
 
+#[cfg(feature = "constraints")]
 pub mod constraints;
 pub mod parameters;
 pub use parameters::*;

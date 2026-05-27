@@ -10,10 +10,12 @@ use ark_std::hash::Hash;
 use errors::SignatureError;
 use rand::prelude::Rng;
 
+#[cfg(feature = "constraints")]
 pub mod constraints;
 pub mod errors;
 pub mod rsa;
 
+#[cfg(feature = "constraints")]
 pub use constraints::SigVerifyGadget;
 
 /// Abstract interface for a public-key signature scheme.

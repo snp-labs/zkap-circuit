@@ -9,29 +9,41 @@ keywords = ["zk", "groth16", "jwt", "oauth", "circuit"]
 categories = ["cryptography"]
 
 [dependencies]
-gadget = { workspace = true, default-features = false, features = ["crypto", "base64", "rsa"] }
-ark-r1cs-helpers = { workspace = true }
+gadget = { workspace = true, default-features = false, features = ["hashes-poseidon", "rsa"] }
+ark-r1cs-helpers = { workspace = true, optional = true }
 
 ark-ec = { workspace = true }
 ark-ff = { workspace = true }
-ark-r1cs-std = { workspace = true }
-ark-relations = { workspace = true }
+ark-r1cs-std = { workspace = true, optional = true }
+ark-relations = { workspace = true, optional = true }
 ark-std = { workspace = true }
-ark-crypto-primitives = { workspace = true, features = ["crh", "constraints", "merkle_tree"] }
+ark-crypto-primitives = { workspace = true, features = ["crh", "merkle_tree"] }
 ark-bn254 = { workspace = true }
-ark-ed-on-bn254 = { workspace = true, features = ["r1cs"] }
+ark-ed-on-bn254 = { workspace = true }
 ark-serialize = { workspace = true, features = ["derive"] }
 
 serde = { workspace = true }
 thiserror = { workspace = true }
 
 [features]
-default = []
-print-trace = ["gadget/print-trace"]
+default = ["constraints"]
+types = []
+constraints = [
+    "types",
+    "dep:ark-r1cs-helpers",
+    "dep:ark-r1cs-std",
+    "dep:ark-relations",
+    "ark-crypto-primitives/constraints",
+    "ark-ed-on-bn254/r1cs",
+    "gadget/base64",
+    "gadget/crypto",
+    "gadget/constraints",
+]
+print-trace = ["constraints", "gadget/print-trace"]
 # Marker feature gating the heavy Groth16 integration test target.
 # Renamed from `zkap-circuit` (Phase 5 / C13) — old name collided with the
 # crate name itself and confused tooling like `clippy --all-features`.
-integration-tests = []
+integration-tests = ["constraints"]
 
 [dev-dependencies]
 # Integration tests under `tests/groth16_integration.rs` exercise the

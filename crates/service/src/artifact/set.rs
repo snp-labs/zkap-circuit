@@ -261,16 +261,15 @@ fn load_arcs(
     // succeeds, the trailer itself is the body Blake3 hash, so avoid
     // `arcs.body_blake3()` here; that would reserialize the full matrix set.
     //
-    // Feed `ArcsFile::read` from disk instead of a preloaded Vec. The parser
-    // currently buffers internally to verify the trailer, but this avoids a
-    // second full-size `circuit.ar1cs` allocation in mobile runtimes.
+    // Feed `ArcsFile::read_seek` from disk so checksum verification streams
+    // the body instead of buffering the full `circuit.ar1cs` file.
     let file = File::open(&path).map_err(|e| ArtifactError::Io {
         path: path.clone(),
         source: e,
     })?;
     let mut reader = BufReader::new(file);
-    let arcs =
-        ArcsFile::<F>::read(&mut reader).map_err(|e| ArtifactError::ArcsFormat(format!("{e}")))?;
+    let arcs = ArcsFile::<F>::read_seek(&mut reader)
+        .map_err(|e| ArtifactError::ArcsFormat(format!("{e}")))?;
     let body_blake3_hex = hex::encode(read_ar1cs_trailer(&path)?);
     if body_blake3_hex != expected_body_blake3_hex {
         return Err(ArtifactError::HashMismatch {

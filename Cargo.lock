@@ -118,7 +118,6 @@ checksum = "c3d036a3c4ab069c7b410a2ce876bd74808d2d0888a82667669f8e783a898bf1"
 [[package]]
 name = "ark-ar1cs"
 version = "0.1.0"
-source = "git+https://github.com/baerae-zkap/ark-ar1cs?rev=d9ed0df5ca8f20e9e7d0710b2ca136b9d9a08833#d9ed0df5ca8f20e9e7d0710b2ca136b9d9a08833"
 dependencies = [
  "ark-ec",
  "ark-ff",

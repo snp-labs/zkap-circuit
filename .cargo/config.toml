@@ -8,6 +8,9 @@
 # Step 2 Tier 1.2 of the cross-platform SDK plan. See
 # crates/witness-gen-wasm/PERF.md.
 
+[patch."https://github.com/baerae-zkap/ark-ar1cs"]
+ark-ar1cs = { path = "../ark-ar1cs/crates/ark-ar1cs" }
+
 [target.wasm32-unknown-unknown]
 # Enable wasm SIMD (v128 ops) and bulk-memory in the rustc backend so
 # Cranelift / browser engines get vectorisable IR for the workload's

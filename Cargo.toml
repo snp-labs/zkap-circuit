@@ -49,12 +49,12 @@ gadget                    = { path = "crates/gadget", default-features = false }
 circuit                   = { path = "crates/circuit", default-features = false }
 zkap-service              = { path = "crates/service" }
 zkap-evm-verifier         = { path = "crates/zkap-evm-verifier" }
-# `ark-ar1cs` exposes the post-migration prover surface: `prove`,
-# `synthesize_full_assignment`, and the `format` submodule
-# (`ArcsFile`, `ConstraintMatrices`, `CurveId`). Pinned to the upstream
-# rev whose workspace fuses `format` / `prover` / `zkey` into the
-# single root crate.
-ark-ar1cs = { git = "https://github.com/baerae-zkap/ark-ar1cs", rev = "b003a7d8ec39becd489e2266eb336df34e11a463" }
+# `ark-ar1cs` exposes the post-migration prover surface:
+# `PreparedArcs`, `prove_with_mode`, `synthesize_full_assignment`, and
+# the `format` submodule (`ArcsFile`, `ConstraintMatrices`, `CurveId`).
+# Pinned to the upstream merge commit that makes prepared proving the
+# root crate's source of truth.
+ark-ar1cs = { git = "https://github.com/baerae-zkap/ark-ar1cs", rev = "d9ed0df5ca8f20e9e7d0710b2ca136b9d9a08833" }
 
 thiserror = { version = "2.0.12" }
 serde = { version = "1.0.227", features = ["derive"] }

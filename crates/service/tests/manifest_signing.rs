@@ -99,7 +99,8 @@ fn build_toy_arcs() -> Vec<u8> {
         .expect("toy circuit synthesis");
     cs.finalize();
     let matrices = ConstraintMatrices::<Fr>::from_cs(&cs).expect("ConstraintMatrices::from_cs");
-    let arcs = ArcsFile::<Fr>::from_matrices(CurveId::Bn254, &matrices);
+    let arcs =
+        ArcsFile::<Fr>::from_matrices(CurveId::Bn254, &matrices).expect("ArcsFile::from_matrices");
     let mut buf: Vec<u8> = Vec::new();
     arcs.write(&mut buf).expect("ArcsFile::write");
     buf

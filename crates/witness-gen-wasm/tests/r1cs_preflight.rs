@@ -5,7 +5,7 @@
 //! [`zkap_witness_gen_wasm::synthesize_witness_bytes`] (the rlib path)
 //! against the bundle's `proof_fixture.json` / `config.json`, then
 //! `CanonicalDeserialize`s the output as `Vec<WitnessBundle>` and feeds
-//! each `bundle.full_assignment` directly to `ark_ar1cs::prove`.
+//! each `bundle.full_assignment` directly to `ark_ar1cs::prove_with_mode`.
 //!
 //! A successful `prove` call proves that:
 //!  - the wasm-path serialiser emits a wire format that round-trips
@@ -14,7 +14,7 @@
 //!    baked into `circuit.ar1cs`, and
 //!  - the length invariant
 //!    `full_assignment.len() == num_instance + num_witness` holds
-//!    (otherwise `ark_ar1cs::prove` returns
+//!    (otherwise `ark_ar1cs::prove_with_mode` returns
 //!    `ProverError::WitnessLengthMismatch`).
 //!
 //! # Prereqs
@@ -151,7 +151,7 @@ fn load_fixture_json(bundle_dir: &std::path::Path) -> (Vec<u8>, Vec<u8>) {
 // ── test ──────────────────────────────────────────────────────────────────────
 
 /// §2.6 criterion #3: the rlib witness bytes, when deserialized as
-/// `Vec<WitnessBundle>` and fed to `ark_ar1cs::prove`, produce a valid
+/// `Vec<WitnessBundle>` and fed to `ark_ar1cs::prove_with_mode`, produce a valid
 /// proof against the matching `pk.bin` + `circuit.ar1cs`.
 #[test]
 #[ignore = "requires local dist/1-of-1-wasm bundle (gitignored release artifact); run generate_setup first then `cargo test -- --ignored`"]
@@ -183,8 +183,8 @@ fn r1cs_preflight_1_of_1_wasm() {
     let mut rng = OsRng;
     for (i, bundle) in bundles.iter().enumerate() {
         // Length invariant: full_assignment.len() == num_instance + num_witness
-        let expected_len = (artifact.arcs.header.num_instance_variables
-            + artifact.arcs.header.num_witness_variables) as usize;
+        let expected_len = artifact.prepared_arcs.num_instance_variables()
+            + artifact.prepared_arcs.num_witness_variables();
         assert_eq!(
             bundle.full_assignment.len(),
             expected_len,
@@ -207,15 +207,16 @@ fn r1cs_preflight_1_of_1_wasm() {
         );
 
         // Actual R1CS preflight: passes iff all constraints are satisfied.
-        ark_ar1cs::prove::<circuit::types::BN254, _>(
+        ark_ar1cs::prove_with_mode::<circuit::types::BN254, _>(
             &artifact.pk,
-            &artifact.arcs,
+            &artifact.prepared_arcs,
             &bundle.full_assignment,
             &mut rng,
+            ark_ar1cs::PreflightMode::VerifyAfter,
         )
         .unwrap_or_else(|e| {
             panic!(
-                "ark_ar1cs::prove failed for bundle[{i}]: {e}\n\
+                "ark_ar1cs::prove_with_mode failed for bundle[{i}]: {e}\n\
                  full_assignment.len()={}, expected={expected_len}",
                 bundle.full_assignment.len()
             )

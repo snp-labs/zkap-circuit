@@ -5,7 +5,7 @@
 //! [`zkap_service::synthesize_witnesses`] so a downstream prover
 //! (circuit-agnostic, native) can drive the circuit-dependent half
 //! of the prove pipeline behind a stable wasm interface and finish
-//! the proof with `ark_ar1cs::prove` on the host.
+//! the proof with `ark_ar1cs::prove_with_mode` on the host.
 //!
 //! ## ABI overview
 //!

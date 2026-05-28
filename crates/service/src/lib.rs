@@ -70,7 +70,7 @@
 //! │     circuit_input::build_merkle_witness                          │
 //! │     circuit_input::compute_public_inputs                         │
 //! │     ZkapCircuit::from_input → synthesize_full_assignment         │
-//! │     → ark_ar1cs::prove                                           │
+//! │     → ark_ar1cs::prove_with_mode(..., VerifyAfter)               │
 //! └──────────────────────────────┬───────────────────────────────────┘
 //!                                │
 //!                                ▼

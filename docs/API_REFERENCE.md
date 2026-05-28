@@ -173,7 +173,7 @@ pub struct ArtifactSet {
     pub pk: ProvingKey<BN254>,
     pub vk: VerifyingKey<BN254>,
     pub pvk: PreparedVerifyingKey<BN254>,
-    pub arcs: ArcsFile<F>,
+    pub prepared_arcs: PreparedArcs<F>,
     pub cfg: CircuitConfig,
     pub witness_gen_wasm: Option<Vec<u8>>,
 }
@@ -196,6 +196,7 @@ Production loader for signed bundles. It verifies:
 - `manifest.signature` exists and verifies against `verifying_key`.
 - sha256 of every manifest-listed artifact matches.
 - `circuit.ar1cs` parses as `ArcsFile`.
+- Parsed `.ar1cs` matrices are prepared once as `PreparedArcs`.
 - `.ar1cs` body Blake3 matches `manifest.ar1cs_blake3`.
 
 ### `ArtifactSet::load_unsigned`
@@ -251,7 +252,7 @@ Internal flow:
 1. Decode and validate `ProveRequest` against `artifact.cfg`.
 2. Derive anchor selectors and per-credential witness bundles.
 3. Build a full assignment for each credential.
-4. Call `ark_ar1cs::prove` with `artifact.pk`, `artifact.arcs`, and `OsRng`.
+4. Call `ark_ar1cs::prove_with_mode` with `artifact.pk`, `artifact.prepared_arcs`, `OsRng`, and `VerifyAfter`.
 5. Return `ProveResponse`.
 
 ## Verification

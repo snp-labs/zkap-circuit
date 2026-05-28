@@ -27,7 +27,7 @@
 //!             circuit_input::compute_public_inputs
 //!             ZkapCircuit::from_input
 //!             ark_ar1cs::synthesize_full_assignment
-//!             ark_ar1cs::prove(&pk, &arcs, &full_assignment, OsRng)
+//!             ark_ar1cs::prove_with_mode(&pk, &prepared_arcs, &full_assignment, OsRng, VerifyAfter)
 //! ```
 //!
 //! Pure native flow — the host loads the manifest-validated CRS bundle

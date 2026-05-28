@@ -201,7 +201,7 @@ The prove path:
 2. Derives witness bundles from JWT claims, Merkle paths, audience hashes, and
    anchor data.
 3. Synthesizes full assignments.
-4. Calls `ark_ar1cs::prove` once per credential.
+4. Calls `ark_ar1cs::prove_with_mode(..., VerifyAfter)` once per credential.
 5. Returns `ProveResponse`.
 
 The prove path does not re-check artifact hashes.

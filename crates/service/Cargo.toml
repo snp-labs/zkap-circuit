@@ -46,10 +46,10 @@ ark-relations         = { workspace = true, optional = true }
 ark-serialize         = { workspace = true, optional = true }
 rand                  = { workspace = true, optional = true }
 rand_chacha           = { workspace = true, optional = true }
-# Native prove flow — Commit 4 of the 2026-05 ark-ar1cs boundary
-# migration. The `ark-ar1cs` root crate exposes `prove`,
-# `synthesize_full_assignment`, and the `format::ArcsFile` envelope
-# that `ArtifactSet` loads from `circuit.ar1cs`.
+# Native prove flow. The `ark-ar1cs` root crate exposes
+# `PreparedArcs`, `prove_with_mode`, `synthesize_full_assignment`, and
+# the `format::ArcsFile` envelope that `ArtifactSet` loads from
+# `circuit.ar1cs`.
 ark-ar1cs              = { workspace = true, optional = true }
 
 [dev-dependencies]

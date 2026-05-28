@@ -1,10 +1,12 @@
-//! [`ArtifactSet`] — the in-memory bundle of `(pk, vk, pvk, arcs, cfg)`
+//! [`ArtifactSet`] — the in-memory bundle of `(pk, vk, pvk, prepared_arcs, cfg)`
 //! and the two caller-facing loaders.
 
+use std::fs::File;
+use std::io::{BufReader, Read, Seek, SeekFrom};
 use std::path::Path;
 use std::time::Instant;
 
-use ark_ar1cs::format::ArcsFile;
+use ark_ar1cs::{PreparedArcs, format::ArcsFile};
 use ark_groth16::{PreparedVerifyingKey, ProvingKey, VerifyingKey as Groth16VerifyingKey};
 use ark_serialize::CanonicalDeserialize;
 use circuit::types::{BN254, CircuitConfig, F};
@@ -46,8 +48,8 @@ pub struct ArtifactSet {
     pub vk: Groth16VerifyingKey<BN254>,
     /// Prepared verifying key — loaded from `pvk.bin`.
     pub pvk: PreparedVerifyingKey<BN254>,
-    /// `.ar1cs` body — loaded from `circuit.ar1cs`.
-    pub arcs: ArcsFile<F>,
+    /// Prepared `.ar1cs` body — loaded from `circuit.ar1cs` and prepared once.
+    pub prepared_arcs: PreparedArcs<F>,
     /// Circuit configuration — loaded from `config.json`.
     pub cfg: CircuitConfig,
     /// Optional `witness_gen.wasm` bytes — loaded from the
@@ -164,7 +166,7 @@ impl ArtifactSet {
         let mut timing = ArtifactLoadTiming::default();
 
         let start = Instant::now();
-        let arcs = load_arcs(dir, &manifest.artifacts.ar1cs, &manifest.ar1cs_blake3)?;
+        let prepared_arcs = load_arcs(dir, &manifest.artifacts.ar1cs, &manifest.ar1cs_blake3)?;
         timing.ar1cs_ms = elapsed_ms(start);
 
         let start = Instant::now();
@@ -205,7 +207,7 @@ impl ArtifactSet {
                 pk,
                 vk,
                 pvk,
-                arcs,
+                prepared_arcs,
                 cfg,
                 witness_gen_wasm,
             },
@@ -242,15 +244,11 @@ fn load_arcs(
     dir: &Path,
     entry: &ArtifactEntry,
     expected_body_blake3_hex: &str,
-) -> Result<ArcsFile<F>, ArtifactError> {
+) -> Result<PreparedArcs<F>, ArtifactError> {
     let path = dir.join(&entry.path);
-    let bytes = std::fs::read(&path).map_err(|e| ArtifactError::Io {
-        path: path.clone(),
-        source: e,
-    })?;
 
     // sha256 of the on-disk file vs manifest.
-    let sha_hex = sha256_hex(&bytes);
+    let sha_hex = sha256_file(&path)?;
     if sha_hex != entry.sha256 {
         return Err(ArtifactError::HashMismatch {
             field: "artifacts.ar1cs.sha256",
@@ -262,9 +260,18 @@ fn load_arcs(
     // Parse verifies the 32-byte trailer against the body. Once that
     // succeeds, the trailer itself is the body Blake3 hash, so avoid
     // `arcs.body_blake3()` here; that would reserialize the full matrix set.
-    let arcs = ArcsFile::<F>::read(&mut &bytes[..])
-        .map_err(|e| ArtifactError::ArcsFormat(format!("{e}")))?;
-    let body_blake3_hex = hex::encode(&bytes[bytes.len() - 32..]);
+    //
+    // Feed `ArcsFile::read` from disk instead of a preloaded Vec. The parser
+    // currently buffers internally to verify the trailer, but this avoids a
+    // second full-size `circuit.ar1cs` allocation in mobile runtimes.
+    let file = File::open(&path).map_err(|e| ArtifactError::Io {
+        path: path.clone(),
+        source: e,
+    })?;
+    let mut reader = BufReader::new(file);
+    let arcs =
+        ArcsFile::<F>::read(&mut reader).map_err(|e| ArtifactError::ArcsFormat(format!("{e}")))?;
+    let body_blake3_hex = hex::encode(read_ar1cs_trailer(&path)?);
     if body_blake3_hex != expected_body_blake3_hex {
         return Err(ArtifactError::HashMismatch {
             field: "ar1cs_blake3",
@@ -272,7 +279,7 @@ fn load_arcs(
             got: body_blake3_hex,
         });
     }
-    Ok(arcs)
+    Ok(arcs.prepare())
 }
 
 fn load_canonical<T: CanonicalDeserialize>(
@@ -281,12 +288,8 @@ fn load_canonical<T: CanonicalDeserialize>(
     what: &'static str,
 ) -> Result<T, ArtifactError> {
     let path = dir.join(&entry.path);
-    let bytes = std::fs::read(&path).map_err(|e| ArtifactError::Io {
-        path: path.clone(),
-        source: e,
-    })?;
 
-    let sha_hex = sha256_hex(&bytes);
+    let sha_hex = sha256_file(&path)?;
     if sha_hex != entry.sha256 {
         let field: &'static str = match what {
             "pk" => "artifacts.pk.sha256",
@@ -307,7 +310,12 @@ fn load_canonical<T: CanonicalDeserialize>(
     // subgroup / curve-validity checks during every bundle load; malformed
     // wire bytes still fail to decode, and semantically wrong keys fail later
     // when proving or verifying against the expected circuit.
-    T::deserialize_uncompressed_unchecked(&bytes[..]).map_err(|e| ArtifactError::Deserialize {
+    let file = File::open(&path).map_err(|e| ArtifactError::Io {
+        path: path.clone(),
+        source: e,
+    })?;
+    let mut reader = BufReader::new(file);
+    T::deserialize_uncompressed_unchecked(&mut reader).map_err(|e| ArtifactError::Deserialize {
         what,
         message: format!("{e}"),
     })
@@ -323,6 +331,61 @@ fn sha256_hex(bytes: &[u8]) -> String {
     hex::encode(hasher.finalize())
 }
 
+fn sha256_file(path: &Path) -> Result<String, ArtifactError> {
+    let file = File::open(path).map_err(|e| ArtifactError::Io {
+        path: path.to_path_buf(),
+        source: e,
+    })?;
+    let mut reader = BufReader::new(file);
+    let mut hasher = Sha256::new();
+    let mut buf = [0u8; 1024 * 1024];
+
+    loop {
+        let n = reader.read(&mut buf).map_err(|e| ArtifactError::Io {
+            path: path.to_path_buf(),
+            source: e,
+        })?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+
+    Ok(hex::encode(hasher.finalize()))
+}
+
+fn read_ar1cs_trailer(path: &Path) -> Result<[u8; 32], ArtifactError> {
+    let mut file = File::open(path).map_err(|e| ArtifactError::Io {
+        path: path.to_path_buf(),
+        source: e,
+    })?;
+    let len = file
+        .metadata()
+        .map_err(|e| ArtifactError::Io {
+            path: path.to_path_buf(),
+            source: e,
+        })?
+        .len();
+    if len < 32 {
+        return Err(ArtifactError::ArcsFormat(
+            "file too short to contain checksum trailer".into(),
+        ));
+    }
+
+    file.seek(SeekFrom::End(-32))
+        .map_err(|e| ArtifactError::Io {
+            path: path.to_path_buf(),
+            source: e,
+        })?;
+    let mut trailer = [0u8; 32];
+    file.read_exact(&mut trailer)
+        .map_err(|e| ArtifactError::Io {
+            path: path.to_path_buf(),
+            source: e,
+        })?;
+    Ok(trailer)
+}
+
 /// Read `dir/entry.path` and assert `sha256(bytes) == entry.sha256`.
 ///
 /// Used for artifact entries that need only an integrity check (no
@@ -336,11 +399,7 @@ fn verify_sha256(
     field: &'static str,
 ) -> Result<(), ArtifactError> {
     let path = dir.join(&entry.path);
-    let bytes = std::fs::read(&path).map_err(|e| ArtifactError::Io {
-        path: path.clone(),
-        source: e,
-    })?;
-    let sha_hex = sha256_hex(&bytes);
+    let sha_hex = sha256_file(&path)?;
     if sha_hex != entry.sha256 {
         return Err(ArtifactError::HashMismatch {
             field,

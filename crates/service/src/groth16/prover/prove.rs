@@ -8,21 +8,24 @@
 //!   the full [`ArtifactSet`]) because the proving key and `.ar1cs`
 //!   body are not used here.
 //! * [`prove`] composes [`synthesize_witnesses`] with the
-//!   **circuit-agnostic** `ark_ar1cs::prove` call (the only step that
-//!   needs `pk` / `arcs`).
+//!   **circuit-agnostic** `ark_ar1cs::prove_with_mode` call (the only step
+//!   that needs `pk` / prepared `.ar1cs` matrices).
 //!
 //! This split is the basis for the planned WASM witness-generator
 //! artifact: a downstream `witness_gen.wasm` will host
 //! [`synthesize_witnesses`] and emit serialized [`WitnessBundle`]s,
 //! letting circuit-agnostic prover packages call only
-//! `ark_ar1cs::prove` natively.
+//! `ark_ar1cs::prove_with_mode` natively.
 //!
 //! Trust gating ([`crate::artifact::ArtifactSet::load`] sha256 /
 //! `ar1cs_blake3` checks) is the loader's responsibility — neither
 //! function re-validates the manifest, `arcs.body_blake3()`, or any
 //! `pk` / `vk` hash.
 
-use ark_ar1cs::{prove as ar1cs_prove, synthesize_full_assignment};
+use ark_ar1cs::{
+    PreflightMode as Ar1csPreflightMode, prove_with_mode as ar1cs_prove_with_mode,
+    synthesize_full_assignment,
+};
 use ark_std::rand::rngs::OsRng;
 use circuit::types::{BN254, BNP, CG, CircuitConfig, F};
 use circuit::witness::{
@@ -274,9 +277,9 @@ pub fn synthesize_witnesses(
 /// in `request`, against the artifact bundle in `artifact`.
 ///
 /// Thin composition of [`synthesize_witnesses`] (circuit-dependent
-/// half) and `ark_ar1cs::prove` (circuit-agnostic half). A fresh
-/// [`OsRng`] is constructed inside this function; the public API
-/// does not expose a seedable RNG variant.
+/// half) and `ark_ar1cs::prove_with_mode(..., VerifyAfter)`
+/// (circuit-agnostic half). A fresh [`OsRng`] is constructed inside this
+/// function; the public API does not expose a seedable RNG variant.
 ///
 /// # Trust boundary
 ///
@@ -301,13 +304,16 @@ pub fn prove(
     let mut proofs = Vec::with_capacity(bundles.len());
     let mut public_input_vectors: Vec<Vec<F>> = Vec::with_capacity(bundles.len());
     for bundle in bundles {
-        let proof = ar1cs_prove::<BN254, _>(
+        let proof = ar1cs_prove_with_mode::<BN254, _>(
             &artifact.pk,
-            &artifact.arcs,
+            &artifact.prepared_arcs,
             &bundle.full_assignment,
             &mut rng,
+            Ar1csPreflightMode::VerifyAfter,
         )
-        .map_err(|e| ApplicationError::ProofGenerationFailed(format!("ark_ar1cs::prove: {e}")))?;
+        .map_err(|e| {
+            ApplicationError::ProofGenerationFailed(format!("ark_ar1cs::prove_with_mode: {e}"))
+        })?;
         proofs.push(proof);
         public_input_vectors.push(bundle.public_inputs);
     }

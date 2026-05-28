@@ -131,7 +131,7 @@ impl SetupOutput {
             pk: self.pk,
             vk: self.vk,
             pvk: self.pvk,
-            arcs: self.arcs,
+            prepared_arcs: self.arcs.prepare(),
             cfg: self.cfg,
             // setup() does not invoke the wasm32 build; attach the
             // witness-gen blob via the CLI / manifest path.
@@ -223,7 +223,9 @@ pub fn setup(
     let matrices = ConstraintMatrices::from_cs(&cs_setup).map_err(|e| {
         ApplicationError::InvalidFormat(format!("Failed to extract R1CS matrices: {e:?}"))
     })?;
-    let arcs = ArcsFile::from_matrices(CurveId::Bn254, &matrices);
+    let arcs = ArcsFile::from_matrices(CurveId::Bn254, &matrices).map_err(|e| {
+        ApplicationError::InvalidFormat(format!("ArcsFile::from_matrices failed: {e}"))
+    })?;
 
     let output = SetupOutput {
         pk,

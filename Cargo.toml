@@ -54,7 +54,7 @@ zkap-evm-verifier         = { path = "crates/zkap-evm-verifier" }
 # the `format` submodule (`ArcsFile`, `ConstraintMatrices`, `CurveId`).
 # Pinned to the upstream merge commit that makes prepared proving the
 # root crate's source of truth.
-ark-ar1cs = { git = "https://github.com/baerae-zkap/ark-ar1cs", rev = "d9ed0df5ca8f20e9e7d0710b2ca136b9d9a08833" }
+ark-ar1cs = { git = "https://github.com/baerae-zkap/ark-ar1cs", rev = "ae071aeb704c58721ee00bf3f8b1b15896bae8af" }
 
 thiserror = { version = "2.0.12" }
 serde = { version = "1.0.227", features = ["derive"] }

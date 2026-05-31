@@ -46,6 +46,10 @@ ark-relations         = { workspace = true, optional = true }
 ark-serialize         = { workspace = true, optional = true }
 rand                  = { workspace = true, optional = true }
 rand_chacha           = { workspace = true, optional = true }
+# Data parallelism for the native per-bundle prove loop. Optional and
+# enabled ONLY by `native-witness`, so the wasm32 `host-primitives`
+# build never links rayon (its threadpool is incompatible with wasm).
+rayon                 = { workspace = true, optional = true }
 # Native prove flow. The `ark-ar1cs` root crate exposes
 # `PreparedArcs`, `prove_with_mode`, `synthesize_full_assignment`, and
 # the `format::ArcsFile` envelope that `ArtifactSet` loads from
@@ -103,6 +107,7 @@ native-witness = [
     "dep:ark-relations",
     "dep:ark-std",
     "dep:rand",
+    "dep:rayon",
 ]
 native-prove = ["artifact-loader", "native-witness"]
 # Internal, non-default feature: re-export

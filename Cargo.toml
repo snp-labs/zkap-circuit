@@ -83,6 +83,11 @@ blake2 = { version = "0.10" }
 hex = { version = "0.4" }
 rand = { version = "0.8" }
 rand_chacha = { version = "0.3" }
+# Native-only data parallelism for the per-bundle Groth16 prove loop
+# (`zkap-service::prove_bundles`). Gated behind `native-witness` in the
+# service crate so it is NEVER pulled into the wasm32 `host-primitives`
+# build consumed by `sdk-wasm`.
+rayon = { version = "1" }
 sha2 = { version = "0.10" }
 time = { version = "0.3", default-features = false, features = ["std", "formatting", "parsing"] }
 

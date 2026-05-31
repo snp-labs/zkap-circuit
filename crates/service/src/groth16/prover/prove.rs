@@ -37,6 +37,7 @@ use circuit::zkap::ZkapCircuit;
 use gadget::anchor::poseidon::{PoseidonAnchor, PoseidonAnchorPublicKey};
 use gadget::base64::get_base64_table;
 use gadget::matrix::VandermondeMatrix;
+use rayon::prelude::*;
 
 use crate::anchor::AnchorConfig;
 use crate::anchor::poseidon::{derive_selector_from_x_list_and_anchor, derive_x_from_secret};
@@ -377,12 +378,19 @@ impl PreflightMode {
 /// A fresh [`OsRng`] is constructed inside this function; the public API
 /// does not expose a seedable RNG variant.
 ///
-/// The per-bundle loop runs **sequentially**. Parallelising it would
-/// require a new dependency (no `rayon` is in the workspace today) and a
-/// thread-safe RNG fan-out; correctness and a minimal dependency
-/// footprint take priority over the throughput win here. Callers that
-/// need batch parallelism can shard `bundles` and call `prove_bundles`
-/// per shard from their own thread pool.
+/// The per-bundle loop runs **in parallel** via rayon
+/// (`into_par_iter`), so multi-credential proving (e.g. 3-of-3) fans the
+/// independent Groth16 proofs across the rayon thread pool. Parallelism
+/// is **native-only**: `rayon` is an optional dependency enabled solely
+/// by the `native-witness` feature, so the wasm32 `host-primitives`
+/// build of this crate never links it. Each task constructs its own
+/// fresh [`OsRng`] (the RNG is not shared across threads); `&artifact`'s
+/// `pk` / `prepared_arcs` are shared immutable (`Sync`) borrows. The
+/// result is **order-preserving**: `collect`ing the parallel iterator
+/// into a `Vec` yields proofs in the same order as the input `bundles`,
+/// which the on-chain / response semantics depend on. A failure in any
+/// bundle short-circuits the `collect` to the first
+/// [`ApplicationError::ProofGenerationFailed`].
 ///
 /// # Trust boundary
 ///
@@ -395,22 +403,35 @@ pub fn prove_bundles(
     mode: PreflightMode,
 ) -> Result<ProveResponse, ApplicationError> {
     let ar1cs_mode = mode.to_ar1cs();
-    let mut rng = OsRng;
-    let mut proofs = Vec::with_capacity(bundles.len());
-    let mut public_input_vectors: Vec<Vec<F>> = Vec::with_capacity(bundles.len());
-    for bundle in bundles {
-        let proof = ar1cs_prove_with_mode::<BN254, _>(
-            &artifact.pk,
-            &artifact.prepared_arcs,
-            &bundle.full_assignment,
-            &mut rng,
-            ar1cs_mode,
-        )
-        .map_err(|e| {
-            ApplicationError::ProofGenerationFailed(format!("ark_ar1cs::prove_with_mode: {e}"))
-        })?;
+    // Prove each bundle in parallel. `into_par_iter().map(...).collect()`
+    // preserves input order, so the resulting (proof, public_inputs)
+    // pairs line up with `bundles`. Each task builds a fresh `OsRng`
+    // rather than sharing one across threads; `&artifact` is a shared
+    // immutable (`Sync`) borrow. Collecting into `Result<Vec<_>, _>`
+    // short-circuits to the first proof failure.
+    let pairs: Vec<(Proof<BN254>, Vec<F>)> = bundles
+        .into_par_iter()
+        .map(|bundle| {
+            let mut rng = OsRng;
+            let proof = ar1cs_prove_with_mode::<BN254, _>(
+                &artifact.pk,
+                &artifact.prepared_arcs,
+                &bundle.full_assignment,
+                &mut rng,
+                ar1cs_mode,
+            )
+            .map_err(|e| {
+                ApplicationError::ProofGenerationFailed(format!("ark_ar1cs::prove_with_mode: {e}"))
+            })?;
+            Ok((proof, bundle.public_inputs))
+        })
+        .collect::<Result<Vec<_>, ApplicationError>>()?;
+
+    let mut proofs = Vec::with_capacity(pairs.len());
+    let mut public_input_vectors: Vec<Vec<F>> = Vec::with_capacity(pairs.len());
+    for (proof, public_inputs) in pairs {
         proofs.push(proof);
-        public_input_vectors.push(bundle.public_inputs);
+        public_input_vectors.push(public_inputs);
     }
     Ok((proofs, public_input_vectors).into())
 }

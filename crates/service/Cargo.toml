@@ -105,6 +105,15 @@ native-witness = [
     "dep:rand",
 ]
 native-prove = ["artifact-loader", "native-witness"]
+# Internal, non-default feature: re-export
+# `synthesize_witnesses_streaming` (the low-memory witness pipeline
+# entry) from the crate root. This is NOT part of the semver-stable
+# public boundary — it exists only so the in-workspace
+# `zkap-witness-gen-wasm` crate can drive the streaming path. External
+# native consumers and `zkap-zkp` must NOT enable it; they use
+# `synthesize_witnesses` / `prove_bundles` instead. Requires the witness
+# pipeline (`native-witness`) to be active.
+internal-streaming-witness = ["native-witness"]
 setup = [
     "native-prove",
     "dep:ark-poly",

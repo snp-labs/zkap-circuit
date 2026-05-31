@@ -16,15 +16,27 @@
 //! - [`setup`] — trusted setup: generates proving/verifying keys and writes them to disk
 //! - [`prove`] — native Groth16 prover free function (takes
 //!   `&ArtifactSet` + [`ProveRequest`]; mirrors the `generate_anchor`
-//!   shape).
+//!   shape). One-shot: synthesize witnesses + prove in a single call.
+//! - [`prove_bundles`] — circuit-agnostic prove half: turn
+//!   pre-synthesized [`WitnessBundle`]s into a [`ProveResponse`] with an
+//!   explicit [`PreflightMode`]. This is the stable façade that replaces
+//!   reaching into `ArtifactSet`'s key material and calling
+//!   `ark_ar1cs::prove_with_mode` directly.
+//! - [`verify`] — Groth16 proof verification wrapper: verifies a
+//!   [`Proof`]`<`[`BN254`]`>` against an `&[`[`F`]`]` instance vector
+//!   using the prepared verifying key bundled in the [`ArtifactSet`], so
+//!   consumers never borrow the prepared key directly.
 //! - [`jwt`] — JWT payload claim parsing ([`jwt::parser::parse_claim_from_str`])
 //!
-//! Proof verification is intentionally **not** wrapped by this crate
-//! after Commit 5 of the 2026-05 ark-ar1cs boundary migration: callers
-//! borrow the prepared verifying key from
-//! [`SetupOutput::prepared_verifying_key`] (or from an
-//! [`ArtifactSet`]) and feed it directly to
-//! `ark_groth16::Groth16::verify_proof`.
+//! Proof verification is wrapped by [`verify`] (re-added for the
+//! 2026-05 `zkap-service` semver-boundary work; it had been removed in
+//! Commit 5 of the ark-ar1cs boundary migration in favour of callers
+//! borrowing the prepared verifying key directly). [`verify`] takes the
+//! prepared key from the [`ArtifactSet`] internally and forwards to
+//! `ark_groth16::Groth16::verify_proof`. Callers that need the prepared
+//! key for other purposes can still read
+//! [`SetupOutput::prepared_verifying_key`] off a freshly-built
+//! [`SetupOutput`].
 //!
 //! Solidity on-chain verifier codegen lives in the sibling crate
 //! [`zkap-evm-verifier`](../zkap_evm_verifier/index.html); call
@@ -129,8 +141,8 @@ pub(crate) mod groth16;
 
 #[cfg(feature = "host-primitives")]
 use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;
-#[cfg(feature = "host-primitives")]
-use circuit::types::F;
+// `F` is provided by the unconditional crate-root re-export
+// (`pub use circuit::types::{..., F}`) below; no separate gated import.
 #[cfg(feature = "host-primitives")]
 use std::sync::OnceLock;
 
@@ -169,12 +181,18 @@ pub fn load_circuit_config(
     Ok(config)
 }
 
-pub use circuit::types;
+// Narrowed `circuit::types` re-export (BREAKING vs. the prior
+// whole-module `pub use circuit::types;`). Only the fundamental
+// field/curve type aliases and the canonical config types cross the
+// boundary; the internal constraint-system aliases (`CG`, `BNP`,
+// `BigNat2048Params`, `PoseidonHash`) are deliberately NOT re-exported
+// — exposing gadget/constraint types in public signatures is the leak
+// this boundary forbids.
+pub use circuit::types::{BN254, CircuitConfig, CircuitConfigError, F};
 
 // Public API (always available)
 #[cfg(feature = "host-primitives")]
 pub use anchor::poseidon::generate_anchor;
-pub use circuit::types::CircuitConfig;
 pub use dto::{
     AnchorSecret, AudienceHashRequest, AudienceHashResponse, GenerateAnchorRequest,
     GenerateAnchorResponse, HashRequest, HashResponse, IssuerKeyHashRequest, IssuerKeyHashResponse,
@@ -188,14 +206,60 @@ pub use artifact::{ArtifactError, ArtifactLoadTiming, ArtifactSet};
 #[cfg(feature = "proof-types")]
 pub use dto::{ProofComponents, ProveResponse, SharedPublicInputs, WitnessBundle};
 pub use dto::{ProveCredential, ProveRequest};
+// Stable native prove/verify boundary. `prove` (one-shot from a
+// `ProveRequest`), `prove_bundles` (circuit-agnostic half from
+// pre-synthesized bundles), `verify` (Groth16 verify against the
+// bundled key), the façade `PreflightMode`, and `synthesize_witnesses`
+// (circuit-dependent half for standalone native callers).
 #[cfg(feature = "native-witness")]
-pub use groth16::prover::{prove, synthesize_witnesses, synthesize_witnesses_streaming};
+pub use groth16::prover::{PreflightMode, prove, prove_bundles, synthesize_witnesses, verify};
+// `synthesize_witnesses_streaming` is a low-memory implementation detail
+// of the witness pipeline, NOT part of the semver-stable boundary. It is
+// re-exported only under the internal, non-default
+// `internal-streaming-witness` feature, which the in-workspace
+// `zkap-witness-gen-wasm` crate enables; external native consumers and
+// `zkap-zkp` never enable it and use `synthesize_witnesses` /
+// `prove_bundles` instead.
+#[cfg(all(feature = "native-witness", feature = "internal-streaming-witness"))]
+pub use groth16::prover::synthesize_witnesses_streaming;
 #[cfg(feature = "setup")]
 pub use groth16::setup::{SetupOutput, SetupRng, SetupShape, setup};
 
-// Compile-checked signature pin for `prove`.
+// `ark_groth16::Proof` is re-exported so `verify` callers can name the
+// proof type without depending on `ark-groth16` directly. It is
+// parameterised by `BN254` (an allowed fundamental curve type) and
+// carries only `ark-bn254` curve points — no circuit/gadget types.
+#[cfg(feature = "proof-types")]
+pub use ark_groth16::Proof;
+
+// ── Compile-checked signature pins (semver drift guard) ──────────────
+//
+// Each `const _` below pins the canonical signature of a public prove /
+// verify entry point. Any drift — a changed parameter type, return type,
+// or arity — becomes a compile error here, so the semver-stable surface
+// cannot move silently. Additive changes (new functions, new
+// `PreflightMode` variants) are non-breaking and do not trip these pins.
 #[cfg(feature = "native-prove")]
 const _ASSERT_PROVE_SIGNATURE: fn(
     &ArtifactSet,
     &dto::ProveRequest,
 ) -> Result<dto::ProveResponse, error::ApplicationError> = prove;
+
+#[cfg(feature = "native-prove")]
+const _ASSERT_PROVE_BUNDLES_SIGNATURE: fn(
+    &ArtifactSet,
+    Vec<dto::WitnessBundle>,
+    PreflightMode,
+) -> Result<dto::ProveResponse, error::ApplicationError> = prove_bundles;
+
+// `type_complexity` allow: this is a deliberate fn-pointer signature
+// pin, not a reusable type — extracting it into a `type` alias would
+// defeat the point (the inline `fn(...)` shape IS the thing being
+// asserted).
+#[cfg(feature = "native-prove")]
+#[allow(clippy::type_complexity)]
+const _ASSERT_VERIFY_SIGNATURE: fn(
+    &ArtifactSet,
+    &Proof<BN254>,
+    &[F],
+) -> Result<bool, error::ApplicationError> = verify;

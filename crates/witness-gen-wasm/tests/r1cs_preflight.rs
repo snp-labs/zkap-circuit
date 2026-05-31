@@ -42,10 +42,10 @@
 use std::path::PathBuf;
 
 use ark_serialize::CanonicalDeserialize;
-use ark_std::rand::rngs::OsRng;
 
 use zkap_service::{
-    ArtifactSet, CircuitConfig, ProveCredential, ProveRequest, WitnessBundle, manifest::Manifest,
+    ArtifactSet, CircuitConfig, PreflightMode, ProveCredential, ProveRequest, WitnessBundle,
+    manifest::Manifest, prove_bundles,
 };
 use zkap_witness_gen_wasm::synthesize_witness_bytes;
 
@@ -179,52 +179,44 @@ fn r1cs_preflight_1_of_1_wasm() {
     let artifact = ArtifactSet::load_unsigned(&manifest, &bundle_dir)
         .expect("ArtifactSet::load_unsigned must succeed for the canonical bundle");
 
-    // ── R1CS preflight: prove each bundle ─────────────────────────────
-    let mut rng = OsRng;
+    // ── Bundle-shape invariants (public surface only) ─────────────────
+    // The full_assignment length-vs-arcs check is now enforced inside
+    // `prove_bundles` → `ark_ar1cs::prove_with_mode` (which returns
+    // `ProverError::WitnessLengthMismatch` on a mismatch); the prepared
+    // `.ar1cs` matrices are no longer a `pub` field on `ArtifactSet`
+    // (semver boundary). We keep the bundle-local shape assertions that
+    // need only the public `WitnessBundle` fields.
+    use circuit::types::F;
+    let n_bundles = bundles.len();
     for (i, bundle) in bundles.iter().enumerate() {
-        // Length invariant: full_assignment.len() == num_instance + num_witness
-        let expected_len = artifact.prepared_arcs.num_instance_variables()
-            + artifact.prepared_arcs.num_witness_variables();
-        assert_eq!(
-            bundle.full_assignment.len(),
-            expected_len,
-            "bundle[{i}]: full_assignment.len()={} but arcs expects {expected_len}",
-            bundle.full_assignment.len()
-        );
-        // F::ONE invariant
-        use circuit::types::F;
         assert_eq!(
             bundle.full_assignment[0],
             F::from(1u64),
             "bundle[{i}]: full_assignment[0] must be F::ONE"
         );
-        // public_inputs length invariant
         assert_eq!(
             bundle.public_inputs.len(),
             8,
             "bundle[{i}]: public_inputs.len()={} but expected 8",
             bundle.public_inputs.len()
         );
-
-        // Actual R1CS preflight: passes iff all constraints are satisfied.
-        ark_ar1cs::prove_with_mode::<circuit::types::BN254, _>(
-            &artifact.pk,
-            &artifact.prepared_arcs,
-            &bundle.full_assignment,
-            &mut rng,
-            ark_ar1cs::PreflightMode::VerifyAfter,
-        )
-        .unwrap_or_else(|e| {
-            panic!(
-                "ark_ar1cs::prove_with_mode failed for bundle[{i}]: {e}\n\
-                 full_assignment.len()={}, expected={expected_len}",
-                bundle.full_assignment.len()
-            )
-        });
     }
+
+    // ── R1CS preflight via the public `prove_bundles` façade ──────────
+    // `VerifyAfter` runs the Groth16 prover and the post-proof
+    // verification per bundle; a satisfying assignment + valid keys =>
+    // `Ok`. This replaces the prior direct `ark_ar1cs::prove_with_mode`
+    // call that reached into `artifact.pk` / `artifact.prepared_arcs`.
+    let response = prove_bundles(&artifact, bundles, PreflightMode::VerifyAfter)
+        .expect("prove_bundles must succeed for the canonical bundle's witnesses");
+    assert_eq!(
+        response.proofs.len(),
+        n_bundles,
+        "prove_bundles must emit one proof per bundle"
+    );
 
     eprintln!(
         "r1cs_preflight: {} bundle(s) proved successfully against dist/1-of-1-wasm",
-        bundles.len()
+        n_bundles
     );
 }

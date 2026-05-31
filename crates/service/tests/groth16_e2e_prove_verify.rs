@@ -26,7 +26,7 @@ use ark_crypto_primitives::{
     sponge::poseidon::PoseidonConfig,
 };
 use ark_ff::{PrimeField, Zero};
-use ark_groth16::{Groth16, Proof};
+use ark_groth16::Proof;
 use ark_std::rand::SeedableRng;
 use base64::Engine;
 use circuit::types::F;
@@ -380,18 +380,20 @@ fn e2e_setup_prove_verify_via_public_api() {
         "service `hanchor` should equal the prove-response shared hanchor"
     );
 
-    // ── 8. Verify each proof against the bundled PreparedVerifyingKey. ──
-    let pvk = &set.pvk;
+    // ── 8. Verify each proof through the public `verify` façade. ───────
+    // The prepared verifying key is no longer a `pub` field on
+    // `ArtifactSet` (semver boundary); callers verify via
+    // `zkap_service::verify(&set, &proof, &public_inputs)`.
     for i in 0..k {
         let proof = proof_from_components(&response.proofs[i]);
         let pub_inputs = pub_inputs_from_hex(&response.public_inputs_for(i));
         assert_eq!(pub_inputs.len(), 8, "8-element canonical instance vector");
 
-        let ok = Groth16::<Bn254>::verify_proof(pvk, &proof, &pub_inputs)
-            .expect("verify_proof must not error on a real proof");
+        let ok = zkap_service::verify(&set, &proof, &pub_inputs)
+            .expect("verify must not error on a real proof");
         assert!(
             ok,
-            "proof[{}] must verify against the setup's PreparedVerifyingKey",
+            "proof[{}] must verify against the setup's prepared verifying key",
             i
         );
         println!("proof[{i}] verified ✓");
@@ -514,11 +516,12 @@ fn e2e_verify_rejects_tampered_public_input() {
     };
     let response = prove(&set, &request).expect("prove");
 
-    // Sanity: untampered proofs verify.
+    // Sanity: untampered proofs verify (through the public `verify`
+    // façade — `pvk` is no longer a `pub` field on `ArtifactSet`).
     let proof0 = proof_from_components(&response.proofs[0]);
     let pub0 = pub_inputs_from_hex(&response.public_inputs_for(0));
     assert!(
-        Groth16::<Bn254>::verify_proof(&set.pvk, &proof0, &pub0).unwrap(),
+        zkap_service::verify(&set, &proof0, &pub0).unwrap(),
         "control: untampered proof must verify before the negative case"
     );
 
@@ -526,10 +529,10 @@ fn e2e_verify_rejects_tampered_public_input() {
     // must reject.
     let mut tampered = pub0.clone();
     tampered[0] += F::from(1u64);
-    let verified = Groth16::<Bn254>::verify_proof(&set.pvk, &proof0, &tampered).unwrap_or(false);
+    let verified = zkap_service::verify(&set, &proof0, &tampered).unwrap_or(false);
     assert!(
         !verified,
-        "verify_proof must reject a proof with a tampered public input"
+        "verify must reject a proof with a tampered public input"
     );
 
     let _ = std::fs::remove_dir_all(&tmp_dir);
@@ -537,11 +540,23 @@ fn e2e_verify_rejects_tampered_public_input() {
 
 // Compile-time guard that this test file pulls in only public items —
 // catches accidental reliance on `pub(crate)` helpers if the boundary
-// shape ever drifts.
+// shape ever drifts. Exercises the full stable prove/verify façade
+// (`prove`, `prove_bundles`, `verify`, `PreflightMode`) so a breaking
+// change to any of them fails to compile here.
 #[allow(dead_code)]
-fn _api_surface_guard(set: &ArtifactSet, req: &ProveRequest) {
+fn _api_surface_guard(
+    set: &ArtifactSet,
+    req: &ProveRequest,
+    bundles: Vec<zkap_service::WitnessBundle>,
+    proof: &Proof<Bn254>,
+    public_inputs: &[F],
+) {
     let _: Result<zkap_service::ProveResponse, zkap_service::error::ApplicationError> =
         prove(set, req);
+    let _: Result<zkap_service::ProveResponse, zkap_service::error::ApplicationError> =
+        zkap_service::prove_bundles(set, bundles, zkap_service::PreflightMode::VerifyAfter);
+    let _: Result<bool, zkap_service::error::ApplicationError> =
+        zkap_service::verify(set, proof, public_inputs);
     // `FromStr` is brought in so `ark_bn254::Fr::from_str` stays
     // available even if hex_decimal_to_field's re-export ever moves.
     let _ = F::from_str("0");

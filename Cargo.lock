@@ -2941,7 +2941,6 @@ name = "zkap-witness-gen-wasm"
 version = "0.1.1-rc.1"
 dependencies = [
  "anyhow",
- "ark-ar1cs",
  "ark-bn254",
  "ark-codec",
  "ark-crypto-primitives",

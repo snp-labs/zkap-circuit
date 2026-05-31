@@ -1,6 +1,6 @@
 [package]
 name = "gadget"
-version = "0.1.1-rc.1"
+version = "0.1.1-rc.2"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "ZK circuit gadgets for JWT verification, RSA signatures, Poseidon hashing, and Base64 decoding"

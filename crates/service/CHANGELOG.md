@@ -22,7 +22,9 @@ types, or arity is a compile error, so the boundary cannot move silently.
 change; if it is added later, prefer a `cargo-public-api` snapshot test to
 extend coverage beyond the hand-written pins.
 
-## [Unreleased] — establish the semver-stable public boundary
+## [Unreleased]
+
+## [0.1.1-rc.2] - 2026-05-31 — establish the semver-stable public boundary
 
 This is the **first semver-tracked public API** of `zkap-service`. The
 goal is to stop internal churn — especially the `ark-ar1cs`

@@ -1,6 +1,6 @@
 [package]
 name = "zkap-service"
-version = "0.1.1-rc.1"
+version = "0.1.1-rc.2"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "Service layer for ZK proof generation and key management"

@@ -41,4 +41,11 @@ mod prove;
 
 pub(crate) use crate::RSA_2048_BYTES;
 
-pub use prove::{prove, synthesize_witnesses, synthesize_witnesses_streaming};
+pub use prove::{PreflightMode, prove, prove_bundles, synthesize_witnesses, verify};
+// `synthesize_witnesses_streaming` is re-exported only when the
+// internal, non-default `internal-streaming-witness` feature is active
+// (enabled by the in-workspace `zkap-witness-gen-wasm` crate). Gating
+// the re-export here keeps it out of the default public surface and
+// avoids an unused-import warning when the feature is off.
+#[cfg(feature = "internal-streaming-witness")]
+pub use prove::synthesize_witnesses_streaming;

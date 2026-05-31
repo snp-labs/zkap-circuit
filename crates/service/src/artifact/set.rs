@@ -43,13 +43,36 @@ pub struct ArtifactLoadTiming {
 /// manifest-validated trust gate for the prove flow.
 pub struct ArtifactSet {
     /// Groth16 proving key — loaded from `pk.bin`.
-    pub pk: ProvingKey<BN254>,
+    ///
+    /// Crate-private: external consumers reach the prover through
+    /// [`crate::prove`] / [`crate::prove_bundles`] instead of borrowing
+    /// the key directly (semver-boundary field hiding).
+    pub(crate) pk: ProvingKey<BN254>,
     /// Groth16 verifying key — loaded from `vk.bin`.
-    pub vk: Groth16VerifyingKey<BN254>,
+    ///
+    /// Crate-private: not part of the stable boundary. Proof
+    /// verification goes through [`crate::verify`], which uses the
+    /// prepared key below.
+    ///
+    /// Retained even though no in-crate reader consumes it today: it is
+    /// a first-class member of the loaded + hash-checked CRS bundle (the
+    /// loader deserializes and integrity-checks `vk.bin`), and
+    /// `SetupOutput::into_artifact_set` populates it. Dropping it would
+    /// silently narrow what the loader binds. `#[allow(dead_code)]` is
+    /// the intentional choice over deleting a load-bearing artifact slot.
+    #[allow(dead_code)]
+    pub(crate) vk: Groth16VerifyingKey<BN254>,
     /// Prepared verifying key — loaded from `pvk.bin`.
-    pub pvk: PreparedVerifyingKey<BN254>,
+    ///
+    /// Crate-private: external consumers verify via [`crate::verify`]
+    /// rather than borrowing the prepared key directly.
+    pub(crate) pvk: PreparedVerifyingKey<BN254>,
     /// Prepared `.ar1cs` body — loaded from `circuit.ar1cs` and prepared once.
-    pub prepared_arcs: PreparedArcs<F>,
+    ///
+    /// Crate-private: consumed internally by [`crate::prove_bundles`];
+    /// external consumers never touch the prepared matrices (the leak
+    /// this boundary closes).
+    pub(crate) prepared_arcs: PreparedArcs<F>,
     /// Circuit configuration — loaded from `config.json`.
     pub cfg: CircuitConfig,
     /// Optional `witness_gen.wasm` bytes — loaded from the

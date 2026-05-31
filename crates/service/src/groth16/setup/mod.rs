@@ -53,9 +53,15 @@ pub struct SetupOutput {
     pub(crate) pvk: PreparedVerifyingKey<BN254>,
     /// `.ar1cs` body extracted alongside the proving/verifying keys.
     /// Used by `crate::crs::persist_setup_output` to emit
-    /// `circuit.ar1cs` and by CLI tooling to compute the manifest's
-    /// `ar1cs_blake3` field.
-    pub arcs: ArcsFile<F>,
+    /// `circuit.ar1cs` and to compute the manifest's `ar1cs_blake3`
+    /// field.
+    ///
+    /// Crate-private: persisted internally by [`setup`] via
+    /// `crate::crs::persist_setup_output`; no external consumer reads the
+    /// raw `ArcsFile` off the `SetupOutput`, and `ArcsFile<F>` would leak
+    /// the `ark-ar1cs` format type across the boundary (semver-boundary
+    /// field hiding).
+    pub(crate) arcs: ArcsFile<F>,
     /// Constraint-system shape — populated from the synthesized
     /// [`ConstraintSystem`] used to extract the R1CS matrices, so the
     /// counts always match the `circuit.ar1cs` payload.

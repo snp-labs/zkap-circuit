@@ -26,6 +26,7 @@ use ark_ar1cs::{
     PreflightMode as Ar1csPreflightMode, prove_with_mode as ar1cs_prove_with_mode,
     synthesize_full_assignment,
 };
+use ark_groth16::{Groth16, Proof};
 use ark_std::rand::rngs::OsRng;
 use circuit::types::{BN254, BNP, CG, CircuitConfig, F};
 use circuit::witness::{
@@ -36,6 +37,7 @@ use circuit::zkap::ZkapCircuit;
 use gadget::anchor::poseidon::{PoseidonAnchor, PoseidonAnchorPublicKey};
 use gadget::base64::get_base64_table;
 use gadget::matrix::VandermondeMatrix;
+use rayon::prelude::*;
 
 use crate::anchor::AnchorConfig;
 use crate::anchor::poseidon::{derive_selector_from_x_list_and_anchor, derive_x_from_secret};
@@ -67,6 +69,18 @@ use super::circuit_input::{
 /// `ZkapCircuit::from_input` → `synthesize_full_assignment`. The
 /// proving key and `.ar1cs` body are not used here, so the function
 /// takes only [`CircuitConfig`].
+///
+/// # Visibility
+///
+/// This is a low-memory implementation detail of the witness pipeline,
+/// not part of the semver-stable `zkap-service` boundary. The function
+/// lives in the `pub(crate) mod groth16` tree, so it is reachable from
+/// outside the crate **only** through the `lib.rs` re-export, which is
+/// gated behind the internal, non-default `internal-streaming-witness`
+/// feature (enabled solely by the in-workspace `zkap-witness-gen-wasm`
+/// crate). External native consumers and `zkap-zkp` never enable that
+/// feature and use the collecting [`synthesize_witnesses`] entry — or,
+/// for the host prove half, [`prove_bundles`] — instead.
 pub fn synthesize_witnesses_streaming<Sink>(
     cfg: &CircuitConfig,
     request: &ProveRequest,
@@ -300,22 +314,179 @@ pub fn prove(
     request: &ProveRequest,
 ) -> Result<ProveResponse, ApplicationError> {
     let bundles = synthesize_witnesses(&artifact.cfg, request)?;
-    let mut rng = OsRng;
-    let mut proofs = Vec::with_capacity(bundles.len());
-    let mut public_input_vectors: Vec<Vec<F>> = Vec::with_capacity(bundles.len());
-    for bundle in bundles {
-        let proof = ar1cs_prove_with_mode::<BN254, _>(
-            &artifact.pk,
-            &artifact.prepared_arcs,
-            &bundle.full_assignment,
-            &mut rng,
-            Ar1csPreflightMode::VerifyAfter,
-        )
-        .map_err(|e| {
-            ApplicationError::ProofGenerationFailed(format!("ark_ar1cs::prove_with_mode: {e}"))
-        })?;
+    prove_bundles(artifact, bundles, PreflightMode::VerifyAfter)
+}
+
+/// Preflight policy for [`prove_bundles`] — the façade-owned mirror of
+/// `ark_ar1cs::PreflightMode`.
+///
+/// This enum is the stable, semver-tracked control knob for the
+/// circuit-agnostic prove half. It lets callers (standalone native
+/// consumers and the downstream witness-gen prover package) select the
+/// preflight behaviour **without importing `ark_ar1cs`** — the whole
+/// point of the `zkap-service` boundary. New variants here are an
+/// additive (non-breaking) change; renames / removals are breaking.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum PreflightMode {
+    /// Generate the proof first, then verify it against `pk.vk` before
+    /// returning. This is the default [`prove`] behaviour: it catches an
+    /// unsatisfying witness as a loud error instead of emitting a proof
+    /// that silently fails downstream verification. Use this when the
+    /// witness pipeline is trusted and an invalid witness is an
+    /// operational bug rather than expected input.
+    #[default]
+    VerifyAfter,
+    /// Check every R1CS row for satisfaction *before* generating the
+    /// proof, and skip the post-proof verify. Surfaces an unsatisfying
+    /// witness as a row-level diagnostic instead of a silent bad proof.
+    /// Maps to `ark_ar1cs::PreflightMode::Strict`.
+    StrictPreflight,
+}
+
+impl PreflightMode {
+    /// Lower the façade mode to the internal `ark_ar1cs` enum.
+    ///
+    /// The two ark-ar1cs modes are complementary, not "more vs less"
+    /// checking: `Strict` runs the row-level R1CS satisfaction preflight
+    /// before proving but performs **no** post-proof verify, whereas
+    /// `VerifyAfter` skips the row preflight and instead verifies the
+    /// finished proof against `pk.vk`. The façade names mirror that
+    /// behaviour: `StrictPreflight → Strict`, `VerifyAfter → VerifyAfter`.
+    fn to_ar1cs(self) -> Ar1csPreflightMode {
+        match self {
+            PreflightMode::VerifyAfter => Ar1csPreflightMode::VerifyAfter,
+            PreflightMode::StrictPreflight => Ar1csPreflightMode::Strict,
+        }
+    }
+}
+
+/// Stable boundary entry point for the **circuit-agnostic** prove half:
+/// turn pre-synthesized [`WitnessBundle`]s into a [`ProveResponse`].
+///
+/// This is the façade replacement for reaching into `ArtifactSet`'s
+/// `pk` / `prepared_arcs` and calling `ark_ar1cs::prove_with_mode`
+/// directly. Downstream prover packages that obtain bundles out-of-band
+/// (e.g. from the `zkap-witness-gen-wasm` ABI) call this with a loaded
+/// [`ArtifactSet`] and never need to depend on `ark_ar1cs`.
+///
+/// For each bundle it calls `ark_ar1cs::prove_with_mode` with the
+/// proving key and prepared `.ar1cs` matrices borrowed from `artifact`,
+/// using `mode` (lowered to the internal `ark_ar1cs` enum), then
+/// collects the proofs alongside each bundle's public-input vector and
+/// assembles the canonical [`ProveResponse`].
+///
+/// A fresh [`OsRng`] is constructed inside this function; the public API
+/// does not expose a seedable RNG variant.
+///
+/// The per-bundle loop runs **in parallel** via rayon
+/// (`into_par_iter`), so multi-credential proving (e.g. 3-of-3) fans the
+/// independent Groth16 proofs across the rayon thread pool. Parallelism
+/// is **native-only**: `rayon` is an optional dependency enabled solely
+/// by the `native-witness` feature, so the wasm32 `host-primitives`
+/// build of this crate never links it. Each task constructs its own
+/// fresh [`OsRng`] (the RNG is not shared across threads); `&artifact`'s
+/// `pk` / `prepared_arcs` are shared immutable (`Sync`) borrows. The
+/// result is **order-preserving**: `collect`ing the parallel iterator
+/// into a `Vec` yields proofs in the same order as the input `bundles`,
+/// which the on-chain / response semantics depend on. A failure in any
+/// bundle short-circuits the `collect` to the first
+/// [`ApplicationError::ProofGenerationFailed`].
+///
+/// # Trust boundary
+///
+/// `prove_bundles` does **not** re-verify any manifest hash. The loader
+/// ([`ArtifactSet::load_signed`]) is the **single** trust gate;
+/// production callers MUST load through it before proving.
+pub fn prove_bundles(
+    artifact: &ArtifactSet,
+    bundles: Vec<WitnessBundle>,
+    mode: PreflightMode,
+) -> Result<ProveResponse, ApplicationError> {
+    let ar1cs_mode = mode.to_ar1cs();
+    // Prove each bundle in parallel. `into_par_iter().map(...).collect()`
+    // preserves input order, so the resulting (proof, public_inputs)
+    // pairs line up with `bundles`. Each task builds a fresh `OsRng`
+    // rather than sharing one across threads; `&artifact` is a shared
+    // immutable (`Sync`) borrow. Collecting into `Result<Vec<_>, _>`
+    // short-circuits to the first proof failure.
+    let pairs: Vec<(Proof<BN254>, Vec<F>)> = bundles
+        .into_par_iter()
+        .map(|bundle| {
+            let mut rng = OsRng;
+            let proof = ar1cs_prove_with_mode::<BN254, _>(
+                &artifact.pk,
+                &artifact.prepared_arcs,
+                &bundle.full_assignment,
+                &mut rng,
+                ar1cs_mode,
+            )
+            .map_err(|e| {
+                ApplicationError::ProofGenerationFailed(format!("ark_ar1cs::prove_with_mode: {e}"))
+            })?;
+            Ok((proof, bundle.public_inputs))
+        })
+        .collect::<Result<Vec<_>, ApplicationError>>()?;
+
+    let mut proofs = Vec::with_capacity(pairs.len());
+    let mut public_input_vectors: Vec<Vec<F>> = Vec::with_capacity(pairs.len());
+    for (proof, public_inputs) in pairs {
         proofs.push(proof);
-        public_input_vectors.push(bundle.public_inputs);
+        public_input_vectors.push(public_inputs);
     }
     Ok((proofs, public_input_vectors).into())
+}
+
+/// Verify a single Groth16 `proof` against `public_inputs`, using the
+/// prepared verifying key bundled in `artifact`.
+///
+/// This is the stable verify counterpart to [`prove`] / [`prove_bundles`]:
+/// it wraps `ark_groth16::Groth16::verify_proof` against
+/// `ArtifactSet`'s (crate-private) `pvk`, so neither standalone native
+/// consumers nor `zkap-zkp` need to borrow the prepared verifying key
+/// directly.
+///
+/// `public_inputs` is the ordered instance vector for the proof — the
+/// canonical 8-element layout `[hanchor, h_a, root, h_sign_user_op,
+/// jwt_exp, partial_rhs, lhs, h_aud_list]` that
+/// [`ProveResponse::public_inputs_for`] reconstructs (decoded back to
+/// `F`). It must **not** include the implicit constant-1 wire; arkworks
+/// prepends that internally. The proof is the ark-native
+/// [`Proof`]`<`[`BN254`]`>` (re-exported from the crate root as
+/// `zkap_service::Proof`); both `F` and `BN254` are the fundamental
+/// field/curve types the boundary deliberately exposes.
+///
+/// Returns `Ok(true)` if the pairing check passes, `Ok(false)` if it
+/// fails (e.g. a tampered public input), and
+/// [`ApplicationError::ProofGenerationFailed`] only if the verifier
+/// itself errors (malformed inputs).
+pub fn verify(
+    artifact: &ArtifactSet,
+    proof: &Proof<BN254>,
+    public_inputs: &[F],
+) -> Result<bool, ApplicationError> {
+    Groth16::<BN254>::verify_proof(&artifact.pvk, proof, public_inputs).map_err(|e| {
+        ApplicationError::ProofGenerationFailed(format!("ark_groth16::verify_proof: {e}"))
+    })
+}
+
+#[cfg(test)]
+mod preflight_mode_tests {
+    use super::{Ar1csPreflightMode, PreflightMode};
+
+    /// Pin the façade → ark-ar1cs `PreflightMode` lowering so a future
+    /// ark-ar1cs variant rename or reorder fails this test instead of
+    /// silently changing prove semantics. `StrictPreflight` must stay the
+    /// row-preflight / no-post-verify mode and `VerifyAfter` the
+    /// prove-then-verify mode.
+    #[test]
+    fn preflight_mode_lowers_to_expected_ar1cs_variant() {
+        assert_eq!(
+            PreflightMode::VerifyAfter.to_ar1cs(),
+            Ar1csPreflightMode::VerifyAfter,
+        );
+        assert_eq!(
+            PreflightMode::StrictPreflight.to_ar1cs(),
+            Ar1csPreflightMode::Strict,
+        );
+    }
 }

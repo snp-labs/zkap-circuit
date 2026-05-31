@@ -141,15 +141,19 @@ fn artifact_set_in_memory_round_trip() {
 
     let setup_output = setup(&cfg, &out_dir, zkap_service::SetupRng::OsRng, None)
         .expect("service::setup must succeed for F1 config");
+
+    // Smoke-check the public-input count via the public `SetupOutput`
+    // accessor — the verifying key is no longer a `pub` field on
+    // `ArtifactSet` (semver boundary), so callers read the count through
+    // `SetupOutput::gamma_abc_g1_len` before converting.
+    assert!(
+        setup_output.gamma_abc_g1_len() > 0,
+        "gamma_abc_g1 must include the implicit-1 + public input wires"
+    );
+
     let set: ArtifactSet = setup_output.into_artifact_set();
 
-    // Smoke-check the public input count via the bundled verifying key —
-    // `ArtifactSet` exposes pub fields, so callers access vk / cfg
-    // directly without an intermediate handle.
-    assert!(
-        !set.vk.gamma_abc_g1.is_empty(),
-        "vk.gamma_abc_g1 must include the implicit-1 + public input wires"
-    );
+    // `cfg` remains a public field on `ArtifactSet`.
     assert_eq!(set.cfg.n, cfg.n);
 
     let _ = std::fs::remove_dir_all(&out_dir);

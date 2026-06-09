@@ -1,6 +1,6 @@
 [package]
 name = "zkap-cli"
-version = "0.1.1-rc.2"
+version = "0.1.1-rc.3"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "CLI tools for ZK circuit CRS generation and hash computation"

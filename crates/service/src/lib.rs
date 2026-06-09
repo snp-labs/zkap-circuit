@@ -75,10 +75,11 @@
 //! │     parse JWTs → derive_x_from_secret → x_list                   │
 //! │     derive_selector_from_x_list_and_anchor → selector            │
 //! │     one_positions[i] = i-th 1-position of selector               │
+//! │     validate_decoded_inputs → merkle/nonce/random pre-flight     │
+//! │     build_shared_audience_stage → shared aud_list / h_aud_list   │
 //! │   per credential:                                                │
 //! │     circuit_input::build_anchor_stage                            │
 //! │     circuit_input::build_jwt_stage                               │
-//! │     circuit_input::build_audience_stage                          │
 //! │     circuit_input::build_merkle_witness                          │
 //! │     circuit_input::compute_public_inputs                         │
 //! │     ZkapCircuit::from_input → synthesize_full_assignment         │

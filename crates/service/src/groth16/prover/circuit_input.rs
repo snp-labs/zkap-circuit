@@ -69,7 +69,7 @@ fn sha_pad_signing_input(signing_input: &[u8], max_jwt_b64_len: usize) -> (Vec<u
     (sha_padded, nblocks)
 }
 
-fn claim_value_bytes_padded(
+pub(super) fn claim_value_bytes_padded(
     payload_bytes: &[u8],
     indices: &ClaimIndices,
     max_len: usize,
@@ -357,36 +357,124 @@ pub(crate) fn build_jwt_stage(
 
 // Audience stage.
 
-/// Audience stage output: padded audience list and its chained
+/// Audience stage output: the **batch-shared** audience allow-list and its
 /// Poseidon hash.
+///
+/// Both the `aud_list` witness and the `h_aud_list` public input are shared
+/// by every credential in a `k`-of-`n` batch: the list holds one
+/// `Poseidon(aud_i)` entry per credential (in `credentials` order), padded
+/// out to `cfg.num_audience_limit` with `Poseidon(forbidden_string)`. The
+/// in-circuit membership check (`Poseidon(aud) ∈ aud_list`) then passes for
+/// credential `i` at slot `i`, while `h_aud_list = Poseidon(aud_list)` is
+/// identical across the batch — so the on-chain verifier sees one shared
+/// audience commitment instead of `k` per-credential ones.
 pub(crate) struct AudienceStage {
     pub(crate) aud_list: Vec<F>,
     pub(crate) h_aud_list: F,
 }
 
-/// Build the audience stage from `aud_packed` (already produced by
-/// [`build_jwt_stage`]).
-pub(crate) fn build_audience_stage(
-    aud_packed: &[F],
+/// Poseidon hash of the quote-wrapped, `max_aud_len`-padded
+/// `forbidden_string` — the value that fills unused audience slots. Mirrors
+/// the host-side recipe in [`crate::generate_audience_hashes`] and the
+/// in-circuit padding.
+fn compute_h_forbidden(
     cfg: &CircuitConfig,
     poseidon_param: &PoseidonConfig<F>,
-) -> Result<AudienceStage, ApplicationError> {
-    let num_audience_limit = cfg.num_audience_limit as usize;
-
-    let h_aud = CRH::<F>::evaluate(poseidon_param, aud_packed.to_vec())
-        .map_err(|e| ApplicationError::PoseidonHashError(format!("h_aud: {e}")))?;
-
+) -> Result<F, ApplicationError> {
     let mut forbidden_bytes = Vec::with_capacity(cfg.forbidden_string.len() + 2);
     forbidden_bytes.push(b'"');
     forbidden_bytes.extend_from_slice(cfg.forbidden_string.as_bytes());
     forbidden_bytes.push(b'"');
     let forbidden_padded = pad_claim_value_to_max(&forbidden_bytes, cfg.max_aud_len as usize);
     let forbidden_packed = try_bytes_to_fields::<F>(&forbidden_padded)?;
-    let h_forbidden = CRH::<F>::evaluate(poseidon_param, forbidden_packed)
-        .map_err(|e| ApplicationError::PoseidonHashError(format!("h_forbidden: {e}")))?;
+    CRH::<F>::evaluate(poseidon_param, forbidden_packed)
+        .map_err(|e| ApplicationError::PoseidonHashError(format!("h_forbidden: {e}")))
+}
+
+/// Extract one credential's `aud` claim from its JWT and pack it into the
+/// same `max_aud_len` field-limb form [`build_jwt_stage`] produces, so the
+/// pre-batch audience pass packs the identical bytes the per-credential JWT
+/// stage (and the in-circuit extractor) see. Lightweight: decodes only the
+/// payload segment — no RSA / SHA work.
+pub(crate) fn aud_packed_from_jwt(
+    field_path: &str,
+    jwt_bytes: &[u8],
+    cfg: &CircuitConfig,
+) -> Result<Vec<F>, ApplicationError> {
+    let jwt_str = core::str::from_utf8(jwt_bytes)
+        .map_err(|e| invalid_prove_request(field_path, "jwt_bytes", format!("not UTF-8: {}", e)))?;
+    let parts: Vec<&str> = jwt_str.split('.').collect();
+    if parts.len() != 3 {
+        return Err(invalid_prove_request(
+            field_path,
+            "jwt_bytes",
+            format!("expected 3 dot-separated segments, got {}", parts.len()),
+        ));
+    }
+    let payload_bytes = decode_any_base64(parts[1]).map_err(|e| {
+        invalid_prove_request(
+            field_path,
+            "jwt_bytes",
+            format!("payload base64 decode failed: {}", e),
+        )
+    })?;
+    let payload_str = core::str::from_utf8(&payload_bytes).map_err(|e| {
+        invalid_prove_request(field_path, "jwt_bytes", format!("payload not UTF-8: {}", e))
+    })?;
+    let aud_idx = locate_claim(payload_str, "aud")
+        .map_err(|e| invalid_prove_request(field_path, "jwt_bytes", e.to_string()))?;
+    let aud_bytes_padded =
+        claim_value_bytes_padded(&payload_bytes, &aud_idx, cfg.max_aud_len as usize);
+    Ok(try_bytes_to_fields::<F>(&aud_bytes_padded)?)
+}
+
+/// Compute `Poseidon(aud_packed)` for one credential — its slot value in the
+/// shared audience list. The audience hash uses the same recipe as the
+/// `aud_packed` slot-0 hash the per-credential JWT stage feeds in-circuit.
+pub(crate) fn per_credential_h_aud(
+    field_path: &str,
+    jwt_bytes: &[u8],
+    cfg: &CircuitConfig,
+    poseidon_param: &PoseidonConfig<F>,
+) -> Result<F, ApplicationError> {
+    let aud_packed = aud_packed_from_jwt(field_path, jwt_bytes, cfg)?;
+    CRH::<F>::evaluate(poseidon_param, aud_packed)
+        .map_err(|e| ApplicationError::PoseidonHashError(format!("h_aud: {e}")))
+}
+
+/// Build the **batch-shared** audience stage from the per-credential
+/// `Poseidon(aud_i)` hashes.
+///
+/// `per_credential_h_aud[i]` is credential `i`'s audience hash (see
+/// [`per_credential_h_aud`]); the list is `[h_aud_0, …, h_aud_{k-1}]` padded
+/// to `cfg.num_audience_limit` with `Poseidon(forbidden_string)`, then
+/// `h_aud_list = Poseidon(aud_list)`. The same [`AudienceStage`] is reused for
+/// every credential's witness, so all `k` proofs commit to one shared
+/// `h_aud_list`. This matches [`crate::generate_audience_hashes`] called with
+/// the same audiences in the same order, and the circuit's
+/// `Poseidon(aud) ∈ aud_list` membership trick, which was designed for
+/// exactly this multi-audience list.
+pub(crate) fn build_shared_audience_stage(
+    per_credential_h_aud: &[F],
+    cfg: &CircuitConfig,
+    poseidon_param: &PoseidonConfig<F>,
+) -> Result<AudienceStage, ApplicationError> {
+    let num_audience_limit = cfg.num_audience_limit as usize;
+    if per_credential_h_aud.len() > num_audience_limit {
+        return Err(ApplicationError::InvalidProveRequest {
+            field: "credentials".into(),
+            message: format!(
+                "credential count {} exceeds num_audience_limit {}",
+                per_credential_h_aud.len(),
+                num_audience_limit
+            ),
+        });
+    }
+
+    let h_forbidden = compute_h_forbidden(cfg, poseidon_param)?;
 
     let mut aud_list = Vec::with_capacity(num_audience_limit);
-    aud_list.push(h_aud);
+    aud_list.extend_from_slice(per_credential_h_aud);
     while aud_list.len() < num_audience_limit {
         aud_list.push(h_forbidden);
     }
@@ -586,6 +674,104 @@ mod tests {
                 "sub".into(),
             ],
             forbidden_string: "forbidden".into(),
+        }
+    }
+
+    /// Poseidon hash of one `aud` value via the canonical quote-wrapped,
+    /// `max_aud_len`-padded recipe — the per-credential slot value that
+    /// `build_shared_audience_stage` consumes.
+    fn h_aud_for(aud: &str, cfg: &CircuitConfig, params: &PoseidonConfig<F>) -> F {
+        let quoted = format!("\"{}\"", aud);
+        let packed = try_bytes_to_fields::<F>(&pad_claim_value_to_max(
+            quoted.as_bytes(),
+            cfg.max_aud_len as usize,
+        ))
+        .expect("pack aud");
+        CRH::<F>::evaluate(params, packed).expect("hash aud")
+    }
+
+    /// Regression gate for the batch-shared audience allow-list: the
+    /// witness-side [`build_shared_audience_stage`] must reproduce, byte for
+    /// byte, the canonical host helper [`crate::generate_audience_hashes`]
+    /// called with the same `k` audiences in the same (credential) order.
+    /// This is the invariant that lets all `k` proofs commit to ONE shared
+    /// `h_aud_list = Poseidon([H(aud_0), …, H(aud_{k-1}), H(forbidden) …])`.
+    #[test]
+    fn build_shared_audience_stage_matches_generate_audience_hashes() {
+        let cfg = sample_config_v1();
+        let params = get_poseidon_params::<F>();
+
+        // k = 3 DISTINCT audiences (the case the per-credential bug broke).
+        let auds = ["aud-alpha", "aud-bravo", "aud-charlie"];
+        assert_eq!(auds.len(), cfg.k as usize);
+
+        let per_cred: Vec<F> = auds.iter().map(|a| h_aud_for(a, &cfg, &params)).collect();
+        let stage = build_shared_audience_stage(&per_cred, &cfg, &params).expect("shared stage");
+
+        // Independent reference: the public host helper over the same auds.
+        let resp = crate::generate_audience_hashes(
+            &cfg,
+            crate::AudienceHashRequest {
+                audiences: auds.iter().map(|s| s.to_string()).collect(),
+            },
+        )
+        .expect("generate_audience_hashes");
+
+        // (1) The shared list is padded out to the full slot count.
+        assert_eq!(stage.aud_list.len(), cfg.num_audience_limit as usize);
+        // (2) Every slot matches: slots 0..k are the k auds IN ORDER, slots
+        //     k.. are Poseidon(forbidden_string) padding.
+        let stage_hex: Vec<String> = stage
+            .aud_list
+            .iter()
+            .map(|f| crate::field_to_hex(*f))
+            .collect();
+        assert_eq!(stage_hex, resp.audience_hashes, "padded slot list mismatch");
+        // (3) The shared public input equals the canonical audience-list hash.
+        assert_eq!(
+            crate::field_to_hex(stage.h_aud_list),
+            resp.audience_list_hash,
+            "h_aud_list must equal generate_audience_hashes(audience_list_hash)"
+        );
+    }
+
+    /// The shared list commits to the audiences IN CREDENTIAL ORDER: permuting
+    /// two distinct audiences must change `h_aud_list`. (Guards against a
+    /// regression that sorts/dedups the list and silently decouples it from
+    /// the per-credential membership slots.)
+    #[test]
+    fn build_shared_audience_stage_is_order_sensitive() {
+        let cfg = sample_config_v1();
+        let params = get_poseidon_params::<F>();
+        let a = h_aud_for("aud-alpha", &cfg, &params);
+        let b = h_aud_for("aud-bravo", &cfg, &params);
+        let c = h_aud_for("aud-charlie", &cfg, &params);
+
+        let abc = build_shared_audience_stage(&[a, b, c], &cfg, &params).expect("abc");
+        let bac = build_shared_audience_stage(&[b, a, c], &cfg, &params).expect("bac");
+        assert_ne!(
+            abc.h_aud_list, bac.h_aud_list,
+            "credential order must be committed in h_aud_list"
+        );
+    }
+
+    /// More credentials than `num_audience_limit` slots is a hard reject (the
+    /// list cannot hold every `aud`), surfaced as `InvalidProveRequest`.
+    #[test]
+    fn build_shared_audience_stage_rejects_too_many_credentials() {
+        let cfg = sample_config_v1();
+        let params = get_poseidon_params::<F>();
+        let too_many = vec![F::zero(); cfg.num_audience_limit as usize + 1];
+
+        match build_shared_audience_stage(&too_many, &cfg, &params) {
+            Err(ApplicationError::InvalidProveRequest { field, message }) => {
+                assert!(field.contains("credentials"), "got field {}", field);
+                assert!(message.contains("exceeds"), "got msg {}", message);
+            }
+            other => panic!(
+                "expected InvalidProveRequest for credential overflow, got {:?}",
+                other.map(|s| s.aud_list.len())
+            ),
         }
     }
 

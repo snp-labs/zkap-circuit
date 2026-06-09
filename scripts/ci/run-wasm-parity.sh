@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
-# Smoke (manifest hash == file hash) + Parity (native rlib vs wasm bytes
-# equal on toy fixtures k=1, k=3, k=5).
+# Smoke (bundle witness_gen.wasm == freshly built wasm) + Parity (native rlib
+# vs wasm bytes equal on toy fixtures k=1, k=3, k=5).
+#
+# NOTE: witness_gen.wasm is no longer a manifest artifact (the sha/signature
+# byte-pin was removed — it carries no circuit trust). It ships as a plain
+# unsigned file in the bundle, so the smoke step compares the bundle's copy to
+# the freshly built wasm directly rather than to a manifest sha entry.
 #
 # Pre-condition: caller MUST pre-place the wasm at the canonical path
 # `target/wasm32-unknown-unknown/release/zkap_witness_gen_wasm.wasm`
@@ -20,21 +25,24 @@ set -euo pipefail
 BUNDLE_DIR="${1:?usage: $0 <bundle_dir> <wasm_file>}"
 WASM_PATH="${2:?usage: $0 <bundle_dir> <wasm_file>}"
 
-# Smoke
+# Smoke — witness_gen.wasm is a plain (unsigned, non-manifest) bundle file
+# since the byte-pin was removed; verify the bundle copy matches the freshly
+# built wasm.
 MANIFEST="$BUNDLE_DIR/manifest.json"
+BUNDLE_WASM="$BUNDLE_DIR/witness_gen.wasm"
 if [ ! -f "$MANIFEST" ]; then echo "::error::missing $MANIFEST" >&2; exit 1; fi
 if [ ! -f "$WASM_PATH" ]; then echo "::error::missing $WASM_PATH" >&2; exit 1; fi
+if [ ! -f "$BUNDLE_WASM" ]; then
+  echo "::error::bundle has no witness_gen.wasm at $BUNDLE_WASM" >&2
+  exit 1
+fi
 WASM_SHA=$(sha256sum "$WASM_PATH" | awk '{print $1}')
-MANIFEST_SHA=$(jq -r '.artifacts.witness_gen.sha256 // empty' "$MANIFEST")
-if [ -z "$MANIFEST_SHA" ]; then
-  echo "::error::manifest.json has no .artifacts.witness_gen.sha256 entry" >&2
+BUNDLE_WASM_SHA=$(sha256sum "$BUNDLE_WASM" | awk '{print $1}')
+if [ "$WASM_SHA" != "$BUNDLE_WASM_SHA" ]; then
+  echo "::error::bundle witness_gen.wasm sha256 mismatch: built=$WASM_SHA bundle=$BUNDLE_WASM_SHA" >&2
   exit 1
 fi
-if [ "$WASM_SHA" != "$MANIFEST_SHA" ]; then
-  echo "::error::wasm sha256 mismatch: file=$WASM_SHA manifest=$MANIFEST_SHA" >&2
-  exit 1
-fi
-echo "Smoke OK: manifest.artifacts.witness_gen.sha256 == file sha256 = $WASM_SHA"
+echo "Smoke OK: bundle witness_gen.wasm == built wasm sha256 = $WASM_SHA"
 
 # Parity — explicit test names, count assertion.
 LOG="$(mktemp)"

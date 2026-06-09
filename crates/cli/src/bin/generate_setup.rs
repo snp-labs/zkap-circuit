@@ -164,7 +164,7 @@ fn main() {
     println!("[2/2] manifest.json emit");
     let ar1cs_blake3 = read_arcs_blake3_hex(&arcs_path);
 
-    let mut builder = ManifestBuilder::new(cli.circuit_id.clone(), circuit_tag.clone())
+    let builder = ManifestBuilder::new(cli.circuit_id.clone(), circuit_tag.clone())
         .with_ar1cs_blake3(ar1cs_blake3.clone())
         .with_shape(
             setup_output.shape.num_instance,
@@ -218,11 +218,14 @@ fn main() {
         });
 
     let witness_gen_attached = if let Some(wasm_src) = cli.witness_gen_wasm.as_deref() {
+        // Copy the wasm into the bundle as a PLAIN, unsigned file. It is NOT a
+        // manifest artifact: no sha entry, not covered by the manifest
+        // signature. The witness generator carries no circuit trust (Groth16
+        // soundness + on-chain public-input pins enforce correctness), so it
+        // ships unsigned and independently versioned. See `ArtifactSet`.
         let dest = out.join("witness_gen.wasm");
         std::fs::copy(wasm_src, &dest)
             .unwrap_or_else(|e| die(format!("copy witness_gen.wasm: {e}")));
-        let entry = make_entry(&dest, "witness_gen.wasm", "domain-optional", None, None);
-        builder = builder.with_artifact(ArtifactKey::WitnessGen, entry);
         true
     } else {
         false

@@ -64,9 +64,13 @@ pub struct Shape {
 /// Per-artifact metadata block.
 ///
 /// Required artifacts are the four core files (`ar1cs`, `pk`, `vk`,
-/// `pvk`) plus the `circuit_config`. `evm_verifier` and `witness_gen`
-/// stay `Option` so hosts that drop those outputs still parse the
-/// manifest.
+/// `pvk`) plus the `circuit_config`. `evm_verifier` stays `Option` so
+/// hosts that drop that output still parse the manifest. The witness
+/// generator (`witness_gen.wasm`) is intentionally NOT a manifest
+/// artifact: it carries no circuit trust (Groth16 soundness + the
+/// on-chain public-input pins enforce correctness regardless of which
+/// generator ran), so it ships as a plain, unsigned, independently
+/// versioned file rather than a sha-pinned, signature-covered entry.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Artifacts {
     /// `circuit.ar1cs` — R1CS matrices in ark-ar1cs canonical envelope.
@@ -86,14 +90,6 @@ pub struct Artifacts {
     pub evm_verifier: Option<ArtifactEntry>,
     /// `config.json` (domain-typed circuit hyperparameters).
     pub circuit_config: ArtifactEntry,
-    /// `witness_gen.wasm` (optional) — circuit-dependent witness
-    /// generator built from `crates/witness-gen-wasm`. Lets
-    /// downstream circuit-agnostic prover packages call
-    /// `zkap_service::synthesize_witnesses` behind a wasm runtime
-    /// without recompiling when the circuit changes; skipped when
-    /// the CLI is invoked without `--witness-gen-wasm`.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub witness_gen: Option<ArtifactEntry>,
 }
 
 /// A single artifact entry — relative path, sha256 hex, size in bytes,
@@ -336,8 +332,6 @@ pub enum ArtifactKey {
     EvmVerifier,
     /// `config.json`.
     CircuitConfig,
-    /// `witness_gen.wasm` (optional).
-    WitnessGen,
 }
 
 /// Reason a [`ManifestBuilder::build`] call failed.
@@ -370,7 +364,6 @@ pub struct ManifestBuilder {
     pvk: Option<ArtifactEntry>,
     evm_verifier: Option<ArtifactEntry>,
     circuit_config_artifact: Option<ArtifactEntry>,
-    witness_gen: Option<ArtifactEntry>,
     setup_provenance: Option<SetupProvenance>,
     build: Option<BuildMetadata>,
 }
@@ -416,7 +409,6 @@ impl ManifestBuilder {
             ArtifactKey::Pvk => self.pvk = Some(entry),
             ArtifactKey::EvmVerifier => self.evm_verifier = Some(entry),
             ArtifactKey::CircuitConfig => self.circuit_config_artifact = Some(entry),
-            ArtifactKey::WitnessGen => self.witness_gen = Some(entry),
         }
         self
     }
@@ -449,7 +441,6 @@ impl ManifestBuilder {
             circuit_config: self
                 .circuit_config_artifact
                 .ok_or(BuilderError::MissingArtifact("circuit_config"))?,
-            witness_gen: self.witness_gen,
         };
 
         Ok(Manifest {
@@ -643,51 +634,16 @@ mod tests {
         }
     }
 
-    /// Acceptance: an absent `witness_gen` slot is skipped during
-    /// serialization (matching `evm_verifier`'s optional shape), so
-    /// hosts on older bundles keep parsing the manifest.
+    /// Acceptance: the witness generator is NOT a manifest artifact (removed
+    /// from the trust path — it ships as a plain unsigned file). The schema
+    /// must have no `witness_gen` key under `artifacts`.
     #[test]
-    fn schema_skips_absent_witness_gen() {
+    fn schema_has_no_witness_gen_artifact() {
         let v = serde_json::to_value(sample_manifest()).unwrap();
         let artifacts = v["artifacts"].as_object().expect("artifacts object");
         assert!(
             !artifacts.contains_key("witness_gen"),
-            "witness_gen must be omitted when not attached"
+            "witness_gen must not be a manifest artifact"
         );
-    }
-
-    /// Acceptance: when `witness_gen` is attached, the entry round
-    /// trips through serde with the same path/sha256/size/kind as
-    /// the in-memory `ArtifactEntry`.
-    #[test]
-    fn schema_round_trips_witness_gen_entry() {
-        let manifest = ManifestBuilder::new("zkap-main-v1", "zkap-main-v1__deadbeef")
-            .with_ar1cs_blake3("ab".repeat(32))
-            .with_shape(9, 896800, 911941)
-            .with_public_input_names(vec!["hanchor".into()])
-            .with_artifact(ArtifactKey::Ar1cs, sample_entry("circuit.ar1cs", "core"))
-            .with_artifact(ArtifactKey::Pk, sample_entry("pk.bin", "core"))
-            .with_artifact(ArtifactKey::Vk, sample_entry("vk.bin", "core"))
-            .with_artifact(ArtifactKey::Pvk, sample_entry("pvk.bin", "core"))
-            .with_artifact(
-                ArtifactKey::CircuitConfig,
-                sample_entry("config.json", "domain"),
-            )
-            .with_artifact(
-                ArtifactKey::WitnessGen,
-                sample_entry("witness_gen.wasm", "domain-optional"),
-            )
-            .with_setup_provenance(SetupProvenance::OsRng)
-            .with_build(sample_build())
-            .build()
-            .expect("builder must succeed");
-
-        let bytes = serde_json::to_vec(&manifest).expect("serialize");
-        let back: Manifest = serde_json::from_slice(&bytes).expect("deserialize");
-        assert_eq!(
-            back.artifacts.witness_gen.as_ref().map(|e| e.path.as_str()),
-            Some("witness_gen.wasm")
-        );
-        assert_eq!(manifest, back);
     }
 }

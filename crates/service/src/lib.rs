@@ -122,6 +122,13 @@ pub(crate) mod hash;
 #[cfg(feature = "manifest")]
 pub mod manifest;
 
+// Witness-generator sidecar schema — `witness_gen.json`. Shares the
+// `manifest` feature gate (both are proof-feature-independent and pull
+// only sha2/hex), so light hosts can validate the sidecar without the
+// Groth16 stack.
+#[cfg(feature = "manifest")]
+pub mod sidecar;
+
 #[cfg(feature = "artifact-loader")]
 pub mod artifact;
 #[cfg(feature = "setup")]
@@ -201,6 +208,10 @@ pub use dto::{
 pub use dto::{PUBLIC_INPUT_NAMES, PUBLIC_INPUTS, PublicInputSlot};
 #[cfg(feature = "host-primitives")]
 pub use hash::{generate_audience_hashes, generate_issuer_key_hash, generate_poseidon_hash};
+
+// Witness-generator sidecar surface (shares the `manifest` gate).
+#[cfg(feature = "manifest")]
+pub use sidecar::{SidecarError, WitnessGenSidecar};
 
 #[cfg(feature = "artifact-loader")]
 pub use artifact::{ArtifactError, ArtifactLoadTiming, ArtifactSet};

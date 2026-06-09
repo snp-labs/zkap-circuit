@@ -73,10 +73,14 @@ struct Cli {
 
     /// Path to a pre-built `witness_gen.wasm` (the cdylib output of
     /// `cargo build --target wasm32-unknown-unknown -p zkap-witness-gen-wasm`).
-    /// When set, the file is copied to `<output>/witness_gen.wasm`
-    /// and registered as an optional artifact in `manifest.json`.
-    /// When omitted, the manifest is emitted without a `witness_gen`
-    /// entry.
+    /// When set, the file is copied into the bundle as a PLAIN, unsigned
+    /// file at `<output>/witness_gen.wasm`. It is NOT a manifest artifact:
+    /// it carries no sha entry and is not covered by the manifest
+    /// signature (the witness generator carries no circuit trust — Groth16
+    /// soundness + on-chain public-input pins enforce correctness). Its
+    /// integrity is described by the independent `witness_gen.json` sidecar
+    /// produced by `generate_witness_gen_sidecar`, not by `manifest.json`.
+    /// When omitted, no `witness_gen.wasm` is written.
     #[arg(long)]
     witness_gen_wasm: Option<PathBuf>,
 

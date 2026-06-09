@@ -19,25 +19,39 @@
 //!
 //! # Prereqs
 //!
-//! The test reads from `dist/1-of-1-wasm/` relative to the workspace
-//! root.  That directory is a `generate_setup` output — it is
-//! **gitignored** (release artifact), so it is NOT present in CI
-//! checkouts. Run `cargo run --release --bin generate_setup -- --config
-//! example.json --output dist/1-of-1-wasm` locally first.  The
-//! `proof_fixture.json` inside it is staged by `gen_proof_fixture` (see
-//! `crates/service/tests/gen_proof_fixture.rs`).
+//! By default the test reads from `dist/1-of-1-wasm/` relative to the
+//! workspace root. Override the bundle directory with
+//! `ZKAP_PREFLIGHT_BUNDLE_DIR=<abs path>` — the release `r1cs-preflight`
+//! CI job sets this per shape so **both** `1-of-1` and `3-of-3` are gated
+//! (H1: the witness generator must produce a satisfying assignment for
+//! each shape's real `config.json` before its `ar1cs_blake3` is written
+//! into the `witness_gen.json` sidecar's `compatible_ar1cs_blake3`).
+//!
+//! The bundle is a `generate_setup` output — **gitignored** (release
+//! artifact), so it is NOT present in normal CI checkouts. Generate it
+//! first: `cargo run --release --bin generate_setup -- --config
+//! example.json --output dist/1-of-1-wasm`. The `proof_fixture.json`
+//! inside it is staged by `gen_proof_fixture` (see
+//! `crates/service/tests/gen_proof_fixture.rs`, which also honours
+//! `ZKAP_PROOF_MANIFEST_DIR`).
 //!
 //! # Run
 //!
 //! ```bash
+//! # default 1-of-1 bundle
 //! cargo test --release -p zkap-witness-gen-wasm --test r1cs_preflight -- --ignored
+//! # explicit shape (CI gate)
+//! ZKAP_PREFLIGHT_BUNDLE_DIR=$PWD/dist/release-local/3-of-3 \
+//!   cargo test --release -p zkap-witness-gen-wasm --test r1cs_preflight -- --ignored
 //! ```
 //!
 //! `--release` is required: loading `pk.bin` (~363 MiB) and running
 //! the Groth16 prover is very slow in debug mode.
 //!
-//! The test is `#[ignore]`d because the bundle is gitignored; opt-in via
-//! `-- --ignored` on a machine that has run `generate_setup` already.
+//! The test is `#[ignore]`d because the bundle is gitignored; the release
+//! pipeline runs it as a real gate via `-- --ignored` after staging the
+//! per-shape bundle (this is the operational meaning of "non-ignored
+//! gate" — a failing preflight aborts the publish).
 
 use std::path::PathBuf;
 
@@ -112,9 +126,16 @@ fn workspace_root() -> PathBuf {
         .to_path_buf()
 }
 
-/// Load `(manifest, bundle_dir)` for the default `1-of-1-wasm` bundle.
+/// Load `(manifest, bundle_dir)` for the preflight bundle.
+///
+/// Defaults to `dist/1-of-1-wasm`; the release `r1cs-preflight` gate
+/// overrides this per shape via `ZKAP_PREFLIGHT_BUNDLE_DIR` so both
+/// `1-of-1` and `3-of-3` are exercised.
 fn load_bundle() -> (Manifest, PathBuf) {
-    let bundle_dir = workspace_root().join("dist").join("1-of-1-wasm");
+    let bundle_dir = match std::env::var_os("ZKAP_PREFLIGHT_BUNDLE_DIR") {
+        Some(dir) => PathBuf::from(dir),
+        None => workspace_root().join("dist").join("1-of-1-wasm"),
+    };
     let manifest_path = bundle_dir.join("manifest.json");
     assert!(
         manifest_path.exists(),
@@ -216,7 +237,8 @@ fn r1cs_preflight_1_of_1_wasm() {
     );
 
     eprintln!(
-        "r1cs_preflight: {} bundle(s) proved successfully against dist/1-of-1-wasm",
-        n_bundles
+        "r1cs_preflight: {} bundle(s) proved successfully against {}",
+        n_bundles,
+        bundle_dir.display()
     );
 }

@@ -190,8 +190,11 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p stage-cli
-          cp target/release/generate_setup stage-cli/generate_setup
-          cp target/release/generate_hash  stage-cli/generate_hash
+          cp target/release/generate_setup              stage-cli/generate_setup
+          cp target/release/generate_hash               stage-cli/generate_hash
+          # Phase 3: the witness-gen sidecar generator is built here and
+          # consumed by the `publish-witness-gen` job.
+          cp target/release/generate_witness_gen_sidecar stage-cli/generate_witness_gen_sidecar
           ls -la stage-cli
       - name: Upload CLI artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -233,7 +236,7 @@ jobs:
   # ───────────────────────────────────────────────────────────────────────────
   generate-release-bundle:
     name: Generate release bundle (${{ matrix.shape }})
-    needs: [validate, test-full, workspace-build, build-wasm]
+    needs: [validate, test-full, workspace-build]
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     # `release` GitHub Environment hosts MANIFEST_SIGNING_KEY and is where
@@ -259,14 +262,6 @@ jobs:
       - uses: ./.github/actions/setup-rust
         with:
           cache-key: release-generate-bundle
-
-      - name: Download wasm artifact
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: zkap-witness-wasm
-          path: target/wasm32-unknown-unknown/release/
-      - name: Mirror to wasm_artifact_path() canonical filename
-        run: cp target/wasm32-unknown-unknown/release/witness_gen.wasm target/wasm32-unknown-unknown/release/zkap_witness_gen_wasm.wasm
 
       - name: Prepare signing key (stable releases only)
         if: needs.validate.outputs.is_prerelease == 'false'
@@ -297,12 +292,14 @@ jobs:
           if [ -n "${SIGNING_KEY_FILE:-}" ]; then
             SIGNING_ARGS=(--signing-key "$SIGNING_KEY_FILE")
           fi
+          # Phase 3: no --witness-gen-wasm — the CRS bundle is the 7-file
+          # set only; witness_gen.wasm ships in its own witness-gen-v<ver>
+          # release (see publish-witness-gen).
           cargo run --release -p zkap-cli --bin generate_setup \
             --features circuit/integration-tests --locked -- \
             --config configs/release/${{ matrix.shape }}.json \
             --output output/keys \
             --circuit-id zkap-main-${{ matrix.shape }} \
-            --witness-gen-wasm target/wasm32-unknown-unknown/release/witness_gen.wasm \
             "${SIGNING_ARGS[@]}"
 
       - name: Always cleanup signing key
@@ -312,11 +309,6 @@ jobs:
 
       - name: Verify 7-file post-migration bundle layout
         run: bash scripts/check-bundle-layout.sh output/keys
-
-      - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
-      - name: Smoke + Parity (wasm vs native rlib)
-        run: bash scripts/ci/run-wasm-parity.sh output/keys target/wasm32-unknown-unknown/release/witness_gen.wasm
 
       - name: Enforce 2 GiB bundle size cap
         run: bash scripts/ci/check-crs-size-cap.sh output/keys
@@ -370,60 +362,98 @@ jobs:
         run: solcjs --bin dl/1-of-1/Groth16Verifier.sol
 
   # ───────────────────────────────────────────────────────────────────────────
-  # verify-wasm-shape-parity — five-way hash invariant: upstream build-wasm
-  # artifact sha256 == per-shape bundle file sha256 == per-shape manifest entry
-  # sha256, for both shapes.
+  # wasm-parity — the wasm32 witness generator must produce byte-identical
+  # output to the native rlib path on the toy k=1/k=3/k=5 fixtures. Combined
+  # with r1cs-preflight (rlib output satisfies the real per-shape R1CS), this
+  # transitively backs the sidecar's compatibility claim. Shape-agnostic: a
+  # single shared wasm covers every shape, so this is not a matrix job.
+  #
+  # NOTE: scripts/ci/run-wasm-parity.sh still bundles a wasm copy for ci.yml's
+  # legacy generate-setup-smoke; we invoke the parity tests directly here so the
+  # release path needs no bundled wasm.
   # ───────────────────────────────────────────────────────────────────────────
-  verify-wasm-shape-parity:
-    name: Verify shared-wasm five-way hash invariant
-    needs: [build-wasm, generate-release-bundle]
+  wasm-parity:
+    name: WASM/rlib witness parity
+    needs: [build-wasm]
     runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - name: Download upstream wasm
+      - uses: ./.github/actions/setup-rust
+        with:
+          cache-key: release-wasm-parity
+      - name: Download wasm artifact
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: zkap-witness-wasm
-          path: dl/upstream
-      - name: Download 1-of-1 bundle
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: proving-keys-1-of-1
-          path: dl/1-of-1
-      - name: Download 3-of-3 bundle
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: proving-keys-3-of-3
-          path: dl/3-of-3
-      - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
-      - name: Assert five-way hash invariant
+          path: target/wasm32-unknown-unknown/release/
+      - name: Mirror to wasm_artifact_path() canonical filename
+        # wasm_artifact_path() (crates/witness-gen-wasm/benches/common/mod.rs)
+        # is hardcoded to zkap_witness_gen_wasm.wasm (cargo cdylib output name).
+        run: cp target/wasm32-unknown-unknown/release/witness_gen.wasm target/wasm32-unknown-unknown/release/zkap_witness_gen_wasm.wasm
+      - name: Parity (wasm vs native rlib, k1/k3/k5)
         run: |
           set -euo pipefail
-          H_UP=$(sha256sum dl/upstream/witness_gen.wasm | awk '{print $1}')
-          H_1F=$(sha256sum dl/1-of-1/witness_gen.wasm | awk '{print $1}')
-          H_3F=$(sha256sum dl/3-of-3/witness_gen.wasm | awk '{print $1}')
-          H_1M=$(jq -r '.artifacts.witness_gen.sha256 // empty' dl/1-of-1/manifest.json)
-          H_3M=$(jq -r '.artifacts.witness_gen.sha256 // empty' dl/3-of-3/manifest.json)
-          if [ -z "$H_1M" ] || [ -z "$H_3M" ]; then
-            echo "::error::missing witness_gen.sha256 in one of the manifests" >&2; exit 1
+          LOG="$(mktemp)"
+          cargo test --release -p zkap-witness-gen-wasm --test parity --locked -- \
+            --ignored --exact parity_k1 parity_k3 parity_k5 2>&1 | tee "$LOG"
+          if ! grep -qE 'test result: ok\. 3 passed' "$LOG"; then
+            echo "::error::parity did not report '3 passed' — investigate silent-skip or test rename" >&2
+            exit 1
           fi
-          echo "Upstream wasm sha256:          $H_UP"
-          echo "1-of-1 file wasm sha256:       $H_1F  manifest entry sha256: $H_1M"
-          echo "3-of-3 file wasm sha256:       $H_3F  manifest entry sha256: $H_3M"
-          if [ "$H_UP" != "$H_1F" ] || [ "$H_UP" != "$H_3F" ] || \
-             [ "$H_UP" != "$H_1M" ] || [ "$H_UP" != "$H_3M" ]; then
-            echo "::error::five-way hash invariant violated" >&2; exit 1
-          fi
-          echo "OK: all five hashes agree = $H_UP"
+          echo "Parity OK: parity_k1, parity_k3, parity_k5 passed"
 
   # ───────────────────────────────────────────────────────────────────────────
-  # publish-release — sole job with `contents: write`.
-  # Stages every asset with shape-prefixed names, writes a top-level
-  # SHA256SUMS over the *exact* asset list, and creates the GitHub Release
-  # with that explicit list (no globs).
+  # r1cs-preflight (H1 gate) — for EACH shape, the witness generator's rlib
+  # output must form a satisfying assignment for that shape's real circuit.ar1cs
+  # (verified by running the Groth16 prover end-to-end). This gates the sidecar's
+  # compatible_ar1cs_blake3: a shape's ar1cs_blake3 is only advertised after its
+  # preflight passes. Reuses the per-shape bundle from generate-release-bundle
+  # (no second generate_setup); stages a proof_fixture.json with gen_proof_fixture,
+  # then runs the preflight against the bundle via ZKAP_PREFLIGHT_BUNDLE_DIR.
+  # ───────────────────────────────────────────────────────────────────────────
+  r1cs-preflight:
+    name: R1CS preflight (${{ matrix.shape }})
+    needs: [validate, generate-release-bundle]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        shape:
+          - 1-of-1
+          - 3-of-3
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: ./.github/actions/setup-rust
+        with:
+          cache-key: release-r1cs-preflight
+      - name: Download ${{ matrix.shape }} bundle
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: proving-keys-${{ matrix.shape }}
+          path: bundle
+      - name: Stage proof_fixture.json
+        run: |
+          set -euo pipefail
+          ZKAP_PROOF_MANIFEST_DIR="$PWD/bundle" \
+            cargo test --release -p zkap-service --test gen_proof_fixture --locked -- \
+            --ignored --nocapture
+      - name: Preflight (rlib witness satisfies real circuit.ar1cs + Groth16 prove)
+        run: |
+          set -euo pipefail
+          ZKAP_PREFLIGHT_BUNDLE_DIR="$PWD/bundle" \
+            cargo test --release -p zkap-witness-gen-wasm --test r1cs_preflight --locked -- \
+            --ignored --nocapture
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # publish-release — CRS-only GitHub Release (one of two `contents: write`
+  # jobs; the other is publish-witness-gen). Stages every asset with
+  # shape-prefixed names, writes a top-level SHA256SUMS over the *exact* asset
+  # list, and creates the GitHub Release with that explicit list (no globs).
   # ───────────────────────────────────────────────────────────────────────────
   publish-release:
     name: Publish GitHub Release
@@ -432,10 +462,10 @@ jobs:
       - test-full
       - workspace-build
       - build-cli
-      - build-wasm
       - generate-release-bundle
       - solidity-smoke
-      - verify-wasm-shape-parity
+      - wasm-parity
+      - r1cs-preflight
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -454,10 +484,10 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release
-          # Common assets — keep canonical names.
+          # Common assets — keep canonical names. (No witness_gen.wasm:
+          # Phase 3 ships it in the separate witness-gen-v<ver> release.)
           cp dl/zkap-cli/generate_setup       release/generate_setup
           cp dl/zkap-cli/generate_hash        release/generate_hash
-          cp dl/zkap-witness-wasm/witness_gen.wasm release/witness_gen.wasm
 
           # Per-shape assets — prefix with the shape so 1-of-1 and 3-of-3
           # never collide on the Release page.
@@ -508,20 +538,18 @@ jobs:
           echo "------- top-level SHA256SUMS -------"
           cat release/SHA256SUMS
 
-      - name: Assert no per-shape wasm assets staged
+      - name: Assert CRS release carries no witness_gen.wasm
         run: |
           set -euo pipefail
-          for shape in 1-of-1 3-of-3; do
-            if [ -f "release/${shape}-witness_gen.wasm" ]; then
-              echo "::error::per-shape wasm asset must NOT exist: release/${shape}-witness_gen.wasm" >&2
-              exit 1
-            fi
-          done
-          if [ ! -f release/witness_gen.wasm ]; then
-            echo "::error::common witness_gen.wasm missing from release/" >&2
+          # Phase 3: the witness generator ships in its own
+          # witness-gen-v<ver> release, never in the CRS release.
+          found=$(find release -maxdepth 1 -name '*witness_gen.wasm' | LC_ALL=C sort)
+          if [ -n "$found" ]; then
+            echo "::error::CRS release must not carry any witness_gen.wasm:" >&2
+            printf '%s\n' "$found" >&2
             exit 1
           fi
-          echo "OK: per-shape wasm absent, common wasm present"
+          echo "OK: no witness_gen.wasm in CRS release (shipped as witness-gen-v<ver>)"
 
       - name: Create GitHub Release
         env:
@@ -545,15 +573,98 @@ jobs:
           echo "Uploading ${#ASSETS[@]} assets to v${VERSION}:"
           printf '  %s\n' "${ASSETS[@]}"
 
-          NOTES="Automated release of zkap-circuit v${VERSION}.
+          NOTES="Automated release of zkap-circuit v${VERSION} (CRS only).
 
           Asset integrity is recorded in the top-level SHA256SUMS.
           Each per-shape bundle additionally carries its own
           \`<shape>-SHA256SUMS\` over the canonical 7-file CRS layout.
           Stable releases include \`<shape>-manifest.json.sig\`
-          (Ed25519 over manifest.json)."
+          (Ed25519 over manifest.json).
+
+          The witness generator (witness_gen.wasm) ships separately in the
+          companion \`witness-gen-v${VERSION}\` release; pair it with this CRS
+          using its \`compatible_ar1cs_blake3\` sidecar."
 
           gh release create "v${VERSION}" $PRE_FLAG \
             --title "v${VERSION}" \
             --notes "$NOTES" \
             "${ASSETS[@]}"
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # publish-witness-gen — companion witness-gen release, published in the SAME
+  # run but under a separate `witness-gen-v<ver>` tag. Carries witness_gen.wasm
+  # + the witness_gen.json sidecar (sha256 + compatible_ar1cs_blake3). The
+  # compatible list is collected by generate_witness_gen_sidecar from the
+  # per-shape bundle manifests that already passed the r1cs-preflight gate (H1).
+  #
+  # The `witness-gen-v*` tag is created with the repository GITHUB_TOKEN, which
+  # by design does not trigger other workflows; and it does not match the `v*`
+  # push-trigger glob, so this never re-triggers a release. (A dedicated
+  # witness-only re-publish workflow is intentionally deferred — see plan §4.)
+  # ───────────────────────────────────────────────────────────────────────────
+  publish-witness-gen:
+    name: Publish witness-gen release
+    needs:
+      - validate
+      - build-cli
+      - build-wasm
+      - generate-release-bundle
+      - wasm-parity
+      - r1cs-preflight
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          path: dl
+
+      - name: Generate witness_gen.json sidecar
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          set -euo pipefail
+          chmod +x dl/zkap-cli/generate_witness_gen_sidecar
+          dl/zkap-cli/generate_witness_gen_sidecar \
+            --witness-gen-wasm dl/zkap-witness-wasm/witness_gen.wasm \
+            --version "v${VERSION}" \
+            --bundle dl/proving-keys-1-of-1 \
+            --bundle dl/proving-keys-3-of-3 \
+            --circuit-commit "$GITHUB_SHA" \
+            --circuit-id zkap-main \
+            --output witness_gen.json
+          echo "------- witness_gen.json -------"
+          cat witness_gen.json
+
+      - name: Create witness-gen GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.validate.outputs.version }}
+          IS_PRERELEASE: ${{ needs.validate.outputs.is_prerelease }}
+        run: |
+          set -euo pipefail
+          PRE_FLAG=""
+          if [ "$IS_PRERELEASE" = "true" ]; then
+            PRE_FLAG="--prerelease"
+          fi
+
+          NOTES="Independent witness generator for zkap-circuit v${VERSION}.
+
+          Contents:
+            * witness_gen.wasm — shape-agnostic witness generator (wasm32 cdylib).
+            * witness_gen.json — sidecar: sha256(wasm) + compatible_ar1cs_blake3,
+              the ar1cs_blake3 of every CRS shape this wasm was R1CS-preflighted
+              against. The CRS itself ships under the v${VERSION} release.
+
+          Pairing is keyed on ar1cs_blake3, not the version string: a witness-gen
+          release may be re-published independently of the CRS."
+
+          gh release create "witness-gen-v${VERSION}" $PRE_FLAG \
+            --target "$GITHUB_SHA" \
+            --title "witness-gen-v${VERSION}" \
+            --notes "$NOTES" \
+            dl/zkap-witness-wasm/witness_gen.wasm \
+            witness_gen.json

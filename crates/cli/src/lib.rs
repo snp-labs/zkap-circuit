@@ -26,7 +26,7 @@
 //! [`zkap_service::manifest`]; the cli no longer owns its own schema.
 
 use std::io::Read;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use circuit::types::{CircuitConfig, F};
@@ -42,6 +42,10 @@ pub use zkap_service::manifest::{
     ToxicWasteDisclosure, canonical_json_bytes, compute_circuit_tag, derive_toxic_waste_disclosure,
     sign_manifest, verify_manifest,
 };
+// Witness-generator sidecar schema also lives in `zkap-service`; the
+// `generate_witness_gen_sidecar` binary and `build_witness_gen_sidecar`
+// consume it.
+pub use zkap_service::{SidecarError, WitnessGenSidecar};
 
 /// Print `msg` to stderr and exit the process with code 1.
 pub fn die(msg: impl std::fmt::Display) -> ! {
@@ -213,11 +217,60 @@ pub fn sha256_hex(path: &Path) -> Result<String, std::io::Error> {
     Ok(hex::encode(hasher.finalize()))
 }
 
+/// Build a [`WitnessGenSidecar`] for an independently-distributed
+/// `witness_gen.wasm`.
+///
+/// Independent of `generate_setup` (the CRS generator no longer emits the
+/// sidecar): hashes `wasm_path` for the integrity `sha256`, then derives
+/// `compatible_ar1cs_blake3` by reading each `<dir>/manifest.json` in
+/// `bundle_dirs`, parsing it as a [`Manifest`], and collecting its
+/// `ar1cs_blake3`. Duplicate blake3 values (e.g. the same shape supplied
+/// twice) are deduped while preserving first-seen order. The optional
+/// `circuit_commit` / `circuit_id` are recorded verbatim as non-gating
+/// provenance.
+///
+/// Returns the validated sidecar, or a human-readable error string on any
+/// failure (unreadable wasm, missing/malformed `manifest.json`, or a
+/// sidecar that fails [`WitnessGenSidecar::validate`]).
+pub fn build_witness_gen_sidecar(
+    wasm_path: &Path,
+    version: String,
+    bundle_dirs: &[PathBuf],
+    circuit_commit: Option<String>,
+    circuit_id: Option<String>,
+) -> Result<WitnessGenSidecar, String> {
+    let sha256 =
+        sha256_hex(wasm_path).map_err(|e| format!("sha256({}): {e}", wasm_path.display()))?;
+
+    let mut compatible_ar1cs_blake3: Vec<String> = Vec::new();
+    for dir in bundle_dirs {
+        let manifest_path = dir.join("manifest.json");
+        let bytes = std::fs::read(&manifest_path)
+            .map_err(|e| format!("read {}: {e}", manifest_path.display()))?;
+        let manifest: Manifest = serde_json::from_slice(&bytes)
+            .map_err(|e| format!("parse {}: {e}", manifest_path.display()))?;
+        if !compatible_ar1cs_blake3.contains(&manifest.ar1cs_blake3) {
+            compatible_ar1cs_blake3.push(manifest.ar1cs_blake3);
+        }
+    }
+
+    let sidecar = WitnessGenSidecar {
+        version,
+        sha256,
+        compatible_ar1cs_blake3,
+        circuit_commit,
+        circuit_id,
+    };
+    sidecar
+        .validate()
+        .map_err(|e| format!("witness_gen sidecar invalid: {e}"))?;
+    Ok(sidecar)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::fs;
-    use std::path::PathBuf;
 
     fn tmp_dir() -> PathBuf {
         let dir = std::env::temp_dir().join(format!(

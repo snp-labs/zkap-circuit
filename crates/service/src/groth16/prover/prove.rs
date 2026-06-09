@@ -48,8 +48,8 @@ use crate::jwt::parser::parse_anchor_secret_from_jwt;
 
 use super::adapter::prove_request_to_decoded;
 use super::circuit_input::{
-    build_anchor_stage, build_audience_stage, build_jwt_stage, build_merkle_witness,
-    compute_public_inputs,
+    build_anchor_stage, build_jwt_stage, build_merkle_witness, build_shared_audience_stage,
+    compute_public_inputs, per_credential_h_aud,
 };
 
 /// Circuit-dependent half of the prove pipeline — emit one
@@ -148,6 +148,43 @@ where
         });
     }
 
+    // ── Off-circuit pre-flight validation ──────────────────────────────
+    // Mirror the in-circuit relations the steps above do NOT already cover
+    // (issuer-key Merkle membership, nonce execution binding, random != 0)
+    // so an inconsistent request fails fast here instead of after the full
+    // Groth16 prove. Runs AFTER the anchor/selector derivation so the
+    // anchor-membership gate keeps firing first. See `super::validate`.
+    super::validate::validate_decoded_inputs(cfg, &shared, &credentials, poseidon_param)?;
+
+    // ── Batch-shared audience allow-list ───────────────────────────────
+    // Build ONE aud_list across the whole batch: [H(aud_0), …, H(aud_{k-1})]
+    // padded to num_audience_limit with H(forbidden). Every credential's
+    // witness reuses this list, so all k proofs commit to a single shared
+    // `h_aud_list` (the on-chain verifier's audience commitment) instead of
+    // each credential hashing only its own aud. The lightweight aud-only
+    // extraction here re-decodes just the JWT payload; the heavier
+    // `build_jwt_stage` in the loop below re-derives `aud_packed` for the
+    // per-credential `h_id`.
+    let per_cred_h_aud: Vec<F> = credentials
+        .iter()
+        .enumerate()
+        .map(|(i, cred)| {
+            per_credential_h_aud(
+                &format!("credentials[{}]", i),
+                &cred.jwt_bytes,
+                cfg,
+                poseidon_param,
+            )
+        })
+        .collect::<Result<_, _>>()?;
+    let shared_audience = build_shared_audience_stage(&per_cred_h_aud, cfg, poseidon_param)?;
+
+    // Prove-time liveness guard: the batch-shared `h_aud_list` must match the
+    // canonical `generate_audience_hashes` over the JWT audiences. Catches
+    // witness-generator drift here (immediate, precise error) instead of as an
+    // on-chain `InvalidAudienceList` revert. See `super::validate`.
+    super::validate::validate_shared_audience(cfg, &credentials, &shared_audience)?;
+
     // ── Per-credential: build → synthesize → emit → drop ───────────────
     for (i, cred) in credentials.iter().enumerate() {
         let path = format!("credentials[{}]", i);
@@ -172,7 +209,6 @@ where
             cfg,
             poseidon_param,
         )?;
-        let audience_stage = build_audience_stage(&jwt_stage.aud_packed, cfg, poseidon_param)?;
         let merkle = build_merkle_witness(
             &path,
             cred.merkle_leaf_sibling_hash,
@@ -208,7 +244,7 @@ where
                 jwt_exp: pub_stage.jwt_exp,
                 partial_rhs: pub_stage.partial_rhs,
                 lhs: pub_stage.lhs,
-                h_aud_list: audience_stage.h_aud_list,
+                h_aud_list: shared_audience.h_aud_list,
             },
             jwt: jwt_stage.jwt_witness,
             anchor: AnchorWitness {
@@ -219,7 +255,7 @@ where
             },
             merkle,
             audience: AudienceWitness {
-                aud_list: audience_stage.aud_list,
+                aud_list: shared_audience.aud_list.clone(),
             },
             misc: MiscWitness {
                 random: shared.random,

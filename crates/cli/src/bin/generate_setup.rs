@@ -73,10 +73,14 @@ struct Cli {
 
     /// Path to a pre-built `witness_gen.wasm` (the cdylib output of
     /// `cargo build --target wasm32-unknown-unknown -p zkap-witness-gen-wasm`).
-    /// When set, the file is copied to `<output>/witness_gen.wasm`
-    /// and registered as an optional artifact in `manifest.json`.
-    /// When omitted, the manifest is emitted without a `witness_gen`
-    /// entry.
+    /// When set, the file is copied into the bundle as a PLAIN, unsigned
+    /// file at `<output>/witness_gen.wasm`. It is NOT a manifest artifact:
+    /// it carries no sha entry and is not covered by the manifest
+    /// signature (the witness generator carries no circuit trust — Groth16
+    /// soundness + on-chain public-input pins enforce correctness). Its
+    /// integrity is described by the independent `witness_gen.json` sidecar
+    /// produced by `generate_witness_gen_sidecar`, not by `manifest.json`.
+    /// When omitted, no `witness_gen.wasm` is written.
     #[arg(long)]
     witness_gen_wasm: Option<PathBuf>,
 
@@ -164,7 +168,7 @@ fn main() {
     println!("[2/2] manifest.json emit");
     let ar1cs_blake3 = read_arcs_blake3_hex(&arcs_path);
 
-    let mut builder = ManifestBuilder::new(cli.circuit_id.clone(), circuit_tag.clone())
+    let builder = ManifestBuilder::new(cli.circuit_id.clone(), circuit_tag.clone())
         .with_ar1cs_blake3(ar1cs_blake3.clone())
         .with_shape(
             setup_output.shape.num_instance,
@@ -218,11 +222,14 @@ fn main() {
         });
 
     let witness_gen_attached = if let Some(wasm_src) = cli.witness_gen_wasm.as_deref() {
+        // Copy the wasm into the bundle as a PLAIN, unsigned file. It is NOT a
+        // manifest artifact: no sha entry, not covered by the manifest
+        // signature. The witness generator carries no circuit trust (Groth16
+        // soundness + on-chain public-input pins enforce correctness), so it
+        // ships unsigned and independently versioned. See `ArtifactSet`.
         let dest = out.join("witness_gen.wasm");
         std::fs::copy(wasm_src, &dest)
             .unwrap_or_else(|e| die(format!("copy witness_gen.wasm: {e}")));
-        let entry = make_entry(&dest, "witness_gen.wasm", "domain-optional", None, None);
-        builder = builder.with_artifact(ArtifactKey::WitnessGen, entry);
         true
     } else {
         false

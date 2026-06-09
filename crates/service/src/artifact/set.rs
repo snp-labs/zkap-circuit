@@ -33,7 +33,8 @@ pub struct ArtifactLoadTiming {
     pub circuit_config_ms: f64,
     /// Time spent sha-checking the optional EVM verifier artifact.
     pub evm_verifier_ms: f64,
-    /// Time spent reading and sha-checking the optional witness WASM.
+    /// Time spent reading the optional, unverified `witness_gen.wasm` file
+    /// (not a manifest artifact; not sha-checked).
     pub witness_gen_wasm_ms: f64,
 }
 
@@ -75,15 +76,20 @@ pub struct ArtifactSet {
     pub(crate) prepared_arcs: PreparedArcs<F>,
     /// Circuit configuration — loaded from `config.json`.
     pub cfg: CircuitConfig,
-    /// Optional `witness_gen.wasm` bytes — loaded from the
-    /// `witness_gen` manifest entry when present.
+    /// Optional `witness_gen.wasm` bytes — loaded as a PLAIN, UNVERIFIED
+    /// file `<dir>/witness_gen.wasm` when present (it is NOT a manifest
+    /// artifact and is NOT sha/signature-checked).
     ///
-    /// Set to `Some(bytes)` iff `manifest.artifacts.witness_gen` is
-    /// populated and the on-disk file matches the recorded sha256.
-    /// Downstream circuit-agnostic prover packages instantiate this
-    /// wasm via a runtime (wasmtime, browser native, …) and call
-    /// `synthesize_witness` over the ABI documented in the
-    /// `zkap-witness-gen-wasm` crate.
+    /// The witness generator carries no circuit trust: Groth16 soundness
+    /// plus the on-chain public-input pins (e.g. `h_aud_list`,
+    /// `Σ partial_rhs == lhs`) enforce correctness regardless of which
+    /// generator produced the witness, and `prove`'s off-circuit
+    /// validation catches generator drift before proving. So the bytes are
+    /// surfaced here purely as a convenience for downstream
+    /// circuit-agnostic prover packages, which instantiate this wasm via a
+    /// runtime (wasmtime, browser native, …) and call `synthesize_witness`
+    /// over the ABI documented in the `zkap-witness-gen-wasm` crate.
+    /// `Some(bytes)` iff the file exists on disk.
     pub witness_gen_wasm: Option<Vec<u8>>,
 }
 
@@ -215,13 +221,20 @@ impl ArtifactSet {
             timing.evm_verifier_ms = elapsed_ms(start);
         }
 
+        // `witness_gen.wasm` is NOT a manifest artifact and carries no circuit
+        // trust (see `ArtifactSet::witness_gen_wasm`). Load it as a plain,
+        // UNVERIFIED optional file when present, purely for downstream
+        // convenience; absence is normal (e.g. native-only bundles).
         let start = Instant::now();
-        let witness_gen_wasm = manifest
-            .artifacts
-            .witness_gen
-            .as_ref()
-            .map(|entry| load_bytes_with_sha(dir, entry, "artifacts.witness_gen.sha256"))
-            .transpose()?;
+        let wg_path = dir.join("witness_gen.wasm");
+        let witness_gen_wasm = if wg_path.is_file() {
+            Some(std::fs::read(&wg_path).map_err(|e| ArtifactError::Io {
+                path: wg_path.clone(),
+                source: e,
+            })?)
+        } else {
+            None
+        };
         timing.witness_gen_wasm_ms = elapsed_ms(start);
         timing.total_ms = elapsed_ms(total_start);
 
@@ -430,32 +443,4 @@ fn verify_sha256(
         });
     }
     Ok(())
-}
-
-/// Read `dir/entry.path`, assert `sha256(bytes) == entry.sha256`,
-/// and return the bytes.
-///
-/// Same hash-check contract as [`verify_sha256`], but the file's
-/// contents flow out instead of being discarded. Used for opaque
-/// artifacts that downstream consumers need to hold in memory (e.g.
-/// `witness_gen.wasm` instantiated through a wasm runtime).
-fn load_bytes_with_sha(
-    dir: &Path,
-    entry: &ArtifactEntry,
-    field: &'static str,
-) -> Result<Vec<u8>, ArtifactError> {
-    let path = dir.join(&entry.path);
-    let bytes = std::fs::read(&path).map_err(|e| ArtifactError::Io {
-        path: path.clone(),
-        source: e,
-    })?;
-    let sha_hex = sha256_hex(&bytes);
-    if sha_hex != entry.sha256 {
-        return Err(ArtifactError::HashMismatch {
-            field,
-            expected: entry.sha256.clone(),
-            got: sha_hex,
-        });
-    }
-    Ok(bytes)
 }

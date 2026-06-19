@@ -2,13 +2,68 @@
 //!
 //! Re-exports [`get_poseidon_params`] from [`parameters`] for constructing the
 //! `PoseidonConfig` used throughout the codebase (full_rounds=8, partial_rounds=57,
-//! width t=3, alpha=5, over BN254-Fr). Circuit-level helpers (`enforce_curve_hanchor`,
-//! `chain_hash_gadget`) live in [`constraints`].
+//! width t=3, alpha=5, over BN254-Fr). Circuit-level helpers
+//! (`poseidon_chain_hash`, `chain_hash_gadget`) live in [`constraints`].
+
+use ark_crypto_primitives::{
+    crh::{CRHScheme, poseidon::CRH},
+    sponge::{Absorb, poseidon::PoseidonConfig},
+};
+use ark_ff::PrimeField;
+
+use crate::hashes::error::HashError;
 
 #[cfg(feature = "constraints")]
 pub mod constraints;
 pub mod parameters;
 pub use parameters::*;
+
+/// Sequential native Poseidon chain hash:
+/// `H(values[0])`, then `H(previous, values[i])`.
+pub fn chain_hash<F: PrimeField + Absorb>(
+    params: &PoseidonConfig<F>,
+    values: &[F],
+) -> Result<F, HashError> {
+    if values.is_empty() {
+        return Err(HashError::InvalidInputLength(
+            "chain_hash requires at least one value".into(),
+        ));
+    }
+
+    let mut hash = CRH::<F>::evaluate(params, [values[0]])
+        .map_err(|e| HashError::NativeHashError(format!("Poseidon chain[0]: {e}")))?;
+    for value in &values[1..] {
+        hash = CRH::<F>::evaluate(params, [hash, *value])
+            .map_err(|e| HashError::NativeHashError(format!("Poseidon chain[i]: {e}")))?;
+    }
+    Ok(hash)
+}
+
+/// Native output-binding mask for a full-n index:
+/// `Poseidon(random, index)`.
+pub fn output_mask_for_index<F: PrimeField + Absorb>(
+    params: &PoseidonConfig<F>,
+    random: F,
+    index: usize,
+) -> Result<F, HashError> {
+    CRH::<F>::evaluate(params, [random, F::from(index as u64)])
+        .map_err(|e| HashError::NativeHashError(format!("output_mask[{index}]: {e}")))
+}
+
+/// Sum native output-binding masks selected by a `0/1` selector vector.
+pub fn selected_output_mask_sum<F: PrimeField + Absorb>(
+    params: &PoseidonConfig<F>,
+    random: F,
+    selector: &[u8],
+) -> Result<F, HashError> {
+    let mut sum = F::zero();
+    for (index, &selected) in selector.iter().enumerate() {
+        if selected == 1 {
+            sum += output_mask_for_index(params, random, index)?;
+        }
+    }
+    Ok(sum)
+}
 
 #[cfg(test)]
 #[allow(clippy::needless_range_loop)]
@@ -71,5 +126,31 @@ pub mod test {
         let h = PoseidonCRH::<Fr>::evaluate(&leaf_hash_params, [leaves[0], leaves[1], leaves[2]])
             .unwrap();
         println!("First leaf hash: {}", h);
+    }
+
+    #[test]
+    pub fn native_chain_hash_matches_explicit_recipe() {
+        let params = get_poseidon_params::<Fr>();
+        let values = [Fr::from(1u64), Fr::from(2u64), Fr::from(3u64)];
+        let expected_1 = PoseidonCRH::<Fr>::evaluate(&params, [values[0]]).unwrap();
+        let expected_2 = PoseidonCRH::<Fr>::evaluate(&params, [expected_1, values[1]]).unwrap();
+        let expected_3 = PoseidonCRH::<Fr>::evaluate(&params, [expected_2, values[2]]).unwrap();
+
+        let actual = super::chain_hash(&params, &values).unwrap();
+        assert_eq!(actual, expected_3);
+    }
+
+    #[test]
+    pub fn selected_output_mask_sum_matches_explicit_masks() {
+        let params = get_poseidon_params::<Fr>();
+        let random = Fr::from(123u64);
+        let selector = [1, 0, 1, 1];
+
+        let expected = super::output_mask_for_index(&params, random, 0).unwrap()
+            + super::output_mask_for_index(&params, random, 2).unwrap()
+            + super::output_mask_for_index(&params, random, 3).unwrap();
+
+        let actual = super::selected_output_mask_sum(&params, random, &selector).unwrap();
+        assert_eq!(actual, expected);
     }
 }

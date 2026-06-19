@@ -37,7 +37,7 @@ use gadget::{
         build_anchor_witness, generate_combinations,
     },
     base64::{IndexBits, get_base64_table},
-    hashes::poseidon::get_poseidon_params,
+    hashes::poseidon::{get_poseidon_params, output_mask_for_index, selected_output_mask_sum},
     matrix::VandermondeMatrix,
     merkletree::tree_config::MerkleTreeParams,
     signature::rsa::{PublicKey as RsaCircuitPubKey, Signature as RsaCircuitSig},
@@ -516,7 +516,8 @@ fn build_valid_circuit_inputs() -> Vec<ZkapCircuitInput<F>> {
         .zip(anchor_ctx.anchor.0.iter())
         .map(|(a, anc)| *a * *anc)
         .sum();
-    let lhs = inner * random;
+    let lhs =
+        inner * random + selected_output_mask_sum(&params, random, &anchor_ctx.selector).unwrap();
 
     let engine = base64::engine::general_purpose::URL_SAFE_NO_PAD;
 
@@ -572,8 +573,9 @@ fn build_valid_circuit_inputs() -> Vec<ZkapCircuitInput<F>> {
             let h_id =
                 CRH::<F>::evaluate(&params, [F::from(current_idx as u64), h_id_inner]).unwrap();
 
-            // partial_rhs = b[current_idx] * h_id * random
-            let partial_rhs = anchor_ctx.b[current_idx] * h_id * random;
+            // partial_rhs = b[current_idx] * h_id * random + Poseidon(random, current_idx)
+            let partial_rhs = anchor_ctx.b[current_idx] * h_id * random
+                + output_mask_for_index(&params, random, current_idx).unwrap();
 
             let jwt_exp = F::from(s.exp);
 

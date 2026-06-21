@@ -6,7 +6,7 @@
 //! `enforce_*` calls, phase sequencing) will alter the R1CS matrices and invalidate the
 //! `ar1cs_blake3` 32-byte gate.  Before merging any such change, verify all six L1 layers:
 //!
-//! See `.omc/plans/2026-05-08-per-crate-refactor/00-cross-cutting-locks.md § L1` for the
+//! See `docs/LOCKS.md` (protocol locks) for the
 //! full gate checklist (ar1cs_blake3, cs.num_constraints golden, R1CS matrix sha256, …).
 //!
 //! # Five-phase structure
@@ -41,6 +41,7 @@ use ark_ec::CurveGroup;
 use ark_ff::PrimeField;
 use ark_r1cs_std::{
     alloc::AllocVar,
+    cmp::CmpGadget,
     eq::EqGadget,
     fields::fp::FpVar,
     prelude::{Boolean, ToBitsGadget, ToBytesGadget},
@@ -49,18 +50,21 @@ use ark_r1cs_std::{
 };
 use ark_relations::gr1cs::ConstraintSynthesizer;
 use ark_serialize::*;
+use core::cmp::Ordering;
 use std::marker::PhantomData;
 
+use crate::audience::enforce_audience_membership_by_equality;
+use crate::output_binding::{output_masks_for_indices, selected_output_mask_sum};
+use crate::token::claim_packing::pack_claim_bytes_to_field_limbs;
 use crate::token::jwt_field::{jwt_exp_to_field, jwt_nonce_hex_to_field};
+use crate::token::payload::slice_jwt_payload_b64_region;
 use crate::types::CircuitConfig;
 use crate::{
     ExposesPublicInputs,
     token::{ClaimIndices, claim_indices::ClaimIndicesVar, claimverifier::claim_extractor_v2},
     witness,
 };
-use ark_r1cs_helpers::{
-    enforce_less_than, pack_decompose_bytes_unchecked, single_multiplexer, slice_efficient,
-};
+use ark_r1cs_helpers::{select_power_of_two_le, single_multiplexer};
 use gadget::{
     anchor::poseidon::{
         PoseidonAnchor,
@@ -76,7 +80,7 @@ use gadget::{
     },
     bigint::{BigNatCircuitParams, constraints::BigNatVar, utils::BigNat},
     hashes::{
-        poseidon::{constraints::chain_hash_gadget, get_poseidon_params},
+        poseidon::{constraints::poseidon_chain_hash, get_poseidon_params},
         sha256::constraints::SHA256Gadget,
     },
     matrix::{VandermondeMatrix, constraints::VandermondeMatrixVar},
@@ -297,19 +301,17 @@ where
         let payload_len_fp = Boolean::le_bits_to_fp(&payload_len_b64.to_bits_le()?)?;
 
         // Defense in depth: payload_offset >= 1 (offset=0 causes field underflow)
-        enforce_less_than(
-            &zero.to_bits_le_with_top_bits_zero(16)?.0,
-            &payload_offset_fp.to_bits_le_with_top_bits_zero(16)?.0,
-        )?;
+        payload_offset_b64
+            .is_gt(&UInt16::constant(0u16))?
+            .enforce_equal(&Boolean::TRUE)?;
 
         // Defense in depth: payload_offset + payload_len < buffer_len (prevent buffer overrun)
         let buf_len =
             FpVar::<C::BaseField>::Constant(C::BaseField::from(sha_pad_jwt_b64_to_fp.len() as u64));
         let second_dot_idx = &payload_offset_fp + &payload_len_fp;
-        enforce_less_than(
-            &second_dot_idx.to_bits_le_with_top_bits_zero(16)?.0,
-            &buf_len.to_bits_le_with_top_bits_zero(16)?.0,
-        )?;
+        // Both sides are UInt16/config bounded and therefore satisfy the
+        // `enforce_cmp_unchecked` half-modulus precondition.
+        second_dot_idx.enforce_cmp_unchecked(&buf_len, Ordering::Less, false)?;
 
         // First '.': immediately before payload start (between header and payload)
         let first_dot_idx = &payload_offset_fp - &one;
@@ -322,10 +324,8 @@ where
         // trailing_zeros() gives the exact log2 of the buffer length.
         let buf_bits = sha_pad_jwt_b64_to_fp.len().trailing_zeros() as usize;
         let first_dot_bits = first_dot_idx.to_bits_le()?;
-        let first_dot_char = ark_r1cs_helpers::select_array_element(
-            &sha_pad_jwt_b64_to_fp,
-            &first_dot_bits[..buf_bits],
-        )?;
+        let first_dot_char =
+            select_power_of_two_le(&sha_pad_jwt_b64_to_fp, &first_dot_bits[..buf_bits])?;
 
         first_dot_char.enforce_equal(&dot_char)?;
 
@@ -335,7 +335,7 @@ where
         let pad_start_fp = pad_start_byte_idx.to_fp()?;
         second_dot_idx.enforce_equal(&pad_start_fp)?;
 
-        let payload_b64 = slice_efficient(
+        let payload_b64 = slice_jwt_payload_b64_region(
             &sha_pad_jwt_b64_to_fp,
             &payload_offset_b64,
             &payload_len_b64,
@@ -376,15 +376,15 @@ where
             self.params.max_sub_len as usize,
         )?;
         // Convert to field elements and pack
-        let aud = pack_decompose_bytes_unchecked(&aud_bytes)?;
+        let aud = pack_claim_bytes_to_field_limbs(&aud_bytes)?;
         let exp = jwt_exp_to_field(&exp_bytes)?;
-        let iss = pack_decompose_bytes_unchecked(&iss_bytes)?;
+        let iss = pack_claim_bytes_to_field_limbs(&iss_bytes)?;
 
         let last_quote_index = token_claim[3]
             .value_len
             .wrapping_add(&UInt16::constant(u16::MAX));
         let nonce = jwt_nonce_hex_to_field(&nonce_bytes, &last_quote_index)?;
-        let sub = pack_decompose_bytes_unchecked(&sub_bytes)?;
+        let sub = pack_claim_bytes_to_field_limbs(&sub_bytes)?;
 
         // ============================================================
         // [Phase 2] Issuer Validation and Execution Binding
@@ -406,7 +406,7 @@ where
         // ============================================================
 
         // h_anchor == Poseidon(anchor)
-        let target_hanchor = chain_hash_gadget(cs.clone(), &poseidon_param, &anchor.anchor)?;
+        let target_hanchor = poseidon_chain_hash(&poseidon_param, &anchor.anchor)?;
         target_hanchor.enforce_equal(&hanchor)?;
 
         // Nonce binding: nonce == Poseidon(h_sign_userop, random)
@@ -415,14 +415,9 @@ where
             PoseidonCRHGadget::<C::BaseField>::evaluate(&poseidon_param, &nonce_inputs)?;
         target_nonce.enforce_equal(&nonce)?;
 
-        // aud membership: Poseidon(aud) ∈ aud_list (product trick)
+        // aud membership: Poseidon(aud) must equal one entry of the committed audience list.
         let target_aud = PoseidonCRHGadget::<C::BaseField>::evaluate(&poseidon_param, &aud)?;
-        let mut product = FpVar::<C::BaseField>::Constant(C::BaseField::from(1u64));
-        for valid_aud in aud_list.iter() {
-            let diff = target_aud.clone() - valid_aud.clone();
-            product *= diff;
-        }
-        product.enforce_equal(&zero)?;
+        enforce_audience_membership_by_equality(&target_aud, &aud_list)?;
 
         // h_a == Poseidon(a, random)
         let mut a_inputs = a.clone();
@@ -463,10 +458,7 @@ where
 
         // current_idx < N
         let n = FpVar::<C::BaseField>::new_constant(cs.clone(), C::BaseField::from(self.params.n))?;
-        enforce_less_than(
-            &current_idx.to_bits_le_with_top_bits_zero(8)?.0,
-            &n.to_bits_le_with_top_bits_zero(8)?.0,
-        )?;
+        current_idx.enforce_cmp(&n, Ordering::Less, false)?;
 
         // ============================================================
         // [Phase 5] Output binding (h_id, partial_rhs, lhs)
@@ -483,14 +475,19 @@ where
         let h_id =
             PoseidonCRHGadget::<C::BaseField>::evaluate(&poseidon_param, &h_id_inputs_with_index)?;
 
-        // partial_rhs[current_idx] = b[current_idx] * h_id * random
-        // lhs = <a, anchor> * random
+        let output_masks =
+            output_masks_for_indices(&poseidon_param, &random, self.params.n as usize)?;
+
+        // partial_rhs[current_idx] = b[current_idx] * h_id * random + Poseidon(random, current_idx)
+        // lhs = <a, anchor> * random + Σ selector[i] * Poseidon(random, i)
         let beta = single_multiplexer(&b, &current_idx)?;
-        let calc_rhs = beta * h_id.clone() * random.clone();
+        let rhs_mask = single_multiplexer(&output_masks, &current_idx)?;
+        let calc_rhs = beta * h_id.clone() * random.clone() + rhs_mask;
         calc_rhs.enforce_equal(&partial_rhs)?;
 
         let lhs_ = PoseidonAnchorSchemeGadget::<C::BaseField>::inner_product(&anchor.anchor, &a)?;
-        let calc_lhs = lhs_ * random.clone();
+        let lhs_mask = selected_output_mask_sum(&indices, &output_masks)?;
+        let calc_lhs = lhs_ * random.clone() + lhs_mask;
         calc_lhs.enforce_equal(&lhs)?;
 
         Ok(())

@@ -1,7 +1,8 @@
 //! R1CS gadgets for array selection and multiplexing.
 //!
 //! Exports: [`multi_mux`], [`single_multiplexer`], [`one_bit_vector`],
-//! [`select_array_element`], [`select_array_element_be`].  These gadgets
+//! [`select_power_of_two_le`], [`select_array_element`],
+//! [`select_array_element_be`].  These gadgets
 //! implement mux / one-hot selection over `FpVar` arrays and generate R1CS
 //! constraints.  Requires the `r1cs` feature (default-on).
 
@@ -56,6 +57,30 @@ where
     }
 
     Ok(res)
+}
+
+/// Selects an element from a power-of-two length array using little-endian
+/// index bits.
+///
+/// This is a small adapter around
+/// [`CondSelectGadget::conditionally_select_power_of_two_vector`], whose bit
+/// order is big-endian. Returns [`SynthesisError::Unsatisfiable`] when the
+/// input length is empty, not a power of two, or does not exactly match the
+/// provided address width.
+pub fn select_power_of_two_le<F: PrimeField>(
+    input: &[FpVar<F>],
+    idx_bits_le: &[Boolean<F>],
+) -> Result<FpVar<F>, SynthesisError> {
+    if input.is_empty()
+        || !input.len().is_power_of_two()
+        || idx_bits_le.len() >= usize::BITS as usize
+        || input.len() != (1usize << idx_bits_le.len())
+    {
+        return Err(SynthesisError::Unsatisfiable);
+    }
+
+    let idx_bits_be = idx_bits_le.iter().rev().cloned().collect::<Vec<_>>();
+    FpVar::conditionally_select_power_of_two_vector(&idx_bits_be, input)
 }
 
 /// Converts an index into a one-hot vector and enforces range constraints.

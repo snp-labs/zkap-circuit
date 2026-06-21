@@ -23,6 +23,11 @@
 use ark_ff::Field;
 
 #[cfg(feature = "constraints")]
+mod audience;
+#[cfg(feature = "constraints")]
+mod output_binding;
+
+#[cfg(feature = "constraints")]
 pub mod token;
 #[cfg(feature = "constraints")]
 pub mod witness;

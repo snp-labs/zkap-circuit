@@ -69,8 +69,8 @@ fn total_circuit_count_dev_profile() {
 
     // Sanity checks — total must be non-trivial.
     assert_eq!(
-        num_constraints, 911_468,
-        "Circuit R1CS layout sentinel — any change to claim_format_verifier_v2 / SHA-256 / RSA gadgets must update this value (dev-profile n=6,k=3,tree_height=4)"
+        num_constraints, 914_776,
+        "Circuit R1CS layout sentinel — any change to claim_format_verifier_v2 / SHA-256 / RSA gadgets / output-binding masking must update this value (dev-profile n=6,k=3,tree_height=4)"
     );
     assert!(
         num_witness > 1000,

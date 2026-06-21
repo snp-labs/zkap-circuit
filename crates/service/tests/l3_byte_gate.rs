@@ -143,9 +143,10 @@ fn circuit_config_f3() -> CircuitConfig {
 // ─── Golden constants — Tier A (L1.1 / ar1cs_blake3) ─────────────────────────
 
 /// F1 Tier A — blake3 of canonical .ar1cs body (32 bytes).
-/// Captured at commit `a6c96dd1` (PR0 of L4 absorption). Preserved unchanged.
+/// Refreshed for output-binding masking (the +3,308 R1CS delta). Equals the
+/// 93431ae golden; R1CS proven byte-identical to it via the Tier E matrix sha256.
 const GOLDEN_AR1CS_BLAKE3_F1: &str =
-    "afb9ca5c043226a201f55e50a0a24d57a8613c3ad94effada85c45b2ff665f5b";
+    "769aeed39ec0fefc2687b43d4373fa8cc56abae819411ed46f39417f26b83d08";
 
 /// F2 Tier A golden — `n=8, k=3, tree_height=5`.
 /// `None` until the ignored test has been run and the hex captured.
@@ -195,18 +196,18 @@ const GOLDEN_CIRCUIT_CONFIG_F3: &str = concat!(
 // on commit f79e7a26 baseline. SynthesisMode::Setup, OptimizationGoal::Constraints.
 
 /// F1 `n=6, k=3, tree_height=4` constraint counts (frozen).
-const GOLDEN_NUM_CONSTRAINTS_F1: usize = 911468;
-const GOLDEN_NUM_WITNESS_F1: usize = 896327;
+const GOLDEN_NUM_CONSTRAINTS_F1: usize = 914776;
+const GOLDEN_NUM_WITNESS_F1: usize = 899171;
 const GOLDEN_NUM_INSTANCE_F1: usize = 9;
 
 /// F2 `n=8, k=3, tree_height=5` constraint counts (frozen).
-const GOLDEN_NUM_CONSTRAINTS_F2: usize = 912456;
-const GOLDEN_NUM_WITNESS_F2: usize = 897318;
+const GOLDEN_NUM_CONSTRAINTS_F2: usize = 916246;
+const GOLDEN_NUM_WITNESS_F2: usize = 900644;
 const GOLDEN_NUM_INSTANCE_F2: usize = 9;
 
 /// F3 `n=4, k=2, tree_height=3` constraint counts (frozen).
-const GOLDEN_NUM_CONSTRAINTS_F3: usize = 910723;
-const GOLDEN_NUM_WITNESS_F3: usize = 895581;
+const GOLDEN_NUM_CONSTRAINTS_F3: usize = 913549;
+const GOLDEN_NUM_WITNESS_F3: usize = 897943;
 const GOLDEN_NUM_INSTANCE_F3: usize = 9;
 
 // ─── Golden constants — Tier E (R1CS matrix sha256, L1.5) ─────────────────────
@@ -218,15 +219,15 @@ const GOLDEN_NUM_INSTANCE_F3: usize = 9;
 
 /// F1 matrix sha256 (frozen).
 const GOLDEN_MATRIX_SHA256_F1: &str =
-    "5b5e243901601d7d078e6861a507e0c13536eb962790edf38e3f969df57e4a27";
+    "288e9df24b83cc71416ef478bd1f3e0e492190e97a492993d44c3f80001a3483";
 
 /// F2 matrix sha256 (frozen).
 const GOLDEN_MATRIX_SHA256_F2: &str =
-    "0c4588d2d8a429cbe75b872ab0ba278e939dbf20b425be22c45699e1ddc4dd6a";
+    "7f66f3ec9b91892290c5e9f6b5e75fdd468ba442524832f5e2bcad8006c45825";
 
 /// F3 matrix sha256 (frozen).
 const GOLDEN_MATRIX_SHA256_F3: &str =
-    "fbf3d72fecddd481e682692a85ab4baa5a4f442bad7454046b47ede1db6fbe55";
+    "733783e75d80e438a4905c995389912d9d72ad29cd3ac54d74e175fc21a99016";
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 

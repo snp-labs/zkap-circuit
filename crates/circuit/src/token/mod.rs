@@ -17,8 +17,10 @@
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 
 pub mod claim_indices;
+pub(crate) mod claim_packing;
 pub mod claimverifier;
 pub mod jwt_field;
+pub(crate) mod payload;
 
 /// Plain (host-side) indices describing one named claim's position in
 /// the decoded JWT payload. Allocated into [`claim_indices::ClaimIndicesVar`]

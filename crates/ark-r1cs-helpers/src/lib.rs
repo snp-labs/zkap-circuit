@@ -38,7 +38,8 @@ pub use packing::{
     pack_bytes_to_field_unchecked, pack_decompose_bytes_checked, pack_decompose_bytes_unchecked,
 };
 pub use select::{
-    multi_mux, one_bit_vector, select_array_element, select_array_element_be, single_multiplexer,
+    multi_mux, one_bit_vector, select_array_element, select_array_element_be,
+    select_power_of_two_le, single_multiplexer,
 };
 pub use slice::{
     num_to_segments_be, segments_to_num_be, slice_efficient, slice_from_start, slice_grouped,

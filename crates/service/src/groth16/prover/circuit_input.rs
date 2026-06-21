@@ -21,6 +21,10 @@ use circuit::witness::{JwtWitness, MerkleWitness};
 use gadget::{
     anchor::poseidon::{PoseidonAnchor, build_anchor_witness},
     base64::{IndexBits, decode_any_base64},
+    hashes::poseidon::{
+        output_mask_for_index as gadget_output_mask_for_index,
+        selected_output_mask_sum as gadget_selected_output_mask_sum,
+    },
     matrix::VandermondeMatrix,
     signature::rsa::{PublicKey, Signature},
 };
@@ -107,6 +111,7 @@ pub(crate) struct AnchorStage {
     pub(crate) anchor_values: Vec<F>,
     pub(crate) anchor_witness: gadget::anchor::poseidon::PoseidonAnchorWitness<F>,
     pub(crate) anchor: PoseidonAnchor<F>,
+    pub(crate) selector: Vec<u8>,
     pub(crate) current_idx: usize,
 }
 
@@ -181,6 +186,7 @@ pub(crate) fn build_anchor_stage(
         anchor_values: anchor_values.to_vec(),
         anchor_witness,
         anchor,
+        selector: anchor_selector.to_vec(),
         current_idx,
     })
 }
@@ -534,6 +540,24 @@ pub(crate) struct PublicInputsStage {
     pub(crate) jwt_exp: F,
 }
 
+fn output_mask_for_index(
+    poseidon_param: &PoseidonConfig<F>,
+    random: F,
+    index: usize,
+) -> Result<F, ApplicationError> {
+    gadget_output_mask_for_index(poseidon_param, random, index)
+        .map_err(|e| ApplicationError::PoseidonHashError(e.to_string()))
+}
+
+fn selected_output_mask_sum(
+    poseidon_param: &PoseidonConfig<F>,
+    random: F,
+    selector: &[u8],
+) -> Result<F, ApplicationError> {
+    gadget_selected_output_mask_sum(poseidon_param, random, selector)
+        .map_err(|e| ApplicationError::PoseidonHashError(e.to_string()))
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn compute_public_inputs(
     field_path: &str,
@@ -566,7 +590,8 @@ pub(crate) fn compute_public_inputs(
         .zip(anchor_values.iter())
         .map(|(a, anc)| *a * *anc)
         .sum();
-    let lhs = inner * random;
+    let lhs_mask = selected_output_mask_sum(poseidon_param, random, &anchor_stage.selector)?;
+    let lhs = inner * random + lhs_mask;
 
     let iss_bytes_padded = claim_value_bytes_padded(
         payload_bytes,
@@ -589,7 +614,8 @@ pub(crate) fn compute_public_inputs(
         .map_err(|e| ApplicationError::PoseidonHashError(format!("h_id_inner: {e}")))?;
     let h_id = CRH::<F>::evaluate(poseidon_param, [F::from(current_idx as u64), h_id_inner])
         .map_err(|e| ApplicationError::PoseidonHashError(format!("h_id: {e}")))?;
-    let partial_rhs = witness.b[current_idx] * h_id * random;
+    let rhs_mask = output_mask_for_index(poseidon_param, random, current_idx)?;
+    let partial_rhs = witness.b[current_idx] * h_id * random + rhs_mask;
 
     let exp_bytes_padded = claim_value_bytes_padded(
         payload_bytes,

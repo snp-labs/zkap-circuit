@@ -1,13 +1,9 @@
-//! R1CS gadget for sequential Poseidon hash chaining.
+//! R1CS gadgets for sequential Poseidon hash chaining.
 //!
-//! [`chain_hash_gadget`] evaluates a sequential Poseidon hash chain over a slice of
-//! `FpVar` values, matching the native recipe used by the host-side anchor binding
-//! (`service::anchor::poseidon::chain_hash`).
-//!
-//! Removed in this revision: the misleadingly-named `enforce_curve_hanchor` helper
-//! that computed but never enforced the chain-hash equality. The function had zero
-//! in-workspace callers; circuits that want curve-anchor enforcement should compose
-//! `chain_hash_gadget` with an explicit `EqGadget::enforce_equal`.
+//! [`poseidon_chain_hash`] evaluates a sequential Poseidon hash chain over a
+//! slice of `FpVar` values, matching the native recipe used by the host-side
+//! anchor binding (`service::anchor::poseidon::chain_hash`). The older
+//! [`chain_hash_gadget`] surface is kept as a compatibility wrapper.
 
 use ark_crypto_primitives::{
     crh::{
@@ -24,12 +20,28 @@ use ark_relations::gr1cs::{ConstraintSystemRef, SynthesisError};
 /// `H(H(…H(H(v[0]), v[1])…), v[n-1])`.
 ///
 /// Matches the native evaluation in [`crate::hashes::poseidon::get_poseidon_params`].
-/// Requires `values.len() >= 1`; panics on empty input (index out of bounds).
+/// Returns `SynthesisError::Unsatisfiable` for empty input.
 pub fn chain_hash_gadget<F: PrimeField + Absorb>(
     _cs: ConstraintSystemRef<F>,
     parameters: &CRHParametersVar<F>,
     values: &[FpVar<F>],
 ) -> Result<FpVar<F>, SynthesisError> {
+    poseidon_chain_hash(parameters, values)
+}
+
+/// Evaluates a sequential Poseidon hash chain over `values` in-circuit:
+/// `H(H(…H(H(v[0]), v[1])…), v[n-1])`.
+///
+/// Matches the native evaluation in [`crate::hashes::poseidon::get_poseidon_params`].
+/// Returns [`SynthesisError::Unsatisfiable`] for empty input.
+pub fn poseidon_chain_hash<F: PrimeField + Absorb>(
+    parameters: &CRHParametersVar<F>,
+    values: &[FpVar<F>],
+) -> Result<FpVar<F>, SynthesisError> {
+    if values.is_empty() {
+        return Err(SynthesisError::Unsatisfiable);
+    }
+
     let mut hash = CRHGadget::<F>::evaluate(parameters, &[values[0].clone()])?;
     for value in values.iter().skip(1) {
         hash = CRHGadget::<F>::evaluate(parameters, &[hash, value.clone()])?;
@@ -107,5 +119,15 @@ mod tests {
 
         let native = CRH::evaluate(&params, [val]).unwrap();
         assert_eq!(gadget_result.value().unwrap(), native);
+    }
+
+    #[test]
+    fn test_chain_hash_empty_input_errors() {
+        let cs = ConstraintSystem::<F>::new_ref();
+        let params = get_params();
+        let param_var = CRHParametersVar::<F>::new_constant(cs.clone(), params).unwrap();
+
+        let result = chain_hash_gadget(cs, &param_var, &[]);
+        assert!(matches!(result, Err(SynthesisError::Unsatisfiable)));
     }
 }

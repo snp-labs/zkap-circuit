@@ -60,17 +60,20 @@ pub struct CircuitPublicInputs<F: PrimeField> {
     /// on-chain verifier reject proofs whose underlying credential is past
     /// expiry without re-parsing the JWT.
     pub jwt_exp: F,
-    /// Pairing-equation partial RHS at the current credential index —
-    /// instance index 5. Per-proof; pairs with [`Self::lhs`] to verify the
-    /// dot-product opening incrementally across the batch.
+    /// Masked pairing-equation partial RHS at the current credential index —
+    /// instance index 5. The circuit enforces
+    /// `b[current_idx] * h_id * random + rho_current`, where
+    /// `rho_i = Poseidon(random, i)`. Per-proof; pairs with [`Self::lhs`]
+    /// to verify the dot-product opening incrementally across the batch.
     pub partial_rhs: F,
-    /// Inner-product `<a, anchor> * random` — instance index 6. Per-proof
-    /// at this layer (every `CircuitPublicInputs` instance carries its own
-    /// `lhs` field), but identical across all proofs in a batch by
-    /// construction — every credential's `lhs` is derived from the same
-    /// batch-shared `random` and `<a, anchor>`, so the on-chain verifier
-    /// observes a single batch-shared value that closes the dot-product
-    /// against the union of per-proof [`Self::partial_rhs`] values.
+    /// Masked inner-product `<a, anchor> * random + sum(selector[i] *
+    /// rho_i)` — instance index 6. Per-proof at this layer (every
+    /// `CircuitPublicInputs` instance carries its own `lhs` field), but
+    /// identical across all proofs in a batch by construction — every
+    /// credential's `lhs` is derived from the same batch-shared `random`,
+    /// selector, and `<a, anchor>`, so the on-chain verifier observes a
+    /// single batch-shared value that closes the dot-product against the
+    /// union of per-proof [`Self::partial_rhs`] values.
     pub lhs: F,
     /// Poseidon commitment to the audience allow-list — instance index 7.
     /// Pins the proof to a specific aud-list shape without disclosing the
@@ -196,3 +199,37 @@ const _: fn() = || {
     fn assert_send_sync<T: Send + Sync + ?Sized>() {}
     assert_send_sync::<ZkapCircuitInput<crate::types::F>>();
 };
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::F;
+
+    #[test]
+    fn circuit_public_inputs_to_vec_is_canonical_order() {
+        let inputs = CircuitPublicInputs {
+            hanchor: F::from(0u64),
+            h_a: F::from(1u64),
+            root: F::from(2u64),
+            h_sign_user_op: F::from(3u64),
+            jwt_exp: F::from(4u64),
+            partial_rhs: F::from(5u64),
+            lhs: F::from(6u64),
+            h_aud_list: F::from(7u64),
+        };
+
+        assert_eq!(
+            inputs.to_vec(),
+            vec![
+                F::from(0u64),
+                F::from(1u64),
+                F::from(2u64),
+                F::from(3u64),
+                F::from(4u64),
+                F::from(5u64),
+                F::from(6u64),
+                F::from(7u64),
+            ]
+        );
+    }
+}

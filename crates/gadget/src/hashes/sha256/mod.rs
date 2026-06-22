@@ -83,7 +83,6 @@ where
     // This is always 32 bytes. It has to be a Vec to impl CanonicalSerialize
     type Output = Vec<u8>;
 
-    // Evaluates SHA256(left_input || right_input)
     fn evaluate<T: Borrow<Self::Input>>(
         left_input: T,
         right_input: T,
@@ -98,7 +97,6 @@ where
         Ok(h.finalize().to_vec())
     }
 
-    // Evaluates SHA256(left_input || right_input)
     fn compress<T: Borrow<Self::Input>>(
         left_input: T,
         right_input: T,

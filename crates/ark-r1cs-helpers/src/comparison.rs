@@ -51,7 +51,7 @@ pub fn lt_bit_vector<F: PrimeField>(
 // Custom implementation: arkworks 0.5.0 FpVar::enforce_cmp produces incorrect
 // constraints for unsigned comparison in certain field configurations.
 // Reference: https://github.com/arkworks-rs/r1cs-std/issues/161
-// TODO: Switch back to upstream when the fix is released.
+// Re-evaluate when bumping the ark-r1cs-std pin past 0.5.0.
 
 /// A < B (Strictly Less) - for Boolean bit vectors
 ///
@@ -121,9 +121,7 @@ pub fn enforce_less_than<F: PrimeField>(
     let mut remaining = diff_val;
     let two_inv = F::from(2u64).inverse().unwrap();
     for _ in 0..n {
-        // Check if LSB is 1 by testing if (remaining - 1) / 2 would be valid
-        // remaining is odd iff remaining / 2 != (remaining - 1) / 2 + 1/2
-        // Simpler: use into_bigint() to check LSB
+        // Extract the LSB via the big-integer representation.
         let bigint = remaining.into_bigint();
         let bit_val = bigint.is_odd();
         let bit = Boolean::new_witness(cs.clone(), || Ok(bit_val))?;

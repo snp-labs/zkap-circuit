@@ -14,12 +14,7 @@ pub mod constraints;
 pub mod error;
 pub mod poseidon;
 
-/// Core trait for the Anchor Scheme V3
-///
-/// Key improvements:
-/// - Removed unnecessary methods (get_indices split into a separate utility)
-/// - Clearer separation of responsibilities
-/// - Simplified type parameters
+/// Core trait for the Anchor Scheme.
 pub trait AnchorScheme {
     /// Vandermonde matrix type; encodes the `(m × n)` structure that maps the
     /// secret vector to the anchor polynomial evaluation.

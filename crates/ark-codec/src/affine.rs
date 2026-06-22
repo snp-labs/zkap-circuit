@@ -195,17 +195,12 @@ mod divergence_tests {
     use ark_bn254::{Fr, G1Affine};
     use ark_ec::{AffineRepr, CurveGroup};
 
-    /// Pins the exact output of `affine_to_hex_str` for the BN254 G1 generator
-    /// (x=1, y=2) and contrasts it with `field_to_hex` on the same values.
+    /// Pins `affine_to_hex_str` output for the BN254 G1 generator (x=1, y=2)
+    /// and contrasts it with `field_to_hex` on the same values.
     ///
-    /// The BN254 G1 generator has coordinates x=1, y=2. Both functions
-    /// produce `0x`-prefixed UPPERCASE output, but the width divergence is clear:
-    ///   - `affine_to_hex_str`: pads to BigInt limb width (8 bytes = 16 hex chars)
-    ///     via `{:X}` on the BigInt representation, e.g. `"0x0000000000000001"`
-    ///   - `field_to_hex`:      pads to the full field encoding (32 bytes = 64 hex
-    ///     chars), e.g. `"0x0000000000000000000000000000000000000000000000000000000000000001"`
-    ///
-    /// This test is the canonical pin for the width-divergence half.
+    /// The divergence being pinned: `affine_to_hex_str` pads to BigInt limb
+    /// width (16 hex chars), while `field_to_hex` pads to the full 32-byte
+    /// field width (64 hex chars). The `assert_eq!` messages carry the detail.
     #[test]
     fn affine_to_hex_str_generator_is_limb_width_not_field_width() {
         let g = G1Affine::generator();

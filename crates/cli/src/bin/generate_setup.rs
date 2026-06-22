@@ -155,9 +155,6 @@ fn main() {
     let setup_output =
         setup(&params, &out, setup_rng, None).unwrap_or_else(|e| die(format!("setup failed: {e}")));
 
-    // `circuit.ar1cs` / `pk.bin` / `vk.bin` / `pvk.bin` /
-    // `Groth16Verifier.sol` / `config.json` are written by `setup()`.
-    // Build the manifest from the resulting files.
     let arcs_path = out.join("circuit.ar1cs");
     let pk_path = out.join("pk.bin");
     let vk_path = out.join("vk.bin");
@@ -222,11 +219,7 @@ fn main() {
         });
 
     let witness_gen_attached = if let Some(wasm_src) = cli.witness_gen_wasm.as_deref() {
-        // Copy the wasm into the bundle as a PLAIN, unsigned file. It is NOT a
-        // manifest artifact: no sha entry, not covered by the manifest
-        // signature. The witness generator carries no circuit trust (Groth16
-        // soundness + on-chain public-input pins enforce correctness), so it
-        // ships unsigned and independently versioned. See `ArtifactSet`.
+        // Plain, unsigned copy — not a manifest artifact; see --witness-gen-wasm doc.
         let dest = out.join("witness_gen.wasm");
         std::fs::copy(wasm_src, &dest)
             .unwrap_or_else(|e| die(format!("copy witness_gen.wasm: {e}")));

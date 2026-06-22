@@ -1,7 +1,7 @@
 //! Shared helpers for the `zkap-cli` binaries.
 //!
-//! Process-control / config loaders shared by `generate_setup` and
-//! `generate_hash`:
+//! Process-control / config loaders shared by `generate_setup`,
+//! `generate_hash`, and `generate_witness_gen_sidecar`:
 //!
 //! - [`load_config_or_exit`] — load a [`circuit::types::CircuitConfig`]
 //!   from a JSON file, printing a human-readable error and exiting with

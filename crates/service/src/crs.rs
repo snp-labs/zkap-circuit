@@ -20,7 +20,7 @@
 //!
 //! Earlier filenames and the wasm witness substrate that pre-dated the
 //! 2026-05 ark-ar1cs boundary migration are no longer written; the
-//! seven entries above are the entire bundle contract enforced by
+//! six files above are the entire bundle contract enforced by
 //! `scripts/check-bundle-layout.sh`.
 
 use std::io::Cursor;

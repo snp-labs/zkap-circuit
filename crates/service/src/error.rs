@@ -1,7 +1,7 @@
 //! Top-level error types for the zkap-service layer.
 //!
 //! [`ApplicationError`] is the single error type returned by all public APIs.
-//! IO failures use `Other(String)` (or the `Io` variant after S7), cryptographic
+//! IO failures use `Io(std::io::Error)`, cryptographic
 //! failures use `CryptographicError`/`PoseidonHashError`, proof failures use
 //! `ProofGenerationFailed`/`VerifyFailed`, and parse failures use
 //! `InvalidFormat`/`ParseError`.

@@ -225,7 +225,7 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> BigNatVar<ConstraintF, P> 
         let cs = self.cs().or(other.cs());
 
         let field_char = field_characteristic_to_nat::<ConstraintF>();
-        // LATENT: BigNatVar::sub adds +1 word_size per call. NOT in RSA critical path today; +3 cs/call if a new caller appears. See docs/audit/constraint-audit-2026-05-20.md C1.5.
+        // LATENT: BigNatVar::sub adds +1 word_size per call. NOT in RSA critical path today; +3 cs/call if a new caller appears.
         let max_word_size = max(&self.word_size, &other.word_size) + BigNat::one();
         if max_word_size >= field_char {
             return Err(SynthesisError::Unsatisfiable);
@@ -1136,12 +1136,12 @@ impl<ConstraintF: PrimeField, P: BigNatCircuitParams> EqGadget<ConstraintF>
         self.limbs.is_eq(&other.limbs)
     }
 }
-// KNOWN LIMITATION (audit C2.2): This EqGadget impl uses limb-wise comparison, which is semantically
-// incorrect for BigNatVar values in non-canonical form. The 30+ callsite survey in
-// docs/audit/constraint-audit-2026-05-20.md §5 C2.2 confirms zero production callers of is_eq on
-// raw BigNatVar — but is_eq remains an API footgun for future callers. Callers requiring canonical
-// equality MUST use enforce_equal_when_carried. The Rust attribute `#[must_use]` cannot be used on
-// this trait impl method (silently ignored by rustc); callers SHOULD prefer the new inherent method
+// KNOWN LIMITATION: This EqGadget impl uses limb-wise comparison, which is semantically
+// incorrect for BigNatVar values in non-canonical form. A callsite survey confirms zero
+// production callers of is_eq on raw BigNatVar — but is_eq remains an API footgun for
+// future callers. Callers requiring canonical equality MUST use enforce_equal_when_carried.
+// The Rust attribute `#[must_use]` cannot be used on this trait impl method (silently
+// ignored by rustc); callers SHOULD prefer the new inherent method
 // `BigNatVar::is_eq_limbwise` below, which carries `#[must_use]` correctly.
 
 /// Computes `⌈log₂(x)⌉` for `x > 0`, or `0` for `x == 0`.

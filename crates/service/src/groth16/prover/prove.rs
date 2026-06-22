@@ -11,13 +11,13 @@
 //!   **circuit-agnostic** `ark_ar1cs::prove_with_mode` call (the only step
 //!   that needs `pk` / prepared `.ar1cs` matrices).
 //!
-//! This split is the basis for the planned WASM witness-generator
-//! artifact: a downstream `witness_gen.wasm` will host
-//! [`synthesize_witnesses`] and emit serialized [`WitnessBundle`]s,
-//! letting circuit-agnostic prover packages call only
-//! `ark_ar1cs::prove_with_mode` natively.
+//! This split is the basis for the shipped WASM witness-generator
+//! artifact: `witness_gen.wasm` hosts [`synthesize_witnesses`] and emits
+//! serialized [`WitnessBundle`]s, letting circuit-agnostic prover packages
+//! call only `ark_ar1cs::prove_with_mode` natively.
 //!
-//! Trust gating ([`crate::artifact::ArtifactSet::load`] sha256 /
+//! Trust gating ([`crate::artifact::ArtifactSet::load_signed`] /
+//! [`crate::artifact::ArtifactSet::load_unsigned`] sha256 /
 //! `ar1cs_blake3` checks) is the loader's responsibility — neither
 //! function re-validates the manifest, `arcs.body_blake3()`, or any
 //! `pk` / `vk` hash.
@@ -327,7 +327,7 @@ pub fn synthesize_witnesses(
 /// in `request`, against the artifact bundle in `artifact`.
 ///
 /// Thin composition of [`synthesize_witnesses`] (circuit-dependent
-/// half) and `ark_ar1cs::prove_with_mode(..., VerifyAfter)`
+/// half) and [`prove_bundles`]`(..., VerifyAfter)`
 /// (circuit-agnostic half). A fresh [`OsRng`] is constructed inside this
 /// function; the public API does not expose a seedable RNG variant.
 ///

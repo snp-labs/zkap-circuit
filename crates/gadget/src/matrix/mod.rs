@@ -15,12 +15,7 @@ use crate::matrix::error::VandermondeMatrixError;
 use ark_ff::PrimeField;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 
-/// Optimized Vandermonde Matrix V2
-///
-/// Key improvements:
-/// - Reduced unnecessary memory allocations
-/// - Clearer method names
-/// - Improved error messages
+/// Vandermonde matrix for the threshold anchor scheme.
 #[derive(Clone, Debug, CanonicalSerialize, CanonicalDeserialize)]
 pub struct VandermondeMatrix<F: PrimeField> {
     /// m × n matrix

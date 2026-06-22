@@ -28,15 +28,8 @@
 //!   consumers never borrow the prepared key directly.
 //! - [`jwt`] — JWT payload claim parsing ([`jwt::parser::parse_claim_from_str`])
 //!
-//! Proof verification is wrapped by [`verify`] (re-added for the
-//! 2026-05 `zkap-service` semver-boundary work; it had been removed in
-//! Commit 5 of the ark-ar1cs boundary migration in favour of callers
-//! borrowing the prepared verifying key directly). [`verify`] takes the
-//! prepared key from the [`ArtifactSet`] internally and forwards to
-//! `ark_groth16::Groth16::verify_proof`. Callers that need the prepared
-//! key for other purposes can still read
-//! [`SetupOutput::prepared_verifying_key`] off a freshly-built
-//! [`SetupOutput`].
+//! Callers that need the prepared verifying key for other purposes can read
+//! [`SetupOutput::prepared_verifying_key`] off a freshly-built [`SetupOutput`].
 //!
 //! Solidity on-chain verifier codegen lives in the sibling crate
 //! [`zkap-evm-verifier`](../zkap_evm_verifier/index.html); call
@@ -154,8 +147,7 @@ use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;
 #[cfg(feature = "host-primitives")]
 use std::sync::OnceLock;
 
-// Field-codec re-export — single source of truth lives in
-// `ark-codec::field` (PR4 / Step 7 of the DTO consolidation plan).
+// Field-codec re-export — single source of truth lives in `ark-codec::field`.
 #[cfg(any(feature = "host-primitives", feature = "proof-types"))]
 pub(crate) use ark_codec::field::field_to_hex;
 

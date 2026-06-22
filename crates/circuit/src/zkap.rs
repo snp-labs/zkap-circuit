@@ -146,7 +146,6 @@ where
         cs: ark_relations::gr1cs::ConstraintSystemRef<C::BaseField>,
     ) -> ark_relations::gr1cs::Result<()> {
         assert!(self.anchor.selector.len() == self.params.n as usize);
-        // Implement the constraint generation logic here
 
         // Validate that max_jwt_b64_len is a power of two so the address-bit
         // width derived from `trailing_zeros()` below is sound.  The circuit

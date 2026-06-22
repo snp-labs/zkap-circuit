@@ -460,7 +460,7 @@ fail the check when any benchmark's measured mean exceeds the
 baseline value by more than `slack_pct` (default 10%, overridable
 via the `SLACK_PCT` env in the workflow step).
 
-The comparison script is `scripts/check-regression.py`. Run it
+The comparison script is `crates/witness-gen-wasm/scripts/check-regression.py`. Run it
 locally after `cargo bench` to validate before pushing:
 
 ```bash

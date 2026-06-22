@@ -64,7 +64,7 @@ impl From<std::io::Error> for EvmEmitError {
 pub trait SolidityContractGenerator {
     /// Writes the rendered `Groth16Verifier.sol` to `path`. The output
     /// is a single library declaration named `Groth16Verifier` with
-    /// `_verify(uint256[] proof, uint256[] instance)` plus the
+    /// `_verify(uint256[N] calldata instance, uint256[8] calldata proof)` plus the
     /// embedded `alphaX/Y`, `betaX0..Y1`, `gammaX0..Y1`, `deltaX0..Y1`,
     /// and `ic###` curve-point constants.
     ///
@@ -83,7 +83,7 @@ fn g1_constant<E: Pairing>(
     if g1.is_zero() {
         return Err(EvmEmitError::PointAtInfinity { which });
     }
-    // SAFETY: is_zero() == false guarantees x() and y() return Some.
+    // Invariant: is_zero() == false guarantees x() and y() return Some.
     let x = g1.x().unwrap_or_default();
     let y = g1.y().unwrap_or_default();
     Ok([
@@ -101,7 +101,7 @@ fn g2_constant<E: Pairing>(
     if g2.is_zero() {
         return Err(EvmEmitError::PointAtInfinity { which });
     }
-    // SAFETY: is_zero() == false guarantees x() and y() return Some.
+    // Invariant: is_zero() == false guarantees x() and y() return Some.
     let x = g2
         .x()
         .unwrap_or_default()

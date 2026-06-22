@@ -1,12 +1,6 @@
-//! ZKAP trusted-setup entry point.
-//!
-//! After Commit 4 of the 2026-05 ark-ar1cs boundary migration the
-//! proving entry point lives in [`crate::groth16::prover`]
-//! ([`crate::prove`]).
-//! Commit 5 then removed the in-crate verify wrapper — callers verify
-//! proofs by calling `Groth16::verify_proof` directly against the
-//! `vk` / `pvk` exposed on [`crate::artifact::ArtifactSet`]. This
-//! module is now the home of only the [`setup`] function.
+//! Trusted setup: [`setup`] generates the proving/verifying keys.
+//! Prove and verify entry points live in [`crate::groth16::prover`] and
+//! [`crate::verify`].
 
 use ark_ar1cs::format::{ArcsFile, ConstraintMatrices, CurveId};
 use ark_crypto_primitives::snark::CircuitSpecificSetupSNARK;
@@ -81,10 +75,10 @@ pub struct SetupOutput {
 impl SetupOutput {
     /// Returns the bundled prepared verifying key.
     ///
-    /// The in-crate verify wrapper was retired in Commit 5 of the
-    /// 2026-05 ark-ar1cs boundary migration; callers that need to
-    /// verify a proof in-process hand this borrow straight to
-    /// `ark_groth16::Groth16::verify_proof`.
+    /// Most callers should use [`crate::verify`] instead of borrowing the
+    /// key directly. This accessor is for in-process flows that need the
+    /// prepared key for other purposes (e.g. batching or custom verification
+    /// pipelines).
     pub fn prepared_verifying_key(&self) -> &PreparedVerifyingKey<BN254> {
         &self.pvk
     }
@@ -181,8 +175,8 @@ pub enum SetupRng {
 ///   [`SetupRng::ChaCha20`] for `--rng-seed --allow-test-only` CI runs.
 ///   Both variants construct a concrete `RngCore + CryptoRng` type,
 ///   removing the former `AssumedCryptoRng` load-bearing assumption.
-/// * `ptau` — Stage 2 placeholder. The Stage 1 binary never sets this,
-///   but the parameter is part of the signature so Stage 2 can land
+/// * `ptau` — Stage 2 placeholder. Callers must pass `None` until Stage 2
+///   is active; the parameter is part of the signature so Stage 2 can land
 ///   without another breaking change. Passing `Some` returns an
 ///   explicit error.
 pub fn setup(

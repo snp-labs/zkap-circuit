@@ -30,7 +30,7 @@ contract that those SDKs wrap.
   `ArtifactSet::load_unsigned` validate manifest claims before proving.
 - **Service API**: setup, host-side hash/anchor helpers, witness synthesis, and
   the free `prove(&ArtifactSet, &ProveRequest)` entry point.
-- **CLI utilities**: `generate_setup` and `generate_hash`.
+- **CLI utilities**: `generate_setup`, `generate_hash`, and `generate_witness_gen_sidecar`.
 
 ## Crates
 
@@ -41,7 +41,7 @@ contract that those SDKs wrap.
 | `crates/gadget` | Reusable circuit gadgets: Poseidon, SHA-256, RSA, base64, Merkle, anchor, matrix |
 | `crates/ark-codec` | arkworks field/string/affine codec helpers |
 | `crates/ark-r1cs-helpers` | R1CS comparison, packing, select, and slice helpers |
-| `crates/cli` | `generate_setup` and `generate_hash` binaries |
+| `crates/cli` | `generate_setup`, `generate_hash`, and `generate_witness_gen_sidecar` binaries |
 | `crates/witness-gen-wasm` | wasm32 C ABI witness generator artifact |
 | `crates/zkap-evm-verifier` | Solidity Groth16 verifier codegen |
 
@@ -105,7 +105,7 @@ use std::path::Path;
 use ed25519_dalek::VerifyingKey;
 use zkap_service::{ArtifactSet, ProveRequest, manifest::Manifest, prove};
 
-let dir = Path::new("dist/1-of-1");
+let dir = Path::new("dist/release-local/1-of-1");
 let manifest: Manifest = serde_json::from_slice(&std::fs::read(dir.join("manifest.json"))?)?;
 
 // Production path for signed bundles.
@@ -122,10 +122,11 @@ bundles, CI fixtures, or environments where the manifest is authenticated out
 of band. It still validates sha256 and `ar1cs_blake3` claims, but it does not
 verify the manifest signature.
 
-In-process verification is intentionally not wrapped by this crate. Borrow a
-prepared verifying key from `ArtifactSet::pvk` or
-`SetupOutput::prepared_verifying_key()` and call
-`ark_groth16::Groth16::<Bn254>::verify_proof` directly.
+Verify a proof with the free `verify(&ArtifactSet, &Proof<BN254>, &[F])` entry
+point. It uses the prepared verifying key bundled in the `ArtifactSet` and
+returns `Ok(true)` on a passing pairing check, `Ok(false)` on failure. The
+`pk`/`vk`/`pvk` fields of `ArtifactSet` are `pub(crate)`; external callers
+verify through `verify` rather than borrowing them.
 
 ## Generating A CRS Bundle
 
@@ -150,8 +151,9 @@ manifest.json
 
 Optional flags:
 
-- `--witness-gen-wasm <path>` copies `witness_gen.wasm` into the bundle and
-  records it in the manifest.
+- `--witness-gen-wasm <path>` copies `witness_gen.wasm` into the bundle as a
+  plain unsigned file. It is not a manifest artifact; its integrity is tracked
+  by the separate `witness_gen.json` sidecar.
 - `--signing-key <path>` signs `manifest.json` with a raw 32-byte ed25519
   secret key seed.
 - `--verifying-key-out <path>` writes the corresponding raw 32-byte ed25519

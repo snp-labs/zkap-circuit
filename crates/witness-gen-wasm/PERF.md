@@ -1,10 +1,9 @@
 # `zkap-witness-gen-wasm` — performance baseline
 
-This document records the **measurement infrastructure** added in PR-1a
-of the cross-platform SDK plan and the **first set of numbers** taken on
-the implementor's workstation. It is intentionally a baseline, not a
-target; PR-1b (CI gates) and Step 2 (perf optimisations) build on top of
-it.
+This document records the **measurement infrastructure** and the **first
+set of numbers** taken on the implementor's workstation. It is
+intentionally a baseline, not a target; the CI gate (see below) and
+Step 2 (perf optimisations) build on top of it.
 
 ## What is measured
 
@@ -99,9 +98,9 @@ at `target/criterion/**/report/index.html`. AOT / pulley rows stay
 2. **wasmtime / rlib ≈ 2.0x consistently** — 2.08x at k=1, 1.98x at
    k=3, 2.02x at k=5. cranelift JIT overhead is multiplicative and
    stable. Step 2 Tier 1 (`wasm-opt -O3` + SIMD via
-   `target-feature=+simd128`) should bring this ratio under ~1.5x to
-   justify the ABI work in Tier 2 (CircuitConfig caching, bincode
-   variant).
+   `target-feature=+simd128`) should bring this ratio under ~1.5x
+   (measured baseline: ~1.95x average) to justify the ABI work in
+   Tier 2 (CircuitConfig caching, bincode variant).
 
 3. **Linear scaling per credential.** rlib: ~123 ms/cred; wasmtime:
    ~255 ms/cred. No per-batch fixed cost worth optimizing. The lever
@@ -447,13 +446,17 @@ for v0.2. `k = 5` on mid-tier Android remains a blocker; the path
 through it is the allocator-swap / arena-reset / parallel-flag work
 outlined in the lever survey above, not a single config flip.
 
-## CI SLA gate (PR-1b)
+## CI SLA gate (planned — not yet wired into CI)
 
-These numbers are pinned in `baseline.json` and policed by
-`.github/workflows/wasm-perf.yml`. On each PR that touches
+> **Status:** methodology and scripts are ready; the workflow file
+> (`.github/workflows/wasm-perf.yml`) does not yet exist in this repo.
+> Only `ci.yml` and `release.yml` are present. Gate wiring is deferred.
+
+These numbers are pinned in `baseline.json` and intended to be policed by
+a future `wasm-perf.yml` workflow. When wired up: on each PR that touches
 `crates/witness-gen-wasm/**`, `Cargo.toml`, or `Cargo.lock`, the
-workflow runs the bench on a `macos-14` (Apple Silicon) runner and
-fails the check when any benchmark's measured mean exceeds the
+workflow would run the bench on a `macos-14` (Apple Silicon) runner and
+fail the check when any benchmark's measured mean exceeds the
 baseline value by more than `slack_pct` (default 10%, overridable
 via the `SLACK_PCT` env in the workflow step).
 
@@ -481,23 +484,20 @@ For local dev on non-matching hosts, either skip the gate or set
 
 ## What this baseline does NOT yet measure
 
-- **aarch64 mobile arch.** All numbers above run wasmtime on the
-  host (typically Apple Silicon laptop). Real device measurement —
-  iOS AOT + Android JIT/AOT — is a follow-up after the SDK plumbing
-  exists.
-- **Per-credential synth time / sub-step breakdown.** The bench
-  times the public entry point (`synthesize_witness_bytes` /
-  `synthesize_witness`). Internal steps (claim extraction, RSA
-  verify, Poseidon hashes, Merkle path replay) are not separately
-  profiled here; that's a Step 2+ scope.
-- **Memory footprint.** Linear memory peak / RSS deltas are not
-  reported. wasmtime exposes the hooks; we'd add them when the
-  mobile target surfaces a constraint.
+- **aarch64 mobile arch — on-device timing.** All wall-clock numbers
+  above run wasmtime on the host (typically Apple Silicon laptop).
+  Memory-envelope estimates for mobile tiers (low/mid/high Android,
+  iOS) appear in the bundle-streaming section above. On-device
+  wall-clock measurement — iOS AOT + Android JIT/AOT — is a
+  follow-up after the SDK plumbing exists.
+- **Per-credential synth time sub-step breakdown.** The bench times
+  the public entry point (`synthesize_witness_bytes` /
+  `synthesize_witness`). Per-credential *timing* breakdown of
+  internal steps (claim extraction, RSA verify, Poseidon hashes,
+  Merkle path replay) is not yet profiled; that's a Step 2+ scope.
 - **End-to-end prove time.** Witness synthesis is one half of the
   prove pipeline; the other half (Groth16 prover) lives in
   `crates/service`. End-to-end timings are tracked elsewhere.
-- **AOT cwasm / pulley axes** (see "Axes" above).
-
 ## Reproducing
 
 ```bash

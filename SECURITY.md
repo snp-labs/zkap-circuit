@@ -8,11 +8,11 @@ This document describes the security policy for [zkap-circuit](https://github.co
 
 | Version | Supported |
 |---------|-----------|
-| `main` (0.1.x, pre-release) | Yes — security fixes applied to `main` |
+| `develop` (0.1.x, pre-release) | Yes — security fixes applied to `develop` |
 | Any prior version | No |
 
 This project has not yet published a stable release to crates.io.
-Security updates are applied to the `main` branch.
+Security updates are applied to the `develop` branch.
 There is no long-term support policy at this time.
 
 ---
@@ -38,7 +38,7 @@ Include as much detail as possible: affected component, reproduction steps, pote
 
 We follow coordinated disclosure:
 
-1. Reporter submits via GitHub Security Advisories or email.
+1. Reporter submits via email.
 2. We acknowledge within 48 hours and begin triage.
 3. We develop and release a fix, coordinating timing with the reporter.
 4. We publish a GitHub Security Advisory upon or after the fix.
@@ -89,4 +89,4 @@ The committed `example.json` contains only circuit setup parameters and does not
 
 ---
 
-*Last updated: 2026-04-06*
+*Last updated: 2026-06-22*

@@ -30,11 +30,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added release and CI workflows for the develop-based release branch,
   including full release tests, release-profile builds, CRS bundle
   generation, Solidity smoke checks, and GitHub Release publishing.
-- Added `witness_gen.wasm` as a required release and setup-bundle
-  artifact. Release uploads include one common `witness_gen.wasm`, not
-  per-shape wasm copies.
-- Added signed/unsigned artifact-load timing APIs and manifest coverage
-  for optional `witness_gen.wasm` entries.
+- Added `witness_gen.wasm` as a release artifact (optional in the setup
+  bundle via `--witness-gen-wasm`). Release uploads include one common
+  `witness_gen.wasm`, not per-shape wasm copies.
+- Added signed/unsigned artifact-load timing APIs. `witness_gen.wasm`
+  integrity is tracked by the separate `witness_gen.json` sidecar, not the
+  manifest.
 - Added manifest and bundle integrity gates, including tamper tests for
   artifact hash mismatches and CI checks for the canonical bundle layout.
 - Added reproducible manifest support through `SOURCE_DATE_EPOCH`.
@@ -83,7 +84,7 @@ Initial open-source release.
 - Full SHA-256 computation inside the circuit for JWT header and payload
 - Poseidon hash gadget with SNARK-friendly constraints
 - Gadget library (`crates/gadget`): base64 decoder, bigint arithmetic, matrix operations, Merkle tree, and anchor gadgets
-- R1CS utility library (`crates/ark-utils`): comparison, bit/byte conversions, and constraint helpers
+- R1CS utility library (`crates/ark-utils`): comparison, bit/byte conversions, and constraint helpers (later split into `crates/ark-codec` + `crates/ark-r1cs-helpers` in 0.1.1-rc.1)
 - Service crate (`crates/service`) with multi-platform binding DTOs
 - Groth16 integration tests with configurable K parameter (prove and verify)
 - WASM binding for `generatePoseidonHash`

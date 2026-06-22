@@ -1,8 +1,10 @@
 //! Manifest schema, signing helpers, and builder support for CRS bundles.
 //!
 //! The v1 schema keeps only the post-migration artifacts
-//! (`ar1cs`, `pk`, `vk`, `pvk`, optional `evm_verifier`, `circuit_config`,
-//! and optional `witness_gen`). Stage 1 emits `os-rng` / `seed`
+//! (`ar1cs`, `pk`, `vk`, `pvk`, optional `evm_verifier`, and
+//! `circuit_config`). `witness_gen.wasm` is deliberately not a manifest
+//! artifact — its integrity is tracked by the separate `witness_gen.json`
+//! sidecar. Stage 1 emits `os-rng` / `seed`
 //! provenance; Stage 2 ceremony fields remain parseable but are not emitted
 //! by the Stage 1 setup binary.
 //!

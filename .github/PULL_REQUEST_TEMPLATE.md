@@ -14,12 +14,12 @@ Brief description of changes.
 ## Checklist
 
 ### Required
-- [ ] `cargo clippy -- -D warnings` passes
-- [ ] `cargo test` passes
+- [ ] `cargo clippy --workspace --all-targets -- -D warnings` passes
+- [ ] `cargo nextest run --cargo-profile release-tests` passes
 - [ ] `cargo fmt --check` passes
 
 ### If circuit constraints changed
-- [ ] `cargo test -p circuit --test groth16_integration -- --ignored` passes
+- [ ] `cargo nextest run --cargo-profile release-tests -p circuit --features integration-tests --test groth16_integration --locked` passes
 - [ ] Soundness argument reviewed (no weakening of existing security properties)
 - [ ] [Circuit Design](docs/CIRCUIT_DESIGN.md) updated (if applicable)
 

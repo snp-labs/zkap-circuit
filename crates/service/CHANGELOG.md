@@ -40,9 +40,8 @@ leaking to the downstream `zkap-zkp` consumer.
   prover per bundle. This replaces the previous pattern of reaching into
   `ArtifactSet`'s `pk` / `prepared_arcs` fields and calling
   `ark_ar1cs::prove_with_mode` directly. The per-bundle loop is
-  sequential (no `rayon` in the workspace; correctness + minimal deps over
-  the throughput win — callers can shard and call per shard from their own
-  pool).
+  parallel via `rayon` (`into_par_iter`); result order is preserved so
+  on-chain proof ordering matches input order.
 - **`verify(&ArtifactSet, &Proof<BN254>, &[F])
   -> Result<bool, ApplicationError>`** — Groth16 proof verification
   wrapper. Takes the prepared verifying key from the `ArtifactSet`

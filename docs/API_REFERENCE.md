@@ -2,9 +2,6 @@
 
 Public API of the `zkap-service` crate.
 
-The current service surface is always available after the 2026-05 refactor:
-the old `proof` / `dev-unverified-artifacts` feature split was removed.
-
 For the proof lifecycle, see [Example Guide](EXAMPLE_GUIDE.md).
 
 ## Helper Functions
@@ -148,7 +145,7 @@ wraps in `manifest.json`.
 | `SetupRng::OsRng` | Production setup. Uses the OS CSPRNG. |
 | `SetupRng::ChaCha20 { seed }` | Deterministic test/reproducible setup only. |
 
-`ptau` is a Stage 2 placeholder and must be `None` today.
+`ptau` is reserved; passing `Some(_)` returns an error.
 
 Files written by `setup()`:
 
@@ -170,14 +167,17 @@ The `generate_setup` CLI writes `manifest.json` and may attach
 
 ```rust
 pub struct ArtifactSet {
-    pub pk: ProvingKey<BN254>,
-    pub vk: VerifyingKey<BN254>,
-    pub pvk: PreparedVerifyingKey<BN254>,
-    pub prepared_arcs: PreparedArcs<F>,
+    pub(crate) pk: ProvingKey<BN254>,
+    pub(crate) vk: VerifyingKey<BN254>,
+    pub(crate) pvk: PreparedVerifyingKey<BN254>,
+    pub(crate) prepared_arcs: PreparedArcs<F>,
     pub cfg: CircuitConfig,
     pub witness_gen_wasm: Option<Vec<u8>>,
 }
 ```
+
+Only `cfg` and `witness_gen_wasm` are `pub`; `pk`, `vk`, `pvk`, and
+`prepared_arcs` are `pub(crate)` and are not accessible to external callers.
 
 `ArtifactSet` is the in-memory bundle consumed by `prove`.
 
@@ -257,16 +257,29 @@ Internal flow:
 
 ## Verification
 
-There is no `zkap_service::verify` wrapper. Call arkworks directly:
+### `verify`
 
 ```rust
-use ark_groth16::Groth16;
-use circuit::types::BN254;
-
-let proof = /* reconstruct or retain ark_groth16::Proof<BN254> */;
-let public_inputs = /* Vec<F> matching ProveResponse::public_inputs_for(i) */;
-let ok = Groth16::<BN254>::verify_proof(&artifact_set.pvk, &proof, &public_inputs)?;
+pub fn verify(
+    artifact: &ArtifactSet,
+    proof: &Proof<BN254>,
+    public_inputs: &[F],
+) -> Result<bool, ApplicationError>
 ```
+
+Returns `Ok(true)` if the pairing check passes, `Ok(false)` if it fails.
+
+```rust
+use zkap_service::verify;
+
+// `response.public_inputs_for(0)` returns hex strings; decode them to
+// `Vec<F>` with the same field codec the host used.
+let public_inputs: Vec<F> = /* decode response.public_inputs_for(0) */;
+let ok = verify(&set, &proof, &public_inputs)?;
+assert!(ok);
+```
+
+Canonical usage: `let ok = zkap_service::verify(&set, &proof, &public_inputs)?;`
 
 ## DTOs
 
@@ -414,8 +427,7 @@ Common `ApplicationError` variants:
 Common `ArtifactError` variants:
 
 - `Io`
-- `MissingArtifact`
-- `HashMismatch`
 - `ArcsFormat`
 - `Deserialize`
+- `HashMismatch`
 - `Signature`

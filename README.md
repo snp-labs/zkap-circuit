@@ -153,7 +153,8 @@ Optional flags:
 
 - `--witness-gen-wasm <path>` copies `witness_gen.wasm` into the bundle as a
   plain unsigned file. It is not a manifest artifact; its integrity is tracked
-  by the separate `witness_gen.json` sidecar.
+  by the separate `witness_gen.json` sidecar (see
+  [Witness Generator](docs/WITNESS_GEN.md)).
 - `--signing-key <path>` signs `manifest.json` with a raw 32-byte ed25519
   secret key seed.
 - `--verifying-key-out <path>` writes the corresponding raw 32-byte ed25519

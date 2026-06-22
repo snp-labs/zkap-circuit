@@ -225,8 +225,12 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y ripgrep
       - name: scripts/check-removed-api.sh
         run: bash scripts/check-removed-api.sh
+      - name: scripts/check-api-reference-coverage.sh
+        run: bash scripts/check-api-reference-coverage.sh
       - name: scripts/check-bundle-layout.sh syntax check
         run: bash -n scripts/check-bundle-layout.sh
+      - name: scripts/check-api-reference-coverage.sh syntax check
+        run: bash -n scripts/check-api-reference-coverage.sh
       - name: scripts/ci/check-crs-size-cap.sh syntax check
         run: bash -n scripts/ci/check-crs-size-cap.sh
       - name: scripts/release/sha256sums.sh syntax check

@@ -60,8 +60,7 @@ use super::circuit_input::{
 /// Used by the wasm path so the serialised output stream replaces the
 /// `Vec<WitnessBundle>` retention; recovers `(k-1) * sizeof(bundle)`
 /// of linear-memory peak vs. the [`synthesize_witnesses`] (collect-into-
-/// Vec) entry below. See `crates/witness-gen-wasm/PERF.md` ("Mobile
-/// RSS investigation").
+/// Vec) entry below.
 ///
 /// The flow is otherwise identical to [`synthesize_witnesses`]:
 /// `prove_request_to_decoded` → per-batch `derive_x` /

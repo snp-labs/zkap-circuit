@@ -4,7 +4,7 @@
     "Consumed by scripts/check-regression.py + .github/workflows/wasm-perf.yml.",
     "PR-1b SLA gate fails when any benchmark's measured mean exceeds the value",
     "below by more than `slack_pct` (default 10%). Values originate from PR-1a's",
-    "first run; see PERF.md for context, key observations, and reproduction.",
+    "first run.",
     "",
     "HOST PIN: numbers are calibrated for Apple Silicon (Darwin aarch64, M-series).",
     "CI must run on macos-14 (or any Apple-Silicon-class runner) to match.",

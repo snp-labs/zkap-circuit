@@ -270,7 +270,7 @@ pub fn fixture_json(cfg: &CircuitConfig, req: &ProveRequest) -> (Vec<u8>, Vec<u8
 /// until it finds `target/wasm32-unknown-unknown/release/
 /// zkap_witness_gen_wasm.wasm`. Panics with an actionable message if
 /// the artifact isn't built — bench / parity caller is expected to
-/// build it first (see `crates/witness-gen-wasm/PERF.md`).
+/// build it first.
 pub fn wasm_artifact_path() -> std::path::PathBuf {
     let crate_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let workspace_root = crate_dir

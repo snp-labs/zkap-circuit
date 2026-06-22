@@ -8,7 +8,7 @@
 //! `zkap-service` rather than directly. Enable modules via `[features = "..."]`
 //! from your workspace member's `Cargo.toml`.
 
-// Workspace lint gate — see docs/LOCKS.md.
+// Workspace lint gate.
 #![warn(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 #![deny(rustdoc::invalid_html_tags)]

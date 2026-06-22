@@ -146,7 +146,7 @@ jobs:
   wasm-build-smoke:
     name: WASM build smoke (wasm32-unknown-unknown)
     if: github.event_name != 'schedule'
-    runs-on: ubuntu-24.04  # G1 — pin for binaryen reproducibility (cf. PERF.md F4 follow-up)
+    runs-on: ubuntu-24.04  # G1 — pin for binaryen reproducibility
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: ./.github/actions/setup-rust

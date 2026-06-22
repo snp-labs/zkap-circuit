@@ -7,7 +7,7 @@
 //! This crate is a dependency of `zkap-service` and is not usually
 //! consumed directly by application code.
 
-// Workspace lint gate — see docs/LOCKS.md.
+// Workspace lint gate.
 #![warn(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 #![deny(rustdoc::invalid_html_tags)]

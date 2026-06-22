@@ -5,8 +5,7 @@
 # `--target wasm32-unknown-unknown` is on the cargo command line; the
 # host (native rlib + workspace tests) is untouched.
 #
-# Step 2 Tier 1.2 of the cross-platform SDK plan. See
-# crates/witness-gen-wasm/PERF.md.
+# Step 2 Tier 1.2 of the cross-platform SDK plan.
 
 [target.wasm32-unknown-unknown]
 # Enable wasm SIMD (v128 ops) and bulk-memory in the rustc backend so

@@ -258,8 +258,7 @@ fn synthesize_witness_inner(req_bytes: &[u8], cfg_bytes: &[u8]) -> Result<Vec<u8
     // deserialize_uncompressed` the bytes unchanged, while never
     // materialising a `Vec<WitnessBundle>` in linear memory. This
     // recovers `(k-1) * sizeof(WitnessBundle) ~ 27 MiB / cred` of peak
-    // vs the prior collect-then-serialize path. See
-    // `crates/witness-gen-wasm/PERF.md` (mobile-RSS investigation).
+    // vs the prior collect-then-serialize path.
     let mut out = Vec::new();
     (request.credentials.len() as u64)
         .serialize_uncompressed(&mut out)

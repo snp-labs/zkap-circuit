@@ -10,8 +10,7 @@
 //!
 //! Two AOT/interpreter axes are scoped in but currently deferred —
 //! see the `#[cfg(feature = "wasmtime_aot")]` /
-//! `#[cfg(feature = "wasmtime_pulley")]` gates. PERF.md tracks the
-//! rationale.
+//! `#[cfg(feature = "wasmtime_pulley")]` gates.
 //!
 //! Two measurement modes per axis × k:
 //!
@@ -128,7 +127,7 @@ fn bench_wasmtime_jit(c: &mut Criterion) {
     group.finish();
 }
 
-// AOT cwasm + pulley interpreter benches are deferred — see PERF.md.
+// AOT cwasm + pulley interpreter benches are deferred.
 // They sit behind cargo features so a follow-up PR can light them up
 // without touching this bench's signature.
 #[cfg(feature = "wasmtime_aot")]

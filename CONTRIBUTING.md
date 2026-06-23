@@ -28,13 +28,13 @@ cargo build
 
 ### Prerequisites
 
-- Rust 1.85 or later (`rustup update stable`) — required for edition 2024
+- Rust 1.86 or later (`rustup update stable`) — required for edition 2024
 - `cargo` (included with Rust)
 
 ### Building
 
 ```sh
-cargo build --release
+cargo build --release --locked
 ```
 
 `Cargo.lock` is committed to the repository so that CI and contributors
@@ -46,15 +46,15 @@ dependencies, and include the lock-file change in the same commit as the
 ### Testing
 
 ```sh
-cargo test --release
+cargo nextest run --cargo-profile release-tests
 ```
 
 To run tests for a specific crate:
 
 ```sh
-cargo test -p circuit
-cargo test -p gadget
-cargo test -p zkap-service
+cargo nextest run --cargo-profile release-tests -p circuit
+cargo nextest run --cargo-profile release-tests -p gadget
+cargo nextest run --cargo-profile release-tests -p zkap-service
 ```
 
 ### Documentation
@@ -72,7 +72,7 @@ cargo doc --workspace --no-deps --open
 # canonical end-to-end exercise lives in
 # `crates/service/tests/native_prove_e2e.rs` and the slow
 # `circuit::tests::groth16_integration` suite).
-cargo build --workspace --examples --release
+cargo build --workspace --examples --release --locked
 ```
 
 ### Linting
@@ -80,7 +80,7 @@ cargo build --workspace --examples --release
 All pull requests must pass Clippy without warnings:
 
 ```sh
-cargo clippy -- -D warnings
+cargo clippy --workspace --all-targets -- -D warnings
 ```
 
 Format your code before submitting:
@@ -94,37 +94,48 @@ cargo fmt
 ```
 zkap-circuit/
 ├── crates/
-│   ├── ark-utils/  # R1CS helpers, field arithmetic, EVM codegen
-│   ├── circuit/    # Main ZK circuit definitions (ZkapCircuit, CircuitConfig)
-│   ├── cli/        # CLI binaries (generate_setup, generate_hash)
-│   ├── gadget/     # Reusable circuit gadgets (anchors, signatures, matrix ops)
-│   └── service/    # Proof generation service
+│   ├── ark-codec/        # arkworks field/string/affine codec helpers
+│   ├── ark-r1cs-helpers/ # R1CS comparison, packing, select, and slice helpers
+│   ├── circuit/          # Main ZK circuit definitions (ZkapCircuit, CircuitConfig)
+│   ├── cli/              # CLI binaries (generate_setup, generate_hash, generate_witness_gen_sidecar)
+│   ├── gadget/           # Reusable circuit gadgets (anchors, signatures, matrix ops)
+│   └── service/          # Proof generation service
 │       ├── src/
-│       │   ├── witness/  # Native input shaping (ProofRequest → ZkapInputV1 → ZkapCircuitInput)
-│       │   ├── artifact/ # Manifest-validated CRS bundle loader (ArtifactSet::load)
-│       │   ├── prover/   # Native ar1cs prover (Prover::from_artifact + Prover::prove)
-│       │   ├── proof/    # Trusted setup (setup, SetupOutput)
-│       │   ├── anchor_host/  # Anchor generation (Poseidon anchor scheme)
+│       │   ├── anchor/   # Anchor generation (Poseidon anchor scheme)
+│       │   ├── artifact/ # Manifest-validated CRS bundle loader
+│       │   │             #   ArtifactSet::load_signed(manifest, dir, verifying_key)
+│       │   │             #   ArtifactSet::load_unsigned(manifest, dir)
+│       │   ├── crs.rs    # Trusted setup (setup, SetupOutput)
+│       │   ├── dto/      # Platform-agnostic DTOs for bindings
+│       │   ├── error.rs  # Service error types
+│       │   ├── groth16/  # Native ar1cs prover — free fn prove(&ArtifactSet, &ProveRequest)
 │       │   ├── hash/     # Hash utilities (Poseidon hash, audience hash, leaf hash)
 │       │   ├── jwt/      # JWT parsing and witness construction
-│       │   ├── dto/      # Platform-agnostic DTOs for bindings
-│       │   └── manifest.rs   # Manifest schema + ManifestBuilder
+│       │   ├── lib.rs    # Public API surface and re-exports
+│       │   ├── manifest.rs   # Manifest schema + ManifestBuilder
+│       │   └── sidecar.rs    # Witness-gen sidecar helpers
 │       └── tests/        # Integration tests
-└── dist/           # Pre-built CRS bundles (1-of-1, 3-of-3 in 7-file layout)
+└── dist/           # Pre-built CRS bundles
+                    #   dist/release-local/1-of-1/   (1-of-1 bundle)
+                    #   dist/release-local/3-of-3/   (3-of-3 bundle)
+                    #   dist/release-local/release/  (release shape)
+                    #   dist/release-local/witness-gen/
+                    #   dist/1-of-1-wasm/
+                    #   dist/witness-gen/
 ```
 
 ## Branch and Review
 
 ### Branch Strategy
 
-- Create branches from `main`.
+- Create branches from `develop`.
 - Use the naming convention: `<type>/<short-description>`
   (e.g. `feat/poseidon-cache`, `fix/anchor-length`, `docs/contributing-guide`).
 
 ### Review Expectations
 
 - All pull requests require at least one approving review before merge.
-- CI must pass: `cargo clippy`, `cargo test --release`, `cargo fmt --check`.
+- CI must pass: `cargo clippy --workspace --all-targets -- -D warnings`, `cargo nextest run --cargo-profile release-tests`, `cargo fmt --check`.
 - Changes to circuit constraints or cryptographic logic may require additional review.
 
 ## Pull Request Process
@@ -133,8 +144,8 @@ zkap-circuit/
 
 Before opening a pull request, confirm all of the following:
 
-- [ ] `cargo clippy -- -D warnings` passes with no errors
-- [ ] `cargo test --release` passes
+- [ ] `cargo clippy --workspace --all-targets -- -D warnings` passes with no errors
+- [ ] `cargo nextest run --cargo-profile release-tests` passes
 - [ ] `cargo fmt` has been run and the diff is clean
 - [ ] New public items include doc comments
 - [ ] Any new cryptographic logic includes references to the relevant specification or paper

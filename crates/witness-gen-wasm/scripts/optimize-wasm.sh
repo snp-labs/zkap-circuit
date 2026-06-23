@@ -8,7 +8,7 @@
 # cdylib in place so both the parity test and the criterion bench load the
 # production-representative binary.
 #
-# Step 2 Tier 1.1 of the cross-platform SDK plan. See PERF.md.
+# Step 2 Tier 1.1 of the cross-platform SDK plan.
 #
 # Usage:
 #   crates/witness-gen-wasm/scripts/optimize-wasm.sh           # in-place

@@ -7,15 +7,8 @@
 //! This crate is a dependency of `zkap-service` and is not usually
 //! consumed directly by application code.
 
-// Crate-internal `missing_docs` warning, not a workspace deny. Phase 6
-// / H5-staged-2: clears the circuit baseline (32 warnings at HEAD =
-// dde7792a, plan v2 §6) and locks the floor without depending on the
-// workspace-wide flip in `00-workspace-hygiene.md` §H5.
+// Workspace lint gate.
 #![warn(missing_docs)]
-// rustdoc lock floor — Phase 9 P9-circuit-rustdoc-audit (Phase 8 critic
-// MINOR #3 follow-up). Mirrors Phase 8 P8-arkutils-doc-link-audit and
-// Phase 9 P9-gadget-rustdoc-audit: any new `///`/`//!` doc with a broken
-// intra-doc link or invalid HTML tag fails the `Rustdoc` CI job.
 #![deny(rustdoc::broken_intra_doc_links)]
 #![deny(rustdoc::invalid_html_tags)]
 

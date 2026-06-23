@@ -58,7 +58,7 @@ pub fn limbs_to_nat<F: PrimeField>(limbs: &[F], limb_width: usize) -> BigNat {
 }
 
 /// Decomposes `n` into exactly as many `limb_width`-bit limbs as needed to hold all bits
-/// (`ceil(n.bits() / limb_width) + 1`), without padding to a fixed `N_LIMBS`.
+/// (`floor(n.bits() / limb_width) + 1`), without padding to a fixed `N_LIMBS`.
 ///
 /// Used where the number of limbs is variable (e.g. intermediate carry values).
 pub fn fit_nat_to_limbs<F: PrimeField>(n: &BigNat, limb_width: usize) -> Vec<F> {

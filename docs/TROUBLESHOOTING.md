@@ -25,10 +25,10 @@ Common errors and their solutions when working with zkap-circuit.
 Use `cargo run --release ...` for CLI/setup commands and release-profile test
 commands for prove-heavy paths.
 
-### `All input vectors must have length K=...`
+### `invalid prove request at {field}: {message}`
 
-**Cause:** `ProofRequest::credentials.len()` does not match `config.k`.
-**Fix:** Ensure `credentials` has exactly K entries.
+**Cause:** A `ProveRequest` field failed boundary validation (e.g. `credentials.len()` does not match `config.k`).
+**Fix:** Ensure `credentials` has exactly K entries and all other shape checks pass (see §4 of [Example Guide](EXAMPLE_GUIDE.md)).
 
 ### `invalid prove request at anchor: ...`
 
@@ -45,7 +45,7 @@ and K=3, `anchor_evaluations` must have 4 entries.
 - Contains all claims listed in `config.claims` (default: `aud`, `exp`, `iss`, `nonce`, `sub`)
 - Uses RS256 algorithm (`{"alg":"RS256","typ":"JWT"}`)
 
-### `Input audience count (...) exceeds the limit (...)`
+### `audience limit exceeded: got {got}, limit {limit}`
 
 **Cause:** `AudienceHashRequest::audiences` passed to `generate_audience_hashes()` has more entries than `config.num_audience_limit`.
 **Fix:** Reduce the audience list or increase `num_audience_limit` in the config. Changing `num_audience_limit` requires re-running `setup()` to generate new CRS artifacts.
@@ -61,7 +61,7 @@ and K=3, `anchor_evaluations` must have 4 entries.
 4. **Audience hash mismatch** — Audience public inputs must come from `generate_audience_hashes().audience_hashes` and `.audience_list_hash`.
 5. **Config mismatch** — `ArtifactSet::cfg` must be the config used during setup.
 
-### `Groth16::verify_proof` returns `false`
+### `verify` returns `Ok(false)`
 
 **Cause:** Public inputs do not match those embedded in the proof.
 **Fix:** Use `ProveResponse::public_inputs_for(index)` to construct the correct 8-element input vector. Do not reorder, omit, or modify elements.
@@ -70,7 +70,7 @@ and K=3, `anchor_evaluations` must have 4 entries.
 // Correct
 let input_hex = prove_response.public_inputs_for(0);
 let inputs = decode_public_inputs(input_hex)?;
-let valid = ark_groth16::Groth16::<BN254>::verify_proof(&set.pvk, &proof, &inputs)?;
+let valid = zkap_service::verify(&set, &proof, &inputs)?;
 
 // Wrong — manually constructing inputs risks ordering errors
 let inputs = vec![hanchor, root, ...];

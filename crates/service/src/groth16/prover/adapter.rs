@@ -71,7 +71,7 @@ pub(crate) fn prove_request_to_decoded(
     request: &ProveRequest,
     cfg: &CircuitConfig,
 ) -> Result<(SharedDecoded, Vec<CredentialDecoded>), ApplicationError> {
-    // 0. Config validation (Codex #4 — fail fast before any n - k + 1 arithmetic).
+    // 0. Config validation — fail fast before any n - k + 1 arithmetic.
     cfg.validate()
         .map_err(|e| ApplicationError::InvalidProveRequest {
             field: "config".into(),
@@ -104,7 +104,7 @@ pub(crate) fn prove_request_to_decoded(
             ),
         });
     }
-    // checked_shl avoids overflow at tree_height >= 64 (codex C11).
+    // checked_shl avoids overflow at tree_height >= 64.
     let max_leaf_idx_exclusive = 1u64.checked_shl(cfg.tree_height as u32).ok_or_else(|| {
         ApplicationError::InvalidProveRequest {
             field: "tree_height".into(),

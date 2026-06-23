@@ -150,14 +150,12 @@ impl<F: PrimeField> SHA256Gadget<F> {
             };
 
             let s0 = {
-                // x1 ^ &x2 ^ &x3
                 let x1 = h[0].rotate_right(2);
                 let x2 = h[0].rotate_right(13);
                 let x3 = h[0].rotate_right(22);
                 x1 ^ (x2 ^ x3)
             };
             let s1 = {
-                // x1 ^ &x2 ^ &x3
                 let x1 = h[4].rotate_right(6);
                 let x2 = h[4].rotate_right(11);
                 let x3 = h[4].rotate_right(25);
@@ -224,7 +222,6 @@ impl<F: PrimeField> SHA256Gadget<F> {
     /// the output of `sha2::Sha256::finalize()`.  See [`Self::digest`] for the full
     /// byte-order contract and the required reversal before calling
     /// [`output_with_prefix`](crate::signature::rsa::constraints::output_with_prefix).
-    // Input data must be padded according to the SHA256 standard.
     pub fn digest_with_pad(
         &mut self,
         data: &[UInt8<F>],
@@ -1152,7 +1149,7 @@ mod tests {
     }
 
     /// Tampered post-final-block region — write a non-zero byte beyond
-    /// the selected final block. Invariant (6) `after_mask * byte = 0`
+    /// the selected final block. Invariant (5) `after_mask * byte = 0`
     /// must reject.
     #[test]
     fn test_enforce_sha2_pad_verifier_rejects_nonzero_post_final_block() {

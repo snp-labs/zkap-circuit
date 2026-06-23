@@ -4,10 +4,8 @@
 //!
 //! Every change to this file that touches constraint synthesis (variable allocation order,
 //! `enforce_*` calls, phase sequencing) will alter the R1CS matrices and invalidate the
-//! `ar1cs_blake3` 32-byte gate.  Before merging any such change, verify all six L1 layers:
-//!
-//! See `docs/LOCKS.md` (protocol locks) for the
-//! full gate checklist (ar1cs_blake3, cs.num_constraints golden, R1CS matrix sha256, …).
+//! `ar1cs_blake3` 32-byte gate.  Before merging any such change, verify all six L1 layers
+//! of the gate checklist (ar1cs_blake3, cs.num_constraints golden, R1CS matrix sha256, …).
 //!
 //! # Five-phase structure
 //!
@@ -146,7 +144,6 @@ where
         cs: ark_relations::gr1cs::ConstraintSystemRef<C::BaseField>,
     ) -> ark_relations::gr1cs::Result<()> {
         assert!(self.anchor.selector.len() == self.params.n as usize);
-        // Implement the constraint generation logic here
 
         // Validate that max_jwt_b64_len is a power of two so the address-bit
         // width derived from `trailing_zeros()` below is sound.  The circuit

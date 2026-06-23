@@ -208,23 +208,19 @@ The prove path does not re-check artifact hashes.
 
 ## 6. Verify
 
-There is no `zkap_service::verify` wrapper. Reconstruct public inputs from the
-response and verify with arkworks directly.
-
 ```rust
-use ark_groth16::Groth16;
-use circuit::types::BN254;
+use zkap_service::verify;
 
 let public_inputs_hex = response.public_inputs_for(0);
 // Convert the hex strings to Vec<F> using the same field codec used by the host.
+let public_inputs: Vec<F> = /* decode public_inputs_hex */;
 
-let ok = Groth16::<BN254>::verify_proof(
-    &set.pvk,
-    &proof,
-    &public_inputs,
-)?;
+let ok = verify(&set, &proof, &public_inputs)?;
 assert!(ok);
 ```
+
+`verify` returns `Ok(true)` on a passing pairing check, `Ok(false)` on
+failure.
 
 Public input order:
 

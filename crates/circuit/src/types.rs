@@ -117,9 +117,9 @@ pub enum CircuitConfigError {
     /// `n` exceeds the 8-bit upper bound enforced by
     /// `zkap::generate_constraints`. The circuit decomposes
     /// `current_idx` (the selected anchor slot, `0..n`) into 8 bits
-    /// before calling `enforce_less_than`, so any `n > 256` would let
+    /// before calling `enforce_less_than`, so any `n > 255` would let
     /// the prover wrap-around past the upper bound silently.
-    #[error("n must be <= 256 (8-bit current_idx decomposition); got: {0}")]
+    #[error("n must be <= 255 (8-bit current_idx decomposition); got: {0}")]
     NTooLargeFor8BitIdx(u64),
     /// `tree_height` exceeds the depth limit implied by the in-circuit
     /// 16-bit `leaf_idx` allocation. The Merkle tree has `1 << (tree_height

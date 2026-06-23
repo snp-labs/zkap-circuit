@@ -46,16 +46,15 @@ pub(super) fn claim_format_verifier_v2<F: PrimeField>(
     let claim_len = Boolean::le_bits_to_fp(&claim_len.to_bits_le()?)?;
 
     // check1: name_len <= colon_idx
-    // AC-10 swap (C1.2): the prior `is_less_than | is_eq` then `enforce_equal(TRUE)`
-    // pair is replaced by the witness-decompose `enforce_less_or_equal` gadget
-    // (AC-1 / commit 02b982a7). Net savings ≈ 93 cs per call (5 callers per circuit).
+    // Uses the witness-decompose `enforce_less_or_equal` gadget rather than
+    // `is_less_than | is_eq` + `enforce_equal(TRUE)`. Net savings ≈ 93 cs per call.
     let name_len_boolean = name_len.to_bits_le()?;
     let colon_idx_boolean = colon_idx.to_bits_le()?;
     enforce_less_or_equal(&name_len_boolean, &colon_idx_boolean)?;
 
     // check2: colon_idx < value_idx
-    // AC-10 swap (C1.1): `is_less_than + enforce_equal(TRUE)` collapsed into
-    // the single `enforce_less_than` call. Net savings ≈ 60 cs per call.
+    // Uses `enforce_less_than` directly rather than `is_less_than + enforce_equal(TRUE)`.
+    // Net savings ≈ 60 cs per call.
     let value_idx_boolean = value_idx.to_bits_le()?;
     enforce_less_than(&colon_idx_boolean, &value_idx_boolean)?;
 
@@ -155,9 +154,8 @@ fn enforce_range_is_whitespace_v2<F: PrimeField>(
     let end_bits_16 = &end_bits[..bits_16];
 
     // is_nonempty = start_idx + 1 <= end_idx
-    // AC-10 swap (C1.3): combine the prior `is_less_than | FpVar::is_eq` pair into
-    // the single `is_less_or_equal` Boolean gadget. Net savings ≈ 2 cs per call
-    // (15 callers per circuit via the 3 enforce_range_is_whitespace_v2 invocations × 5 claims).
+    // Uses `is_less_or_equal` rather than `is_less_than | FpVar::is_eq`. Net savings ≈ 2 cs
+    // per call (3 enforce_range_is_whitespace_v2 invocations × 5 claims = 15 call sites).
     let is_nonempty = is_less_or_equal(start_plus_1_bits_16, end_bits_16)?;
 
     // Clamp: if nonempty use start_idx+1, else use end_idx (range sum becomes 0)

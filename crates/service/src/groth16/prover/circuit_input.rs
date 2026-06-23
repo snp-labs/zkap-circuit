@@ -436,7 +436,7 @@ pub(crate) fn aud_packed_from_jwt(
 
 /// Compute `Poseidon(aud_packed)` for one credential — its slot value in the
 /// shared audience list. The audience hash uses the same recipe as the
-/// `aud_packed` slot-0 hash the per-credential JWT stage feeds in-circuit.
+/// per-credential `aud_packed` hash the JWT stage feeds in-circuit.
 pub(crate) fn per_credential_h_aud(
     field_path: &str,
     jwt_bytes: &[u8],
@@ -670,9 +670,6 @@ fn decimal_bytes_to_field(bytes: &[u8]) -> Result<F, ApplicationError> {
     }
     Ok(acc)
 }
-
-// The removed local base64 decoder is covered in `gadget` tests; this module
-// now uses the same decoder as the adapter and JWT parser.
 
 #[cfg(test)]
 mod tests {
@@ -968,9 +965,6 @@ mod tests {
             ),
         }
     }
-
-    // The local hand-rolled `base64_url_no_pad_decode` was removed; its
-    // coverage lives in `gadget/src/base64/decoder.rs` tests now.
 
     #[test]
     fn build_merkle_witness_rejects_wrong_path_length() {

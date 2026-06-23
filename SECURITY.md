@@ -8,11 +8,11 @@ This document describes the security policy for [zkap-circuit](https://github.co
 
 | Version | Supported |
 |---------|-----------|
-| `main` (0.1.x, pre-release) | Yes — security fixes applied to `main` |
+| `develop` (0.1.x, pre-release) | Yes — security fixes applied to `develop` |
 | Any prior version | No |
 
 This project has not yet published a stable release to crates.io.
-Security updates are applied to the `main` branch.
+Security updates are applied to the `develop` branch.
 There is no long-term support policy at this time.
 
 ---
@@ -38,7 +38,7 @@ Include as much detail as possible: affected component, reproduction steps, pote
 
 We follow coordinated disclosure:
 
-1. Reporter submits via GitHub Security Advisories or email.
+1. Reporter submits via email.
 2. We acknowledge within 48 hours and begin triage.
 3. We develop and release a fix, coordinating timing with the reporter.
 4. We publish a GitHub Security Advisory upon or after the fix.
@@ -69,6 +69,26 @@ a fix is available or the 90-day window has elapsed.
 
 **Mitigation:** Monitoring the arkworks project for migration to a maintained alternative (`bon` or `educe`). Added to `.cargo/audit.toml` ignore list with a review date.
 
+### RUSTSEC-2023-0071 — `rsa` crate Marvin Attack (timing side-channel)
+
+| Field    | Detail                                                                 |
+|----------|------------------------------------------------------------------------|
+| Advisory | [RUSTSEC-2023-0071](https://rustsec.org/advisories/RUSTSEC-2023-0071.html) |
+| Crate    | `rsa`                                                                  |
+| Status   | No upstream fix available; ignored in `.cargo/audit.toml` with a review date |
+
+**Description:** The `rsa` crate is vulnerable to a key-recovery timing side-channel (the "Marvin Attack") during RSA *private-key* operations (decryption / signing).
+
+**Impact for this project: NOT APPLICABLE.**
+
+This library performs RSA signature **verification** only — it never loads or operates on an RSA private key. The private key that signed a JWT lives at the OAuth identity provider (e.g. Google), never in this code. The side-channel requires a secret exponent, which this project does not possess, so the timing leak has nothing to leak here.
+
+**Mitigation:** Verifier-only usage already eliminates the attack surface. Tracked in `.cargo/audit.toml`; will drop the ignore if/when an upstream fix lands.
+
+### Full list
+
+The two advisories above are the ones that touch this library's security posture directly. The complete set of accepted advisories — including unmaintained transitive dependencies and `wasmtime` (a dev-dependency used only by benches and the parity test, never shipped to production) — is maintained, with per-advisory rationale and review dates, in [`.cargo/audit.toml`](.cargo/audit.toml).
+
 ---
 
 ## 5. Security Design
@@ -89,4 +109,4 @@ The committed `example.json` contains only circuit setup parameters and does not
 
 ---
 
-*Last updated: 2026-04-06*
+*Last updated: 2026-06-22*

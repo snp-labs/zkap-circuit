@@ -345,7 +345,6 @@ impl<F: PrimeField + Absorb> AnchorScheme for PoseidonAnchorScheme<F> {
         selector: &[u8],
         matrix: &Self::Matrix,
     ) -> Result<Self::Witness, AnchorError> {
-        // Generate witness using the new helper function
         build_anchor_witness(&pk.params, &secrets.0, selector, matrix)
     }
 

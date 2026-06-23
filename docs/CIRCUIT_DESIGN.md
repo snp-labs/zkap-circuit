@@ -4,7 +4,7 @@ Technical reference for the ZKAP Groth16 circuit's constraint structure,
 witness flow, and security properties.
 
 > This document describes *what* the circuit enforces and *why*.
-> For crate-level architecture, see [ARCHITECTURE.md](../ARCHITECTURE.md).
+> For crate-level architecture, see [Architecture](../ARCHITECTURE.md).
 > For the public API, see [API Reference](API_REFERENCE.md).
 
 ## What the Circuit Proves

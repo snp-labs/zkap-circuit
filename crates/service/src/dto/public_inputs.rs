@@ -5,7 +5,7 @@
 //!
 //! 1. emitted into the witness vector by `prove()`,
 //! 2. written into the manifest's `public_input_names` by `generate_setup`, and
-//! 3. decoded from `ProofComponents::public_inputs` in `dto::proof`.
+//! 3. assembled into the verifier-facing vector by `ProveResponse::public_inputs_for` in `dto::proof`.
 //!
 //! Changing this order is a **wire-protocol-breaking change** and invalidates
 //! the on-chain Solidity Groth16Verifier.

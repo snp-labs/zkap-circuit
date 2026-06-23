@@ -146,7 +146,7 @@ jobs:
   wasm-build-smoke:
     name: WASM build smoke (wasm32-unknown-unknown)
     if: github.event_name != 'schedule'
-    runs-on: ubuntu-24.04  # G1 — pin for binaryen reproducibility (cf. PERF.md F4 follow-up)
+    runs-on: ubuntu-24.04  # G1 — pin for binaryen reproducibility
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: ./.github/actions/setup-rust
@@ -225,8 +225,12 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y ripgrep
       - name: scripts/check-removed-api.sh
         run: bash scripts/check-removed-api.sh
+      - name: scripts/check-api-reference-coverage.sh
+        run: bash scripts/check-api-reference-coverage.sh
       - name: scripts/check-bundle-layout.sh syntax check
         run: bash -n scripts/check-bundle-layout.sh
+      - name: scripts/check-api-reference-coverage.sh syntax check
+        run: bash -n scripts/check-api-reference-coverage.sh
       - name: scripts/ci/check-crs-size-cap.sh syntax check
         run: bash -n scripts/ci/check-crs-size-cap.sh
       - name: scripts/release/sha256sums.sh syntax check
@@ -235,6 +239,30 @@ jobs:
         run: bash -n scripts/ci/build-wasm-artifact.sh
       - name: scripts/ci/run-wasm-parity.sh syntax check
         run: bash -n scripts/ci/run-wasm-parity.sh
+
+  secret-scan:
+    name: Secret scan (gitleaks)
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          # Full history so gitleaks scans every commit, not just the tip.
+          fetch-depth: 0
+      - name: Install gitleaks (version + checksum pinned)
+        run: |
+          set -euo pipefail
+          VERSION=8.30.1
+          SHA256=551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}/gitleaks_${VERSION}_linux_x64.tar.gz" -o gitleaks.tar.gz
+          echo "${SHA256}  gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf gitleaks.tar.gz gitleaks
+          sudo install gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+      - name: Scan git history + working tree
+        # .gitleaks.toml extends the default ruleset and allowlists the two
+        # synthetic-fixture test files. Non-zero exit (leak found) fails CI.
+        run: gitleaks detect --source . --redact --config .gitleaks.toml
 
   # ───────────────────────────────────────────────────────────────────────────
   # develop-push / workflow_dispatch only (skipped on PR by design).
@@ -300,6 +328,7 @@ jobs:
       - wasm-build-smoke
       - generate-setup-smoke
       - migration-boundary
+      - secret-scan
       - integration-test
     runs-on: ubuntu-latest
     steps:

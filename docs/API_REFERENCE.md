@@ -2,9 +2,6 @@
 
 Public API of the `zkap-service` crate.
 
-The current service surface is always available after the 2026-05 refactor:
-the old `proof` / `dev-unverified-artifacts` feature split was removed.
-
 For the proof lifecycle, see [Example Guide](EXAMPLE_GUIDE.md).
 
 ## Helper Functions
@@ -148,7 +145,7 @@ wraps in `manifest.json`.
 | `SetupRng::OsRng` | Production setup. Uses the OS CSPRNG. |
 | `SetupRng::ChaCha20 { seed }` | Deterministic test/reproducible setup only. |
 
-`ptau` is a Stage 2 placeholder and must be `None` today.
+`ptau` is reserved; passing `Some(_)` returns an error.
 
 Files written by `setup()`:
 
@@ -164,20 +161,53 @@ Files written by `setup()`:
 The `generate_setup` CLI writes `manifest.json` and may attach
 `witness_gen.wasm`.
 
+### `SetupOutput`
+
+```rust
+pub struct SetupOutput {
+    pub shape: SetupShape,
+    // pk / vk / pvk / arcs are pub(crate)
+}
+
+impl SetupOutput {
+    pub fn prepared_verifying_key(&self) -> &PreparedVerifyingKey<BN254>;
+    pub fn public_input_count(&self) -> usize;
+}
+```
+
+Returned by `setup`. The key material (`pk`/`vk`/`pvk`/`arcs`) is `pub(crate)`
+and persisted internally by `setup`; only `shape` is `pub`. Most callers should
+verify via `verify` rather than borrowing `prepared_verifying_key()`.
+
+### `SetupShape`
+
+```rust
+pub struct SetupShape {
+    pub num_instance: u64,   // includes the constant-1 wire
+    pub num_witness: u64,
+    pub num_constraints: u64,
+}
+```
+
+Constraint-system counts of the synthesized circuit; mirrors `manifest::Shape`.
+
 ## Artifact Loading
 
 ### `ArtifactSet`
 
 ```rust
 pub struct ArtifactSet {
-    pub pk: ProvingKey<BN254>,
-    pub vk: VerifyingKey<BN254>,
-    pub pvk: PreparedVerifyingKey<BN254>,
-    pub prepared_arcs: PreparedArcs<F>,
+    pub(crate) pk: ProvingKey<BN254>,
+    pub(crate) vk: VerifyingKey<BN254>,
+    pub(crate) pvk: PreparedVerifyingKey<BN254>,
+    pub(crate) prepared_arcs: PreparedArcs<F>,
     pub cfg: CircuitConfig,
     pub witness_gen_wasm: Option<Vec<u8>>,
 }
 ```
+
+Only `cfg` and `witness_gen_wasm` are `pub`; `pk`, `vk`, `pvk`, and
+`prepared_arcs` are `pub(crate)` and are not accessible to external callers.
 
 `ArtifactSet` is the in-memory bundle consumed by `prove`.
 
@@ -231,6 +261,102 @@ pub fn load_unsigned_with_timing(
 Timed loaders have identical validation semantics. The timing value is
 diagnostic only.
 
+## Manifest
+
+A CRS bundle is described by a `manifest.json`. The loaders
+(`ArtifactSet::load_signed` / `load_unsigned`) consume a `Manifest`; the
+`generate_setup` CLI produces one. A manifest carries per-file sha256 claims,
+the `ar1cs_blake3` body hash, the constraint-system shape, setup provenance, and
+an optional ed25519 signature. `witness_gen.wasm` is intentionally NOT a
+manifest artifact — its integrity is tracked by the separate `witness_gen.json`
+sidecar.
+
+### `ManifestBuilder`
+
+```rust
+impl ManifestBuilder {
+    pub fn new(circuit_id: impl Into<String>, circuit_tag: impl Into<String>) -> Self;
+    pub fn with_ar1cs_blake3(self, hex: impl Into<String>) -> Self;
+    pub fn with_shape(self, num_instance: u64, num_witness: u64, num_constraints: u64) -> Self;
+    pub fn with_public_input_names(self, names: Vec<String>) -> Self;
+    pub fn with_artifact(self, key: ArtifactKey, entry: ArtifactEntry) -> Self;
+    pub fn with_setup_provenance(self, p: SetupProvenance) -> Self;
+    pub fn with_build(self, build: BuildMetadata) -> Self;
+    pub fn build(self) -> Result<Manifest, BuilderError>;
+}
+```
+
+Required before `build()`: `with_ar1cs_blake3`, `with_shape`,
+`with_public_input_names`, `with_setup_provenance`, `with_build`, and
+`with_artifact` for each of `Ar1cs` / `Pk` / `Vk` / `Pvk` / `CircuitConfig`
+(the `EvmVerifier` artifact is optional). `build()` derives
+`toxic_waste_disclosure` from the provenance.
+
+```rust
+use zkap_service::manifest::{ManifestBuilder, ArtifactKey, SetupProvenance};
+
+let manifest = ManifestBuilder::new("zkap-main-v1", circuit_tag)
+    .with_ar1cs_blake3(ar1cs_blake3_hex)
+    .with_shape(num_instance, num_witness, num_constraints)
+    .with_public_input_names(
+        zkap_service::PUBLIC_INPUT_NAMES.iter().map(|s| s.to_string()).collect(),
+    )
+    .with_artifact(ArtifactKey::Ar1cs, ar1cs_entry)
+    // … Pk, Vk, Pvk, CircuitConfig …
+    .with_setup_provenance(SetupProvenance::OsRng)
+    .with_build(build_metadata)
+    .build()?;
+```
+
+### Signing
+
+```rust
+pub fn sign_manifest(
+    manifest: &mut Manifest,
+    signing_key: &ed25519_dalek::SigningKey,
+) -> Result<(), ManifestError>;
+
+pub fn verify_manifest(
+    manifest: &Manifest,
+    verifying_key: &ed25519_dalek::VerifyingKey,
+) -> Result<(), ManifestError>;
+
+impl Manifest {
+    pub fn canonical_signing_bytes(&self) -> Result<Vec<u8>, ManifestError>;
+}
+```
+
+`sign_manifest` writes `manifest.signature` over the canonical compact-JSON
+payload (every non-signature field participates, so adding a field
+automatically brings it under the signature). `verify_manifest` checks that
+signature.
+
+### Schema types
+
+| Type | Purpose |
+|---|---|
+| `Manifest` | top-level document: version, circuit id/tag, curve, proof system, `ar1cs_blake3`, `shape`, `public_input_names`, `artifacts`, `setup_provenance`, `toxic_waste_disclosure`, `build`, optional `signature` |
+| `Shape` | constraint-system counts (`num_instance` / `num_witness` / `num_constraints`) |
+| `Artifacts` | per-file block: `ar1cs` / `pk` / `vk` / `pvk` / `circuit_config` (required) + optional `evm_verifier` |
+| `ArtifactEntry` | one file: `path`, `sha256`, `size`, `kind`, optional `schema_owner` / `schema_ref` |
+| `ArtifactKey` | builder slot selector: `Ar1cs` / `Pk` / `Vk` / `Pvk` / `EvmVerifier` / `CircuitConfig` |
+| `SetupProvenance` | randomness provenance: `OsRng` / `Seed { seed }` / `Ceremony { ptau, phase2_attestations }` (kebab-case `kind` tag) |
+| `ToxicWasteDisclosure` | trust model derived from the provenance |
+| `BuildMetadata` | repo / commit / `ark_ar1cs_rev` / rustc / RFC3339 `built_at` |
+| `PtauRef`, `Phase2Attestation`, `ContributionPublicKeyJson` | Stage 2 ceremony provenance — schema-accepted but not emitted by the Stage 1 setup binary |
+
+### Helpers
+
+```rust
+pub fn compute_circuit_tag(circuit_id: &str, cfg_canonical_bytes: &[u8]) -> String;
+pub fn canonical_json_bytes(value: &serde_json::Value) -> Vec<u8>;
+pub fn derive_toxic_waste_disclosure(p: &SetupProvenance) -> ToxicWasteDisclosure;
+```
+
+`compute_circuit_tag` produces `{circuit_id}__{first_8_hex_of_sha256(cfg)}` —
+the same tag used for the dist subdirectory and `manifest.circuit_tag`.
+`canonical_json_bytes` emits deterministic key-sorted JSON bytes.
+
 ## Proving
 
 ### `prove`
@@ -255,18 +381,79 @@ Internal flow:
 4. Call `ark_ar1cs::prove_with_mode` with `artifact.pk`, `artifact.prepared_arcs`, `OsRng`, and `VerifyAfter`.
 5. Return `ProveResponse`.
 
-## Verification
+`prove` is the one-shot composition of the two halves below:
+`synthesize_witnesses` then `prove_bundles(.., PreflightMode::VerifyAfter)`.
 
-There is no `zkap_service::verify` wrapper. Call arkworks directly:
+### `prove_bundles`
 
 ```rust
-use ark_groth16::Groth16;
-use circuit::types::BN254;
-
-let proof = /* reconstruct or retain ark_groth16::Proof<BN254> */;
-let public_inputs = /* Vec<F> matching ProveResponse::public_inputs_for(i) */;
-let ok = Groth16::<BN254>::verify_proof(&artifact_set.pvk, &proof, &public_inputs)?;
+pub fn prove_bundles(
+    artifact: &ArtifactSet,
+    bundles: Vec<WitnessBundle>,
+    mode: PreflightMode,
+) -> Result<ProveResponse, ApplicationError>
 ```
+
+The circuit-agnostic half of proving: turns pre-synthesized `WitnessBundle`s
+into a `ProveResponse`. Callers that obtain bundles out of band (e.g. from the
+`zkap-witness-gen-wasm` ABI) use this directly and never depend on `ark_ar1cs`.
+
+The per-bundle loop runs in parallel via rayon (enabled only by the
+`native-witness` feature) and is **order-preserving** — output proof order
+matches input bundle order, which the on-chain semantics rely on. Like `prove`,
+it re-verifies nothing; the loader is the trust gate.
+
+### `synthesize_witnesses`
+
+```rust
+pub fn synthesize_witnesses(
+    cfg: &CircuitConfig,
+    request: &ProveRequest,
+) -> Result<Vec<WitnessBundle>, ApplicationError>
+```
+
+The circuit-dependent half: validates `request` against `cfg` and produces one
+`WitnessBundle` per credential. Pair with `prove_bundles` for a split prove
+pipeline, or call `prove` for the one-shot path.
+
+### `PreflightMode`
+
+Preflight policy for `prove_bundles` (mirrors `ark_ar1cs::PreflightMode` so
+callers select the behaviour without importing `ark_ar1cs`).
+
+| Variant | Behaviour |
+|---|---|
+| `VerifyAfter` (default) | Generate the proof, then verify it against `pk.vk` before returning. The `prove` default. |
+| `StrictPreflight` | Check every R1CS row for satisfaction *before* proving; skip the post-proof verify. |
+
+## Verification
+
+### `verify`
+
+```rust
+pub fn verify(
+    artifact: &ArtifactSet,
+    proof: &Proof<BN254>,
+    public_inputs: &[F],
+) -> Result<bool, ApplicationError>
+```
+
+Returns `Ok(true)` if the pairing check passes, `Ok(false)` if it fails.
+
+`proof` is `ark_groth16::Proof<BN254>`, re-exported as `zkap_service::Proof` so
+callers can name the proof type without depending on `ark-groth16` directly.
+
+```rust
+use zkap_service::verify;
+
+// `response.public_inputs_for(0)` returns hex strings; decode them to
+// `Vec<F>` with the same field codec the host used.
+let public_inputs: Vec<F> = /* decode response.public_inputs_for(0) */;
+let ok = verify(&set, &proof, &public_inputs)?;
+assert!(ok);
+```
+
+Canonical usage: `let ok = zkap_service::verify(&set, &proof, &public_inputs)?;`
 
 ## DTOs
 
@@ -394,6 +581,94 @@ pub struct ProofComponents {
 }
 ```
 
+### `WitnessBundle`
+
+```rust
+pub struct WitnessBundle {
+    pub full_assignment: Vec<F>,
+    pub public_inputs: Vec<F>,
+}
+```
+
+Circuit-agnostic witness emitted by `synthesize_witnesses` and consumed by
+`prove_bundles`. Both vectors are `Vec<F>`, so a wasm generator can
+`CanonicalSerialize` them and a native host can `CanonicalDeserialize` and prove
+without linking constraint code.
+
+### `SharedPublicInputs`
+
+```rust
+pub struct SharedPublicInputs {
+    pub hanchor: String,
+    pub h_a: String,
+    pub root: String,
+    pub h_sign_user_op: String,
+    pub lhs: String,
+    pub h_aud_list: String,
+}
+```
+
+The public-input values shared across every proof in a batch (slots 0–3, 6, 7).
+The per-proof slots — `jwt_exp` (4) and `partial_rhs` (5) — live on
+`ProveResponse` (`jwt_exp` / `verification_rhs`) instead.
+
+### Public Input Layout
+
+The canonical 8-slot wire order is defined once by `PublicInputSlot` /
+`PUBLIC_INPUTS` (the single source of truth), with names in
+`PUBLIC_INPUT_NAMES`:
+
+| Index | `PublicInputSlot` | Wire name |
+|---|---|---|
+| 0 | `Hanchor` | `hanchor` |
+| 1 | `Ha` | `h_a` |
+| 2 | `Root` | `root` |
+| 3 | `HSignUserOp` | `h_sign_user_op` |
+| 4 | `JwtExp` | `jwt_exp` |
+| 5 | `PartialRhs` | `partial_rhs` |
+| 6 | `Lhs` | `lhs` |
+| 7 | `HAudList` | `h_aud_list` |
+
+`PublicInputSlot::name()` and `::index()` map a slot to its wire name and
+position. This order matches the witness vector, the manifest
+`public_input_names`, and `ProveResponse::public_inputs_for`. Note: slot 5's
+canonical wire name is `partial_rhs`; the `ProveResponse` struct exposes the
+same per-proof value as its `verification_rhs` field.
+
+## Witness-Gen Sidecar
+
+`witness_gen.wasm` ships independently of the CRS bundle, described by a
+`witness_gen.json` sidecar produced by the `generate_witness_gen_sidecar` CLI.
+The sidecar pairs a wasm with the CRS shapes it may serve, keyed on
+`ar1cs_blake3`. For the CLI flags, the release model, and the publish/consume
+how-to, see [Witness Generator](WITNESS_GEN.md).
+
+### `WitnessGenSidecar`
+
+```rust
+pub struct WitnessGenSidecar {
+    pub version: String,
+    pub sha256: String,                       // 64-char lowercase hex
+    pub compatible_ar1cs_blake3: Vec<String>, // non-empty
+    pub circuit_commit: Option<String>,
+    pub circuit_id: Option<String>,
+}
+
+impl WitnessGenSidecar {
+    pub fn from_json(bytes: &[u8]) -> Result<Self, SidecarError>;
+    pub fn validate(&self) -> Result<(), SidecarError>;
+    pub fn verify_wasm_sha(&self, wasm_bytes: &[u8]) -> Result<(), SidecarError>;
+    pub fn require_compatible(&self, crs_ar1cs_blake3: &str) -> Result<(), SidecarError>;
+    pub fn is_compatible(&self, crs_ar1cs_blake3: &str) -> bool;
+}
+```
+
+The contract is fail-closed: parse → `validate` → `verify_wasm_sha` →
+`require_compatible` before trusting a downloaded wasm. `sha256` is
+distribution-integrity; `compatible_ar1cs_blake3` gates which CRS shapes the
+wasm pairs with; `circuit_commit` / `circuit_id` are non-gating provenance.
+Failures surface as `SidecarError`.
+
 ## Error Types
 
 All public APIs return `ApplicationError` except artifact loaders, which return
@@ -414,8 +689,22 @@ Common `ApplicationError` variants:
 Common `ArtifactError` variants:
 
 - `Io`
-- `MissingArtifact`
-- `HashMismatch`
 - `ArcsFormat`
 - `Deserialize`
+- `HashMismatch`
 - `Signature`
+
+`CircuitConfigError` (returned by `CircuitConfig::validate`, surfaced through
+`load_circuit_config`) variants:
+
+- `InvalidK`
+- `KExceedsN`
+- `InvalidN`
+- `InvalidTreeHeight`
+- `PayloadExceedsJwt`
+- `InvalidNumAudienceLimit`
+- `EmptyClaims`
+
+Manifest and sidecar helpers have their own error types: `ManifestError`
+(signing / canonical encoding), `BuilderError` (missing builder field or
+artifact), and `SidecarError` (witness-gen sidecar parse / validation).

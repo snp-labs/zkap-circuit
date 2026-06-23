@@ -100,7 +100,7 @@ impl<F: PrimeField> CircuitPublicInputs<F> {
 /// JWT-related witness (SHA256 + Base64 + RSA)
 #[derive(Clone, CanonicalSerialize, CanonicalDeserialize)]
 pub struct JwtWitness {
-    /// Number of SHA256 blocks (final block index, 0-indexed)
+    /// 0-indexed index of the final SHA-256 block (i.e. `total_blocks - 1`)
     pub nblocks: usize,
     /// Claim indices
     pub claim_indices: Vec<ClaimIndices>,

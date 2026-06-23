@@ -42,7 +42,6 @@ impl<F: PrimeField> VandermondeMatrixVar<F> {
         for j in 0..n {
             let mut sum = FpVar::zero();
 
-            // Multiply the i-th element of a by the (i,j) element of M and accumulate
             // 1 constraint per multiplication
             for (i, a_i) in a.iter().enumerate().take(m) {
                 sum += a_i * &self.matrix[i][j];

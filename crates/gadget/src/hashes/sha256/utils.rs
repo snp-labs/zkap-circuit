@@ -34,7 +34,7 @@ pub fn conditionally_select_vec<F: PrimeField>(
 /// the length field must encode the declared maximum, not the actual data bytes, to keep
 /// the hash consistent with the circuit's `enforce_sha2_pad_verifier` checks.
 pub fn sha256_pad_with_len(input: &[u8], max_len: usize) -> Vec<u8> {
-    let block_size = 64; // Block size in bytes
+    let block_size = 64;
     let mut padded = input.to_vec();
 
     // Append the '1' bit as SHA256_PAD_MARKER (0x80)

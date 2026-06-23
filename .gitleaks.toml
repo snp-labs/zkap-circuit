@@ -1,8 +1,21 @@
 title = "zkup-baerae gitleaks config"
 
+# Load gitleaks' built-in ruleset; without this the config below would
+# define an allowlist with ZERO detection rules (a silent no-op scan).
+[extend]
+  useDefault = true
+
 [allowlist]
   description = "Test fixtures and well-known development keys"
   paths = [
     '''crates/circuit/tests/groth16_integration\.rs''',
     '''crates/service/tests/service_integration\.rs''',
+  ]
+  # This is a JWT-verification circuit: synthetic test JWTs (zeroed signatures,
+  # test.example.com claims) are inherent to the source and test vectors, in
+  # current files and in pre-reorg history. JWTs are not the credential class
+  # that matters here; the HIGH-value default rules (private keys, AWS/GCP/
+  # GitHub/Slack tokens, passwords, connection strings) stay fully active.
+  regexes = [
+    '''eyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]*''',
   ]

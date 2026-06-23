@@ -73,10 +73,15 @@ jobs:
 
       - name: Parse + validate version
         id: parse
+        # Pass the workflow_dispatch input through an env var rather than
+        # interpolating ${{ github.event.inputs.version }} straight into the
+        # shell — avoids any script-injection surface from the input string.
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
         run: |
           set -euo pipefail
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            VERSION="${{ github.event.inputs.version }}"
+            VERSION="$INPUT_VERSION"
           else
             VERSION="${GITHUB_REF#refs/tags/v}"
           fi

@@ -25,10 +25,6 @@
 //! The tests stay light (no symbolic Solidity parser); end-to-end
 //! Solidity logic is exercised by `zkap-service::tests::service_integration`.
 //!
-//! Plan refs:
-//! - `.omc/plans/2026-05-08-per-crate-refactor/service.md` §S11
-//! - Phase 5 critic WM2 (Phase 6 follow-up)
-
 use std::ops::Neg;
 
 use ark_bn254::{Bn254, Fr, G1Affine, G2Affine};
@@ -285,11 +281,10 @@ fn generate_solidity_round_trip_pins_distinct_vk_constants() {
     // contract evaluates the Groth16 pairing with `-beta`, `-gamma`,
     // `-delta`). With distinct G2 points we can pin the negation by
     // comparing against `pt.into_group().neg().into_affine()` and
-    // separately confirm the un-negated form would not match. Phase 5
-    // initially pinned only beta; Phase 7 (P7-evm-gamma-delta-pin, WM(c)
-    // follow-up) extends the same pin to gamma and delta so a regression
-    // that drops `.neg()` on either of them — but not beta — is also
-    // surfaced. `assert_g2_neg_pinned` is the per-tag helper.
+    // separately confirm the un-negated form would not match.
+    // beta was the only pinned negation originally; gamma and delta pins were
+    // added later to catch a missing `.neg()` on either.
+    // `assert_g2_neg_pinned` is the per-tag helper.
     assert_g2_neg_pinned(&body, "beta", &vk.beta_g2);
     assert_g2_neg_pinned(&body, "gamma", &vk.gamma_g2);
     assert_g2_neg_pinned(&body, "delta", &vk.delta_g2);

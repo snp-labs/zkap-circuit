@@ -54,7 +54,7 @@ RAYON_NUM_THREADS=4 cargo run --release -p zkap-cli --bin generate_setup -- \
 CRS files (`pk.bin`) can be large. The pre-built artifacts in `dist/` give an indication of expected sizes:
 
 ```bash
-ls -lh dist/*/
+ls -lh dist/release-local/1-of-1/pk.bin
 ```
 
 Proof output (`ProofComponents`) is compact: 3 elliptic curve points (2 G1 + 1 G2), serialized as hex strings.

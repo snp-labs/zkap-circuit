@@ -73,6 +73,49 @@ pub fn generate_anchor(
     })
 }
 
+/// Derive the k-of-n slot selector from `k` known secrets and the anchor
+/// evaluations (hex-or-decimal strings, e.g. straight from on-chain
+/// `getAnchor()` or a stored `generate_anchor` response).
+///
+/// Succeeds iff the presented secrets occupy some ascending slot combination
+/// of the anchor — i.e. a **membership check** that works without knowing the
+/// dummy slots (their one-time random preimages are discarded at
+/// registration). Present the secrets in their slot-ascending relative order;
+/// permutations are not searched.
+pub fn derive_selector(
+    config: &CircuitConfig,
+    secrets: &[AnchorSecret],
+    anchor_evaluations: &[String],
+) -> Result<Vec<u8>, ApplicationError> {
+    let ctx = AnchorConfig::from_params(config);
+    let poseidon_params = crate::poseidon_params();
+
+    let anchor_key = PoseidonAnchorPublicKey {
+        params: poseidon_params.clone(),
+    };
+
+    let x_list: Vec<F> = secrets
+        .iter()
+        .map(|s| derive_x_from_secret(s, &anchor_key.params, &ctx))
+        .collect::<Result<Vec<F>, ApplicationError>>()?;
+
+    let evaluations: Vec<F> = anchor_evaluations
+        .iter()
+        .enumerate()
+        .map(|(i, s)| {
+            ark_codec::string::hex_decimal_to_field::<F>(s).map_err(|e| {
+                ApplicationError::InvalidFormat(format!(
+                    "anchor_evaluations[{}]: invalid field-element string: {}",
+                    i, e
+                ))
+            })
+        })
+        .collect::<Result<Vec<F>, ApplicationError>>()?;
+    let anchor = PoseidonAnchor::new(evaluations);
+
+    derive_selector_from_x_list_and_anchor(&anchor_key, &x_list, &anchor, &ctx.matrix)
+}
+
 /// Sequential Poseidon chain hash matching the in-circuit `hanchor` recipe:
 /// `H(v[0])`, then `H(prev, v[i])` for `i in 1..len`.
 ///

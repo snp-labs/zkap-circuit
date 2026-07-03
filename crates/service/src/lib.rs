@@ -192,7 +192,7 @@ pub use circuit::types::{BN254, CircuitConfig, CircuitConfigError, F};
 
 // Public API (always available)
 #[cfg(feature = "host-primitives")]
-pub use anchor::poseidon::generate_anchor;
+pub use anchor::poseidon::{derive_selector, generate_anchor};
 pub use dto::{
     AnchorSecret, AudienceHashRequest, AudienceHashResponse, GenerateAnchorRequest,
     GenerateAnchorResponse, HashRequest, HashResponse, IssuerKeyHashRequest, IssuerKeyHashResponse,

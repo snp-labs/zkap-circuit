@@ -122,6 +122,29 @@ assert_eq!(
 );
 ```
 
+### `derive_selector`
+
+```rust
+pub fn derive_selector(
+    config: &CircuitConfig,
+    secrets: &[AnchorSecret],
+    anchor_evaluations: &[String],
+) -> Result<Vec<u8>, ApplicationError>
+```
+
+Derives the length-`n` `0/1` anchor selector marking which anchor positions the
+caller's `secrets` cover (the selector sums to `k`). `anchor_evaluations` are the
+field-element strings (hex or decimal) from a `generate_anchor` response or an
+on-chain anchor. Wraps `derive_selector_from_x_list_and_anchor` with string
+decoding; it is the public entry point for server-side backup membership-verify.
+
+```rust
+use zkap_service::{AnchorSecret, derive_selector};
+
+let selector = derive_selector(&config, &secrets, &anchor.anchor_evaluations)?;
+assert_eq!(selector.len(), config.n as usize);
+```
+
 ## Setup
 
 ### `setup`

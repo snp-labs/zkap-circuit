@@ -1,11 +1,15 @@
 # Pins toolchain installed by `rustup` and by `dtolnay/rust-toolchain` in CI.
-# Workspace MSRV is 1.86 (`Cargo.toml: rust-version = "1.86"`); stable channel
-# satisfies it. The wasm32 target is required for `zkap-witness-gen-wasm` and
-# is installed eagerly so wasm-build-smoke and the release `build-wasm` job
-# don't need a separate `rustup target add` step.
+# Workspace MSRV is 1.86 (`Cargo.toml: rust-version = "1.86"`). Pinned to an
+# EXPLICIT stable version rather than the floating `stable` channel: with
+# `stable`, a new Rust release adds/strengthens clippy & rustdoc lints that the
+# `-D warnings` gates promote to hard errors, breaking CI with no code change
+# (e.g. 1.97 `useless_borrows_in_formatting`). Bump this line deliberately.
+# The wasm32 target is required for `zkap-witness-gen-wasm` and is installed
+# eagerly so wasm-build-smoke and the release `build-wasm` job don't need a
+# separate `rustup target add` step.
 
 [toolchain]
-channel = "stable"
+channel = "1.97.0"
 components = ["rustfmt", "clippy"]
 targets = ["wasm32-unknown-unknown"]
 profile = "minimal"

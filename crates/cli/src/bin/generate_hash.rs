@@ -126,7 +126,7 @@ fn generate_aud_hash(args: &AudArgs, params: &circuit::types::CircuitConfig) {
     };
 
     write_json_or_exit(&args.out, &output);
-    println!("Successfully generated aud hashes to {}", &args.out);
+    println!("Successfully generated aud hashes to {}", args.out);
 }
 
 fn generate_pk_leaf(args: &LeafArgs, params: &circuit::types::CircuitConfig) {

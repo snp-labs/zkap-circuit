@@ -1,0 +1,29 @@
+# Dependabot keeps the two drift sources that break CI in check:
+#   * cargo         — Rust deps (transitive advisories/yanks: crossbeam-epoch,
+#                     spin, anyhow, ...). Security updates are opened
+#                     automatically when "Dependabot security updates" is
+#                     enabled in the repo's Settings → Code security.
+#   * github-actions — pinned action SHAs in .github/workflows/*.
+#
+# NOTE: Dependabot does NOT manage rust-toolchain.toml — the toolchain is
+# pinned to an explicit version there and bumped by hand.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      # Collapse routine minor/patch bumps into one PR to cut noise; security
+      # and major bumps still get their own PRs.
+      cargo-minor-patch:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5

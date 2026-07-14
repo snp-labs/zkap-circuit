@@ -108,7 +108,7 @@ zeroize = { version = "1.8", default-features = false, features = ["alloc"] }
 # Used only as dev-dependencies by `crates/witness-gen-wasm` for its
 # criterion bench suite + wasm parity integration test. Not pulled
 # into any release artifact.
-criterion = "0.5"
+criterion = "0.8"
 wasmtime = { version = "26", default-features = false, features = ["cranelift", "runtime", "std"] }
 proptest = { version = "1", default-features = false, features = ["std"] }
 anyhow = { version = "1" }

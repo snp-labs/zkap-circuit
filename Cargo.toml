@@ -109,7 +109,7 @@ zeroize = { version = "1.8", default-features = false, features = ["alloc"] }
 # criterion bench suite + wasm parity integration test. Not pulled
 # into any release artifact.
 criterion = "0.5"
-wasmtime = { version = "26", default-features = false, features = ["cranelift", "runtime", "std"] }
+wasmtime = { version = "46", default-features = false, features = ["cranelift", "runtime", "std"] }
 proptest = { version = "1", default-features = false, features = ["std"] }
 anyhow = { version = "1" }
 signature = { version = "2" }

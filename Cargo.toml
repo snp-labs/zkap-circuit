@@ -88,7 +88,7 @@ rand_chacha = { version = "0.3" }
 # service crate so it is NEVER pulled into the wasm32 `host-primitives`
 # build consumed by `sdk-wasm`.
 rayon = { version = "1" }
-sha2 = { version = "0.10" }
+sha2 = { version = "0.11" }
 time = { version = "0.3", default-features = false, features = ["std", "formatting", "parsing"] }
 
 serde_json = { version = "1.0.145" }

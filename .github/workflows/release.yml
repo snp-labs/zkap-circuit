@@ -202,7 +202,7 @@ jobs:
           cp target/release/generate_witness_gen_sidecar stage-cli/generate_witness_gen_sidecar
           ls -la stage-cli
       - name: Upload CLI artifacts
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: zkap-cli
           path: stage-cli/
@@ -227,7 +227,7 @@ jobs:
       - name: Build + optimise wasm
         run: bash scripts/ci/build-wasm-artifact.sh stage-wasm/witness_gen.wasm
       - name: Upload wasm artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: zkap-witness-wasm
           path: stage-wasm/
@@ -339,7 +339,7 @@ jobs:
           cat output/keys/SHA256SUMS
 
       - name: Upload bundle artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: proving-keys-${{ matrix.shape }}
           path: output/keys/

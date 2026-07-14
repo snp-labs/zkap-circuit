@@ -77,7 +77,7 @@ regex = { version = "1.11.1" }
 rsa = { version = "0.9.10" }
 num = { version = "0.4" }
 num-integer = { version = "0.1.46" }
-num-bigint = { version = "0.4.6" }
+num-bigint = { version = "0.5.1" }
 num-traits = { version = "0.2.19" }
 blake2 = { version = "0.10" }
 hex = { version = "0.4" }
